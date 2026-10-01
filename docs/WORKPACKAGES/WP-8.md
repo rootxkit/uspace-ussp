@@ -51,7 +51,12 @@ WP-15.
   (`operator_ws` type, client id instance; disabled → close 1013, HTTP
   503 with `Retry-After` on reconnect, B-10), per-client rate 2 Hz
   (over-rate frames dropped, counted, reported in the `status` frame),
-  dedupe on `(serial, seq)` within 30 s, body cap per frame.
+  dedupe on `(serial, seq)` within 30 s, body cap per frame. Frames in
+  both directions carry the common envelope (`schema` + `body`;
+  reconciliation M29): `telemetry/v1` bodies from the client, and the
+  server's `status` frames as `console/status/v1` bodies (`accepted`,
+  `dropped`, `rate`, `acked_seq`, `backlog` as its extras) so one client
+  code path parses this socket and `/v1/traffic`.
 - Time placement: per frame `rx_ts` = now; per batch
   `timeplace.PlaceBatch(rxTS, ts[], 120 s)` → `captured_at` (T-02);
   `backlog` from the client's flag or from `rx_ts - captured_at >

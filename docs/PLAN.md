@@ -16,8 +16,14 @@ Sections: 1 scope and role boundary; 2 decisions; 3 architecture;
 4 package layout; 5 data model and migrations; 6 the published API;
 7 events on the bus; 8 security; 9 performance budgets; 10 testing;
 11 deployment; 12 milestones; 13 work packages, waves and the critical
-path; 14 engineering standards and CI; 15 open questions with proposed
-answers.
+path; 14 engineering standards and CI; 15 open questions, decided and
+still open.
+
+Reconciled on 2026-10-02 against the cross-plan decisions document
+(`M<n>` references below are its mismatch numbers): endpoint paths, the
+JWT audience and session claims, the problem body, the console frame,
+schema ownership, the interim contract mechanism, migrations, the
+droplet layout and the web toolchain now match the four sibling plans.
 
 ---
 
@@ -88,11 +94,11 @@ two migration trees, and the operator portal and USSP console under
 | D2 | `uspace-core` is pinned by tag, `v1.0.0` at WP-0, bumped only by its own `build(deps)` commit. Nothing in this repo re-implements identification, zone judgement, CPA, alert lifecycle, time placement, geodesy, ED-318, F3411/F3548 validation or JWT verification. Two judgements core does not provide, **conformance** (track against authorised volumes, thresholds and Art. 6(1)) and **strategic deconfliction** (Volume4D intersection in space, time and altitude, with priority), are USSP-only in the regulation (`01 §7`: R, A = ussp) and are built here in `internal/conformance` and `internal/intent/deconflict`, pinned by JSON vectors in the lab's shape under `testdata/vectors/`, and proposed to `uspace-lab/knowledge/vectors/` and to core as additive `v1.x` packages once the lab's SITL scenarios have run them (§15 Q1). | `00 §6` says safety logic exists once; once is satisfied by one owner. The authority and the lab consume the *results* (F3548 states, records), never the judgement. |
 | D3 | The standard interfaces are generated, never hand-written: the pinned `uas_standards` OpenAPI files of F3411 v22a and F3548 v21 (the same commits and SHA-256 that `uspace-core/f3411/SOURCE` and `f3548/SOURCE` record) generate the USS-side **server** interfaces and the DSS-side **clients** with oapi-codegen v2 into `internal/stdapi/`; handlers convert at the boundary and validate with core's `UnmarshalRIDFlight`, `UnmarshalOperationalIntent`, `Altitude.HAEM`, `Volume4DToZonesEnvelope`. The generated code is committed and CI verifies it offline (`scripts/check-generated.sh`: regenerate from the vendored YAML, diff). | LESSONS E-03 generalised: a field name on the wire comes from the standard's file. Core deliberately generated types only (its D5: a library has no HTTP client); the servers and clients are a system concern. The duplicated struct definitions are generated from one source and never edited (§15 Q5). |
 | D4 | The national API is spec-first: `api/openapi.yaml` (OpenAPI 3.1) is the published contract (`00 §7`), and `oapi-codegen` generates the `net/http` server interface (`std-http-server`, Go 1.22 routing) and the Go client (used by the lab and by tests) from it. An endpoint that is not in the file does not exist. | Owner's stack; `02 §1` publication rule; `uspace-lab/api/` aggregates the file. |
-| D5 | Two migration trees with goose, embedded: `migrations/relational/` (PostgreSQL 16 + PostGIS 3.4, written only by `api`) and `migrations/timeseries/` (TimescaleDB, written only by `tsdb-writer`; `api` reads it for records). Separate version tables `goose_db_version_relational` and `goose_db_version_timeseries`. Never merged. | LESSONS B-15; spec `03` preamble. The spec names `golang-migrate`; the owner's stack says goose (§15 Q3). |
+| D5 | Two migration trees with goose, embedded: `migrations/relational/` (PostgreSQL 16 + PostGIS 3.4, written only by `api`) and `migrations/timeseries/` (TimescaleDB, written only by `tsdb-writer`; `api` reads it for records). Separate version tables `goose_db_version_relational` and `goose_db_version_timeseries` (a tree run against the wrong database fails on the table name). Never merged. Migrations run only through the `migrate` subcommand of the system binary (`ussp-api migrate`, `ussp-tsdb-writer migrate`) and the one-shot `migrate` compose service; long-running processes **never migrate** and refuse to start on a version lower than they need, printing which. | LESSONS B-15; spec `03` preamble. The spec names `golang-migrate`; the owner's stack says goose (§15 Q3, reconciliation M36). |
 | D6 | Hot-path processes never open PostgreSQL. What they need is projected by `api` into NATS KV buckets (`cis_current`, `policy`, `source_control`, `registry_validity`, `client_bindings`, `intent_active`) and read as in-memory projections refreshed by watch plus periodic re-read; a stale projection is served with its age, never blocks. | Spec `00 §6.2`, `05 §2`; LESSONS G-08, B-08, B-09. |
-| D7 | The partition key is a pure-Go geodesic grid (`internal/cell`): `cell5` ≈ 8 km squares and `cell3` their 16×16 parents, named `c3:<row>:<col>` / `c5:<row>:<col>`, behind an interface whose only consumers are subject names and consumer ownership maps. H3 resolution 5 (the spec's figure) is not used because the maintained Go binding is cgo and core rejected it (core PLAN §11 gap 3). The cell never appears on an external interface. | `05 §3` calls the key "a design choice"; a cgo dependency in seven binaries buys nothing at 100–1000 drones. §15 Q2. |
-| D8 | JSON everywhere, with the message schemas of `04` that this repo **produces** under `schemas/`: `telemetry/v1`, `alert/v1`, `intent/request/v1`, `intent/decision/v1`, `intent/state/v1`, `track/telemetry/v1` (internal), `coordination/annex_v/v1`, `traffic/product/v1` (new, §6.1). Consumed schemas (`cis/change/v1`, `manned_track.v1`, `occurrence/v1`) are read from the producing repo's published copy in `uspace-lab/schemas/` at a pinned commit, never redefined here. | `04 §1` schema ownership rule. §15 Q9 on the two schemas whose producer is ambiguous. |
-| D9 | Operator machine clients authenticate with OAuth2 client credentials at the USSP's own issuer (`core/auth.Issuer`, RS256, JWKS at `/.well-known/jwks.json`); portal users with local accounts (argon2id) and a BFF session cookie. A full OIDC provider for operators is deferred: the claims shape is OIDC's so it can be added without changing clients (§15 Q4). Peers, the authority and the ANSP present ecosystem tokens verified by `core/auth.Verifier` with the authority's issuer allow-listed. | `01 §3` users table, `06 §3`. |
+| D7 | The partition key is the pure-Go lat-lon grid of `uspace-core/geodesy/cell` (additive in core v1.1.0, core WP-14): `cell5` = 0.1° × 0.1°, `cell3` = 1° × 1°, named `c5:<lat_idx>:<lon_idx>` / `c3:<lat_idx>:<lon_idx>`, ring-1 neighbours, bbox → cell set. `internal/cell` is a thin wrapper (ownership map, cell sets per intent) behind an interface whose only consumers are subject names and consumer ownership maps; until core v1.1.0 ships it carries the same grid locally and is replaced by the import in a `build(deps)` commit. H3 resolution 5 (the spec's figure) is not used because the maintained Go binding is cgo and core rejected it (core PLAN §11 gap 3). The cell never appears on an external interface. | `05 §3` calls the key "a design choice"; one grid implementation shared with the authority (reconciliation M35); a cgo dependency in seven binaries buys nothing at 100–1000 drones. §15 Q2. |
+| D8 | JSON everywhere. Schema ownership follows the reconciliation rule (M14): an HTTP request or response body is owned by the repo whose `api/openapi.yaml` carries it; a pushed stream message by its producer; a shape produced by several systems by `uspace-lab/schemas/common/`. This repo **owns** under `schemas/`: `telemetry/v1`, `intent/request/v1`, `intent/decision/v1`, `intent/state/v1`, `alert/v1`, `traffic/product/v1` (new, §6.1). It **consumes** at a pinned commit, never redefined here: `coordination/annex_v/v1` (ANSP, its API carries it), `cis/change/v1` (CISP), `occurrence/v1` (authority), `track/manned/v1` (ANSP), and from `uspace-lab/schemas/common/` the shared shapes `envelope/v1`, `track/telemetry/v1`, `source/status/v1`, `zone/applicable/v1`, `console/status/v1`, `console/snapshot/v1`, `console/subscribe/v1`, `problem/v1`. | `04 §1` schema ownership rule as reconciled (M14). §15 Q9. |
+| D9 | Operator machine clients authenticate with OAuth2 client credentials at the USSP's own issuer (`core/auth.Issuer`, RS256, JWKS at `/.well-known/jwks.json`); portal users with local accounts (argon2id) and a BFF session cookie. A full OIDC provider for operators is deferred: the claims shape is OIDC's so it can be added without changing clients (§15 Q4). Peers, the authority and the ANSP present ecosystem tokens verified by `core/auth.Verifier` with the authority's issuer (and the lab issuer in the lab) allow-listed. Audience rule (M18): `aud` of every machine token is the **host of the target's published base URL**; this system accepts the configured list `USSP_AUDIENCES` (its public host plus a lab alias such as the compose service name) and requests `aud` = host of `uss_base_url`, of the DSS, of the CISP, of the authority or of the ANSP for outgoing calls. `USSP_SYSTEM_ID` is the USSP code (`certificates.code`, M8), never an audience. | `01 §3` users table, `06 §3`; reconciliation Appendix A. |
 | D10 | Thresholds are a versioned `policy` row (`policy_version` travels on every alert and decision): CPA minima, deviation threshold defaults, `telemetry_lost_s`, `lost_link_s`, `cis_stale_s`, `proximity_radius_m`, `nonconformance_nearby_radius_m`, `escalation_repeat_s`, retention days. Never a literal. | LESSONS INV-03, S-13 policy reload; `04 §3.3`. |
 | D11 | Trust and source class travel on every track; a source that fails is `stale`/`unavailable`/`source_disabled` with age, never removed. Source control (type and instance switches) uses `core/sources` with the KV + push pattern. | `02 §1` failure rule, LESSONS B-11, B-16. |
 | D12 | The optional national extension `WS /v1/authority/flights` is built (WP-9) but **off by default** and never a condition of any milestone: the F3411 DP path is the conformance baseline. | `02 F7`, `09 §2`. |
@@ -152,7 +158,7 @@ flowchart LR
 
 | Process | Serves | Reads | Writes | Must keep working when |
 |---|---|---|---|---|
-| `api` (control plane, stateless behind Caddy) | `/v1/intents/*`, `/v1/geo/*`, `/v1/alerts/{id}/ack`, `/v1/registry/validate`, `/v1/records/*`, `/v1/weather/*`, `/v1/accounts/*`, `/oauth/*`, `/.well-known/jwks.json`, the F3548 USS endpoints `/uss/v1/*`, the CIS webhook receiver `/v1/cis/notify`, `/v1/admin/*` (policy, sources), `/healthz`, `/metrics` | PostgreSQL; TimescaleDB read-only (records); CIS (F3); authority (F8, F7) | PostgreSQL (sole writer); KV projections; JetStream `intent.v1`, `cis.v1`, `ctl.*`; outbox to the DSS handed to `dss-sync` | NATS or TimescaleDB down: refuses what needs them with a 503 that names the dependency, keeps serving reads |
+| `api` (control plane, stateless behind Caddy) | `/v1/intents/*`, `/v1/geo/*`, `/v1/alerts/{id}/ack`, `/v1/registry/validate`, `/v1/records/*`, `/v1/weather/*`, `/v1/accounts/*`, `/oauth/*`, `/.well-known/jwks.json`, the F3548 USS endpoints `/uss/v1/*`, the CIS change-notification receiver `/v1/cis/notifications`, `/v1/admin/*` (policy, sources), `/healthz`, `/metrics` | PostgreSQL; TimescaleDB read-only (records); CIS (F3); authority (F8, F7) | PostgreSQL (sole writer); KV projections; JetStream `intent.v1`, `cis.v1`, `ctl.*`; outbox to the DSS handed to `dss-sync` | NATS or TimescaleDB down: refuses what needs them with a 503 that names the dependency, keeps serving reads |
 | `telemetry-ingest` | `WS /v1/telemetry`, `POST /v1/telemetry/batch` | KV `client_bindings`, `source_control`, `policy`; geoid grid | `trk.v1.*` (core NATS + mirror), `ingest.v1.<cell3>` on backpressure, `src.v1.*` | `api` down (bindings from KV with age); DSS down; CIS down |
 | `rid-sp` | `GET /uss/flights`, `GET /uss/flights/{id}/details`, `POST /uss/identification_service_areas/{id}` (ISA notifications for our own peer views), optional `WS /v1/authority/flights` | `trk.v1.>` (own flights), KV `intent_active`, `registry_validity` | ISA create/update/delete in the DSS (F3411); `peers.isa_notify` to `dss-sync`'s view registry | DSS down (serves `/uss/flights` from its in-memory 60 s window; ISA upkeep retried) |
 | `monitor` (partitioned per `cell3`; one instance for the demo) | nothing over HTTP but `/healthz`, `/metrics` | `trk.v1.<cell3>.>` plus ring-1 neighbours, `man.v1.<cell3>.>`, KV `intent_active`, `cis_current`, `policy`, `source_control`; terrain and geoid | `alrt.v1.*` (raise, refresh, clear), `conf.v1.*` (conformance states), `ident.v1.*` | `api` down (projections with age); CIS down (last zones with `cis_age_s`); terrain absent (height not evaluated, said so) |
@@ -161,7 +167,16 @@ flowchart LR
 | `tsdb-writer` | nothing | `trk.v1` mirror, `man.v1`, `peer.v1`, `traffic.product.v1`, `conf.v1` | TimescaleDB (sole writer), batched `COPY`, bounded 10 s queue, spill to the JetStream mirror | TimescaleDB down: queue, then spill, counted |
 
 The console's live feed is `traffic-ws` with a staff session (it is the
-same stream with a `bbox` instead of an `intent_id`).
+same stream with a `bbox` instead of an `intent_id`). Every WebSocket
+frame this system sends, to a browser or to a machine client, carries
+the common envelope of `uspace-lab/schemas/common/envelope/v1`
+(`schema`, `msg_id`, `producer`, `ts`, `rx_ts`, `captured_at`,
+`time_source`, `backlog`) plus a `body` named by `schema`; consumers
+dispatch on `schema`. The browser-facing stream is the console frame of
+reconciliation M29: `console/status/v1` on connect and every 2 s,
+`console/snapshot/v1` on connect and re-subscribe, `console/subscribe/v1
+{bbox, layers[]}` from the client, and `traffic/product/v1` / `alert/v1`
+as bodies.
 
 ### 3.2 Boundaries (spec `00 §6.2`)
 
@@ -170,7 +185,7 @@ same stream with a `bbox` instead of an `intent_id`).
 | hot path → control plane (alerts needing records, conformance states, flight start/end, identification changes) | JetStream subjects with explicit ack; `api` persists and opens workflow (escalation, Annex V notice, DSS state change via `dss-sync`) | `api` never re-judges; the judgement came from the package `monitor` imported |
 | control plane → hot path (policy, zones, registry validity, bindings, switches, active intents) | NATS KV buckets written by `api` inside the same transaction's commit hook (B-09: refuse the write with 503 when the store cannot take it), watched by the hot path, re-read every 300 s | a hot-path process starts without a bucket after 3 retries with every source enabled and logs that the state is unknown (SC-08 step 8) |
 | synchronous judgement in `api` (deconfliction, zone checks on an intent) | direct calls into `internal/intent`, `internal/cis` (which calls `core/zones`), `internal/registry` | the DSS write is the only remote call in the request path and it is after the local decision |
-| `web` → backend | HTTPS same origin; the BFF route exchanges login for an `HttpOnly`, `SameSite=Strict` cookie and forwards the bearer | `web` has no database, no NATS, no geometry library (lint rule) |
+| `web` → backend | HTTPS same origin; the BFF route exchanges login for the `uspace_session` cookie (`HttpOnly; Secure; SameSite=Strict`) with the `uspace_csrf` double-submit cookie and `X-CSRF-Token` header (M21), and forwards the bearer. WebSockets are opened by the browser directly to `traffic-ws` on the same origin: the session cookie on the upgrade plus an `Origin` allow-list, verified by the WS process with the shared verifier; no ticket route (M22); a `4401` close means "re-login" | `web` has no database, no NATS, no geometry library (lint rule) |
 | TypeScript types | `openapi-typescript` from `api/openapi.yaml` and `json-schema-to-typescript` from `schemas/` | a hand-written API type fails lint |
 
 ---
@@ -185,7 +200,7 @@ github.com/rootxkit/uspace-ussp
 ├── api/
 │   ├── openapi.yaml           the national USSP API (OpenAPI 3.1); published; aggregated by uspace-lab
 │   └── standards/             pinned copies of uas_standards' F3411 v22a and F3548 v21 OpenAPI (SOURCE + sha256)
-├── schemas/                   JSON Schemas this repo produces (04 §1): telemetry, alert, intent/*, track/telemetry, coordination, traffic/product
+├── schemas/                   JSON Schemas this repo owns (D8): telemetry, alert, intent/*, traffic/product; consumed ones are pinned copies from uspace-lab/schemas/
 ├── migrations/
 │   ├── relational/            goose, embedded, PostgreSQL + PostGIS (api is the only writer)
 │   └── timeseries/            goose, embedded, TimescaleDB (tsdb-writer is the only writer)
@@ -197,7 +212,7 @@ github.com/rootxkit/uspace-ussp
 │   ├── accounts/              operator accounts, OAuth2 clients, staff accounts, roles
 │   ├── store/                 pgx pools, sqlc-generated queries (relational, timeseries), transactions, outbox
 │   ├── bus/                   NATS JetStream streams, subjects (05 §3), KV buckets, projections, followers
-│   ├── cell/                  partition key (D7); cell sets per viewport and per intent
+│   ├── cell/                  thin wrapper over core geodesy/cell (D7); ownership map; cell sets per viewport and per intent
 │   ├── policy/                the policy row, versioning, KV projection, defaults
 │   ├── sources/               core/sources follower + the admin switch writer (B-09)
 │   ├── cis/                   F3 client (pull, ETag, versions), webhook receiver (JWS), reconciliation, cache tables, cis_current projection, applicability evaluation via core/ed318 + core/zones
@@ -214,7 +229,7 @@ github.com/rootxkit/uspace-ussp
 │   ├── geo/                   geo-awareness responses from the CIS cache; zone incursion and restriction_activated alerts (core/alerting zones path)
 │   ├── alerts/                alert records, acknowledgement, escalation (10 s repeat, supervisor), nonconformance_nearby fan-out
 │   ├── peers/                 DP role towards peer USSPs: ISA discovery via DSS, `GET /uss/flights` polling per view, 24 h cache, peer_unavailable
-│   ├── manned/                ANSP F4 stream client (mTLS), e-conspicuity adapter (ADS-B JSON/SBS), `man.v1`, trust classes, stale and unavailable
+│   ├── manned/                ANSP F4 stream client (mTLS per USSP_MTLS_MODE, envelope-wrapped frames), e-conspicuity adapter (ADS-B JSON/SBS), `man.v1`, trust classes, stale and unavailable
 │   ├── coordination/          F13: Annex V notices to the ANSP, acknowledgement records, retry
 │   ├── records/               Art. 15(1)(g): per-flight record, daily bundles, retention jobs, 24 h purges, traffic product sampling
 │   ├── occurrence/            occurrence/v1 to the authority, 72 h deadline, delivery status
@@ -224,7 +239,8 @@ github.com/rootxkit/uspace-ussp
 │   └── national/              generated server interface and client from api/openapi.yaml, plus handlers' glue
 ├── web/                       Next.js: operator portal (public) and USSP console (staff); uspace-ui kit; ka/en
 ├── deploy/
-│   ├── Dockerfile  compose/  caddy/  ENV.md  conformance/ (uss_qualifier configs against the lab DSS)
+│   ├── Dockerfile  compose/  caddy/ (snippet consumed by uspace-deploy)  ENV.md  conformance/ (uss_qualifier configs against the lab DSS)
+├── api/clients/               pinned copies of sibling OpenAPI files (cisp, authority, ansp) with SOURCE commits; CI diffs them (M11)
 ├── testdata/vectors/          conformance and deconfliction vectors (lab shape), proposed upstream
 ├── scripts/                   check-generated.sh, check-schemas.sh, migrate.sh, seed-dev.sh
 └── docs/                      this plan, WORKPACKAGES/, RUNBOOKS/
@@ -296,10 +312,13 @@ TimescaleDB read-only for records and exports.
 ### 5.3 Migration rules
 
 - Every schema change is a goose migration in the right tree; never a
-  hand edit. Both trees embed (`embed.FS`) and run at process start of
-  their owner (`api` for relational, `tsdb-writer` for timeseries) with an
-  advisory lock; other processes wait for the version they need and
-  refuse to start on a lower one, printing which.
+  hand edit. Both trees embed (`embed.FS`) and run only through the
+  `migrate` subcommand of their owner's binary (`ussp-api migrate` for
+  relational, `ussp-tsdb-writer migrate` for timeseries) with an advisory
+  lock, invoked by the one-shot `migrate` compose service before the
+  long-running services start (M36). No long-running process migrates;
+  every process waits for the version it needs and refuses to start on a
+  lower one, printing which.
 - `sqlc` generates the query layer per tree (`internal/store/relational`,
   `internal/store/timeseries`); generated code is committed and checked
   offline in CI.
@@ -314,8 +333,14 @@ One origin, `https://<ussp host>`, Caddy routing path groups to processes
 (`02 §3`). Every national endpoint below is in `api/openapi.yaml`;
 every standard endpoint is defined by `uas_standards` and served by the
 generated interface (D3). Errors are RFC 9457 `application/problem+json`
-with a stable `type` slug and, for refusals of a judgement, the
-`conflicts[]` or the field path.
+in the shape every system shares (M28, `uspace-lab/schemas/common/problem/v1`):
+`{type, title, status, detail, instance, errors: [{field, reason}],
+truncated?: bool}`, `field` = the JSON path as `core.FieldError` and
+`ed269.Problems` write it, capped at 100 entries with `truncated`;
+`type` = `https://schemas.uspace.ge/problems/<slug>` where `slug` is the
+counter or refusal name (`unauthenticated`, `forbidden`, `cis_stale`,
+`registry_unknown`, ...). The `conflicts[]` of a refused intent stay on
+the **decision** body (`intent/decision/v1`), never on the problem.
 
 ### 6.1 National API (`api/openapi.yaml`, tag per group)
 
@@ -328,19 +353,19 @@ with a stable `type` slug and, for refusals of a judgement, the
 | `GET /v1/geo?bbox=&at=` and `GET /v1/geo/intents/{id}` | api | `ussp.geo` | `02 F5`, Art. 9 | applicable zones, airspaces with Art. 3(4) requirements, restrictions; each with `updated_at`, `version`, `valid_from/to`; `cis_version`, `cis_age_s`, `stale` |
 | `WS /v1/telemetry` | telemetry-ingest | `ussp.telemetry` | `02 F5`, Art. 8(2) | frames `telemetry/v1`; server `status` frames (accepted, dropped, rate, `backlog` ack); 2 Hz per client cap |
 | `POST /v1/telemetry/batch` | telemetry-ingest | `ussp.telemetry` | `02 F5` | ≤ 1 s batches; `backlog=true` on drain; acked only when queued durably (B-05) |
-| `WS /v1/traffic?intent_id=` or `?bbox=` | traffic-ws | `ussp.traffic` / staff | `02 F5`, Art. 11 | `traffic/product/v1` at 1 Hz: tracks with position, time of report, speed, heading, emergency, `trust`, `age_s`; `degraded[]`; proximity alerts inline |
+| `WS /v1/traffic?intent_id=` or `?bbox=` | traffic-ws | `ussp.traffic` / staff session cookie | `02 F5`, Art. 11 | envelope-wrapped frames (§3.1): `console/status/v1` on connect and every 2 s (`degraded[]`, `dropped_frames`, `policy_version`, thresholds, `cis_version`, `cis_age_s`), `console/snapshot/v1` on connect, then `traffic/product/v1` bodies at 1 Hz (tracks with position, time of report, speed, heading, emergency, `trust`, `age_s`) and `alert/v1` bodies; staff send `console/subscribe/v1 {bbox, layers[]}` |
 | `GET /v1/traffic/snapshot?intent_id=|bbox=` | traffic-ws | `ussp.traffic` / staff | `02 F5` | bootstrap |
-| `WS /v1/alerts?intent_id=` | traffic-ws | `ussp.traffic` | `02 F5`, Art. 13 | `alert/v1` push; repeats unacknowledged critical alerts every `escalation_repeat_s` |
+| `WS /v1/alerts?intent_id=` | traffic-ws | `ussp.traffic` | `02 F5`, Art. 13 | envelope-wrapped `alert/v1` push; repeats unacknowledged critical alerts every `escalation_repeat_s` |
 | `POST /v1/alerts/{id}/ack` | api | `ussp.traffic` | `02 F5` | records `acked_at/by` |
 | `GET /v1/registry/validate?operator=&serial=&pilot=` | api | `ussp.intents` | `02 F5`, `F8` | proxy with cache; status only |
 | `GET /v1/weather?bbox=&at=` | api | `ussp.geo` | Art. 12 | optional; `503 weather_unavailable` with reason when no source |
 | `GET /v1/records/flights/{id}` | api | `ussp.records` (authority) | `02 F7`, Art. 15(1)(g), 18(b) | authorisation (number, thresholds, decision, conflicts), telemetry summary, alerts, conformance timeline, traffic shown; no names |
 | `GET /v1/records/daily/{date}` | api | `ussp.records` | `02 F7` | bundle with content hash |
 | `WS /v1/authority/flights` | rid-sp | `rid.display_provider` (authority) | `02 F7` optional national extension | off unless `USSP_AUTHORITY_PUSH=on`; never a milestone condition (D12) |
-| `POST /v1/cis/notify` | api | CISP's JWS (JWKS allow-listed) | `02 F3` | `cis/change/v1` webhook; pulls the delta; logs |
-| `POST /oauth/token` | api | client credentials | `06 §3` | USSP issuer for operator clients; `aud` = this USSP's id, TTL ≤ 1 h |
+| `POST /v1/cis/notifications` | api | compact JWS (`application/jose`) from an allow-listed issuer: the CISP or, on its degraded direct path, the ANSP (`USSP_CIS_NOTIFY_ISSUERS`, JWKS URLs from config); `aud` = this host | `02 F3`; M1, M5, M19 | `cis/change/v1`; pulls the delta from `pull_url` only when its host equals the issuer's configured base host (SSRF guard); reasons `subscription_test`, `republished` and any unknown reason are acknowledged `204` without a pull (M16); logs |
+| `POST /oauth/token` | api | client credentials | `06 §3` | USSP issuer for operator clients; `aud` = this USSP's host (M18), TTL ≤ 1 h |
 | `GET /.well-known/jwks.json` | api | public | `06 §3` | issuer keys |
-| `POST /v1/accounts/login`, `/logout`, `GET /v1/accounts/me` | api | portal / console sessions | `01 §3` | argon2id; session JWT for the BFF cookie; MFA for staff admin |
+| `POST /v1/accounts/login`, `/logout`, `GET /v1/accounts/me` | api | portal / console sessions | `01 §3`; M20, M21 | argon2id; session JWT for the `uspace_session` cookie (`iss` = this issuer, `aud` = this host, `sub` = account id, `scope = "session"`, `roles: [..]`, `realm` = `portal` for operators / `console` for staff, `jti` = session id, `exp` ≤ 12 h, `kid`); MFA for staff admin |
 | `POST /v1/accounts/operators` (self-registration with registration number), `GET/PATCH /v1/accounts/operators/{id}`, `POST /v1/accounts/operators/{id}/clients`, `POST .../clients/{id}/serials`, `DELETE .../serials/{serial}`, `POST .../clients/{id}/rotate` | api | `operator_admin` | `01 §3`, `06 T3` | validity checked through F8 before activation |
 | `GET /v1/admin/flights`, `/alerts`, `/dss`, `/inputs`, `/escalations`; `POST /v1/admin/alerts/{id}/escalate|close`; `POST /v1/admin/emergency/{flight_id}` (open, note, close) | api | `supervisor`, `support` | `01` S11, `05 §6` | console; degraded inputs with age |
 | `GET/PUT /v1/admin/policy`, `GET/POST /v1/admin/sources` | api | `admin` | INV-03, U-15 | audited; 503 when the KV cannot take the switch (B-09) |
@@ -373,31 +398,43 @@ F3411 `PUT/DELETE /rid/v2/dss/identification_service_areas/{id}[/{version}]`,
 `POST {uss_base_url}/uss/v1/operational_intents`,
 `GET {uss_base_url}/uss/flights?view=`, `.../details`. Every outgoing
 call carries an ecosystem token with the scope the standard names and
-`aud` as the deployment configures for the DSS and for peers.
+`aud` = the host of the target's base URL (the DSS host from
+`USSP_DSS_BASE_URL`; a peer's `uss_base_url` host; M18), requested from
+the token service with the `audience` parameter; for standard scopes
+(`utm.*`, `rid.*`) any audience may be requested because peers are
+discovered, not configured (`00 §7`). ISA and intent notifications we
+send to peers carry `aud` = the host of each subscriber's `uss_base_url`.
 
-### 6.3 Outbound national calls (clients generated from the owning repo's OpenAPI, pinned from `uspace-lab/api/`)
+### 6.3 Outbound national calls (clients generated from the owning repo's OpenAPI)
 
 | Call | Target | Scope | Spec |
 |---|---|---|---|
 | `GET /v1/registry/validate`, `POST /v1/registry/validate`, `GET /v1/registry/changes?since=` | authority | `registry.validate` | `02 F8` |
-| `POST /v1/occurrences` | authority | `occurrences.write` | `02 F7` |
+| `POST /v1/occurrences` (`occurrence/v1`, owned by the authority; `reporter.person_ref` is an opaque reference in clear text over TLS, M13) | authority | `occurrences.write` | `02 F7` |
 | `POST /v1/certificates/{id}/status` | authority | `certificates.status` | `02 F7`, Art. 7(6) |
-| `GET /v1/{dataset}?bbox=&at=&since_version=`, `GET /v1/{dataset}/versions/{v}`, `GET /v1/changes?since=`, `POST /v1/subscriptions` | CISP | `cis.read` | `02 F3` |
-| `WS /v1/manned-traffic/stream?bbox=`, `GET /v1/manned-traffic/snapshot` | ANSP | `ansp.traffic` + mTLS | `02 F4` |
-| `POST /v1/coordination/*` (`coordination/annex_v/v1`) | ANSP | ecosystem token | `02 F13` |
+| `GET /v1/{dataset}?bbox=&at=&since_version=`, `GET /v1/{dataset}/versions/{v}`, `GET /v1/changes?since=`, `POST /v1/subscriptions` (callback `{USSP_USS_BASE_URL}/v1/cis/notifications`) | CISP | `cis.read` | `02 F3` |
+| `WS /v1/manned-traffic/stream?bbox=`, `GET /v1/manned-traffic/snapshot` (envelope-wrapped `track/manned/v1` frames and `console/status/v1` as the feed status, M12) | ANSP | `ansp.traffic` + mTLS per `USSP_MTLS_MODE` (M25) | `02 F4` |
+| `POST /v1/coordination/notices` (`coordination/annex_v/v1`, owned by the ANSP) → `202 {ack_id, state: received, received_at}`; `GET /v1/coordination/notices/{ack_id}` polled for the human acknowledgement | ANSP | `ansp.coordination` | `02 F13`; M2 |
 
-Until those repos publish their files, the clients are built against
-the endpoint shapes in `02` and marked `// CONTRACT: pending <repo> openapi`
-with a CI check that lists them; the aggregation in `uspace-lab/api/`
-replaces them (§15 Q8).
+Every `aud` is the host of the target's base URL (M18). The interim
+contract mechanism is the authority's, adopted everywhere (M11): each
+sibling's `api/openapi.yaml` is copied into `api/clients/<system>.yaml`
+with a `SOURCE` file naming the commit, the client is generated from the
+copy, and a CI job diffs the copy against the sibling repo at that
+commit; the copies are bumped in a `build:` commit, never inside a
+feature PR. The fakes in `internal/testfakes/` are the executable
+reading of `02` for tests. The lab aggregate (`uspace-lab/api/`, lab
+WP-L1) replaces the copies when it exists (§15 Q8).
 
 ---
 
 ## 7. Events on the bus
 
 One NATS cluster for this system on its own network; per-process
-credentials; no JWT inside (`00 §6.2`). Subjects follow `05 §3`; the
-cell is D7's.
+credentials; no JWT inside (`00 §6.2`). Subjects follow `05 §3` with the
+additions below (`conf.v1`, `peer.v1`, `traffic.product.v1`), accepted
+as a spec erratum because NATS never crosses a system (M30); the cell is
+D7's. A subject that carries an `04` message carries the envelope.
 
 | Subject | Stream | Producer → consumer | Payload |
 |---|---|---|---|
@@ -434,8 +471,9 @@ T4 (inter-system impersonation), T5 (token service outage), T6 (PII), T8
 
 | Control | Where |
 |---|---|
-| Ecosystem tokens verified by `core/auth.Verifier`: RS256 only, `kid`, allow-listed `iss` (the authority's token service), `aud` = this USSP's system id, 30 s skew, scope per endpoint (`httpx` middleware). JWKS fetched at start; outage keeps the cache (T5). | `internal/auth`, `internal/httpx` |
-| Operator machine tokens issued by `core/auth.Issuer` (own RSA key from KMS/env file, 90-day rotation runbook, `kid` rotation with both keys in the JWKS during the overlap). TTL ≤ 1 h. Client secrets argon2id. | `internal/auth`, `internal/accounts` |
+| Ecosystem tokens verified by `core/auth.Verifier`: RS256 only, `kid`, allow-listed issuers with their JWKS URLs (the authority's token service; the lab issuer in the lab), `aud` ∈ `USSP_AUDIENCES` (this system's public host plus a lab alias; M18), 30 s skew, `jti` required, scope per endpoint (`httpx` middleware). The same verifier checks session JWTs (`scope = "session"`, `roles[]`, `realm`; M20) and the CIS notification JWS (issuers `USSP_CIS_NOTIFY_ISSUERS`: the CISP and the ANSP; M5). JWKS fetched at start; outage keeps the cache (T5). Scope catalogue = `06 §3` as reconciled (M23, held by authority WP-2): a new scope is a PR there first. | `internal/auth`, `internal/httpx` |
+| Operator machine tokens issued by `core/auth.Issuer` (own RSA key from KMS/env file, 90-day rotation runbook, `kid` rotation with both keys in the JWKS during the overlap). `aud` = this USSP's host, TTL ≤ 1 h. Client secrets argon2id. This system's own ecosystem client id at the authority is `ussp-<code>-01` (M24). | `internal/auth`, `internal/accounts` |
+| mTLS towards the ANSP (F4) with `USSP_MTLS_MODE = required \| off` (M25): `required` in production (client certificate from `USSP_MTLS_CERT_FILE` / `USSP_MTLS_KEY_FILE` / `USSP_MTLS_CA_FILE`), `off` on the staging droplet and in the lab; `off` is printed at error level in every status period. | `internal/manned`, `internal/config` |
 | A client sends telemetry only for its bound serials; a second live session for one serial is refused and counted; a teleport > 100 m/s between samples is flagged `anomaly: teleport` on the track and counted, never silently dropped (T3). | `internal/telemetry` |
 | Body caps 1 MiB; `GET /uss/flights` view diagonal cap and flight-count cap; peer responses bounded (`MaxMessageBytes` of core); per-client WS rate 2 Hz; per-client and per-IP limits in Caddy and in `httpx` (T8, T9). | `internal/httpx`, `deploy/caddy` |
 | ED-318 from the CISP validated by `core/ed318.Parse` and refused, never repaired; the webhook JWS verified against the CISP's JWKS; the 60 s reconciliation pull is mandatory (T9). | `internal/cis` |
@@ -443,7 +481,7 @@ T4 (inter-system impersonation), T5 (token service outage), T6 (PII), T8
 | Production ingest refuses `trust: simulated` and `source: sitl` at the schema validator; the lab's simulated operator uses an ordinary client credential and is `authenticated` like any operator (T11). | `internal/telemetry` |
 | Audit: every write, token issuance and refusal, source switch, policy change, PII-bearing record export is an `events` row with actor and purpose; role `ussp_app` has no `UPDATE`/`DELETE` on `events`, `telemetry`, `conformance_states` (T7). | `migrations/relational`, `internal/store` |
 | Public repo: gitleaks in CI and pre-commit; `.env.example` only; fixtures use `GEO-TEST-*` numbers and `TEST*` serials; a CI grep for `chikox.net` outside `deploy/staging/` fails; SBOM and cosign on images; `SECURITY.md`. | `.github/workflows`, `deploy/` |
-| `web/`: no credential in browser code, BFF cookie `HttpOnly`/`SameSite=Strict`, CSRF token, no geometry import (ESLint rule), no DB/NATS client. | `web/` |
+| `web/`: no credential in browser code, cookies `uspace_session` / `uspace_csrf` (`HttpOnly; Secure; SameSite=Strict`, `X-CSRF-Token`; M21), WebSocket upgrade authenticated by the cookie plus an `Origin` allow-list (M22), the kit's CSP (`connect-src 'self'`, `font-src 'self'`, `worker-src blob:`), fonts via `next/font/local`, no third-party tile or font request (M38), no geometry import (ESLint rule), no DB/NATS client. | `web/` |
 
 ---
 
@@ -488,7 +526,7 @@ SITL or a lab scenario raised and cleared it.
 | Unit | every package; table tests; fuzz targets on every decoder that reads untrusted bytes (`telemetry/v1`, `intent/request/v1`, CIS webhook, ANSP frames, ADS-B adapter) | `go test -race -shuffle=on ./...` |
 | Core vectors, owned cases | `RunOwned(t, "ussp", ...)` on `identification_status`, `serials_and_registration`, `fleet_match`, `cpa`, `alert_lifecycle`, `zones_vertical`, `zones_applicability`, `geodesy`, `terrain_geoid`, `source_control`, `jwt_verify`, `ed318_roundtrip`, `rid_time` (network cases), `pressure_altitude` — run against **this repo's adapters** (the mapping from our wire types onto core inputs), never a second copy of the judgement | `internal/<pkg>/vectors_test.go`; the core module's own vector tests also run from the module cache in CI (`go test -run Vectors github.com/rootxkit/uspace-core/...`) |
 | Repo vectors | `testdata/vectors/conformance.json`, `deconfliction.json` in the lab's file shape (description, units, tolerance, owners, cases with `why`); proposed upstream to `uspace-lab/knowledge/vectors/` | `internal/conformance`, `internal/intent/deconflict` |
-| Schema examples | every `schemas/*` has examples under `schemas/examples/`; Go structs round-trip them; `openapi-typescript` output is up to date | `scripts/check-schemas.sh` |
+| Schema examples | every owned `schemas/*` has examples under `schemas/examples/`; Go structs round-trip them and the consumed copies (pinned from `uspace-lab/schemas/`, including `schemas/common/`); `openapi-typescript` output is up to date; the pinned sibling OpenAPI copies in `api/clients/` match their `SOURCE` commit (M11) | `scripts/check-schemas.sh`, `scripts/check-contracts.sh` |
 | Integration (CI, real services) | PostgreSQL+PostGIS+TimescaleDB and NATS as GitHub Actions service containers; migrations up/down/up; `api` + `telemetry-ingest` + `monitor` + `traffic-ws` + `dss-sync` + `tsdb-writer` started in-process from `cmd/ussp-dev` against them; a fake DSS (`internal/dss/fakedss`, in-memory, the subset of the DSS API we call, with ovn semantics), a fake authority (F8 + JWKS + occurrences), a fake CISP (F3 with ETag + webhook), a fake ANSP (F4 stream + coordination inbox) under `internal/testfakes/`; each fake has a "down" switch for the degraded-path tests of `02` (CIS stale → `cis_stale`; DSS down → `pending_dss`; authority down → cached validity then `unknown`; ANSP down → `manned: unavailable since T`) | `make integration` (`go test -tags integration ./...`), job `integration` in CI |
 | Conformance hooks | `deploy/conformance/`: compose profile with the InterUSS DSS (its published image, pinned by digest) and `uss_qualifier` configurations for F3411 SP (v22a) and F3548 (strategic coordination, constraint processing) pointed at this USSP; `make conformance` runs them locally; the lab (`uspace-lab/conformance/`) runs the same against staging and owns the pass criteria and the national OpenAPI contract tests | WP-19; CI runs it on a manual dispatch and on release tags only (it pulls external images) |
 | Scenarios (lab, SITL) | SC-01, SC-02, SC-21 (CPA), SC-03 (zone), SC-08 (source switches), SC-09 (no false spoof on drain), SC-14 (drain ≥ 5× intake), SC-15 (stalled adapter), SC-16 (peer SP switched off), SC-17 (registry change reaches resolvers), SC-22 (missing inputs are visible), plus the S-M2/S-M3/S-M4 done-when runs of `07` (conformance in and out of the volume, `nonconformance_nearby`, ANSP acknowledgement, peer `Nonconforming`, lost link, restriction activation, peer purge at 24 h) | run by `uspace-lab` against this repo's image; each WP that owns an alert path lists the scenario it must pass and records the run (date, image digest, numbers) in `docs/RUNBOOKS/<wp>.md` |
@@ -509,28 +547,50 @@ distinct counter, reason or problem+json `type` covered by a named test.
   non-root, `CGO_ENABLED=0`), entrypoint `/usr/bin/ussp-<process>`; one
   image `ghcr.io/rootxkit/uspace-ussp-web:<sha>` built in CI (`next build`,
   standalone output). Never build Next.js on the server.
-- `deploy/compose/docker-compose.yml`: the seven processes, `web`,
-  `postgres` (postgis image), `timescaledb` (`timescale/timescaledb-ha`,
-  PostGIS included), `nats` (JetStream on, per-process accounts), on an
-  isolated network; only Caddy (shared, in the infra repo) is outside.
+- `deploy/compose/docker-compose.yml`: the seven processes, `web`, the
+  one-shot `migrate` service (runs both `migrate` subcommands and exits;
+  the long-running services depend on its completion; M36), one
+  `timescaledb` container (`timescale/timescaledb-ha:pg16`, PostGIS
+  included) holding **both** databases, relational and time series, as
+  separate databases with separate version tables (M37; two hosts only
+  when the system outgrows one, `05 §4`), `nats` (JetStream on,
+  per-process accounts), on an isolated network; only Caddy (shared,
+  composed by the private deployment repo `uspace-deploy`) is outside.
   Profiles: `demo` (adds the InterUSS DSS and the lab fakes), `conformance`.
-- Caddy snippet `deploy/caddy/ussp.caddy`: `uspace-ussp.chikox.net` →
-  path groups per process; rate limits; the hostname is a variable.
+- Caddy snippet `deploy/caddy/ussp.caddy`: `{$USSP_HOST}` → path groups
+  per process; rate limits; WebSocket upgrades pass through with the
+  `Origin` header intact; the hostname is a variable. The snippet is
+  imported by `uspace-deploy`'s shared Caddyfile, which also serves
+  `/basemap/*` from one shared read-only volume on every host (the lab
+  builds the bundle, lab WP-L3; M38) and never routes `/metrics`.
+- `web/` uses `pnpm` with `packageManager` pinned and `--frozen-lockfile`
+  (M34); `uspace-ui` from npmjs only, exact pin (M32).
 - Config by env only, every variable documented in `deploy/ENV.md` with
-  default, unit and the process that reads it: `USSP_SYSTEM_ID`,
-  `USSP_USS_BASE_URL`, `USSP_DSS_BASE_URL`, `USSP_DSS_AUDIENCE`,
-  `USSP_CISP_BASE_URL`, `USSP_AUTHORITY_BASE_URL`, `USSP_TOKEN_ISSUER`,
-  `USSP_TOKEN_JWKS_URL`, `USSP_ANSP_STREAM_URL`, `USSP_ANSP_MTLS_*`,
+  default, unit and the process that reads it: `USSP_SYSTEM_ID` (the
+  USSP code, `certificates.code`; `USSP-DEV` in the lab), `USSP_AUDIENCES`
+  (comma-separated hosts this system accepts as `aud`: its public host
+  and a lab alias), `USSP_USS_BASE_URL`, `USSP_DSS_BASE_URL`,
+  `USSP_CISP_BASE_URL`, `USSP_AUTHORITY_BASE_URL`, `USSP_ANSP_BASE_URL`,
+  `USSP_TOKEN_ISSUERS` (allow-listed issuer URLs with their JWKS URLs),
+  `USSP_CIS_NOTIFY_ISSUERS`, `USSP_ANSP_STREAM_URL`, `USSP_MTLS_MODE`,
+  `USSP_MTLS_CERT_FILE`, `USSP_MTLS_KEY_FILE`, `USSP_MTLS_CA_FILE`,
   `USSP_ISSUER_KEY_FILE`, `USSP_PG_URL`, `USSP_TS_URL`, `USSP_NATS_URL`,
   `USSP_NATS_CREDS`, `USSP_GEOID_FILE`, `USSP_TERRAIN_DIR`,
   `USSP_CELL_OWNERSHIP`, `USSP_AUTHORITY_PUSH`, `USSP_WEATHER_SOURCE`,
-  `USSP_ADSB_SOURCE`. No hostname in code.
+  `USSP_ADSB_SOURCE`, `USSP_WS_ALLOWED_ORIGINS`. Outgoing `aud` values
+  are derived from the base URLs (M18): there is no `USSP_DSS_AUDIENCE`.
+  No hostname in code.
 - Staging: the droplet's compose project `uspace-ussp`; images pulled by
   digest from GHCR by the owner's deploy (never by CI); migrations run by
-  `api` and `tsdb-writer` at start; backups: nightly `pg_dump` of the
-  relational database and Timescale chunk export to the backup account
-  (runbook in WP-20). Production is per operator: a third-party USSP
-  deploys its own; the state deploys none of this repo.
+  the one-shot `migrate` service before the processes start; backups:
+  nightly `pg_dump` of the relational database and Timescale chunk export
+  to the backup account (runbook in WP-20). Production is per operator: a
+  third-party USSP deploys its own; the state deploys none of this repo.
+- Droplet sizing is an open owner question (reconciliation §2.1): the
+  five systems plus the DSS and the lab exceed 2 vCPU / 3.8 GB; the
+  proposed default is to resize to ≥ 4 vCPU / 8 GB before L-M1 or to run
+  the DSS and the lab on a second droplet. This plan's §9 budgets assume
+  the system's share on either.
 
 ---
 
@@ -563,7 +623,7 @@ update in the same PR.
 | WP-1 | `store-migrations` | `migrations/*`, `internal/store`, `internal/policy`, `events` audit, `internal/sources` (writer side) | WP-0 | S-M0 |
 | WP-2 | `auth-accounts` | `internal/auth`, `internal/accounts`, `/oauth/*`, `/.well-known/jwks.json`, `/v1/accounts/*`, scope middleware, client-serial bindings, KV `client_bindings` | WP-1 | S-M1 |
 | WP-3 | `standards-codegen` | `api/standards/`, `internal/stdapi/`, `scripts/check-generated.sh`, 501 stubs wired in `api` and `rid-sp` | WP-0 | S-M2 |
-| WP-4 | `cis-cache` | `internal/cis`, `/v1/cis/notify`, KV `cis_current`, `zone/applicable` evaluation | WP-1 | S-M1 |
+| WP-4 | `cis-cache` | `internal/cis`, `/v1/cis/notifications`, KV `cis_current`, `zone/applicable` evaluation | WP-1 | S-M1 |
 | WP-5 | `registry-validity` | `internal/registry`, `/v1/registry/validate`, KV `registry_validity` | WP-1 | S-M1 |
 | WP-6 | `bus-cell-tsdb` | `internal/bus`, `internal/cell`, `cmd/tsdb-writer`, stream and KV definitions, followers | WP-1 | S-M0 |
 | WP-7 | `intent-authorisation` | `internal/intent` (+ `deconflict`), `/v1/intents/*`, `intent.v1`, KV `intent_active`, `testdata/vectors/deconfliction.json` | WP-2, WP-4, WP-5, WP-6 | **S-M1** |
@@ -574,9 +634,9 @@ update in the same PR.
 | WP-12 | `geo-awareness` | `internal/geo`, `/v1/geo*`, zone incursion and `restriction_activated` alerts, Art. 10(10) standing re-check (calls `intent`) | WP-4, WP-7, WP-11 (alert records) | S-M1 (geo), S-M4 (restriction) |
 | WP-13 | `dss-sync` | `internal/dss`, `cmd/dss-sync`, the F3548 USS endpoints, outbox, subscriptions, peer notifications, `pending_dss`, `peer_intents`, constraints intake, `uss_availability`, 24 h purge | WP-3, WP-7 | **S-M4** |
 | WP-14 | `peers-manned` | `internal/peers`, `internal/manned`, `man.v1`, `peer.v1`, ANSP F4 client, e-conspicuity adapter, peer DP polling, `peer_unavailable`, `manned: unavailable` | WP-3, WP-6, WP-11 | S-M3 (manned), S-M4 (peers) |
-| WP-15 | `coordination-records-occurrences` | `internal/coordination`, `internal/records`, `internal/occurrence`, `internal/status`, `/v1/records/*`, retention and purge jobs, `coordination/annex_v/v1` schema | WP-10, WP-11, WP-1 | S-M2 (Annex V), S-M5 |
+| WP-15 | `coordination-records-occurrences` | `internal/coordination`, `internal/records`, `internal/occurrence`, `internal/status`, `/v1/records/*`, retention and purge jobs, the pinned consumed copy of the ANSP's `coordination/annex_v/v1` | WP-10, WP-11, WP-1 | S-M2 (Annex V), S-M5 |
 | WP-16 | `weather` | `internal/weather`, `/v1/weather`, `weather_checked_ref` | WP-7 | after S-M5 (optional) |
-| WP-17 | `web-portal` | `web/` operator portal: register, clients, intents, decisions, geo map, traffic, alerts | WP-0 (bootstrap), WP-7, WP-11, WP-12; can start against the OpenAPI mock after WP-7's PR is open | S-M1 (intents), S-M3 (traffic) |
+| WP-17 | `web-portal` | `web/` operator portal: register, clients, intents, decisions, geo map, traffic, alerts | WP-0 (bootstrap), WP-7, WP-11, WP-12; can start against the OpenAPI mock after WP-7's PR is open; `uspace-ui` ≥ 0.2.0 for the intents pages (`form`, `table`), ≥ 0.3.0 for the traffic pages (`alerts`; M33) | S-M1 (intents), S-M3 (traffic) |
 | WP-18 | `web-console` | `web/` staff console: flights, alerts, DSS state, degraded inputs, escalations, emergency workflow, sources, policy | WP-17 (shared shell), WP-13, WP-15, `internal/admin` | S-M5 |
 | WP-19 | `conformance-suite-hardening` | `deploy/conformance/`, `make conformance`, findings fixed in their packages (small, named PRs), chaos runs of `05 §6` recorded | WP-9, WP-13, WP-14 | S-M6 |
 | WP-20 | `deploy-staging` | `deploy/compose`, `deploy/caddy`, `deploy/ENV.md`, GHCR publish job, backup and rollback runbooks | WP-0; refreshed after WP-8, WP-13 | S-M1 (first deploy), S-M6 |
@@ -630,10 +690,10 @@ cancel-in-progress; every job `timeout-minutes` ≤ 20; `actions/setup-go`
 cache; path filters so a `web/`-only change runs only the web job and a
 `docs/`-only change runs nothing but a markdown link check. Jobs:
 
-1. `build-vet-lint` (Go) — gofmt, build, vet, tidy, staticcheck, golangci-lint, `check-generated.sh`, `check-schemas.sh`, `check-deps.sh`, grep for hostnames.
+1. `build-vet-lint` (Go) — gofmt, build, vet, tidy, staticcheck, golangci-lint, `check-generated.sh`, `check-schemas.sh`, `check-contracts.sh` (sibling OpenAPI copies vs their `SOURCE` commit), `check-deps.sh`, grep for hostnames.
 2. `test-race` — `go test -race -count=1 -shuffle=on -coverprofile` for the module; core's vector tests from the module cache.
 3. `integration` — service containers `timescale/timescaledb-ha:pg16` (PostGIS) and `nats:2-alpine`; `go test -tags integration`.
-4. `web` — `npm ci`, lint, `tsc`, generated types up to date, `next build`, Playwright smoke against `cmd/ussp-dev` + fakes (only when `web/**` or `api/**` changed).
+4. `web` — `pnpm install --frozen-lockfile`, lint, `tsc`, generated types up to date, `next build`, Playwright smoke against `cmd/ussp-dev` + fakes (only when `web/**` or `api/**` changed).
 5. `image` — build both images on `main` and tags, push to GHCR with SBOM and cosign (on `pull_request` build only, no push).
 6. `gitleaks`, `govulncheck` (pinned).
 7. `conformance` — `workflow_dispatch` and tags only: the InterUSS DSS + `uss_qualifier` profile.
@@ -642,31 +702,44 @@ Branch protection on `main` requires 1–3 and 6. No scheduled jobs.
 
 ---
 
-## 15. Open questions with proposed answers
+## 15. Open questions: decided and still open
 
-Where the spec is silent or the owner's stack and the spec disagree.
-Each row says what this plan assumes until answered.
+Reconciled on 2026-10-02 against the cross-plan decisions document
+(mismatches M1–M38 and the per-question decisions). **Decided** rows are
+what this plan now builds; **open** rows need a human (GCAA, the DPO or
+the owner) and record the demo default the plan uses until answered.
+The default is never the policy answer.
 
-| # | Question | Proposed answer (assumed) | Needs |
+### 15.1 Decided (coordinator-decidable, applied in this plan)
+
+| # | Question | Decision |
+|---|---|---|
+| Q1 | Conformance and strategic deconfliction judgements are not in `uspace-core` (`00 §6` lists them as once-only safety logic; core v1.0.0 has `zones`, `cpa`, `alerting`, `f3548.Volume4DToZonesEnvelope` but no conformance or Volume4D-intersection package). | **Decided.** Build `internal/conformance` and `internal/intent/deconflict` here now, pinned by vectors in the lab's shape; propose them to core as additive packages after S-M2/S-M4. The USSP is the only regulatory owner (`01 §7`); waiting for core would put it on the critical path. |
+| Q2 | Partition key: `05 §3` says H3 resolution 5; the Go H3 binding is cgo. | **Decided (M35).** No H3. Core ships `geodesy/cell` (0.1° / 1° grid, `c5:` / `c3:`) in v1.1.0; `internal/cell` wraps it (D7). Spec erratum by the lab. |
+| Q3 | Migrations: spec `03` says `golang-migrate`; the owner's stack says goose. | **Decided (M36).** goose, two embedded trees, version tables `goose_db_version_relational` / `goose_db_version_timeseries`; `migrate` subcommand + one-shot compose service; no process migrates at start (D5). |
+| Q4 | Operator OIDC (`01 §3`: "OIDC accounts owned by the USSP"). | **Decided.** Local accounts + BFF cookie for the portal; client credentials for machines; OIDC claims shape; provider endpoints later, once a relying party exists (D9). |
+| Q5 | Generated F3411/F3548 server and client types duplicate core's generated types. | **Decided.** Generated from the same pinned files as core into `internal/stdapi`; boundary conversion in one place per direction (D3). |
+| Q7 | Who assigns the USSP code of the authorisation number (`03 §6`)? | **Decided (M8).** The authority adds `certificates.code` (≤ 8 upper-case alphanumerics, unique, assigned at issue); it is `ussp_id` in `cis/ussp_list/v1` and `USSP_SYSTEM_ID` here (`USSP-DEV` in the lab). |
+| Q8 | The outbound national clients depend on OpenAPI files the sibling repos are writing now. | **Decided (M11, M31).** The authority's mechanism everywhere: `api/clients/<system>.yaml` copied with a `SOURCE` commit and a CI diff, from the day each sibling's WP-0 lands its skeleton; the fakes in `internal/testfakes` stay as the executable reading of `02`; the lab aggregate replaces the copies. No `// CONTRACT: pending` markers. |
+| Q9 | Schema ownership for the request bodies, `coordination/annex_v/v1` and `occurrence/v1`. | **Decided (M14).** HTTP bodies belong to the repo whose OpenAPI carries them; pushed stream messages to the producer; shared shapes to `uspace-lab/schemas/common/`. This repo owns `telemetry/v1`, `intent/*`, `alert/v1`, `traffic/product/v1`; the ANSP owns `coordination/annex_v/v1`; the authority owns `occurrence/v1` (D8). |
+| Q10 | ANSP coordination endpoint (`02 F13`) has no path or body detail. | **Decided (M2).** `POST /v1/coordination/notices` → `202 {ack_id, state: received, received_at}`; the human acknowledgement is read by `GET /v1/coordination/notices/{ack_id}`, polled every 10 s for 5 min; no push in v1. |
+| Q12 | Weather source for Art. 12. | **Decided.** Adapter interface; first implementation METAR/TAF from a configured URL; "no source configured" is a visible 503, never an empty product. |
+| Q15 | `monitor` partitioning for the demo. | **Decided.** One `monitor` owning every cell (`USSP_CELL_OWNERSHIP=all`); the ownership map is honoured so a second instance needs no code change. |
+| Q16 | Peer conflict notification ≤ 1 s when the peer is slow. | **Decided.** Sent by `api` in the request path with a 900 ms deadline, then the outbox with `peer_notify_late`; measure in the conformance suite before redesigning. |
+| — | Cross-cutting defaults not asked by this plan but applied in it: the JWT claim table (`aud` = target host, `USSP_AUDIENCES`; session `scope = "session"`, `roles[]`, `realm`; M18, M20), cookie names (M21), WS cookie upgrade (M22), the scope catalogue (M23), client ids (M24), `USSP_MTLS_MODE` (M25), the problem body (M28), the console frame (M29), `pnpm` (M34), one Timescale container (M37), basemap and CSP (M38), kit pins (M33). | **Applied** in §3, §6, §8, §11, §13 and the briefs. |
+
+### 15.2 Open (owner-only; demo default recorded, not decided)
+
+| # | Question | Demo default used until answered | Who answers |
 |---|---|---|---|
-| Q1 | **Conformance and strategic deconfliction judgements are not in `uspace-core`** (`00 §6` lists "conformance, strategic deconfliction" as once-only safety logic; core v1.0.0 has `zones`, `cpa`, `alerting`, `f3548.Volume4DToZonesEnvelope` but no conformance or Volume4D-intersection package). | Build them in this repo (`internal/conformance`, `internal/intent/deconflict`) pinned by JSON vectors in the lab's shape; after S-M2/S-M4 scenarios have run, propose the vectors to `uspace-lab/knowledge/vectors/` and the packages to core as additive `v1.x` (`conformance`, `deconflict`). The USSP is the only regulatory owner (`01 §7`), so "once" holds either way. | Owner: accept, or ask core for the packages first (adds a core WP to the critical path). |
-| Q2 | Partition key: `05 §3` says H3 resolution 5; the Go H3 binding is cgo and core rejected cgo. | D7: a pure-Go geodesic grid of the same scale behind `internal/cell`; never on an external interface. | Owner: accept or accept cgo in this repo. |
-| Q3 | Migrations: spec `03` says `golang-migrate`; the owner's stack says goose. | goose, embedded, two trees (D5). | Owner confirms (spec text to be updated by the lab). |
-| Q4 | Operator OIDC (`01 §3`: "OIDC accounts owned by the USSP"). A full OIDC provider (authorization code + PKCE, discovery, consent) is a sizeable WP. | D9: local accounts + BFF session cookie for the portal; OAuth2 client credentials for machines; OIDC claims shape; provider endpoints deferred to a later WP once an external relying party exists. | Owner. |
-| Q5 | Generated F3411/F3548 server and client types duplicate core's generated types (same source files). | D3: accepted as generated-from-one-source; boundary conversion to core types in one place per direction (`internal/stdapi/convert`); core may later export server interfaces, at which point `stdapi` shrinks. | Owner; core maintainers. |
-| Q6 | Deviation threshold defaults (Art. 10(2)(d)) and `lost_link_s`, `telemetry_lost_s`, nearby radius: national figures with no source. | Policy defaults: `h_m 50`, `v_m 15`, `t_s 60`, `telemetry_lost_s 5`, `lost_link_s 15` (spec `02 F5`), `nonconformance_nearby_radius_m 2000` (the traffic radius default), `proximity` as core's CPA policy (60 s / 60 m / 20 m / 800 m). Shown on the console as policy with version. | GCAA (spec Q17); owner for the demo figures. |
-| Q7 | Authorisation number `<USSP code>-<operator public reg>-<ULID>` (`03 §6`): who assigns the USSP code? | The certificate id the authority issues (`certificates.id`), configured as `USSP_SYSTEM_ID`; `USSP-DEV` in the lab. | Authority planner / GCAA. |
-| Q8 | The outbound national clients (F3, F4, F7, F8, F13) depend on OpenAPI files the sibling repos are writing now. | Clients built from the shapes in `02` with a `// CONTRACT: pending` marker and a CI list; replaced by generated clients from `uspace-lab/api/` when published; the fakes in `internal/testfakes` are the executable reading of `02` until then. | Sibling planners; lab aggregation. |
-| Q9 | Schema ownership for `telemetry/v1` and `intent/request/v1` (produced by operators, defined by the USSP's API) and `occurrence/v1` (produced by the USSP, received by the authority). | The API owner publishes the request schema: this repo owns `telemetry/v1`, `intent/request/v1`, `intent/decision/v1`, `alert/v1`, `coordination/annex_v/v1`; the authority owns `occurrence/v1` and this repo consumes its published copy. | Lab (spec `04 §1` wording). |
-| Q10 | ANSP coordination endpoint (`02 F13`: `POST /v1/coordination/*` returning `ack_id`) has no path or body detail. | `POST /v1/coordination/notices` with `coordination/annex_v/v1`, response `{ack_id, received_at}`; acknowledgement of a nonconformance notice by a person is a later `PATCH` on the ANSP side that we poll via `GET /v1/coordination/notices/{ack_id}` every 10 s until acknowledged or 5 min. | ANSP planner. |
-| Q11 | e-conspicuity receiver (spec Q18): hardware and feed format. | `internal/manned` adapter reads a readsb/dump1090 `aircraft.json` endpoint or an SBS BaseStation TCP stream (both open formats); the lab replays a recorded file; ADS-L deferred. | Owner / GCAA. |
-| Q12 | Weather source for Art. 12 (`U-08` had METAR + a forecast). | Adapter interface; first implementation METAR/TAF from a configured URL (NOAA AWC data API) for QNH, wind, visibility, temperature, dew point, cloud base; convective and precipitation indicators from the same reports; "no source configured" is a visible 503, not an empty product. | Owner. |
-| Q13 | Which `uss_qualifier` configurations are required for certification (spec Q7). | F3411 v22a Service Provider (`netrid` SP scenarios) and F3548 v21 strategic coordination + constraint processing (`utm` scenarios), as the `00 §7` text names; DP-role tests run too but are informative for a USSP. | Lab (L-M4), GCAA. |
-| Q14 | Public subset of network identification (Art. 8(4)(a), national choice). | None served by the USSP; the authority decides what is public and serves it from its DP picture. | GCAA. |
-| Q15 | `monitor` partitioning for the demo. | One `monitor` instance owning every cell (`USSP_CELL_OWNERSHIP=all`); the ownership map is honoured so a second instance can be added without a code change. | None. |
-| Q16 | Peer conflict notification ≤ 1 s (`ConflictingOIMaxUSSNotificationTimeSeconds`) when the DSS write succeeds but the peer is slow. | The notification is sent by `api` in the request path with a 900 ms deadline; on timeout it is handed to `dss-sync`'s outbox and counted `peer_notify_late`; the conformance suite will tell whether this is sufficient. | None until measured. |
-| Q17 | Specific-category authorisation workflow (spec Q12): escalate inside the system or reference an external authorisation id. | Reference (`authorisation_ref`); `pending_authority` is a state the operator sees but nothing is sent to the authority. | GCAA. |
-| Q18 | Retention above the floor (spec Q8). | 90 days telemetry online, 1 year compressed, 5 years alerts/intents/conformance, audit 10 years, as `05 §4`; jobs configurable. | DPO. |
+| Q6 | Deviation threshold defaults (Art. 10(2)(d)) and `lost_link_s`, `telemetry_lost_s`, nearby radius: national figures with no source. | Policy row: `h_m 50`, `v_m 15`, `t_s 60`, `telemetry_lost_s 5`, `lost_link_s 15`, `nonconformance_nearby_radius_m 2000`, CPA 60 s / 60 m / 20 m / 800 m; shown on the console with `policy_version`. | GCAA (spec Q17; Art. 3(4) figures). |
+| Q11 | e-conspicuity receiver (spec Q18): hardware and feed format. | readsb/dump1090 `aircraft.json` or an SBS stream; the lab replays a file; ADS-L deferred. | GCAA (spec Q14, Q18). |
+| Q13 | Which `uss_qualifier` configurations are required for certification (spec Q7). | F3411 v22a SP + F3548 strategic coordination and constraint processing; DP tests informative. | GCAA (adopts the suite as a certification condition). |
+| Q14 | Public subset of network identification (Art. 8(4)(a), national choice). | None served by the USSP; the authority decides and serves from its DP picture. | GCAA. |
+| Q17 | Specific-category authorisation workflow (spec Q12): escalate inside the system or reference an external authorisation id. | Reference (`authorisation_ref`); `pending_authority` is visible, nothing is sent. | GCAA (spec Q12). |
+| Q18 | Retention above the floor (spec Q8). | `05 §4` defaults: 90 d telemetry online, 1 y compressed, 5 y alerts/intents/conformance, audit 10 y; jobs configurable. | DPO (spec Q8). |
+| — | Droplet sizing (§11): five systems plus the DSS and the lab exceed 2 vCPU / 3.8 GB. | Resize to ≥ 4 vCPU / 8 GB before L-M1, or a second droplet for the DSS and the lab. | Owner (money). |
+| — | Hosting (spec Q16): when production domains and state hosting take over from `*.chikox.net`. | Staging on the droplet until the authority's cutover (A-M5). | GCAA. |
 
-Nothing in this table changes the role boundary of §1; a different
+Nothing in these tables changes the role boundary of §1; a different
 answer changes a package, not a contract.

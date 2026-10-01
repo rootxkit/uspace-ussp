@@ -1,7 +1,7 @@
 # WP-4: CIS cache and geo-zone evaluation
 
 Branch `feat/WP-4-cis-cache`. Milestone S-M1. Owns `internal/cis/`, the
-endpoint `POST /v1/cis/notify`, the tables `cis_datasets`, `cis_features`,
+endpoint `POST /v1/cis/notifications`, the tables `cis_datasets`, `cis_features`,
 `cis_notifications` (queries), KV `cis_current` (through WP-6's projector
 interface; in-memory projector until WP-6 merges), the `zone/applicable`
 evaluation that `intent`, `geo` and `monitor` call. Depends on WP-1.
@@ -31,15 +31,29 @@ alerts), WP-10/11 (`monitor` zones).
 - `cis.Client`: `GET /v1/{dataset}` with `If-None-Match` (ETag =
   version), `GET /v1/{dataset}/versions/{v}`, `GET /v1/changes?since=`,
   `POST /v1/subscriptions` at start (callback `USSP_USS_BASE_URL +
-  /v1/cis/notify`, datasets `zones`, `uspace_airspace`, `ussp_list`,
-  `restrictions`, bbox from config), ecosystem token with `cis.read`,
-  body cap, deadline; the client is built from `02 F3` with `// CONTRACT:
-  pending uspace-cisp openapi` and swapped for the generated client when
-  the lab aggregates it.
-- `cis.Receiver`: `POST /v1/cis/notify` verifying the JWS with the
-  CISP's JWKS (allow-listed issuer, `aud` = us), storing the
-  notification, and triggering a pull of that dataset; replay (same
-  `version` twice) is idempotent and counted.
+  /v1/cis/notifications`, datasets `zones`, `uspace_airspace`,
+  `ussp_list`, `restrictions`, bbox from config), ecosystem token with
+  `cis.read` and `aud` = the CISP's host (M18), body cap, deadline. The
+  client is generated from the pinned copy `api/clients/cisp.yaml`
+  (`SOURCE` = the CISP commit; CI diffs it; M11), bumped in a `build:`
+  commit, never hand-built. ED-318 metadata is core's `ed318.Metadata`
+  (`issued`, `provider`) plus the CISP's top-level `cis_dataset`,
+  `cis_version`, `cis_updated_at` (M15).
+- `cis.Receiver`: `POST /v1/cis/notifications` (one path on every
+  subscriber, M1): a compact JWS (`Content-Type: application/jose`)
+  verified with the shared verifier against the allow-listed issuers
+  `USSP_CIS_NOTIFY_ISSUERS`, the CISP and, on its degraded direct
+  path, the ANSP, each with its JWKS URL from config (M5); `aud` = our
+  host (M19), `sub` = subscription id, `jti` = delivery id (replayed
+  `jti` → 204, counted). The payload is `cis/change/v1` from the CISP's
+  pinned schema. Reasons `subscription_test`, `republished` and any
+  reason unknown to us are acknowledged `204` with no pull (M16,
+  additive-enum rule of `04 §4`); every other reason stores the
+  notification and triggers a pull of that dataset. `pull_url` is
+  honoured only when its host equals the issuer's configured base host
+  (SSRF guard); otherwise the dataset is pulled from the configured
+  CISP base URL and the mismatch is counted. Replay (same `version`
+  twice) is idempotent and counted.
 - `cis.Reconciler`: every 60 s `HEAD`/conditional `GET` per dataset; a
   missed webhook costs ≤ 60 s (prove it: kill the receiver during a
   change in the integration test).
@@ -89,6 +103,13 @@ alerts), WP-10/11 (`monitor` zones).
   state).
 - [ ] `Age()` crosses 300 s with the fake CISP down → `stale: true`; back
   → false (both directions).
+- [ ] Receiver pairs (E-01): a notification signed by the fake CISP →
+  pull; the same signed by the fake ANSP's key → pull (degraded direct
+  path, M5); signed by a key of neither → 401 and
+  `cis_webhook_bad_signature`; reason `subscription_test` → 204 and no
+  request at the fake CISP (assert its counter); reason `zones_changed`
+  → one pull; `pull_url` on another host → no request to that host,
+  counted, dataset pulled from the configured base URL.
 - [ ] SC-13 in unit form: a PROHIBITED 0–120 m AGL zone with
   `GroundNotConfigured` → `JudgePoint` returns warning-grade
   `limit_not_judged` with `not_judged: ["AGL"]`; a CONDITIONAL one
@@ -109,7 +130,7 @@ alerts), WP-10/11 (`monitor` zones).
 ## Commits
 
 `feat(cis): pull, versions and change feed with ETag [WP-4 S-M1]`,
-`feat(cis): signed webhook receiver and 60 s reconciliation [WP-4 S-M1]`,
+`feat(cis): signed change-notification receiver and 60 s reconciliation [WP-4 S-M1]`,
 `feat(cis): cache store and zone/applicable projection per cell [WP-4 S-M1]`,
 `feat(cis): evaluator over core zones with staleness [WP-4 S-M1]`,
 `test(cis): run the owned zone vectors through the evaluator [WP-4 S-M1]`.

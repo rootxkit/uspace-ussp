@@ -30,7 +30,9 @@ WP-1. Consumers: WP-2 (account validation), WP-7 (intent gate), WP-8
   `POST /v1/registry/validate` (batch), `GET /v1/registry/changes?since=`
   on the authority with scope `registry.validate` and purpose header
   (`authorisation` or `identification`); body cap, deadline 2 s; built
-  from `02 F8` with `// CONTRACT: pending uspace-authority openapi`.
+  generated from the pinned copy `api/clients/authority.yaml` (`SOURCE`
+  commit, CI diff; reconciliation M11), with `aud` = the authority's
+  host (M18).
 - `registry.Cache`: `Validate(ctx, keys, purpose) (Answers, error)`:
   cache hit within TTL (24 h positive, 5 min negative, from policy) →
   answer with `cache_age_s`; miss → client; client failure → `unknown`

@@ -82,6 +82,46 @@ package brief in `docs/WORKPACKAGES/`. The system spec is in
 12. **English only** in code, comments, commits and docs. User-facing
     strings go through i18n (`ka`, `en`) from the first page.
 
+## Cross-system contracts (reconciled 2026-10-02)
+
+These were decided across the five plans and are not this repo's to
+change; a different need is a PR against the owning repo first.
+
+- **Audience rule.** The `aud` of every machine token is the host of
+  the target's published base URL (`uspace-cisp.chikox.net`, the DSS
+  host, a peer's `uss_base_url` host). This system accepts the list
+  `USSP_AUDIENCES` (its public host plus a lab alias); it requests
+  `audience` = the target's host for every outgoing call; it never
+  uses `USSP_SYSTEM_ID` (the USSP code from the authority's certificate)
+  as an audience. Sessions are JWTs with `aud` = our host, `scope =
+  "session"`, `roles[]`, `realm` (`portal` or `console`), verified by
+  the same `core/auth.Verifier`; cookies `uspace_session` /
+  `uspace_csrf`; WebSockets authenticate with the cookie on a
+  same-origin upgrade plus an `Origin` allow-list, never a ticket.
+- **Error body.** RFC 9457 `application/problem+json` with `{type,
+  title, status, detail, instance, errors: [{field, reason}],
+  truncated?}`; `type` = `https://schemas.uspace.ge/problems/<slug>`.
+  A refused intent's `conflicts[]` live on `intent/decision/v1`, not on
+  the problem.
+- **Every WebSocket frame carries the envelope** (`schema`, `msg_id`,
+  `producer`, `ts`, `rx_ts`, `captured_at`, `time_source`, `backlog`)
+  and a `body` named by `schema`; consumers dispatch on `schema`.
+  Browser-facing streams speak the console frame: `console/status/v1`
+  every 2 s, `console/snapshot/v1` on connect, `console/subscribe/v1`
+  from the client, catalogued messages as bodies.
+- **Paths.** CIS change notifications arrive at
+  `POST /v1/cis/notifications` (from the CISP or, degraded, the ANSP);
+  Annex V notices go to `POST {ansp}/v1/coordination/notices`.
+- **Schemas.** We own `telemetry/v1`, `intent/*`, `alert/v1`,
+  `traffic/product/v1`; we consume `coordination/annex_v/v1` (ANSP),
+  `occurrence/v1` (authority), `cis/*` (CISP), `track/manned/v1`
+  (ANSP) and the shared shapes in `uspace-lab/schemas/common/`. Sibling
+  OpenAPI files are pinned copies in `api/clients/` with a `SOURCE`
+  commit and a CI diff; never hand-built clients.
+- **Operations.** `USSP_MTLS_MODE = required | off`; migrations only
+  through the `migrate` subcommand and the one-shot compose service;
+  `pnpm` in `web/`; `uspace-ui` from npmjs with an exact pin.
+
 ## Testing rules (LESSONS E-01 to E-04, E-10, E-11)
 
 - **E-01 Test presence, not only absence.** Every test that asserts
@@ -135,7 +175,9 @@ package brief in `docs/WORKPACKAGES/`. The system spec is in
 - `web/` renders only: BFF routes carry the session cookie as a bearer
   and nothing else; no database, no NATS, no geometry library (ESLint
   rule); API types from `openapi-typescript`; `ka` and `en` catalogues
-  complete (a missing key fails the build); Noto Sans Georgian.
+  complete (a missing key fails the build); Noto Sans Georgian bundled
+  via `next/font/local`; the kit's CSP; the basemap from `/basemap/`
+  served by the deployment; no third-party tile or font request.
 - Everything refused, dropped, degraded or late is counted with a
   stable snake_case name and visible on `/metrics` and, where a person
   needs it, on `/readyz` and the console (E-09).

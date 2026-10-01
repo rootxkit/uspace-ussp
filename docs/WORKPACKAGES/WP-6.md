@@ -49,15 +49,20 @@ implementation that WP-1/2/4/5 wrote against, and the follower side of
 - `bus.Follower[T]`: watch a bucket, keep the last value, re-read every
   300 s, expose `Value() (T, ageS float64, ok bool)`; `sources.Follower`
   from core wrapped with the `ctl.sources` push.
-- `cell`: `Key(core.LatLon) (cell5, cell3 string)`, `Ring1(cell5)
-  []string`, `CellsFor(geodesy.BBox) []string`, `CellsForEnvelope`
-  (intents), `Ownership` parsed from `USSP_CELL_OWNERSHIP` (`all` or a
-  list of `cell3`) with `Owns(cell3) bool`. Grid: 8 km squares on a
-  fixed WGS84 graticule (0.072° latitude; longitude step scaled by
-  cos(lat) at the row's centre so cells stay ≈ 8 km wide), `cell3` =
-  16×16 blocks. Pure Go, no dependency. Property tests: every point maps
-  to one cell; neighbours of a cell contain every point within 800 m of
-  any point in it (the CPA ring guarantee, C-15).
+- `cell`: a thin wrapper over `uspace-core/geodesy/cell` (additive in
+  core v1.1.0, core WP-14; reconciliation M35): `Key(core.LatLon)
+  (cell5, cell3 string)`, `Ring1(cell5) []string`, `CellsFor(geodesy.BBox)
+  []string`, `CellsForEnvelope` (intents), `Ownership` parsed from
+  `USSP_CELL_OWNERSHIP` (`all` or a list of `cell3`) with `Owns(cell3)
+  bool`. Grid as core defines it: `cell5` = 0.1° × 0.1°, `cell3` = 1° ×
+  1°, names `c5:<lat_idx>:<lon_idx>` / `c3:<lat_idx>:<lon_idx>`; the
+  same grid the authority uses. If core v1.1.0 is not tagged when this
+  WP starts, implement the identical grid locally behind the same
+  function names and replace it with the import in a `build(deps)`
+  commit; never a second grid definition. Property tests: every point
+  maps to one cell; neighbours of a cell contain every point within
+  800 m of any point in it (the CPA ring guarantee, C-15; at 0.1° a
+  ring-1 margin is ≥ 7 km everywhere in Georgia).
 - `tsdb-writer`: JetStream pull consumers on `TRK` (mirror), `man`,
   `peer`, `TRAFFIC`, `CONF` → batched `COPY` into the hypertables with
   `pgx.CopyFrom`, batches of ≤ 1000 rows or 1 s, ack after commit (B-05),

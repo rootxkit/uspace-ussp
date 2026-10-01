@@ -64,14 +64,17 @@ notifications for our peer views).
   now + `policy.SessionISAHorizonS`), `uss_base_url = USSP_USS_BASE_URL`;
   on each DSS response, notify the `subscribers` the DSS lists
   (`POST {url}/uss/identification_service_areas/{id}` with the
-  `subscription_state` list) within the standard's time; on flight end,
+  `subscription_state` list, scope `rid.service_provider`, `aud` = the
+  host of each subscriber's `uss_base_url`; reconciliation M6, M18: the
+  authority verifies exactly this) within the standard's time; on flight end,
   `DELETE` with the version; retries with backoff through the
   `dss_outbox`; DSS down → flights are still served on `/uss/flights`,
   `/readyz` says `dss: down since T`, ISA writes replay on recovery.
   ISA versions kept in `dss_isas`.
 - `POST /uss/identification_service_areas/{id}` (we are also a DP for
-  peers, WP-14): scope `rid.service_provider` from the DSS; stores the
-  notification for WP-14's view registry; 204.
+  peers, WP-14): scope `rid.service_provider`, sent by the peer SP (not
+  the DSS) with `aud` = our host; stores the notification for WP-14's
+  view registry; 204.
 - Optional `WS /v1/authority/flights` (scope `rid.display_provider`,
   only when `USSP_AUTHORITY_PUSH=on`): 1 Hz `RIDFlight` frames for every
   airborne flight; bounded 10 min buffer, then drop oldest with a gap

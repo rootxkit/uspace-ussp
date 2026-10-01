@@ -57,8 +57,16 @@ one freezes.
   `Bearer(r)`.
 - `api/openapi.yaml`: OpenAPI 3.1 skeleton with `info`, `servers`
   (variable host), `components.securitySchemes` (`operatorToken`,
-  `ecosystemToken`, `session`), `Problem` schema, the tags of PLAN §6.1
-  (empty), `GET /healthz`, `GET /readyz`. `oapi-codegen` config
+  `ecosystemToken`, `session`), the `Problem` schema in the shared
+  shape (`type`, `title`, `status`, `detail`, `instance`, `errors:
+  [{field, reason}]`, `truncated`; `type` = `https://schemas.uspace.ge/problems/<slug>`;
+  reconciliation M28, mirrored from `uspace-lab/schemas/common/problem/v1`
+  once it exists), the tags of PLAN §6.1
+  (empty), `GET /healthz`, `GET /readyz`. `api/clients/` directory with
+  a `README` describing the sibling-copy mechanism (`<system>.yaml` +
+  `SOURCE`; M11) and `scripts/check-contracts.sh` that diffs each copy
+  against its repo at the `SOURCE` commit (no copies yet; the script
+  passes on an empty directory and says so). `oapi-codegen` config
   (`api/oapi-codegen.server.yaml`, `client.yaml`) generating
   `internal/national/gen/` (`std-http-server`, strict server, Go 1.22
   routing) and `internal/national/client/`. `scripts/check-generated.sh`
@@ -87,8 +95,12 @@ one freezes.
 - `deploy/Dockerfile`: multi-stage, `CGO_ENABLED=0`, all seven binaries,
   distroless static, non-root; `deploy/web.Dockerfile` for Next.js
   standalone. `deploy/compose/docker-compose.yml`: the seven processes
-  from one image with entrypoints, `web`, `postgres` (`postgis/postgis:16-3.4`),
-  `timescaledb` (`timescale/timescaledb-ha:pg16`), `nats` (JetStream, a
+  from one image with entrypoints, `web`, one `timescaledb` container
+  (`timescale/timescaledb-ha:pg16`, PostGIS included) with an init
+  script creating both databases, `ussp_relational` and
+  `ussp_timeseries` (reconciliation M37; the two migration trees stay
+  separate), a one-shot `migrate` service (empty until WP-1; M36),
+  `nats` (JetStream, a
   `nats.conf` with one account per process and no auth-less access),
   healthchecks, an isolated network, `.env.example`. Profiles `demo` and
   `conformance` declared, empty.
@@ -97,8 +109,11 @@ one freezes.
   Schema 2020-12 and round-trips examples when WP-8 adds the first),
   `scripts/check-hostnames.sh` (grep `chikox.net` outside `deploy/staging/`).
 - `web/`: `create-next-app` (App Router, TypeScript strict, Tailwind),
-  `uspace-ui` added as a dependency when it publishes (until then a
-  `// KIT: pending uspace-ui` marker in `web/README.md`), `openapi-typescript`
+  `pnpm` with `packageManager` pinned and `pnpm-lock.yaml` committed
+  (`--frozen-lockfile` in CI and the image; M34), `uspace-ui` added
+  from npmjs when it publishes its `0.1.0-rc` (exact pin, never a git
+  tag; M32; until then a `// KIT: pending uspace-ui` marker in
+  `web/README.md`), `openapi-typescript`
   generating `web/src/api/types.ts` from `api/openapi.yaml`, ESLint rules:
   no hand-written type under `src/api/`, no import of `turf`, `proj4`,
   `geolib`, `h3-js`, `@turf/*`, `cheap-ruler` (the no-geometry rule), no

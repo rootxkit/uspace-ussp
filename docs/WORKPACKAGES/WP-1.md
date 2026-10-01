@@ -63,8 +63,12 @@ other WP.
   table row created at migration time, KV write inside the tx hook, 503
   on KV failure; `Republish(ctx)` every 60 s from the database (B-09
   repair); `List(ctx)`.
-- `scripts/migrate.sh` (up/down/status for either tree against a URL);
-  `make migrate-up/down`.
+- The `migrate` subcommand on `cmd/api` (relational tree) and
+  `cmd/tsdb-writer` (timeseries tree): `up`, `down`, `status`, with the
+  advisory lock; the only code path that runs a migration
+  (reconciliation M36). Process start never migrates: `WaitForVersion`
+  refuses to start on a lower version, printing which. `scripts/migrate.sh`
+  wraps the subcommands for a URL; `make migrate-up/down`.
 
 ## Done when
 
@@ -78,8 +82,10 @@ other WP.
   no new row (E-01 twin: a succeeding projector leaves one row and one
   audit event).
 - [ ] `WaitForVersion` test: a process started against an older schema
-  waits, then proceeds when the migration lands; a lower version after
-  timeout returns an error naming the versions.
+  waits, then proceeds when the `migrate` subcommand lands it (run from
+  the test, not from the process); a lower version after timeout
+  returns an error naming the versions; a grep of `cmd/*` proves no
+  process calls the migrator outside the `migrate` subcommand.
 - [ ] `-race -shuffle=on` green; lint clean; `CHANGELOG.md` line; PR with
   outputs.
 
