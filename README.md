@@ -25,10 +25,23 @@ aircraft**, and it informs rather than resolves.
 
 ## Status
 
-Planning. `docs/PLAN.md` is the implementation plan (architecture,
-data model, published API, bus events, security, performance budgets,
-testing, deployment, milestones S-M0..S-M6, 21 work packages in 7 waves,
-open questions). Implementation starts with `docs/WORKPACKAGES/WP-0.md`.
+Scaffold (WP-0, milestone S-M0). The seven processes start, report
+their dependencies on `/readyz` and `/metrics`, and do no work yet;
+`docs/PLAN.md` is the implementation plan (architecture, data model,
+published API, bus events, security, performance budgets, testing,
+deployment, milestones S-M0..S-M6, 21 work packages in 7 waves, open
+questions) and `docs/WORKPACKAGES/` the briefs.
+
+```
+make tools          # once: the pinned linters
+make lint race      # gofmt, vet, staticcheck, golangci-lint; tests with -race
+make compose-deps   # TimescaleDB (+ PostGIS) and NATS on 127.0.0.1
+make integration    # the processes against them
+make compose-up     # every container, built locally; make compose-down removes it all
+```
+
+Configuration is environment only: `deploy/ENV.md`, or
+`ussp-<process> --help`.
 
 ## Layout (planned)
 
