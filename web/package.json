@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "gen:api": "openapi-typescript ../api/openapi.yaml -o src/api/types.ts",
     "check:api": "openapi-typescript ../api/openapi.yaml -o src/api/types.ts && git diff --exit-code -- src/api/types.ts",
     "test:e2e": "node e2e/serve.mjs --prepare && playwright test"
