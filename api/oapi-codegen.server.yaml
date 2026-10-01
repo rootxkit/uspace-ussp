@@ -1,0 +1,12 @@
+# oapi-codegen configuration for internal/national/gen: the net/http
+# server interface (Go 1.22 routing), its strict wrapper and the models,
+# from api/openapi.yaml. Run through `make generate`; never edit the
+# generated file.
+package: gen
+generate:
+  std-http-server: true
+  strict-server: true
+  models: true
+  embedded-spec: false
+output-options:
+  skip-prune: true

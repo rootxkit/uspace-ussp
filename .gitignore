@@ -1,0 +1,13 @@
+# Go
+coverage.out
+integration.log
+/bin/
+
+# local secrets and state (make compose-up writes deploy/compose/.env)
+deploy/compose/.env
+/local/
+
+# editors
+.idea/
+.vscode/
+*.swp

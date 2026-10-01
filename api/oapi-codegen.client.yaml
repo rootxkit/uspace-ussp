@@ -1,0 +1,9 @@
+# oapi-codegen configuration for internal/national/client: the Go client
+# of api/openapi.yaml, used by the lab and by this repository's tests.
+# Run through `make generate`; never edit the generated file.
+package: client
+generate:
+  client: true
+  models: true
+output-options:
+  skip-prune: true
