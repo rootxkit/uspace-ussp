@@ -1,0 +1,30 @@
+import type { Catalogue } from "./en";
+
+// The Georgian catalogue; typed by en.ts, so it has exactly its keys.
+export const ka: Catalogue = {
+  "app.title": "uspace USSP",
+  "app.subtitle": "U-space-ის მომსახურების მიმწოდებელი",
+  "lang.en": "English",
+  "lang.ka": "ქართული",
+  "readiness.heading": "სერვისის მზადყოფნა",
+  "readiness.source": "API პროცესის მზადყოფნა, წაკითხულია {time}",
+  "readiness.unreachable": "API არ პასუხობს: {error}",
+  "readiness.unreachable.hint": "სანამ API მიუწვდომელია, ქვემოთ არაფერია ცნობილი.",
+  "readiness.status.ready": "მზადაა",
+  "readiness.status.degraded": "მზადაა, შეზღუდული რეჟიმით",
+  "readiness.status.not_ready": "არ არის მზად",
+  "readiness.column.dependency": "დამოკიდებულება",
+  "readiness.column.state": "მდგომარეობა",
+  "readiness.column.required": "სავალდებულო",
+  "readiness.column.since": "დრო, როდიდან",
+  "readiness.column.age": "ბოლოს ხელმისაწვდომი",
+  "readiness.column.detail": "დეტალები",
+  "readiness.state.up": "ხელმისაწვდომია",
+  "readiness.state.degraded": "შეზღუდულია",
+  "readiness.state.down": "მიუწვდომელია",
+  "readiness.state.unknown": "უცნობია",
+  "readiness.required.yes": "დიახ",
+  "readiness.required.no": "არა",
+  "readiness.age.seconds": "{seconds} წმ წინ",
+  "readiness.age.never": "არასდროს",
+};

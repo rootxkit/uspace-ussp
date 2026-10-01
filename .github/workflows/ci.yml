@@ -1,0 +1,320 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOTOOLCHAIN: local
+
+defaults:
+  run:
+    # Explicit bash runs steps with -eo pipefail.
+    shell: bash
+
+jobs:
+  # Path filters for pull requests (docs/PLAN.md §14): a docs-only change
+  # runs no Go job, a web/-only change runs only the web job. On main
+  # and on tags every job runs. A job skipped by its filter reports as
+  # skipped, which a required check accepts; gitleaks is never filtered.
+  changes:
+    name: changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      go: ${{ github.event_name != 'pull_request' || steps.filter.outputs.go == 'true' }}
+      web: ${{ github.event_name != 'pull_request' || steps.filter.outputs.web == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'pull_request'
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'api/**'
+              - 'scripts/**'
+              - 'deploy/**'
+              - 'Makefile'
+              - '.golangci.yml'
+              - '.github/workflows/ci.yml'
+            web:
+              - 'web/**'
+              - 'api/**'
+              - 'deploy/web.Dockerfile'
+              - '.github/workflows/ci.yml'
+
+  build-vet-lint:
+    name: build, vet, lint, checks
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: gofmt
+        run: make fmt-check
+      - run: CGO_ENABLED=0 go build ./...
+      - name: go vet (with the integration tag)
+        run: make vet
+      - name: go mod tidy is clean
+        run: make tidy
+      # Pinned like the Makefile's STATICCHECK_VERSION and
+      # GOLANGCI_LINT_VERSION (equal to uspace-core's); change both in
+      # one `ci:` commit.
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+      - name: generated code is current (offline)
+        run: make check-generated
+      - name: schemas
+        run: make check-schemas
+      - name: sibling OpenAPI copies match their SOURCE commits
+        run: make check-contracts
+      - name: import order
+        run: make check-deps
+      - name: no staging hostname outside deploy/staging/
+        run: make check-hostnames
+
+  test-race:
+    name: test with the race detector
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: go test -race -shuffle=on
+        run: go test -race -count=1 -shuffle=on -coverprofile=coverage.out -covermode=atomic ./...
+      - name: coverage summary
+        run: |
+          total="$(go tool cover -func=coverage.out | tail -n 1)"
+          echo "$total"
+          { echo '### Coverage'; echo '```'; echo "$total"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      # uspace-core's own vector tests at the pinned version, from the
+      # module cache with this module's build list (docs/PLAN.md §10).
+      - name: uspace-core vectors at the pinned version
+        run: go test -count=1 -run 'Vector|Manifest|Version' github.com/rootxkit/uspace-core/...
+
+  integration:
+    name: integration (TimescaleDB + PostGIS, NATS)
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      timescaledb:
+        image: timescale/timescaledb-ha:pg16
+        env:
+          POSTGRES_PASSWORD: ci-superuser-only-in-this-job
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -h 127.0.0.1"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      # A service container cannot take arguments, and NATS needs -js.
+      - name: nats:2-alpine with JetStream
+        run: |
+          docker run -d --name nats -p 4222:4222 -p 8222:8222 nats:2-alpine -js -m 8222
+          for _ in $(seq 1 30); do
+            curl -fsS 'http://127.0.0.1:8222/healthz?js-enabled-only=true' && exit 0
+            sleep 1
+          done
+          docker logs nats; exit 1
+      - name: create both databases and roles (deploy/compose/initdb/10-ussp.sql)
+        run: |
+          api_pw="$(openssl rand -hex 16)"; tsdb_pw="$(openssl rand -hex 16)"
+          echo "::add-mask::$api_pw"; echo "::add-mask::$tsdb_pw"
+          docker exec -i -e USSP_PG_API_PASSWORD="$api_pw" -e USSP_PG_TSDB_PASSWORD="$tsdb_pw" \
+            "${{ job.services.timescaledb.id }}" psql -U postgres -v ON_ERROR_STOP=1 -f - < deploy/compose/initdb/10-ussp.sql
+          {
+            echo "USSP_TEST_PG_URL=postgres://ussp_api:${api_pw}@127.0.0.1:5432/ussp_relational?sslmode=disable"
+            echo "USSP_TEST_TS_URL=postgres://ussp_api:${api_pw}@127.0.0.1:5432/ussp_timeseries?sslmode=disable"
+            echo "USSP_TEST_NATS_URL=nats://127.0.0.1:4222"
+          } >> "$GITHUB_ENV"
+      - name: make integration (fails when zero tests ran)
+        run: make integration
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-log
+          path: integration.log
+
+  web:
+    name: web
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: generated API types are current
+        run: pnpm check:api
+      - run: pnpm lint
+      - name: tsc (a missing ka/en key fails here)
+        run: pnpm typecheck
+      - run: pnpm build
+      - name: playwright (chromium)
+        run: pnpm exec playwright install --with-deps chromium
+      - name: smoke test of / in ka and en
+        run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: web/playwright-report
+
+  govulncheck:
+    name: govulncheck
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      # Pinned like GOVULNCHECK_VERSION in the Makefile.
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -show verbose ./...
+
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pinned (and in the Makefile); change both together.
+          GITLEAKS_VERSION: "8.24.3"
+
+  # Both images. On a pull request they are built and not pushed; on
+  # main and v* tags, after every gate, they are pushed to GHCR by short
+  # SHA (and by the tag), with an SBOM and provenance, and signed with
+  # cosign (keyless). `latest` is never pushed; CI never deploys.
+  image:
+    name: images
+    needs: [changes, build-vet-lint, test-race, integration, web, gitleaks, govulncheck]
+    if: >-
+      always() && !cancelled() && !contains(needs.*.result, 'failure') &&
+      (github.event_name != 'pull_request' || needs.changes.outputs.go == 'true' || needs.changes.outputs.web == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    env:
+      PUSH: ${{ github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: tags
+        id: tags
+        run: |
+          short="${GITHUB_SHA::7}"
+          go_tags="ghcr.io/rootxkit/uspace-ussp:${short}"
+          web_tags="ghcr.io/rootxkit/uspace-ussp-web:${short}"
+          version="$short"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            go_tags+=",ghcr.io/rootxkit/uspace-ussp:${GITHUB_REF_NAME}"
+            web_tags+=",ghcr.io/rootxkit/uspace-ussp-web:${GITHUB_REF_NAME}"
+            version="$GITHUB_REF_NAME"
+          fi
+          { echo "go=$go_tags"; echo "web=$web_tags"; echo "version=$version"; } >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: env.PUSH == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Go image (the seven processes)
+        id: go
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ steps.tags.outputs.go }}
+          build-args: |
+            VERSION=${{ steps.tags.outputs.version }}
+            COMMIT=${{ github.sha }}
+          sbom: ${{ env.PUSH == 'true' }}
+          provenance: ${{ env.PUSH == 'true' }}
+          cache-from: type=gha,scope=go
+          cache-to: type=gha,mode=max,scope=go
+      - name: web image
+        id: web
+        uses: docker/build-push-action@v6
+        with:
+          context: web
+          file: deploy/web.Dockerfile
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ steps.tags.outputs.web }}
+          sbom: ${{ env.PUSH == 'true' }}
+          provenance: ${{ env.PUSH == 'true' }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+      - uses: sigstore/cosign-installer@v3
+        if: env.PUSH == 'true'
+      - name: sign
+        if: env.PUSH == 'true'
+        env:
+          GO_DIGEST: ${{ steps.go.outputs.digest }}
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+        run: |
+          cosign sign --yes "ghcr.io/rootxkit/uspace-ussp@${GO_DIGEST}"
+          cosign sign --yes "ghcr.io/rootxkit/uspace-ussp-web@${WEB_DIGEST}"

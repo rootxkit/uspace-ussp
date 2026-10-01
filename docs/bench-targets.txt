@@ -1,0 +1,19 @@
+# Benchmark name, target ns/op, from the budgets of docs/PLAN.md §9
+# (spec 05). Reported in CI, never gated; the lab's load test (L-M2)
+# checks the budgets end to end. Each line says where its number comes
+# from; a target that is only an upper bound from a request budget is
+# marked so, and the work package that writes the benchmark refines it.
+#
+# telemetry-ingest: decode + place + bind <= 200 us per message (WP-8)
+BenchmarkTelemetryDecodePlace   200000
+# conformance: <= 50 us per sample (WP-10)
+BenchmarkConformanceJudge       50000
+# deconfliction over <= 1000 active intents: upper bound from the
+# POST /v1/intents budget, p95 <= 500 ms without the DSS (WP-7)
+BenchmarkDeconflictEnvelope     500000000
+# GET /uss/flights from the in-memory 60 s window: upper bound from
+# p95 <= 1 s (WP-9)
+BenchmarkFlightsView            1000000000
+# traffic product: 6000 msg/s out on one core at 1000 drones, ~166 us
+# per message (WP-12)
+BenchmarkTrafficProduct         166000

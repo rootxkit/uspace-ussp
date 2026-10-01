@@ -1,0 +1,23 @@
+name: conformance
+
+# The InterUSS DSS and uss_qualifier against this USSP (docs/PLAN.md
+# §10, WP-19). Manual only: it pulls external images, and it fails
+# until WP-19 fills `make conformance`. Not a required check.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    name: uss_qualifier
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: make conformance

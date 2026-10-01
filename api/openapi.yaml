@@ -1,0 +1,230 @@
+openapi: 3.1.0
+info:
+  title: uspace-ussp national USSP API
+  version: 0.1.0
+  description: |
+    The national API of a U-space Service Provider of the Georgian
+    U-space system-of-systems (Reg. (EU) 2021/664 Art. 7-13, 15). This
+    file is the published contract: an endpoint that is not in it does
+    not exist. The standard interfaces (ASTM F3411-22a, ASTM F3548-21)
+    are served from the pinned standard files, not from this one.
+
+    Every error is application/problem+json in the shape of the Problem
+    schema (reconciliation M28).
+
+    Skeleton (WP-0): health and readiness, the security schemes and the
+    tags. Every later work package adds its paths under its tag.
+  license:
+    name: Apache-2.0
+servers:
+  - url: "https://{host}"
+    description: A USSP deployment; the host is configuration, never code.
+    variables:
+      host:
+        default: localhost
+        description: The public host of the deployment.
+tags:
+  - name: health
+    description: Liveness and readiness of one process instance.
+  - name: intents
+    description: Flight authorisation and operational intents (Art. 10).
+  - name: geo
+    description: Geo-awareness from the CIS (Art. 9).
+  - name: telemetry
+    description: Operator telemetry in (Art. 8(2)).
+  - name: traffic
+    description: Traffic information and its stream (Art. 11).
+  - name: alerts
+    description: Conformance and proximity alerts and their acknowledgement (Art. 13).
+  - name: registry
+    description: Registry validation through the authority (F8).
+  - name: weather
+    description: Weather information (Art. 12, optional).
+  - name: records
+    description: Flight records and daily bundles for the authority (Art. 15(1)(g)).
+  - name: authority
+    description: The optional national push of network identification to the authority.
+  - name: cis
+    description: CIS change notifications from the CISP or the ANSP.
+  - name: oauth
+    description: This USSP's token issuer for operator machine clients.
+  - name: accounts
+    description: Operator and staff accounts, clients and sessions.
+  - name: admin
+    description: The USSP console (staff).
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      tags: [health]
+      summary: Liveness
+      description: 200 while the process runs. Says nothing about dependencies.
+      security: []
+      responses:
+        "200":
+          description: The process is running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        default:
+          $ref: "#/components/responses/Problem"
+  /readyz:
+    get:
+      operationId: getReadyz
+      tags: [health]
+      summary: Readiness
+      description: |
+        Runs every dependency check of the process and reports each with
+        its state, since when, how long ago it was last seen up, and why
+        it is not up. 503 while a required dependency is down or has not
+        been checked; 200 otherwise, with every dependency that is not up
+        listed in degraded. A check that did not run is "unknown", never
+        "up".
+      security: []
+      responses:
+        "200":
+          description: Ready; degraded lists what is not up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        "503":
+          description: Not ready; a required dependency is down or unknown.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        default:
+          $ref: "#/components/responses/Problem"
+
+components:
+  securitySchemes:
+    operatorToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        RS256 machine token issued by this USSP (POST /oauth/token,
+        client credentials) to an operator client; aud is this host.
+    ecosystemToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        RS256 machine token of an allow-listed ecosystem issuer (the
+        authority's token service; the lab issuer in the lab) presented
+        by the authority, the ANSP or a peer; aud is this host (M18).
+    session:
+      type: apiKey
+      in: cookie
+      name: uspace_session
+      description: |
+        Portal or console session: a JWT with scope "session", roles and
+        realm, in the uspace_session cookie; state-changing requests also
+        send the uspace_csrf cookie's value as X-CSRF-Token (M20, M21).
+
+  responses:
+    Problem:
+      description: An error, as RFC 9457 problem details.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    Problem:
+      type: object
+      description: |
+        The ecosystem-wide error body (RFC 9457), the shape of
+        uspace-lab schemas/common/problem/v1, mirrored here until that
+        schema is published (reconciliation M28).
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          pattern: "^https://schemas\\.uspace\\.ge/problems/[a-z][a-z0-9_]*$"
+          description: https://schemas.uspace.ge/problems/<slug>, the slug being the counter or refusal name.
+          examples: ["https://schemas.uspace.ge/problems/not_found"]
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          description: The request path.
+        errors:
+          type: array
+          description: Field problems, at most 100; truncated says when more existed.
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/FieldProblem"
+        truncated:
+          type: boolean
+    FieldProblem:
+      type: object
+      required: [field, reason]
+      properties:
+        field:
+          type: string
+          description: The JSON path or parameter name at fault.
+        reason:
+          type: string
+
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+
+    Readiness:
+      type: object
+      required: [status, checked_at, dependencies, degraded]
+      properties:
+        status:
+          type: string
+          enum: [ready, degraded, not_ready]
+          description: not_ready while a required dependency is down or unknown; degraded while any dependency is not up.
+        checked_at:
+          type: string
+          format: date-time
+        dependencies:
+          type: object
+          description: Every dependency of the process, by name (postgres, timescaledb, nats).
+          additionalProperties:
+            $ref: "#/components/schemas/Dependency"
+        degraded:
+          type: array
+          description: The names of the dependencies that are not up, sorted.
+          items:
+            type: string
+    Dependency:
+      type: object
+      required: [state, required, since]
+      properties:
+        state:
+          type: string
+          enum: [up, degraded, down, unknown]
+        required:
+          type: boolean
+          description: Whether the process is not ready while this dependency is down or unknown.
+        since:
+          type: string
+          format: date-time
+          description: When the dependency entered its current state.
+        age_s:
+          type: number
+          format: double
+          minimum: 0
+          description: Seconds since the dependency was last seen up; 0 while it is up, absent when it never was.
+        detail:
+          type: string
+          description: Why the dependency is not up; absent while it is.

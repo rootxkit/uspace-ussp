@@ -1,0 +1,7 @@
+.git
+web
+docs
+**/node_modules
+deploy/compose/.env
+coverage.out
+integration.log

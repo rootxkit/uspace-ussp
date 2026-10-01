@@ -1,0 +1,203 @@
+# uspace-ussp on one host (docs/PLAN.md §11): the seven processes from
+# one image, the web portal, one TimescaleDB container holding both
+# databases (M37), NATS JetStream, and the one-shot migrate service, on
+# the project's own network. Secrets come from deploy/compose/.env
+# (`make compose-up` writes random ones on first use; see .env.example).
+#
+#   make compose-up      build, start, wait until every container is healthy
+#   make compose-down    stop and remove containers, volumes and network
+#
+# Only the API, the web portal, PostgreSQL and NATS publish a port, and
+# only on 127.0.0.1 (dev ports 57080, 57300, 57432, 57422). In staging
+# the shared Caddy of uspace-deploy fronts api and web and never routes
+# /metrics.
+#
+# Profiles: `demo` (the InterUSS DSS and the lab fakes, WP-17) and
+# `conformance` (uss_qualifier, WP-19) add their services here; neither
+# has one yet, so `--profile demo` starts the same stack.
+name: uspace-ussp
+
+x-go: &go
+  image: ghcr.io/rootxkit/uspace-ussp:${USSP_IMAGE_TAG:-dev}
+  restart: unless-stopped
+  networks: [ussp]
+  read_only: true
+  security_opt: ["no-new-privileges:true"]
+  depends_on:
+    migrate: {condition: service_completed_successfully}
+    nats: {condition: service_healthy}
+
+x-env: &env
+  USSP_LOG_LEVEL: ${USSP_LOG_LEVEL:-info}
+  USSP_SYSTEM_ID: ${USSP_SYSTEM_ID:-USSP-DEV}
+  USSP_MTLS_MODE: ${USSP_MTLS_MODE:-off}
+
+services:
+  timescaledb:
+    image: timescale/timescaledb-ha:pg16
+    restart: unless-stopped
+    networks: [ussp]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in deploy/compose/.env}
+      USSP_PG_API_PASSWORD: ${USSP_PG_API_PASSWORD:?set in deploy/compose/.env}
+      USSP_PG_TSDB_PASSWORD: ${USSP_PG_TSDB_PASSWORD:?set in deploy/compose/.env}
+    command: ["postgres", "-c", "shared_buffers=128MB"]
+    ports: ["127.0.0.1:57432:5432"]
+    volumes:
+      - ./initdb/10-ussp.sql:/docker-entrypoint-initdb.d/10-ussp.sql:ro
+      - pgdata:/home/postgres/pgdata
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "127.0.0.1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  nats:
+    image: nats:2-alpine
+    restart: unless-stopped
+    networks: [ussp]
+    command: ["-c", "/etc/nats/nats.conf"]
+    environment:
+      USSP_NATS_API_PASSWORD: ${USSP_NATS_API_PASSWORD:?set in deploy/compose/.env}
+      USSP_NATS_TELEMETRY_INGEST_PASSWORD: ${USSP_NATS_TELEMETRY_INGEST_PASSWORD:?set in deploy/compose/.env}
+      USSP_NATS_RID_SP_PASSWORD: ${USSP_NATS_RID_SP_PASSWORD:?set in deploy/compose/.env}
+      USSP_NATS_MONITOR_PASSWORD: ${USSP_NATS_MONITOR_PASSWORD:?set in deploy/compose/.env}
+      USSP_NATS_TRAFFIC_WS_PASSWORD: ${USSP_NATS_TRAFFIC_WS_PASSWORD:?set in deploy/compose/.env}
+      USSP_NATS_DSS_SYNC_PASSWORD: ${USSP_NATS_DSS_SYNC_PASSWORD:?set in deploy/compose/.env}
+      USSP_NATS_TSDB_WRITER_PASSWORD: ${USSP_NATS_TSDB_WRITER_PASSWORD:?set in deploy/compose/.env}
+    ports: ["127.0.0.1:57422:4222"]
+    volumes:
+      - ./nats.conf:/etc/nats/nats.conf:ro
+      - natsdata:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8222/healthz?js-enabled-only=true"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # One-shot: applies the migration trees and exits; the processes start
+  # only after it succeeded (D5, M36). Until WP-1 it applies nothing and
+  # logs that it applied nothing.
+  migrate:
+    <<: *go
+    # The one service that builds the Go image; the seven processes run
+    # the same image (one build, not eight).
+    build:
+      context: ../..
+      dockerfile: deploy/Dockerfile
+      args:
+        VERSION: ${USSP_VERSION:-dev}
+        COMMIT: ${USSP_COMMIT:-unknown}
+    restart: "no"
+    entrypoint: ["/usr/bin/ussp-api", "migrate"]
+    environment:
+      <<: *env
+    depends_on:
+      timescaledb: {condition: service_healthy}
+
+  api:
+    <<: *go
+    entrypoint: ["/usr/bin/ussp-api"]
+    ports: ["127.0.0.1:57080:8080"]
+    environment:
+      <<: *env
+      USSP_PG_URL: postgres://ussp_api:${USSP_PG_API_PASSWORD}@timescaledb:5432/ussp_relational?sslmode=disable
+      USSP_TS_URL: postgres://ussp_api:${USSP_PG_API_PASSWORD}@timescaledb:5432/ussp_timeseries?sslmode=disable
+      USSP_NATS_URL: nats://api:${USSP_NATS_API_PASSWORD}@nats:4222
+    healthcheck: &probe
+      test: ["CMD", "/usr/bin/ussp-api", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  telemetry-ingest:
+    <<: *go
+    entrypoint: ["/usr/bin/ussp-telemetry-ingest"]
+    environment:
+      <<: *env
+      USSP_NATS_URL: nats://telemetry-ingest:${USSP_NATS_TELEMETRY_INGEST_PASSWORD}@nats:4222
+    healthcheck:
+      <<: *probe
+      test: ["CMD", "/usr/bin/ussp-telemetry-ingest", "healthcheck"]
+
+  rid-sp:
+    <<: *go
+    entrypoint: ["/usr/bin/ussp-rid-sp"]
+    environment:
+      <<: *env
+      USSP_NATS_URL: nats://rid-sp:${USSP_NATS_RID_SP_PASSWORD}@nats:4222
+    healthcheck:
+      <<: *probe
+      test: ["CMD", "/usr/bin/ussp-rid-sp", "healthcheck"]
+
+  monitor:
+    <<: *go
+    entrypoint: ["/usr/bin/ussp-monitor"]
+    environment:
+      <<: *env
+      USSP_NATS_URL: nats://monitor:${USSP_NATS_MONITOR_PASSWORD}@nats:4222
+    healthcheck:
+      <<: *probe
+      test: ["CMD", "/usr/bin/ussp-monitor", "healthcheck"]
+
+  traffic-ws:
+    <<: *go
+    entrypoint: ["/usr/bin/ussp-traffic-ws"]
+    environment:
+      <<: *env
+      USSP_NATS_URL: nats://traffic-ws:${USSP_NATS_TRAFFIC_WS_PASSWORD}@nats:4222
+    healthcheck:
+      <<: *probe
+      test: ["CMD", "/usr/bin/ussp-traffic-ws", "healthcheck"]
+
+  dss-sync:
+    <<: *go
+    entrypoint: ["/usr/bin/ussp-dss-sync"]
+    environment:
+      <<: *env
+      USSP_NATS_URL: nats://dss-sync:${USSP_NATS_DSS_SYNC_PASSWORD}@nats:4222
+    healthcheck:
+      <<: *probe
+      test: ["CMD", "/usr/bin/ussp-dss-sync", "healthcheck"]
+
+  tsdb-writer:
+    <<: *go
+    entrypoint: ["/usr/bin/ussp-tsdb-writer"]
+    environment:
+      <<: *env
+      USSP_TS_URL: postgres://ussp_tsdb:${USSP_PG_TSDB_PASSWORD}@timescaledb:5432/ussp_timeseries?sslmode=disable
+      USSP_NATS_URL: nats://tsdb-writer:${USSP_NATS_TSDB_WRITER_PASSWORD}@nats:4222
+    healthcheck:
+      <<: *probe
+      test: ["CMD", "/usr/bin/ussp-tsdb-writer", "healthcheck"]
+
+  web:
+    image: ghcr.io/rootxkit/uspace-ussp-web:${USSP_IMAGE_TAG:-dev}
+    build:
+      context: ../../web
+      dockerfile: ../deploy/web.Dockerfile
+    restart: unless-stopped
+    networks: [ussp]
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp"]
+    ports: ["127.0.0.1:57300:3000"]
+    environment:
+      USSP_WEB_API_URL: http://api:8080
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+networks:
+  ussp:
+    name: uspace-ussp
+
+volumes:
+  pgdata:
+  natsdata:
