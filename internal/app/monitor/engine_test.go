@@ -424,3 +424,30 @@ func TestFeedProbe(t *testing.T) {
 	fail.Store(false)
 	waitFor(t, "up", func() bool { st, _ := f.Probe(context.Background()); return st == obs.StateUp })
 }
+
+// C-05 in the neighbour table: an undeclared sample keeps the flight's
+// last known flying state, so a neighbour seen airborne still receives
+// the nearby alert; a sample that says ground changes it (E-01 pair).
+func TestTableKeepsFlyingOnUndeclared(t *testing.T) {
+	g := newRig(t, true)
+	g.offer(flightB, nil, origin, "Airborne")
+	g.clk.Add(time.Second)
+	g.offer(flightB, nil, origin, "Undeclared")
+	flyingOf := func() (bool, bool) {
+		nb := g.eng.table.near(origin, 10)
+		if len(nb) != 1 {
+			return false, false
+		}
+		return nb[0].Flying, nb[0].SeenAt.Equal(g.clk.Now())
+	}
+	waitFor(t, "the undeclared sample in the table", func() bool { _, fresh := flyingOf(); return fresh })
+	if f, _ := flyingOf(); !f {
+		t.Fatal("an undeclared sample landed a flight seen airborne")
+	}
+	g.clk.Add(time.Second)
+	g.offer(flightB, nil, origin, "Ground")
+	waitFor(t, "the ground sample in the table", func() bool { _, fresh := flyingOf(); return fresh })
+	if f, _ := flyingOf(); f {
+		t.Fatal("a ground sample left the flight flying")
+	}
+}

@@ -193,7 +193,7 @@ func (e *Engine) Offer(data []byte) {
 	flightID := *tr.Body.FlightID
 	e.table.put(tableEntry{
 		FlightID: flightID, IntentID: deref(tr.Body.IntentID), Position: in.Sample.Position, Cell5: in.Cell5,
-		SeenAt: in.Sample.CapturedAt, Flying: in.Flying != nil && *in.Flying,
+		SeenAt: in.Sample.CapturedAt, Flying: in.Flying != nil && *in.Flying, flyingKnown: in.Flying != nil,
 	}, e.Counters)
 	w := e.route(flightID, in.Cell5)
 	if w == nil {

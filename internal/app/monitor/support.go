@@ -95,6 +95,9 @@ type tableEntry struct {
 	Cell5    string
 	SeenAt   time.Time
 	Flying   bool
+	// flyingKnown is false for a sample whose status says neither
+	// (Undeclared): the entry keeps the flight's last known Flying (C-05).
+	flyingKnown bool
 }
 
 // table is the process's neighbour table: the last sample of every
@@ -111,6 +114,9 @@ func (t *table) put(e tableEntry, counters *core.Counters) {
 	if old, ok := t.flights[e.FlightID]; ok {
 		if e.SeenAt.Before(old.SeenAt) {
 			return // never overwrite a newer state (T-06)
+		}
+		if !e.flyingKnown {
+			e.Flying, e.flyingKnown = old.Flying, old.flyingKnown
 		}
 	} else if len(t.flights) >= MaxTableFlights {
 		counters.Inc(CounterTableOverBound)

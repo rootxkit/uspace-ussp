@@ -514,3 +514,37 @@ func stateBodyOfFuzz() intent.StateBody {
 	"volumes_amsl":[{"lower_amsl_m":500,"upper_amsl_m":600,"undulation_m":20}]}`), &b)
 	return b
 }
+
+// C-05: a sample whose status says neither flying nor on the ground
+// (Undeclared) does not land the aircraft: a flight last seen airborne
+// still raises lost_link when it falls silent after it; one last seen on
+// the ground does not (E-01 pair).
+func TestFlyingUnknownKeepsTheFlyingState(t *testing.T) {
+	cfg := testConfig()
+	a := circleAuth()
+	for _, tc := range []struct {
+		name  string
+		first bool
+		lost  bool
+	}{{"airborne then undeclared", true, true}, {"ground then undeclared", false, false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr := NewTracker(flightA, intentA, "", nil)
+			tr.Observe(input(origin, 0, &a), cfg, at(0)) // judged: authorised
+			in := input(origin, 1, &a)
+			in.Flying = flying(tc.first)
+			tr.Observe(in, cfg, at(1))
+			in = input(origin, 2, &a)
+			in.Flying = nil
+			if ev := tr.Observe(in, cfg, at(2)); ev.Unjudged != "flying_unknown" {
+				t.Fatalf("%+v", ev)
+			}
+			if got := tr.Snapshot().LastFlying; got != tc.first {
+				t.Fatalf("last flying %v after an undeclared sample, want %v", got, tc.first)
+			}
+			ev := tr.Tick(cfg, at(2+cfg.LostLinkS))
+			if lost := len(ev.Alerts) == 1 && ev.Alerts[0].Alert.Kind == KindLostLink; lost != tc.lost {
+				t.Fatalf("lost_link %v, want %v: %+v", lost, tc.lost, ev)
+			}
+		})
+	}
+}

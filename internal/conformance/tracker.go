@@ -443,7 +443,11 @@ func (t *Tracker) Observe(in Input, cfg Config, wall time.Time) Events {
 	prevLive := t.lastLive
 	t.lastCaptured, t.lastLive, t.hasLive = s.CapturedAt, placed, true
 	t.lastPos, t.lastCell5 = s.Position, in.Cell5
-	t.lastFlying = in.Flying != nil && *in.Flying
+	if in.Flying != nil {
+		// An undeclared status says nothing: the last known one holds
+		// (C-05), so a flight seen airborne still loses its link.
+		t.lastFlying = *in.Flying
+	}
 	t.change(&ev, placed, func() {
 		t.disabled = false
 		if t.linkLost {
