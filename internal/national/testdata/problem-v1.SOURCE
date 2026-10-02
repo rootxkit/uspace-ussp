@@ -1,0 +1,11 @@
+problem-v1.schema.json is a pinned copy of uspace-lab
+schemas/common/problem/v1/schema.json (M28), read by the tests of
+internal/national, which validate every problem body this package and
+internal/auth write against it (brief WP-2).
+
+repository: https://github.com/rootxkit/uspace-lab
+commit:     50f7cb991a62e419927235ea11f30ebdad1b030d
+sha256:     4854ae88544fd4d8a1322163d86ccbefd95995b74452b5d1ddc289e9c64fa7ff
+
+Replace it with the lab's file at a newer commit and update both lines;
+never edit the copy.

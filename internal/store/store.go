@@ -7,6 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/rootxkit/uspace-core/core"
 
 	"github.com/rootxkit/uspace-ussp/internal/store/relational"
 	"github.com/rootxkit/uspace-ussp/internal/store/timeseries"
@@ -140,3 +142,24 @@ func SQLState(err error) string {
 
 // StateInsufficientPrivilege is the SQLSTATE of a refused grant (42501).
 const StateInsufficientPrivilege = "42501"
+
+// UUID parses s (the canonical text form) into the database's uuid; a
+// malformed s is a *core.FieldError on field.
+func UUID(field, s string) (pgtype.UUID, error) {
+	var u pgtype.UUID
+	if len(s) != 36 || u.Scan(s) != nil {
+		return pgtype.UUID{}, &core.FieldError{Field: field, Reason: "not a UUID"}
+	}
+	return u, nil
+}
+
+// UUIDText is the canonical text form of u, or "" when it is NULL.
+func UUIDText(u pgtype.UUID) string {
+	if !u.Valid {
+		return ""
+	}
+	return u.String()
+}
+
+// StateUniqueViolation is the SQLSTATE of a unique constraint (23505).
+const StateUniqueViolation = "23505"

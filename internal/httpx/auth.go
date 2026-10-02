@@ -47,9 +47,28 @@ func ClaimsFrom(ctx context.Context) (auth.Claims, bool) {
 	return c, ok
 }
 
+// TokenRefused writes the 401 of a token the verifier refused: the
+// problem type is the verifier's counter (rejected_expired,
+// rejected_audience, ...; brief WP-2, M28) and the one field error names
+// the claim at fault, never the token. An error that is not a
+// *auth.TokenError is unauthenticated.
+func TokenRefused(w http.ResponseWriter, r *http.Request, err error) {
+	slug := SlugUnauthenticated
+	var errs []*core.FieldError
+	var te *auth.TokenError
+	if errors.As(err, &te) {
+		if slugPattern.MatchString(te.Counter) {
+			slug = te.Counter
+		}
+		errs = append(errs, &core.FieldError{Field: te.Claim, Reason: te.Reason})
+	}
+	w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+	NewProblem(http.StatusUnauthorized, slug, "", "the token was refused", errs...).Write(w, r)
+}
+
 // RequireScope admits a request whose bearer token v accepts and which
-// grants scope: no token or a refused one is a 401 unauthenticated
-// problem naming the claim at fault (never the token), a token without
+// grants scope: no token is a 401 unauthenticated problem, a refused
+// one a 401 typed by the verifier's counter (TokenRefused), a token without
 // the scope is a 403 forbidden problem. The verified claims are in the
 // request context (ClaimsFrom). Each outcome is counted.
 func RequireScope(v TokenVerifier, scope string, counters *core.Counters) func(http.Handler) http.Handler {
@@ -65,14 +84,7 @@ func RequireScope(v TokenVerifier, scope string, counters *core.Counters) func(h
 			claims, err := v.Verify(r.Context(), token)
 			if err != nil {
 				counters.Inc(CounterTokenRefused)
-				var te *auth.TokenError
-				detail := "the token was refused"
-				var errs []*core.FieldError
-				if errors.As(err, &te) {
-					errs = append(errs, &core.FieldError{Field: te.Claim, Reason: te.Reason})
-				}
-				w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
-				NewProblem(http.StatusUnauthorized, SlugUnauthenticated, "", detail, errs...).Write(w, r)
+				TokenRefused(w, r, err)
 				return
 			}
 			if err := auth.RequireScope(claims, scope); err != nil {

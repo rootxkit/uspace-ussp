@@ -95,6 +95,8 @@ func TestValidateNamesEveryRefusedField(t *testing.T) {
 	v.TelemetryRetentionDays = TelemetryRetentionFloorDays - 1
 	v.AuditRetentionDays = 0
 	v.RecordRetentionDays = 0
+	v.OperatorTokenTTLS = MaxOperatorTokenTTLS + 1
+	v.ClientSecretOverlapS = -1
 	err := v.Validate()
 	var fields []string
 	var j interface{ Unwrap() []error }
@@ -108,7 +110,7 @@ func TestValidateNamesEveryRefusedField(t *testing.T) {
 		}
 		fields = append(fields, fe.Field)
 	}
-	want := "deviation_h_m,cpa_horizontal_min_m,cpa_vertical_min_m,cpa_tcpa_max_s,telemetry_retention_days,record_retention_days,audit_retention_days"
+	want := "deviation_h_m,cpa_horizontal_min_m,cpa_vertical_min_m,cpa_tcpa_max_s,telemetry_retention_days,record_retention_days,audit_retention_days,operator_token_ttl_s,client_secret_overlap_s"
 	if strings.Join(fields, ",") != want {
 		t.Errorf("fields %v, want %s", fields, want)
 	}
@@ -116,6 +118,7 @@ func TestValidateNamesEveryRefusedField(t *testing.T) {
 	// itself is accepted.
 	v = Defaults()
 	v.CPATCPAMaxS, v.CPANeighbourMaxAgeS, v.TelemetryRetentionDays = 0, 0, TelemetryRetentionFloorDays
+	v.OperatorTokenTTLS, v.ClientSecretOverlapS = MaxOperatorTokenTTLS, 0
 	if err := v.Validate(); err != nil {
 		t.Errorf("boundary values refused: %v", err)
 	}

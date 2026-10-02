@@ -4,8 +4,10 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -51,6 +53,12 @@ func Main(ctx context.Context, spec Spec, args []string, stdout, stderr io.Write
 			return Healthcheck(ctx, cfg.Addr(spec.Process), path, stderr)
 		case args[0] == "migrate" && spec.Migrate:
 			return migrate(ctx, spec, args[1:], stdout, stderr, lookup)
+		case spec.Commands[args[0]] != nil:
+			cfg, err := config.LoadFrom(lookup)
+			if err != nil {
+				return configError(stderr, spec.Process, err)
+			}
+			return spec.Commands[args[0]](ctx, cfg, args[1:], os.Stdin, stdout, stderr)
 		default:
 			obs.NewLogger(stderr, "info", spec.Process).Error("unknown argument",
 				slog.String("argument", strings.Join(args, " ")), slog.String("hint", "--help lists the usage"))
@@ -146,6 +154,9 @@ func usage(spec Spec) string {
 	cmds := "usage: ussp-" + spec.Process + " [--help | healthcheck [path]"
 	if spec.Migrate {
 		cmds += " | migrate [up | down [version] | status]"
+	}
+	for _, name := range slices.Sorted(maps.Keys(spec.Commands)) {
+		cmds += " | " + name + " ..."
 	}
 	return cmds + "]\n\nConfiguration is read from the environment only (deploy/ENV.md):\n\n" + config.Help(spec.Process)
 }

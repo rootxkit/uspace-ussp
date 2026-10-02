@@ -55,7 +55,7 @@ func TestRequireScope(t *testing.T) {
 		counter string
 	}{
 		{"no token", "", nil, 401, SlugUnauthenticated, CounterNoBearer},
-		{"refused token", "Bearer forged", []string{"ussp.intents"}, 401, SlugUnauthenticated, CounterTokenRefused},
+		{"refused token", "Bearer forged", []string{"ussp.intents"}, 401, auth.CounterRejectedSignature, CounterTokenRefused},
 		{"scope missing", "Bearer good", []string{"ussp.geo"}, 403, SlugForbidden, CounterScopeRefused},
 		{"admitted", "Bearer good", []string{"ussp.geo", "ussp.intents"}, 204, "", CounterTokenAccepted},
 	} {

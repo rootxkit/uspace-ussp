@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -57,9 +58,21 @@ type Spec struct {
 	// Migrate is true for the two processes with a migrate subcommand
 	// (api: relational tree; tsdb-writer: time-series tree; D5).
 	Migrate bool
-	// Routes adds the process's own routes (nil until its work package).
-	Routes func(mux *http.ServeMux, rt *Runtime)
+	// Commands are the process's own subcommands beside healthcheck and
+	// migrate (api: staff-add), by name.
+	Commands map[string]Command
+	// Routes adds the process's operations (nil until its work
+	// package). A process with Routes serves its health operations
+	// itself (HealthHandlers, through the generated router); Run adds
+	// only /metrics. ctx ends after the server has drained: background
+	// work started with rt.Go stops with it. An error refuses the start.
+	Routes func(ctx context.Context, mux *http.ServeMux, rt *Runtime) error
 }
+
+// Command is a subcommand: it gets the loaded configuration, the
+// arguments after its name and the standard streams, and returns the
+// exit code.
+type Command func(ctx context.Context, cfg config.Config, args []string, stdin io.Reader, stdout, stderr io.Writer) int
 
 // Runtime is what a running process's routes and workers share.
 type Runtime struct {
@@ -70,6 +83,17 @@ type Runtime struct {
 	Health   *obs.Health
 	Counters *core.Counters
 	Status   *obs.Status
+	// Store holds the pools this process opened (Rel for api only, TS
+	// for api and tsdb-writer); nil fields are databases it does not use.
+	Store *store.Store
+
+	work sync.WaitGroup
+}
+
+// Go runs fn in the background with the process's work context; Run
+// waits for it after the server has drained.
+func (rt *Runtime) Go(ctx context.Context, fn func(context.Context)) {
+	rt.work.Go(func() { fn(ctx) })
 }
 
 // Options are the parts of Run a test replaces.
@@ -96,6 +120,7 @@ func Run(ctx context.Context, cfg config.Config, spec Spec, opts Options) error 
 		Registry: obs.NewRegistry(spec.Process),
 		Health:   obs.NewHealth(logger, time.Duration(cfg.ReadinessCheckTimeoutMS)*time.Millisecond),
 		Counters: &core.Counters{},
+		Store:    &store.Store{},
 	}
 	rt.Registry.MustRegister(rt.Health, obs.NewCountersCollector("http", rt.Counters))
 	rt.Status = &obs.Status{Logger: logger, Interval: time.Duration(cfg.StatusIntervalS) * time.Second, Health: rt.Health}
@@ -113,15 +138,26 @@ func Run(ctx context.Context, cfg config.Config, spec Spec, opts Options) error 
 		return err
 	}
 
+	workCtx, stopWork := context.WithCancel(context.WithoutCancel(ctx))
+	defer func() { stopWork(); rt.work.Wait() }()
 	mux := http.NewServeMux()
-	HealthRoutes(mux, rt.Health, rt.Registry)
 	if spec.Routes != nil {
-		spec.Routes(mux, rt)
+		MetricsRoute(mux, rt.Registry)
+		if err := spec.Routes(workCtx, mux, rt); err != nil {
+			return fmt.Errorf("refusing to start: %w", err)
+		}
+	} else {
+		HealthRoutes(mux, rt.Health, rt.Registry)
 	}
 	mux.HandleFunc("/", httpx.NotFound)
+	proxies, err := httpx.ParseTrustedProxies(cfg.TrustedProxies)
+	if err != nil {
+		return fmt.Errorf("USSP_TRUSTED_PROXIES: %w", err)
+	}
 	srv := httpx.NewServer(httpx.ServerOptions{
 		Name: spec.Process, Addr: cfg.Addr(spec.Process), Logger: logger,
-		Handler:           httpx.Baseline(mux, logger, httpx.BaselineDeps{Counters: rt.Counters, MaxBodyBytes: int64(cfg.MaxBodyBytes)}),
+		Handler: httpx.Baseline(mux, logger, httpx.BaselineDeps{Counters: rt.Counters, MaxBodyBytes: int64(cfg.MaxBodyBytes),
+			TrustedProxies: proxies}),
 		ReadHeaderTimeout: time.Duration(cfg.ReadHeaderTimeoutS) * time.Second,
 	})
 	ln, err := srv.Listen()
@@ -204,6 +240,11 @@ func openDependencies(rt *Runtime, spec Spec) ([]schemaPool, func(), error) {
 		closers = append(closers, pool.Close)
 		rt.Health.Register(d.name, d.need == Required, pool.Probe(d.extension, d.tree))
 		pools = append(pools, schemaPool{pool: pool, tree: d.tree})
+		if d.tree == store.TreeRelational {
+			rt.Store.Rel = pool
+		} else {
+			rt.Store.TS = pool
+		}
 	}
 	if spec.NATS != NotUsed {
 		nc, err := bus.Connect(rt.Config.NATSURL, rt.Config.NATSCreds, "ussp-"+spec.Process, rt.Logger)

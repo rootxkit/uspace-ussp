@@ -188,14 +188,24 @@ type IntentVersion struct {
 	Snapshot     []byte      `json:"snapshot"`
 }
 
+type LoginLockout struct {
+	Realm       string     `json:"realm"`
+	Username    string     `json:"username"`
+	Failures    int32      `json:"failures"`
+	LockedUntil *time.Time `json:"locked_until"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
 type OauthClient struct {
-	ClientID   string      `json:"client_id"`
-	OperatorID pgtype.UUID `json:"operator_id"`
-	SecretHash string      `json:"secret_hash"`
-	Scopes     []string    `json:"scopes"`
-	Status     string      `json:"status"`
-	CreatedAt  time.Time   `json:"created_at"`
-	RotatedAt  *time.Time  `json:"rotated_at"`
+	ClientID           string      `json:"client_id"`
+	OperatorID         pgtype.UUID `json:"operator_id"`
+	SecretHash         string      `json:"secret_hash"`
+	Scopes             []string    `json:"scopes"`
+	Status             string      `json:"status"`
+	CreatedAt          time.Time   `json:"created_at"`
+	RotatedAt          *time.Time  `json:"rotated_at"`
+	PreviousSecretHash *string     `json:"previous_secret_hash"`
+	PreviousValidUntil *time.Time  `json:"previous_valid_until"`
 }
 
 type OccurrenceReport struct {
@@ -305,6 +315,16 @@ type Policy struct {
 	Values    []byte    `json:"values"`
 }
 
+type PortalUser struct {
+	ID           pgtype.UUID `json:"id"`
+	OperatorID   pgtype.UUID `json:"operator_id"`
+	Username     string      `json:"username"`
+	PasswordHash string      `json:"password_hash"`
+	Role         string      `json:"role"`
+	Status       string      `json:"status"`
+	CreatedAt    time.Time   `json:"created_at"`
+}
+
 type RecordBundle struct {
 	Date        pgtype.Date `json:"date"`
 	BuiltAt     time.Time   `json:"built_at"`
@@ -323,6 +343,19 @@ type RegistryValidity struct {
 	Competencies []byte    `json:"competencies"`
 	FetchedAt    time.Time `json:"fetched_at"`
 	Negative     bool      `json:"negative"`
+}
+
+type Session struct {
+	Jti          string      `json:"jti"`
+	Realm        string      `json:"realm"`
+	AccountID    pgtype.UUID `json:"account_id"`
+	Roles        []string    `json:"roles"`
+	IssuedAt     time.Time   `json:"issued_at"`
+	ExpiresAt    time.Time   `json:"expires_at"`
+	LastSeenAt   time.Time   `json:"last_seen_at"`
+	RevokedAt    *time.Time  `json:"revoked_at"`
+	RevokeReason *string     `json:"revoke_reason"`
+	RemoteIp     string      `json:"remote_ip"`
 }
 
 type SourceControl struct {
@@ -351,6 +384,7 @@ type StaffAccount struct {
 	MfaSecretRef *string     `json:"mfa_secret_ref"`
 	Status       string      `json:"status"`
 	CreatedAt    time.Time   `json:"created_at"`
+	MfaLastStep  int64       `json:"mfa_last_step"`
 }
 
 type WeatherProduct struct {

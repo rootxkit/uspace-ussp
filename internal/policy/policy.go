@@ -60,7 +60,22 @@ type Values struct {
 	TelemetryRetentionDays int `json:"telemetry_retention_days"`
 	RecordRetentionDays    int `json:"record_retention_days"`
 	AuditRetentionDays     int `json:"audit_retention_days"`
+
+	// OperatorTokenTTLS is the lifetime of an operator machine token
+	// this USSP issues (at most MaxOperatorTokenTTLS, cross-plan
+	// Appendix A). ClientSecretOverlapS is how long the previous secret
+	// of a rotated client keeps working (0: not at all).
+	OperatorTokenTTLS    int `json:"operator_token_ttl_s"`
+	ClientSecretOverlapS int `json:"client_secret_overlap_s"`
 }
+
+// MaxOperatorTokenTTLS bounds OperatorTokenTTLS: an operator token
+// lives at most one hour. MaxClientSecretOverlapS bounds the overlap of
+// a rotation at seven days.
+const (
+	MaxOperatorTokenTTLS    = 3600
+	MaxClientSecretOverlapS = 7 * 24 * 3600
+)
 
 // TelemetryRetentionFloorDays is the shortest telemetry retention a
 // policy may set (Art. 15(1)(g)); a lower value is refused.
@@ -71,7 +86,8 @@ const TelemetryRetentionFloorDays = 30
 // 5 s, lost_link 15 s, nearby radius 2000 m, uspace-core's CPA defaults
 // (cpa.DefaultPolicy: 60 s, 60 m, 20 m, 800 m, 10 s), CIS stale after
 // 300 s, escalation every 10 s, telemetry 90 days, records 5 years,
-// audit 10 years. ProximityRadiusM has no figure in the plan; it takes
+// audit 10 years, operator tokens for one hour and a rotated client
+// secret overlapping its successor for one day. ProximityRadiusM has no figure in the plan; it takes
 // the CPA neighbour radius until GCAA answers Q6. They are shown with
 // their policy_version, never presented as the policy answer.
 func Defaults() Values {
@@ -94,6 +110,8 @@ func Defaults() Values {
 		TelemetryRetentionDays:      90,
 		RecordRetentionDays:         5 * 365,
 		AuditRetentionDays:          10 * 365,
+		OperatorTokenTTLS:           3600,
+		ClientSecretOverlapS:        24 * 3600,
 	}
 }
 
@@ -112,8 +130,9 @@ func (v Values) CPA() cpa.Policy {
 // finite; every minimum, radius, timeout and repeat positive (a zero
 // minimum would read every pair as clear); the CPA window and maximum
 // age may be zero (cpa.Policy: "now only", "same instant only");
-// retentions at least one day and telemetry at least the floor. Every
-// refusal names its field.
+// retentions at least one day and telemetry at least the floor; the
+// operator token TTL from 60 s to one hour and the secret overlap from 0
+// to seven days. Every refusal names its field.
 func (v Values) Validate() error {
 	var errs []error
 	positive := []struct {
@@ -148,6 +167,12 @@ func (v Values) Validate() error {
 	}
 	if v.AuditRetentionDays < 1 {
 		errs = append(errs, core.Fieldf("audit_retention_days", "must be at least 1, got %d", v.AuditRetentionDays))
+	}
+	if v.OperatorTokenTTLS < 60 || v.OperatorTokenTTLS > MaxOperatorTokenTTLS {
+		errs = append(errs, core.Fieldf("operator_token_ttl_s", "must be from 60 to %d, got %d", MaxOperatorTokenTTLS, v.OperatorTokenTTLS))
+	}
+	if v.ClientSecretOverlapS < 0 || v.ClientSecretOverlapS > MaxClientSecretOverlapS {
+		errs = append(errs, core.Fieldf("client_secret_overlap_s", "must be from 0 to %d, got %d", MaxClientSecretOverlapS, v.ClientSecretOverlapS))
 	}
 	return errors.Join(errs...)
 }

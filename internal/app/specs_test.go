@@ -37,8 +37,8 @@ func TestSpecsFollowThePlan(t *testing.T) {
 		if s.Migrate != usesTS {
 			t.Errorf("%s: migrate %v", s.Process, s.Migrate)
 		}
-		if s.Routes != nil {
-			t.Errorf("%s: routes before their work package", s.Process)
+		if (s.Routes != nil) != (s.Process == config.ProcessAPI) {
+			t.Errorf("%s: routes before their work package (api's arrive with WP-2)", s.Process)
 		}
 	}
 	if !slices.Equal(names, config.Processes) {
