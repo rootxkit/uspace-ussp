@@ -474,3 +474,37 @@ func TestTeleportFlaggedNeverDropped(t *testing.T) {
 		t.Fatal("not counted")
 	}
 }
+
+// A client that restarts its seq counter is not taken for a replay: its
+// new run names a new epoch, and a run without an epoch still sends new
+// samples (another ts) under the old seqs. Each pair's twin, a true
+// replay (same epoch, seq and ts), is acknowledged and not published.
+func TestRestartedClientReusingSeqsIsTaken(t *testing.T) {
+	r := newRig(t, rigOpts{})
+	run := func(epoch string, seq int64, ts time.Time, want string) {
+		t.Helper()
+		f := frame(snA, seq, ts)
+		f.Epoch = epoch
+		r.clk.set(ts.Add(200 * time.Millisecond))
+		one(t, r.take(clientA, nil, f), want)
+	}
+	for i := range 3 {
+		run("boot-1", int64(i), t0.Add(time.Duration(i)*time.Second), OutcomeAccepted)
+	}
+	run("boot-1", 2, t0.Add(2*time.Second), OutcomeDuplicate) // replay
+	// The client restarts: a new epoch, seqs from 0 again.
+	for i := range 3 {
+		run("boot-2", int64(i), t0.Add(time.Duration(10+i)*time.Second), OutcomeAccepted)
+	}
+	run("boot-2", 1, t0.Add(11*time.Second), OutcomeDuplicate) // replay of the new run
+	// A client that sends no epoch and restarts: new samples, new ts.
+	run("", 7, t0.Add(20*time.Second), OutcomeAccepted)
+	run("", 7, t0.Add(20*time.Second), OutcomeDuplicate)
+	run("", 7, t0.Add(25*time.Second), OutcomeAccepted)
+	if n := len(r.pub.tracks(t)); n != 8 {
+		t.Fatalf("%d tracks, want 8", n)
+	}
+	if r.counters.Get(CounterSeqReused) != 1 {
+		t.Fatalf("seq reuse not counted: %v", r.counters.Snapshot())
+	}
+}

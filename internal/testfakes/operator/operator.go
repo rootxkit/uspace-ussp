@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -48,6 +49,9 @@ type Client struct {
 	Lat, Lng float64
 	// IntentID, when set, is put on every sample.
 	IntentID *string
+	// Epoch names this client's run of its seq counters (a new one per
+	// New, as a client draws one at start).
+	Epoch string
 
 	mu      sync.Mutex
 	seq     map[string]int64
@@ -63,7 +67,7 @@ type Client struct {
 // New is a client of base with token for serials at lat, lng.
 func New(base, token string, lat, lng float64, serials ...string) *Client {
 	return &Client{Base: strings.TrimSuffix(base, "/"), Token: token, Serials: serials, Lat: lat, Lng: lng,
-		seq: map[string]int64{}, pending: map[string]map[int64]*sample{}}
+		seq: map[string]int64{}, pending: map[string]map[int64]*sample{}, Epoch: "run-" + strconv.FormatInt(time.Now().UnixNano(), 36)}
 }
 
 // Up opens the socket; the reader takes the status frames and lets the
@@ -203,6 +207,10 @@ func (c *Client) frame(sn string, seq int64, ts time.Time) client.TelemetryFrame
 		Ts: ts.UTC(), Serial: sn, Seq: seq, Position: client.TelemetryPosition{Lat: c.Lat, Lng: c.Lng},
 		AltWgs84M: &alt, HeightM: &h, HeightRef: &ref, SpeedMs: &speed, TrackDeg: &track, VspeedMs: &v,
 		Status: "Airborne", AccuracyH: "HA3m", AccuracyV: "VA10m", TimestampAccuracyS: &acc,
+	}
+	if c.Epoch != "" {
+		e := c.Epoch
+		f.Epoch = &e
 	}
 	if c.IntentID != nil {
 		// The generated UUID type reads its JSON string form.

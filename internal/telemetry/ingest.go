@@ -68,6 +68,7 @@ const (
 	CounterAirspaceNotJudged = "uspace_airspace_not_judged"
 	CounterSessionReplaced   = "session_replaced"
 	CounterDedupeEvicted     = "dedupe_evicted"
+	CounterSeqReused         = "seq_reused"
 	CounterIdentPublished    = "ident_changes"
 	CounterIdentUnavailable  = "ident_registry_unavailable"
 	CounterTeleport          = "anomaly_teleport"
@@ -340,12 +341,18 @@ func (in *Ingestor) takeAircraft(ctx context.Context, ac *aircraft, d Delivery, 
 			results[i].Reason, results[i].Detail = RejectedTooOld, "older than ingest_backlog_max_s"
 			continue
 		}
-		if dup, pending := ac.duplicate(f.Seq, d.RxTS, window); dup {
+		dup, pending, reused := ac.duplicate(replayKeyOf(f), f.TS, d.RxTS, window)
+		if dup {
 			results[i].Reason = OutcomeDuplicate
 			if pending {
 				results[i].Reason = OutcomeDuplicatePending
 			}
 			continue
+		}
+		if reused {
+			// The client reused a seq for another sample (a restart that
+			// names no new epoch): taken, never acknowledged as a replay.
+			in.count(CounterSeqReused)
 		}
 		st := ac.stream(p.backlog)
 		if st.hasHeld && !p.tsEff.After(st.held) {
@@ -451,13 +458,14 @@ func (in *Ingestor) takeSample(ctx context.Context, ac *aircraft, d Delivery, i 
 			in.count(CounterBacklogByAge)
 		}
 	}
-	ac.remember(f.Seq, d.RxTS, in.cfg.Counters)
+	rk := replayKeyOf(f)
+	ac.remember(rk, f.TS, d.RxTS, in.cfg.Counters)
 	seq, frame, idx := f.Seq, *f, i
 	if d.Index != nil {
 		idx = d.Index[i]
 	}
 	h := &handoff{subject: subject, cell3: c3, track: tr, done: func(handed bool) {
-		ac.landed(seq, handed)
+		ac.landed(rk, handed)
 		if d.Handed != nil {
 			d.Handed(idx, &frame, handed)
 		}

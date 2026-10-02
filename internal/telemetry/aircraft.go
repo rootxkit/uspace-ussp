@@ -16,7 +16,7 @@ import (
 // drones (spec 05 §7).
 const MaxAircraft = 10_000
 
-// maxDedupe bounds the (serial, seq) pairs remembered per aircraft
+// maxDedupe bounds the (serial, epoch, seq) keys remembered per aircraft
 // (E-10): the live and backlog rates of the policy over its window fit
 // well inside; beyond it the oldest is forgotten and counted.
 const maxDedupe = 4096
@@ -28,6 +28,24 @@ type aircraftKey struct{ client, fold string }
 
 func keyOf(clientID, sn string) aircraftKey {
 	return aircraftKey{client: clientID, fold: serial.FoldKey(sn)}
+}
+
+// replayKey is one sample of an aircraft as the client counts it: its
+// epoch (the client's run of its seq counter; empty when it sends none)
+// and its seq.
+type replayKey struct {
+	epoch string
+	seq   int64
+}
+
+func replayKeyOf(f *Frame) replayKey { return replayKey{epoch: f.Epoch, seq: f.Seq} }
+
+// seenEntry is a sample taken: when (wall clock) and its own time. A
+// replay is the same sample sent again, so its ts is the same; the same
+// key with another ts is a client that reused the seq (a restart
+// without an epoch), not a replay.
+type seenEntry struct {
+	at, ts time.Time
 }
 
 // String is the key as the flights binder and the logs name it.
@@ -94,11 +112,12 @@ type aircraft struct {
 	// sample under it (never under mu, which Take holds while it hands
 	// samples to the outbox).
 	seenMu sync.Mutex
-	// seen is the (serial, seq) replay window: seq -> when it was taken;
-	// pending are those taken and not yet handed to the bus.
-	seen      map[int64]time.Time
-	seenOrder []int64
-	pending   map[int64]bool
+	// seen is the (serial, epoch, seq) replay window: the key -> when it
+	// was taken and its ts; pending are those taken and not yet handed
+	// to the bus.
+	seen      map[replayKey]seenEntry
+	seenOrder []replayKey
+	pending   map[replayKey]bool
 
 	ident      *core.Identification // the last identification published
 	identTrack string               // for this track
@@ -107,7 +126,7 @@ type aircraft struct {
 }
 
 func newAircraft(key aircraftKey, sn string) *aircraft {
-	return &aircraft{key: key, serial: sn, seen: map[int64]time.Time{}, pending: map[int64]bool{}}
+	return &aircraft{key: key, serial: sn, seen: map[replayKey]seenEntry{}, pending: map[replayKey]bool{}}
 }
 
 // stream is the live or the backlog stream.
@@ -118,15 +137,19 @@ func (a *aircraft) stream(backlog bool) *stream {
 	return &a.live
 }
 
-// duplicate reports whether seq was taken within window of now, and
-// whether it is still on its way to the bus; it forgets what is older
-// than the window.
-func (a *aircraft) duplicate(seq int64, now time.Time, window time.Duration) (dup, pending bool) {
+// duplicate reports whether the sample k with own time ts was taken
+// within window of now, and whether it is still on its way to the bus;
+// reused is the same key taken with another ts (not a replay). It
+// forgets what is older than the window.
+func (a *aircraft) duplicate(k replayKey, ts, now time.Time, window time.Duration) (dup, pending, reused bool) {
 	a.seenMu.Lock()
 	defer a.seenMu.Unlock()
 	a.prune(now, window)
-	_, dup = a.seen[seq]
-	return dup, a.pending[seq]
+	e, ok := a.seen[k]
+	if ok && !e.ts.Equal(ts) {
+		return false, false, true
+	}
+	return ok, ok && a.pending[k], false
 }
 
 // prune forgets what is older than the window, never a sample still
@@ -134,22 +157,23 @@ func (a *aircraft) duplicate(seq int64, now time.Time, window time.Duration) (du
 func (a *aircraft) prune(now time.Time, window time.Duration) {
 	n := 0
 	for n < len(a.seenOrder) {
-		seq := a.seenOrder[n]
-		at, ok := a.seen[seq]
-		if ok && (now.Sub(at) <= window || a.pending[seq]) {
+		k := a.seenOrder[n]
+		e, ok := a.seen[k]
+		if ok && (now.Sub(e.at) <= window || a.pending[k]) {
 			break
 		}
 		if ok {
-			delete(a.seen, seq)
+			delete(a.seen, k)
 		}
 		n++
 	}
 	a.seenOrder = a.seenOrder[n:]
 }
 
-// remember records seq as taken at now and pending; when the window is
-// full its oldest entry is forgotten to make room (counted).
-func (a *aircraft) remember(seq int64, now time.Time, counters *core.Counters) {
+// remember records k with own time ts as taken at now and pending;
+// when the window is full its oldest entry is forgotten to make room
+// (counted).
+func (a *aircraft) remember(k replayKey, ts, now time.Time, counters *core.Counters) {
 	a.seenMu.Lock()
 	defer a.seenMu.Unlock()
 	if len(a.seenOrder) >= maxDedupe {
@@ -160,20 +184,20 @@ func (a *aircraft) remember(seq int64, now time.Time, counters *core.Counters) {
 		}
 		counters.Inc(CounterDedupeEvicted)
 	}
-	a.seen[seq] = now
-	a.seenOrder = append(a.seenOrder, seq)
-	a.pending[seq] = true
+	a.seen[k] = seenEntry{at: now, ts: ts}
+	a.seenOrder = append(a.seenOrder, k)
+	a.pending[k] = true
 }
 
-// landed settles a pending seq: handed, it stays remembered (a replay
+// landed settles a pending key: handed, it stays remembered (a replay
 // publishes nothing twice, B-05); not handed, it is forgotten, so the
 // client's next copy is taken.
-func (a *aircraft) landed(seq int64, handed bool) {
+func (a *aircraft) landed(k replayKey, handed bool) {
 	a.seenMu.Lock()
 	defer a.seenMu.Unlock()
-	delete(a.pending, seq)
+	delete(a.pending, k)
 	if !handed {
-		delete(a.seen, seq)
+		delete(a.seen, k)
 	}
 }
 

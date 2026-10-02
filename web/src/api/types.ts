@@ -199,8 +199,10 @@ export interface paths {
          *     by one socket: a later socket that sends for it replaces the
          *     earlier one, whose next sample for it is refused_replaced (B-14).
          *     Live samples above 2 Hz per aircraft are dropped and counted; a
-         *     (serial, seq) seen in the last telemetry_dedupe_s (600 s, the
-         *     client's queue) is acknowledged and not published twice. Inside U-space airspace a sample needs an
+         *     (serial, epoch, seq) with the same ts seen in the last
+         *     telemetry_dedupe_s (600 s, the client's queue) is acknowledged and
+         *     not published twice; the same key with another ts is a new
+         *     sample. Inside U-space airspace a sample needs an
          *     activated intent of this aircraft (intent_id), else it is refused
          *     (refused_no_authorisation, refused_intent_state).
          *
@@ -984,6 +986,8 @@ export interface components {
             serial: string;
             /** Format: int64 */
             seq: number;
+            /** @description The client's run of its seq counter: a new one whenever seq starts again. */
+            epoch?: string;
             backlog?: boolean;
             end?: boolean;
             /** Format: uuid */

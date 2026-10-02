@@ -51,9 +51,13 @@ type OperatorPosition struct {
 // schema bounds is within its bounds, every enumeration one of its
 // values.
 type Frame struct {
-	TS                 time.Time
-	Serial             string
-	Seq                int64
+	TS     time.Time
+	Serial string
+	Seq    int64
+	// Epoch names the client's seq counter (its run): a client that
+	// restarts its counter sends a new one, so its seqs are not taken
+	// for replays. Empty when the client sends none.
+	Epoch              string
 	Backlog            bool
 	End                bool
 	IntentID           *string
@@ -79,6 +83,7 @@ type wireFrame struct {
 	TS                 *string         `json:"ts"`
 	Serial             *string         `json:"serial"`
 	Seq                json.RawMessage `json:"seq"`
+	Epoch              *string         `json:"epoch"`
 	Backlog            *bool           `json:"backlog"`
 	End                *bool           `json:"end"`
 	IntentID           json.RawMessage `json:"intent_id"`
@@ -194,6 +199,13 @@ func DecodeFrame(raw []byte, prefix string) (Frame, error) {
 		fe.add("seq", "must be an integer from 0 to 2^53-1")
 	} else {
 		f.Seq = n
+	}
+	if w.Epoch != nil {
+		if serialPattern.MatchString(*w.Epoch) {
+			f.Epoch = *w.Epoch
+		} else {
+			fe.add("epoch", "1 to 64 printable ASCII characters without spaces")
+		}
 	}
 	f.Backlog = w.Backlog != nil && *w.Backlog
 	f.End = w.End != nil && *w.End

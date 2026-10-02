@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.uspace.ge/telemetry/v1.json",
   "title": "telemetry/v1",
-  "description": "One telemetry sample an operator client sends for one of its bound aircraft (spec 02 F5, Art. 8(2)): the body of a WS /v1/telemetry frame ({\"schema\": \"telemetry/v1\", \"body\": ...}) and an item of POST /v1/telemetry/batch. ts is the client's own clock; the ingest places the sample on its clock (T-01, T-02). The positions are WGS84 decimal degrees, alt_wgs84_m is height above the WGS84 ellipsoid and alt_pressure_m the pressure altitude (ISA 1013.25 hPa, not AMSL); the ingest derives AMSL through the geoid. status, accuracy_h and accuracy_v are the F3411 v22a enumerations (RIDOperationalStatus, HorizontalAccuracy, VerticalAccuracy). seq increases by one per sample of a serial; (serial, seq) is the replay key. backlog says the sample was queued before this delivery (T-04). end says the operator ends the flight with this sample. The trust class and the source are the ingest's, never the client's: a sample that carries either (trust simulated, source sitl, or any other) is refused (spec 06 T11).",
+  "description": "One telemetry sample an operator client sends for one of its bound aircraft (spec 02 F5, Art. 8(2)): the body of a WS /v1/telemetry frame ({\"schema\": \"telemetry/v1\", \"body\": ...}) and an item of POST /v1/telemetry/batch. ts is the client's own clock; the ingest places the sample on its clock (T-01, T-02). The positions are WGS84 decimal degrees, alt_wgs84_m is height above the WGS84 ellipsoid and alt_pressure_m the pressure altitude (ISA 1013.25 hPa, not AMSL); the ingest derives AMSL through the geoid. status, accuracy_h and accuracy_v are the F3411 v22a enumerations (RIDOperationalStatus, HorizontalAccuracy, VerticalAccuracy). seq increases by one per sample of a serial; epoch names the client's run of that counter and changes when the counter restarts. (serial, epoch, seq) with the same ts is a replay; the same key with another ts is a new sample (a restart that named no new epoch). backlog says the sample was queued before this delivery (T-04). end says the operator ends the flight with this sample. The trust class and the source are the ingest's, never the client's: a sample that carries either (trust simulated, source sitl, or any other) is refused (spec 06 T11).",
   "type": "object",
   "additionalProperties": false,
   "required": ["ts", "serial", "seq", "position", "alt_wgs84_m", "height_m", "height_ref", "speed_ms", "track_deg", "vspeed_ms",
@@ -23,6 +23,13 @@
       "pattern": "^[\\x21-\\x7e]+$"
     },
     "seq": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "epoch": {
+      "description": "The client's run of its seq counter, for example an id drawn at start: a new one whenever seq starts again.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[\\x21-\\x7e]+$"
+    },
     "backlog": { "type": "boolean" },
     "end": { "type": "boolean" },
     "intent_id": {

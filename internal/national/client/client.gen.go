@@ -954,13 +954,16 @@ type TelemetryBatchResult struct {
 
 // TelemetryFrame telemetry/v1 (schemas/telemetry/v1/schema.json, the source of truth).
 type TelemetryFrame struct {
-	AccuracyH          TelemetryFrameAccuracyH    `json:"accuracy_h"`
-	AccuracyV          TelemetryFrameAccuracyV    `json:"accuracy_v"`
-	AltPressureM       *float64                   `json:"alt_pressure_m,omitempty"`
-	AltWgs84M          *float64                   `json:"alt_wgs84_m"`
-	Backlog            *bool                      `json:"backlog,omitempty"`
-	Emergency          bool                       `json:"emergency"`
-	End                *bool                      `json:"end,omitempty"`
+	AccuracyH    TelemetryFrameAccuracyH `json:"accuracy_h"`
+	AccuracyV    TelemetryFrameAccuracyV `json:"accuracy_v"`
+	AltPressureM *float64                `json:"alt_pressure_m,omitempty"`
+	AltWgs84M    *float64                `json:"alt_wgs84_m"`
+	Backlog      *bool                   `json:"backlog,omitempty"`
+	Emergency    bool                    `json:"emergency"`
+	End          *bool                   `json:"end,omitempty"`
+
+	// Epoch The client's run of its seq counter: a new one whenever seq starts again.
+	Epoch              *string                    `json:"epoch,omitempty"`
 	HeightM            *float64                   `json:"height_m"`
 	HeightRef          *TelemetryFrameHeightRef   `json:"height_ref"`
 	IntentId           *openapi_types.UUID        `json:"intent_id,omitempty"`
@@ -1692,8 +1695,10 @@ type ClientInterface interface {
 	// by one socket: a later socket that sends for it replaces the
 	// earlier one, whose next sample for it is refused_replaced (B-14).
 	// Live samples above 2 Hz per aircraft are dropped and counted; a
-	// (serial, seq) seen in the last telemetry_dedupe_s (600 s, the
-	// client's queue) is acknowledged and not published twice. Inside U-space airspace a sample needs an
+	// (serial, epoch, seq) with the same ts seen in the last
+	// telemetry_dedupe_s (600 s, the client's queue) is acknowledged and
+	// not published twice; the same key with another ts is a new
+	// sample. Inside U-space airspace a sample needs an
 	// activated intent of this aircraft (intent_id), else it is refused
 	// (refused_no_authorisation, refused_intent_state).
 	//
@@ -2410,8 +2415,10 @@ func (c *Client) ValidateRegistry(ctx context.Context, params *ValidateRegistryP
 // by one socket: a later socket that sends for it replaces the
 // earlier one, whose next sample for it is refused_replaced (B-14).
 // Live samples above 2 Hz per aircraft are dropped and counted; a
-// (serial, seq) seen in the last telemetry_dedupe_s (600 s, the
-// client's queue) is acknowledged and not published twice. Inside U-space airspace a sample needs an
+// (serial, epoch, seq) with the same ts seen in the last
+// telemetry_dedupe_s (600 s, the client's queue) is acknowledged and
+// not published twice; the same key with another ts is a new
+// sample. Inside U-space airspace a sample needs an
 // activated intent of this aircraft (intent_id), else it is refused
 // (refused_no_authorisation, refused_intent_state).
 //
@@ -3862,8 +3869,10 @@ type ClientWithResponsesInterface interface {
 	// by one socket: a later socket that sends for it replaces the
 	// earlier one, whose next sample for it is refused_replaced (B-14).
 	// Live samples above 2 Hz per aircraft are dropped and counted; a
-	// (serial, seq) seen in the last telemetry_dedupe_s (600 s, the
-	// client's queue) is acknowledged and not published twice. Inside U-space airspace a sample needs an
+	// (serial, epoch, seq) with the same ts seen in the last
+	// telemetry_dedupe_s (600 s, the client's queue) is acknowledged and
+	// not published twice; the same key with another ts is a new
+	// sample. Inside U-space airspace a sample needs an
 	// activated intent of this aircraft (intent_id), else it is refused
 	// (refused_no_authorisation, refused_intent_state).
 	//
@@ -6122,8 +6131,10 @@ func (c *ClientWithResponses) ValidateRegistryWithResponse(ctx context.Context, 
 // by one socket: a later socket that sends for it replaces the
 // earlier one, whose next sample for it is refused_replaced (B-14).
 // Live samples above 2 Hz per aircraft are dropped and counted; a
-// (serial, seq) seen in the last telemetry_dedupe_s (600 s, the
-// client's queue) is acknowledged and not published twice. Inside U-space airspace a sample needs an
+// (serial, epoch, seq) with the same ts seen in the last
+// telemetry_dedupe_s (600 s, the client's queue) is acknowledged and
+// not published twice; the same key with another ts is a new
+// sample. Inside U-space airspace a sample needs an
 // activated intent of this aircraft (intent_id), else it is refused
 // (refused_no_authorisation, refused_intent_state).
 //

@@ -130,6 +130,7 @@ func TestDecodeFrameFields(t *testing.T) {
 	for name, c := range map[string]struct{ json, field string }{
 		"seq as string":     {strings.Replace(sampleJSON(""), `"seq":1`, `"seq":"1"`, 1), "seq"},
 		"seq fraction":      {strings.Replace(sampleJSON(""), `"seq":1`, `"seq":1.5`, 1), "seq"},
+		"epoch space":       {strings.Replace(sampleJSON(""), `"seq":1`, `"seq":1,"epoch":"a b"`, 1), "epoch"},
 		"no ts":             {strings.Replace(sampleJSON(""), `"ts":"2026-10-02T09:00:00.000Z",`, ``, 1), "ts"},
 		"ts offset":         {strings.Replace(sampleJSON(""), `00.000Z"`, `00.000+04:00"`, 1), "ts"},
 		"ts garbage":        {strings.Replace(sampleJSON(""), `"2026-10-02T09:00:00.000Z"`, `"yesterdayZ"`, 1), "ts"},

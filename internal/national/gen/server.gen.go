@@ -952,13 +952,16 @@ type TelemetryBatchResult struct {
 
 // TelemetryFrame telemetry/v1 (schemas/telemetry/v1/schema.json, the source of truth).
 type TelemetryFrame struct {
-	AccuracyH          TelemetryFrameAccuracyH    `json:"accuracy_h"`
-	AccuracyV          TelemetryFrameAccuracyV    `json:"accuracy_v"`
-	AltPressureM       *float64                   `json:"alt_pressure_m,omitempty"`
-	AltWgs84M          *float64                   `json:"alt_wgs84_m"`
-	Backlog            *bool                      `json:"backlog,omitempty"`
-	Emergency          bool                       `json:"emergency"`
-	End                *bool                      `json:"end,omitempty"`
+	AccuracyH    TelemetryFrameAccuracyH `json:"accuracy_h"`
+	AccuracyV    TelemetryFrameAccuracyV `json:"accuracy_v"`
+	AltPressureM *float64                `json:"alt_pressure_m,omitempty"`
+	AltWgs84M    *float64                `json:"alt_wgs84_m"`
+	Backlog      *bool                   `json:"backlog,omitempty"`
+	Emergency    bool                    `json:"emergency"`
+	End          *bool                   `json:"end,omitempty"`
+
+	// Epoch The client's run of its seq counter: a new one whenever seq starts again.
+	Epoch              *string                    `json:"epoch,omitempty"`
 	HeightM            *float64                   `json:"height_m"`
 	HeightRef          *TelemetryFrameHeightRef   `json:"height_ref"`
 	IntentId           *openapi_types.UUID        `json:"intent_id,omitempty"`
