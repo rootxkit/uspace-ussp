@@ -603,10 +603,16 @@ func TestRestoreNeedsTheFullHysteresis(t *testing.T) {
 	if s := tr.Snapshot(); s.State != StateNonconforming || len(tr.Active()) != 1 || tr.Active()[0].ID != raised || tr.Active()[0].Cell5 == "" {
 		t.Fatalf("restored %+v %+v", s, tr.Active())
 	}
-	// 3.5 s since the last sample outside, but only 0.5 s since the
-	// restore: held.
-	if ev := tr.Observe(input(origin, 4, &a), cfg, at(4)); len(ev.Transitions) != 0 || len(ev.Alerts) != 0 {
-		t.Fatalf("returned before the hysteresis: %+v", ev)
+	// A sample outside newer than the saved state but older than the
+	// restore (the track replay at a start) does not move the hysteresis
+	// back before the restore.
+	tr.Observe(input(geodesy.Destination(origin, 90, 600), 2.5, &a), cfg, at(3.5))
+	// 3.5 s since the last sample outside, but only 0.5 s and then
+	// 2.5 s since the restore: held.
+	for _, s := range []float64{4, 6} {
+		if ev := tr.Observe(input(origin, s, &a), cfg, at(s)); len(ev.Transitions) != 0 || len(ev.Alerts) != 0 {
+			t.Fatalf("returned %v s after the restore, before the hysteresis: %+v", s-3.5, ev)
+		}
 	}
 	ev := tr.Observe(input(origin, 3.5+cfg.ClearAfterS+0.1, &a), cfg, at(3.5+cfg.ClearAfterS+0.1))
 	if tr.Snapshot().State != StateConforming || len(ev.Alerts) != 1 || ev.Alerts[0].Alert.ID != raised || ev.Alerts[0].ClearReason != ClearResolved {

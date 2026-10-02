@@ -470,7 +470,7 @@ func (t *Tracker) Observe(in Input, cfg Config, wall time.Time) Events {
 				t.ll = nil
 			}
 			if t.base != StateConforming {
-				t.lastOutside = placed
+				t.outsideAt(placed)
 			}
 		}
 	})
@@ -564,7 +564,7 @@ func (t *Tracker) apply(ev *Events, v Verdict, placed, wall time.Time, cfg Confi
 			}
 		})
 	case Outside:
-		t.lastOutside = placed
+		t.outsideAt(placed)
 		if t.outsideSince.IsZero() {
 			t.outsideSince = placed
 		}
@@ -598,6 +598,16 @@ func (t *Tracker) apply(ev *Events, v Verdict, placed, wall time.Time, cfg Confi
 			t.nc.Detail = t.ncDetail(v, t.ncReason)
 			t.nc.UpdatedAt, t.nc.CapturedAt, t.nc.PolicyVersion, t.nc.Cell5 = placed, placed, cfg.PolicyVersion, t.lastCell5
 		}
+	}
+}
+
+// outsideAt records the flight shown outside at placed. The hysteresis
+// back to conforming never counts from earlier than it already does: a
+// restored tracker counts from its restore, which a sample older than
+// the restore (the track replay at a start) does not move back.
+func (t *Tracker) outsideAt(placed time.Time) {
+	if placed.After(t.lastOutside) {
+		t.lastOutside = placed
 	}
 }
 
