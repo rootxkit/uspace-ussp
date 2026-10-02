@@ -37,10 +37,12 @@ const MaxViewBytes = 256
 // see the package documentation). Its answers come from the window and
 // the intent_active projection in memory and nothing else.
 type Server struct {
-	Window   *Window
-	Intents  Intents
-	Now      func() time.Time
-	Counters *core.Counters
+	Window  *Window
+	Intents Intents
+	// Notifications keeps the ISA notifications peers send us.
+	Notifications NotificationStore
+	Now           func() time.Time
+	Counters      *core.Counters
 	// ObserveFlights, when set, receives the time each GET /uss/flights
 	// took (the rid_sp_flights_seconds histogram).
 	ObserveFlights func(time.Duration)
