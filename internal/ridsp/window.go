@@ -245,8 +245,8 @@ func (w *Window) trimLocked(id string, f *flightWin, now time.Time) {
 			w.Counters.Add(CounterSamplesOverBound, uint64(over))
 		}
 	}
-	for _, s := range f.samples[:cut] {
-		w.indexLocked(id, s.Cell5, -1)
+	for i := range f.samples[:cut] {
+		w.indexLocked(id, f.samples[i].Cell5, -1)
 	}
 	f.samples = slices.Delete(f.samples, 0, cut)
 	if len(f.samples) == 0 {
@@ -255,8 +255,8 @@ func (w *Window) trimLocked(id string, f *flightWin, now time.Time) {
 }
 
 func (w *Window) dropLocked(id string, f *flightWin) {
-	for _, s := range f.samples {
-		w.indexLocked(id, s.Cell5, -1)
+	for i := range f.samples {
+		w.indexLocked(id, f.samples[i].Cell5, -1)
 	}
 	delete(w.flights, id)
 }
@@ -284,9 +284,9 @@ func (w *Window) Len() int {
 // recent samples within recent of now. ok is false when nothing is left.
 func view(id string, f *flightWin, now time.Time, recent time.Duration) (View, bool) {
 	var live []Sample
-	for _, s := range f.samples {
-		if now.Sub(s.CapturedAt) <= Horizon {
-			live = append(live, s)
+	for i := range f.samples {
+		if now.Sub(f.samples[i].CapturedAt) <= Horizon {
+			live = append(live, f.samples[i])
 		}
 	}
 	if len(live) == 0 {
@@ -294,9 +294,9 @@ func view(id string, f *flightWin, now time.Time, recent time.Duration) (View, b
 	}
 	v := View{ID: id, Current: live[len(live)-1]}
 	if recent > 0 {
-		for _, s := range live {
-			if now.Sub(s.CapturedAt) <= recent {
-				v.Recent = append(v.Recent, s)
+		for i := range live {
+			if now.Sub(live[i].CapturedAt) <= recent {
+				v.Recent = append(v.Recent, live[i])
 			}
 		}
 	}
@@ -328,8 +328,8 @@ func (w *Window) InView(box geodesy.BBox, recent time.Duration) ([]View, error) 
 				continue
 			}
 			inside := false
-			for _, s := range f.samples {
-				if now.Sub(s.CapturedAt) <= Horizon && box.Contains(s.Position()) {
+			for i := range f.samples {
+				if s := &f.samples[i]; now.Sub(s.CapturedAt) <= Horizon && box.Contains(s.Position()) {
 					inside = true
 					break
 				}

@@ -10,11 +10,9 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rootxkit/uspace-core/f3411"
 
 	"github.com/rootxkit/uspace-ussp/internal/auth"
-	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 	stdf3411 "github.com/rootxkit/uspace-ussp/internal/stdapi/f3411"
 )
@@ -165,59 +163,25 @@ func (s *Server) PostIdentificationServiceArea(ctx context.Context, req stdf3411
 	return stdf3411.PostIdentificationServiceArea204Response{}, nil
 }
 
+// RawKV is one KV bucket's keys (internal/bus.KVStore).
+type RawKV interface {
+	Get(ctx context.Context, key string) ([]byte, bool, error)
+	Put(ctx context.Context, key string, value []byte) error
+}
+
 // KVNotifications is NotificationStore on the KV bucket
 // rid_isa_notifications (bounded, a day's TTL), so what peers told us
 // survives a restart and is shared by every rid-sp instance.
-type KVNotifications struct {
-	JS jetstream.JetStream
-	// Timeout bounds one read or write (bus.DefaultKVTimeout).
-	Timeout time.Duration
-	// open replaces the bucket lookup in tests.
-	open func(ctx context.Context) (notificationKV, error)
-}
-
-// notificationKV is the part of a jetstream.KeyValue the store uses.
-type notificationKV interface {
-	Get(ctx context.Context, key string) (jetstream.KeyValueEntry, error)
-	Put(ctx context.Context, key string, value []byte) (uint64, error)
-}
-
-func (k KVNotifications) bucket(ctx context.Context) (notificationKV, context.Context, context.CancelFunc, error) {
-	t := k.Timeout
-	if t <= 0 {
-		t = bus.DefaultKVTimeout
-	}
-	ctx, cancel := context.WithTimeout(ctx, t)
-	var kv notificationKV
-	var err error
-	if k.open != nil {
-		kv, err = k.open(ctx)
-	} else {
-		kv, err = k.JS.KeyValue(ctx, bus.BucketISANotifications)
-	}
-	if err != nil {
-		cancel()
-		return nil, nil, nil, err
-	}
-	return kv, ctx, cancel, nil
-}
+type KVNotifications struct{ KV RawKV }
 
 // Get implements NotificationStore.
 func (k KVNotifications) Get(ctx context.Context, isaID string) (ISANotification, bool, error) {
-	kv, ctx, cancel, err := k.bucket(ctx)
-	if err != nil {
-		return ISANotification{}, false, err
-	}
-	defer cancel()
-	e, err := kv.Get(ctx, isaID)
-	if errors.Is(err, jetstream.ErrKeyNotFound) {
-		return ISANotification{}, false, nil
-	}
-	if err != nil {
+	raw, found, err := k.KV.Get(ctx, isaID)
+	if err != nil || !found {
 		return ISANotification{}, false, err
 	}
 	var n ISANotification
-	if err := json.Unmarshal(e.Value(), &n); err != nil {
+	if err := json.Unmarshal(raw, &n); err != nil {
 		return ISANotification{}, false, err
 	}
 	return n, true, nil
@@ -229,11 +193,5 @@ func (k KVNotifications) Put(ctx context.Context, n ISANotification) error {
 	if err != nil {
 		return err
 	}
-	kv, ctx, cancel, err := k.bucket(ctx)
-	if err != nil {
-		return err
-	}
-	defer cancel()
-	_, err = kv.Put(ctx, n.ISAID, b)
-	return err
+	return k.KV.Put(ctx, n.ISAID, b)
 }

@@ -256,8 +256,9 @@ func (w *ISAWorker) Once(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	ob := w.Store
-	for _, it := range items {
-		err := w.handle(ctx, it)
+	for i := range items {
+		it := &items[i]
+		err := w.handle(ctx, *it)
 		if err == nil {
 			if derr := ob.Done(ctx, it.ID); derr != nil {
 				w.logger().LogAttrs(ctx, slog.LevelWarn, "ISA item done but not marked; it will be taken again", obs.Err(derr))
@@ -266,7 +267,7 @@ func (w *ISAWorker) Once(ctx context.Context) (int, error) {
 		}
 		w.count(CounterISAFailed)
 		backoff := w.backoff(it.Attempts)
-		var r *retryNow
+		var r *retryNowError
 		if errors.As(err, &r) {
 			backoff = 0
 		}
@@ -294,11 +295,11 @@ func (w *ISAWorker) backoff(attempts int32) time.Duration {
 	return min(d, limit)
 }
 
-// retryNow is a failure after which the item is due again at once: the
+// retryNowError is a failure after which the item is due again at once: the
 // worker learnt the version it needed.
-type retryNow struct{ cause string }
+type retryNowError struct{ cause string }
 
-func (r *retryNow) Error() string { return r.cause }
+func (r *retryNowError) Error() string { return r.cause }
 
 func (w *ISAWorker) handle(ctx context.Context, it store.OutboxItem) error {
 	switch it.Kind {
@@ -329,7 +330,7 @@ func (w *ISAWorker) unreadable(ctx context.Context, it store.OutboxItem) error {
 
 // readAnswer reads at most maxAnswerBytes of res and closes it.
 func readAnswer(res *http.Response) ([]byte, error) {
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	b, err := io.ReadAll(io.LimitReader(res.Body, maxAnswerBytes+1))
 	if err != nil {
 		return nil, err
@@ -346,7 +347,7 @@ func readAnswer(res *http.Response) ([]byte, error) {
 func (w *ISAWorker) classify(res *http.Response, err error) error {
 	if err != nil {
 		w.set(false, "no answer: "+clipErr(err))
-		return fmt.Errorf("%w: %v", errDSSDown, err)
+		return fmt.Errorf("%w: %w", errDSSDown, err)
 	}
 	if res.StatusCode >= 500 || res.StatusCode == http.StatusTooManyRequests {
 		_, _ = readAnswer(res)
@@ -481,7 +482,7 @@ func (w *ISAWorker) refreshVersion(ctx context.Context, isaID string, start, end
 	if err := w.Store.Written(ctx, ISARecord{ISAID: isaID, Version: &v, TimeStart: start, TimeEnd: end, Extents: ext}); err != nil {
 		return err
 	}
-	return &retryNow{cause: "the DSS answered 409; its version " + v + " is recorded and the write is retried"}
+	return &retryNowError{cause: "the DSS answered 409; its version " + v + " is recorded and the write is retried"}
 }
 
 // delete removes the ISA from the DSS with its version: nothing to do

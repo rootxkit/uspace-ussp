@@ -192,12 +192,13 @@ func (p *Push) Tick() int {
 		p.last = map[string]time.Time{}
 	}
 	seen := make(map[string]time.Time, len(all))
-	for _, v := range all {
-		seen[v.ID] = p.last[v.ID]
+	for i := range all {
+		seen[all[i].ID] = p.last[all[i].ID]
 	}
 	p.last = seen // flights that left the window are forgotten (E-10)
 	p.mu.Unlock()
-	for _, v := range all {
+	for i := range all {
+		v := &all[i]
 		if !v.Current.CapturedAt.After(seen[v.ID]) {
 			continue
 		}

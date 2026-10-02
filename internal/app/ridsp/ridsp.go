@@ -56,6 +56,7 @@ func Run(ctx context.Context, cfg config.Config) error {
 // mirrorIntents is the intent_active projection as sp.Intents.
 type mirrorIntents struct{ m *bus.Mirror[sp.IntentFacts] }
 
+// Intent implements sp.Intents.
 func (i mirrorIntents) Intent(id string) (sp.IntentFacts, bool) {
 	v, found, _, _ := i.m.Get(id)
 	return v, found
@@ -115,7 +116,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	spCounters := &core.Counters{}
 	proc.Publish(rt, "rid_sp", spCounters)
 	window := &sp.Window{MaxSamples: func() int { return current().RIDRecentPositionsMaxCount }, Counters: spCounters}
-	feed := &sp.TrackFeed{Source: sp.JSTracks{JS: js}, Window: window, Logger: rt.Logger}
+	feed := &sp.TrackFeed{Source: bus.Replay{JS: js, Stream: bus.StreamTRK, Subject: bus.SubjectTrkAll}, Window: window, Logger: rt.Logger}
 	rt.Health.Register(DepTrk, false, feed.Probe())
 	latency := prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name: obs.MetricName("rid_sp_flights_seconds"), Help: "time to answer one GET /uss/flights",
@@ -123,7 +124,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	})
 	rt.Registry.MustRegister(latency)
 	srv := &sp.Server{
-		Window: window, Intents: mirrorIntents{intents}, Notifications: sp.KVNotifications{JS: js},
+		Window: window, Intents: mirrorIntents{intents}, Notifications: sp.KVNotifications{KV: bus.KVStore{JS: js, Bucket: bus.BucketISANotifications}},
 		Counters: spCounters, Logger: rt.Logger,
 		ObserveFlights: func(d time.Duration) { latency.Observe(d.Seconds()) },
 	}

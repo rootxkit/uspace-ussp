@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -480,8 +481,9 @@ func TestWorkerConflictRecovers(t *testing.T) {
 
 func (r *workerRig) payload(t *testing.T, id string) ISAPut {
 	t.Helper()
-	for _, it := range r.m.pending() {
-		if it.EntityID == id {
+	items := r.m.pending()
+	for i := range items {
+		if it := &items[i]; it.EntityID == id {
 			var p ISAPut
 			_ = json.Unmarshal(it.Payload, &p)
 			return p
@@ -586,7 +588,7 @@ func TestCheckSubscribers(t *testing.T) {
 	if got, err := checkSubscribers(&ok); err != nil || len(got) != MaxSubscribers {
 		t.Fatalf("at the bound: %v", err)
 	}
-	over := append(ok, ok[0])
+	over := append(slices.Clone(ok), ok[0])
 	if _, err := checkSubscribers(&over); err == nil {
 		t.Fatal("over the bound accepted")
 	}

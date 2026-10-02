@@ -64,7 +64,7 @@ func as(sub string) context.Context {
 	return auth.WithPrincipal(context.Background(), auth.Principal{Claims: coreauth.Claims{Subject: sub}})
 }
 
-func post(t *testing.T, s *Server, ctx context.Context, id string, b *f3411.PutIdentificationServiceAreaNotificationParameters) (stdf3411.PostIdentificationServiceAreaResponseObject, error) {
+func post(ctx context.Context, t *testing.T, s *Server, id string, b *f3411.PutIdentificationServiceAreaNotificationParameters) (stdf3411.PostIdentificationServiceAreaResponseObject, error) {
 	t.Helper()
 	return s.PostIdentificationServiceArea(ctx, stdf3411.PostIdentificationServiceAreaRequestObject{Id: id, Body: b})
 }
@@ -76,7 +76,7 @@ func post(t *testing.T, s *Server, ctx context.Context, id string, b *f3411.PutI
 func TestNotificationReceiver(t *testing.T) {
 	store := &memNotifications{}
 	s := &Server{Notifications: store, Counters: &core.Counters{}}
-	res, err := post(t, s, as("peer"), isaID, notification("v1"))
+	res, err := post(as("peer"), t, s, isaID, notification("v1"))
 	if _, ok := res.(stdf3411.PostIdentificationServiceArea204Response); !ok || err != nil {
 		t.Fatalf("%#v %v", res, err)
 	}
@@ -85,21 +85,21 @@ func TestNotificationReceiver(t *testing.T) {
 		t.Fatalf("stored %+v", n)
 	}
 	for _, v := range []string{"v1", "v2"} {
-		if res, _ := post(t, s, as("peer"), isaID, notification(v)); res != (stdf3411.PostIdentificationServiceArea204Response{}) {
+		if res, _ := post(as("peer"), t, s, isaID, notification(v)); res != (stdf3411.PostIdentificationServiceArea204Response{}) {
 			t.Fatalf("%s: %#v", v, res)
 		}
 	}
 	other := notification("v2")
 	other.ServiceArea.UssBaseUrl = "https://elsewhere.test/rid"
-	if res, _ := post(t, s, as("peer"), isaID, other); func() bool { _, ok := res.(stdf3411.PostIdentificationServiceArea409JSONResponse); return !ok }() {
+	if res, _ := post(as("peer"), t, s, isaID, other); func() bool { _, ok := res.(stdf3411.PostIdentificationServiceArea409JSONResponse); return !ok }() {
 		t.Fatalf("same version, another entity: %#v", res)
 	}
-	if res, _ := post(t, s, as("intruder"), isaID, notification("v3")); func() bool { _, ok := res.(stdf3411.PostIdentificationServiceArea403JSONResponse); return !ok }() {
+	if res, _ := post(as("intruder"), t, s, isaID, notification("v3")); func() bool { _, ok := res.(stdf3411.PostIdentificationServiceArea403JSONResponse); return !ok }() {
 		t.Fatalf("another sender: %#v", res)
 	}
 	del := notification("")
 	del.ServiceArea, del.Extents = nil, nil
-	if res, _ := post(t, s, as("peer"), isaID, del); res != (stdf3411.PostIdentificationServiceArea204Response{}) || !store.m[isaID].Deleted {
+	if res, _ := post(as("peer"), t, s, isaID, del); res != (stdf3411.PostIdentificationServiceArea204Response{}) || !store.m[isaID].Deleted {
 		t.Fatalf("deletion: %#v %+v", res, store.m[isaID])
 	}
 	if s.Counters.Get(CounterNotifications) != 4 || s.Counters.Get(CounterNotificationConflict) != 1 || s.Counters.Get(CounterNotificationNotOwner) != 1 {
@@ -159,7 +159,7 @@ func TestNotificationReceiver(t *testing.T) {
 	}
 	for name, mk := range bad {
 		id, b := mk()
-		res, err := post(t, s, as("peer"), id, b)
+		res, err := post(as("peer"), t, s, id, b)
 		if _, ok := res.(stdf3411.PostIdentificationServiceArea400JSONResponse); !ok || err != nil {
 			t.Errorf("%s: %#v %v", name, res, err)
 		}
@@ -174,14 +174,14 @@ func TestNotificationReceiver(t *testing.T) {
 func TestNotificationStoreDown(t *testing.T) {
 	st := &memNotifications{getErr: errors.New("nats down")}
 	s := &Server{Notifications: st, Counters: &core.Counters{}}
-	if _, err := post(t, s, as("peer"), isaID, notification("v1")); err == nil {
+	if _, err := post(as("peer"), t, s, isaID, notification("v1")); err == nil {
 		t.Fatal("read failure not returned")
 	}
 	st.getErr, st.putErr = nil, errors.New("nats down")
-	if _, err := post(t, s, as("peer"), isaID, notification("v1")); err == nil {
+	if _, err := post(as("peer"), t, s, isaID, notification("v1")); err == nil {
 		t.Fatal("write failure not returned")
 	}
-	if _, err := post(t, &Server{Counters: s.Counters}, as("peer"), isaID, notification("v1")); !errors.Is(err, ErrNotificationsUnavailable) {
+	if _, err := post(as("peer"), t, &Server{Counters: s.Counters}, isaID, notification("v1")); !errors.Is(err, ErrNotificationsUnavailable) {
 		t.Fatal(err)
 	}
 	if s.Counters.Get(CounterNotificationUnstored) != 3 {

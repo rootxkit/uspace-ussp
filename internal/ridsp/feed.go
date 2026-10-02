@@ -6,9 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nats-io/nats.go/jetstream"
-
-	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 )
 
@@ -17,28 +14,9 @@ import (
 const DefaultFeedRetry = 2 * time.Second
 
 // TrackSource delivers trk.v1 messages from a moment on, then as they
-// come, to handle, until stop is called.
+// come, to handle, until stop is called (internal/bus.Replay of TRK).
 type TrackSource interface {
 	Open(ctx context.Context, from time.Time, handle func(data []byte)) (stop func(), err error)
-}
-
-// JSTracks is TrackSource on the TRK stream: an ordered consumer from
-// the moment asked, which follows NATS through reconnects on its own.
-type JSTracks struct{ JS jetstream.JetStream }
-
-// Open implements TrackSource.
-func (j JSTracks) Open(ctx context.Context, from time.Time, handle func([]byte)) (func(), error) {
-	cons, err := j.JS.OrderedConsumer(ctx, bus.StreamTRK, jetstream.OrderedConsumerConfig{
-		FilterSubjects: []string{bus.SubjectTrkAll}, DeliverPolicy: jetstream.DeliverByStartTimePolicy, OptStartTime: &from,
-	})
-	if err != nil {
-		return nil, err
-	}
-	cc, err := cons.Consume(func(m jetstream.Msg) { handle(m.Data()) })
-	if err != nil {
-		return nil, err
-	}
-	return cc.Stop, nil
 }
 
 // TrackFeed fills the window from trk.v1 starting Horizon back, so a

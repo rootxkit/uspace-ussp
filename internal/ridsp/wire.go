@@ -172,8 +172,9 @@ func FlightOf(v View) f3411.RIDFlight {
 	}
 	if len(v.Recent) > 0 {
 		rp := make([]f3411.RIDRecentAircraftPosition, len(v.Recent))
-		for i, s := range v.Recent {
-			rp[i] = f3411.RIDRecentAircraftPosition{Time: wireTime(s.CapturedAt), Position: PositionOf(s)}
+		for i := range v.Recent {
+			s := &v.Recent[i]
+			rp[i] = f3411.RIDRecentAircraftPosition{Time: wireTime(s.CapturedAt), Position: PositionOf(*s)}
 		}
 		f.RecentPositions = &rp
 	}

@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nats-io/nats.go/jetstream"
-
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 )
 
@@ -82,47 +80,33 @@ func TestTrackFeed(t *testing.T) {
 	}
 }
 
-// fakeEntry is a jetstream.KeyValueEntry holding a value.
-type fakeEntry struct{ v []byte }
-
-func (e fakeEntry) Bucket() string                  { return "rid_isa_notifications" }
-func (e fakeEntry) Key() string                     { return "" }
-func (e fakeEntry) Value() []byte                   { return e.v }
-func (e fakeEntry) Revision() uint64                { return 1 }
-func (e fakeEntry) Created() time.Time              { return time.Time{} }
-func (e fakeEntry) Delta() uint64                   { return 0 }
-func (e fakeEntry) Operation() jetstream.KeyValueOp { return jetstream.KeyValuePut }
-
 type fakeKV struct {
 	m   map[string][]byte
 	err error
 }
 
-func (k *fakeKV) Get(_ context.Context, key string) (jetstream.KeyValueEntry, error) {
+func (k *fakeKV) Get(_ context.Context, key string) ([]byte, bool, error) {
 	if k.err != nil {
-		return nil, k.err
+		return nil, false, k.err
 	}
 	v, ok := k.m[key]
-	if !ok {
-		return nil, jetstream.ErrKeyNotFound
-	}
-	return fakeEntry{v}, nil
+	return v, ok, nil
 }
 
-func (k *fakeKV) Put(_ context.Context, key string, v []byte) (uint64, error) {
+func (k *fakeKV) Put(_ context.Context, key string, v []byte) error {
 	if k.err != nil {
-		return 0, k.err
+		return k.err
 	}
 	k.m[key] = v
-	return 1, nil
+	return nil
 }
 
 // The KV store round-trips a notification, says false for one it does
-// not hold, and returns the bucket's errors (a missing bucket, a value
-// that does not read, a failing read or write).
+// not hold, and returns the bucket's errors (a value that does not read,
+// a failing read or write).
 func TestKVNotifications(t *testing.T) {
 	kv := &fakeKV{m: map[string][]byte{}}
-	s := KVNotifications{open: func(context.Context) (notificationKV, error) { return kv, nil }}
+	s := KVNotifications{KV: kv}
 	ctx := context.Background()
 	if _, found, err := s.Get(ctx, isaID); found || err != nil {
 		t.Fatalf("empty: %v %v", found, err)
@@ -145,12 +129,5 @@ func TestKVNotifications(t *testing.T) {
 	}
 	if err := s.Put(ctx, n); err == nil {
 		t.Error("a failing write")
-	}
-	missing := KVNotifications{open: func(context.Context) (notificationKV, error) { return nil, jetstream.ErrBucketNotFound }}
-	if _, _, err := missing.Get(ctx, isaID); err == nil {
-		t.Error("a missing bucket read")
-	}
-	if err := missing.Put(ctx, n); err == nil {
-		t.Error("a missing bucket write")
 	}
 }

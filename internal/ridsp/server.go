@@ -164,8 +164,9 @@ func (s *Server) SearchFlights(ctx context.Context, req stdf3411.SearchFlightsRe
 	}
 	now := s.now()
 	flights := make([]f3411.RIDFlight, 0, len(views))
-	for _, v := range views {
-		f := FlightOf(v)
+	for i := range views {
+		v := &views[i]
+		f := FlightOf(*v)
 		if _, err := convert.RIDFlightToWire(&f); err != nil {
 			// Never sent: a peer running core would refuse it. Counted
 			// and logged so it is not silent.

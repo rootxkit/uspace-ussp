@@ -150,6 +150,11 @@ func TestPushBufferAndGap(t *testing.T) {
 	if f.Schema != SchemaAuthorityFlight || f.Backlog {
 		t.Fatalf("live frame %+v", f)
 	}
+	// The server counts a frame once its write returned, which may be
+	// after the client read it.
+	for deadline := time.Now().Add(5 * time.Second); p.Counters.Get(CounterPushSent) < 4 && time.Now().Before(deadline); {
+		time.Sleep(time.Millisecond)
+	}
 	if p.Counters.Get(CounterPushSent) != 4 || p.Counters.Get(CounterPushSessions) != 1 {
 		t.Fatalf("%v", p.Counters.Snapshot())
 	}

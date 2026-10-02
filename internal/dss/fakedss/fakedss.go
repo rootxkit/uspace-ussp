@@ -163,6 +163,7 @@ type recorder struct {
 	status int
 }
 
+// WriteHeader records the status.
 func (r *recorder) WriteHeader(s int) { r.status = s; r.ResponseWriter.WriteHeader(s) }
 
 func (d *DSS) serve(w http.ResponseWriter, r *http.Request) {
