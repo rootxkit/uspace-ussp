@@ -156,6 +156,7 @@ func wantStates(t *testing.T, body *client.Readiness, want map[string]client.Dep
 // With every dependency running, api reports postgres, timescaledb and
 // nats up and is ready (the success path, E-02).
 func TestIntegrationAPIReadyWithEveryDependencyUp(t *testing.T) {
+	ensureSchemas(t)
 	c := run(t, api.Spec, map[string]string{
 		"USSP_API_ADDR": "127.0.0.1:0",
 		"USSP_PG_URL":   mustEnv(t, "USSP_TEST_PG_URL"),
@@ -174,6 +175,7 @@ func TestIntegrationAPIReadyWithEveryDependencyUp(t *testing.T) {
 // NATS taken away (a closed port): the databases stay up, nats is down
 // with its reason, and /readyz answers 503 (E-02).
 func TestIntegrationAPINotReadyWithoutNATS(t *testing.T) {
+	ensureSchemas(t)
 	c := run(t, api.Spec, map[string]string{
 		"USSP_API_ADDR": "127.0.0.1:0",
 		"USSP_PG_URL":   mustEnv(t, "USSP_TEST_PG_URL"),
@@ -271,6 +273,7 @@ func (p *proxy) stop() {
 // /readyz follows it down (503, nats down with its reason) and up
 // again (200), without a restart (B-08, E-02).
 func TestIntegrationAPIFollowsNATSAwayAndBack(t *testing.T) {
+	ensureSchemas(t)
 	natsURL, err := url.Parse(mustEnv(t, "USSP_TEST_NATS_URL"))
 	if err != nil {
 		t.Fatal(err)

@@ -146,6 +146,8 @@ linters:
       # Generated code: exempt from style linters, never from vet.
       - path: ^internal/national/(gen|client)/
         linters: [revive, gocritic, misspell, exhaustive, errorlint, gosec, staticcheck, unparam, prealloc]
+      - path: ^internal/store/(relational|timeseries)/
+        linters: [revive, gocritic, misspell, exhaustive, errorlint, gosec, staticcheck, unparam, prealloc]
 
 formatters:
   enable:

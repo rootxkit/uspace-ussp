@@ -30,7 +30,9 @@ const (
 //	healthcheck [path]    GET path (default /healthz) on the local
 //	                      listener; exit 0 on 200 (the container health
 //	                      check of a distroless image, which has no curl)
-//	migrate               api and tsdb-writer only (D5)
+//	migrate [up | down [version] | status]
+//	                      api (relational tree) and tsdb-writer (time-series
+//	                      tree) only: the only code path that migrates (D5)
 func Main(ctx context.Context, spec Spec, args []string, stdout, stderr io.Writer, lookup config.LookupFunc) int {
 	if len(args) > 0 {
 		switch {
@@ -47,8 +49,8 @@ func Main(ctx context.Context, spec Spec, args []string, stdout, stderr io.Write
 				return configError(stderr, spec.Process, err)
 			}
 			return Healthcheck(ctx, cfg.Addr(spec.Process), path, stderr)
-		case args[0] == "migrate" && spec.Migrate && len(args) == 1:
-			return migrate(ctx, spec, stdout, lookup)
+		case args[0] == "migrate" && spec.Migrate:
+			return migrate(ctx, spec, args[1:], stdout, stderr, lookup)
 		default:
 			obs.NewLogger(stderr, "info", spec.Process).Error("unknown argument",
 				slog.String("argument", strings.Join(args, " ")), slog.String("hint", "--help lists the usage"))
@@ -143,7 +145,7 @@ func isHelp(arg string) bool { return slices.Contains([]string{"-h", "--help", "
 func usage(spec Spec) string {
 	cmds := "usage: ussp-" + spec.Process + " [--help | healthcheck [path]"
 	if spec.Migrate {
-		cmds += " | migrate"
+		cmds += " | migrate [up | down [version] | status]"
 	}
 	return cmds + "]\n\nConfiguration is read from the environment only (deploy/ENV.md):\n\n" + config.Help(spec.Process)
 }
@@ -159,23 +161,6 @@ func configError(stderr io.Writer, process string, err error) int {
 	obs.NewLogger(stderr, "info", process).Error("configuration invalid",
 		slog.Any("variables", fields), slog.String("error", strings.ReplaceAll(err.Error(), "\n", "; ")))
 	return ExitConfig
-}
-
-// migrate is the migrate subcommand. Until WP-1 adds the trees it
-// applies nothing and says so; it never claims a version it did not
-// reach.
-func migrate(ctx context.Context, spec Spec, stdout io.Writer, lookup config.LookupFunc) int {
-	cfg, err := config.LoadFrom(lookup)
-	if err != nil {
-		return configError(stdout, spec.Process, err)
-	}
-	tree := "migrations/relational"
-	if spec.Process == config.ProcessTSDBWriter {
-		tree = "migrations/timeseries"
-	}
-	obs.NewLogger(stdout, cfg.LogLevel, spec.Process).LogAttrs(ctx, slog.LevelWarn, "migrate: no migration tree yet",
-		slog.String("tree", tree), slog.Int("applied", 0), slog.String("filled_by", "WP-1"))
-	return ExitOK
 }
 
 // Healthcheck GETs path on the local listener of addr and returns

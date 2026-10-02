@@ -54,6 +54,9 @@ jobs:
               - 'Makefile'
               - '.golangci.yml'
               - '.github/workflows/ci.yml'
+              - 'migrations/**'
+              - 'sqlc.yaml'
+              - 'internal/store/queries/**'
             web:
               - 'web/**'
               - 'api/**'
@@ -165,6 +168,7 @@ jobs:
           {
             echo "USSP_TEST_PG_URL=postgres://ussp_api:${api_pw}@127.0.0.1:5432/ussp_relational?sslmode=disable"
             echo "USSP_TEST_TS_URL=postgres://ussp_api:${api_pw}@127.0.0.1:5432/ussp_timeseries?sslmode=disable"
+            echo "USSP_TEST_TS_OWNER_URL=postgres://ussp_tsdb:${tsdb_pw}@127.0.0.1:5432/ussp_timeseries?sslmode=disable"
             echo "USSP_TEST_NATS_URL=nats://127.0.0.1:4222"
           } >> "$GITHUB_ENV"
       - name: make integration (fails when zero tests ran)

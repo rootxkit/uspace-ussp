@@ -27,7 +27,7 @@ COMMIT       ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 .PHONY: all build vet fmt fmt-check tools staticcheck lint tidy test race cover \
         integration generate check-generated check-schemas check-deps check-hostnames \
         check-contracts secrets vulncheck image compose-deps compose-up compose-down \
-        conformance ci clean
+        conformance ci clean migrate-up migrate-down migrate-status
 
 all: ci
 
@@ -85,7 +85,7 @@ cover:
 integration:
 	@set -a; if [ -f $(COMPOSE_ENV) ]; then . ./$(COMPOSE_ENV); fi; set +a; \
 	export USSP_TEST_PG_URL="$${USSP_TEST_PG_URL:-postgres://ussp_api:$${USSP_PG_API_PASSWORD}@127.0.0.1:57432/ussp_relational?sslmode=disable}"; \
-	export USSP_TEST_TS_URL="$${USSP_TEST_TS_URL:-postgres://ussp_api:$${USSP_PG_API_PASSWORD}@127.0.0.1:57432/ussp_timeseries?sslmode=disable}"; \
+	export USSP_TEST_TS_URL="$${USSP_TEST_TS_URL:-postgres://ussp_api:$${USSP_PG_API_PASSWORD}@127.0.0.1:57432/ussp_timeseries?sslmode=disable}"; 	export USSP_TEST_TS_OWNER_URL="$${USSP_TEST_TS_OWNER_URL:-postgres://ussp_tsdb:$${USSP_PG_TSDB_PASSWORD}@127.0.0.1:57432/ussp_timeseries?sslmode=disable}"; \
 	export USSP_TEST_NATS_URL="$${USSP_TEST_NATS_URL:-nats://api:$${USSP_NATS_API_PASSWORD}@127.0.0.1:57422}"; \
 	set -o pipefail; \
 	$(GO) test -tags integration -count=1 -v ./test/integration/... 2>&1 | tee integration.log; \
@@ -156,6 +156,22 @@ compose-down:
 	  docker ps -a --filter label=com.docker.compose.project=$(PROJECT); docker volume ls --filter label=com.docker.compose.project=$(PROJECT); \
 	  docker network ls --filter name=^$(PROJECT)$$; exit 1; fi; \
 	echo "compose-down: no container, volume or network of $(PROJECT) left"
+
+# Both migration trees through the migrate subcommands (scripts/migrate.sh),
+# against the stack of `make compose-deps` unless MIGRATE_PG_URL /
+# MIGRATE_TS_URL name other databases. The relational tree runs as
+# ussp_api, the time-series tree as ussp_tsdb (the owners). Down rolls
+# each tree back one migration.
+MIGRATE_ENV = set -a; if [ -f $(COMPOSE_ENV) ]; then . ./$(COMPOSE_ENV); fi; set +a; 	rel="$${MIGRATE_PG_URL:-postgres://ussp_api:$${USSP_PG_API_PASSWORD}@127.0.0.1:57432/ussp_relational?sslmode=disable}"; 	ts="$${MIGRATE_TS_URL:-postgres://ussp_tsdb:$${USSP_PG_TSDB_PASSWORD}@127.0.0.1:57432/ussp_timeseries?sslmode=disable}"
+
+migrate-up:
+	@$(MIGRATE_ENV); GO=$(GO) scripts/migrate.sh relational up "$$rel" && GO=$(GO) scripts/migrate.sh timeseries up "$$ts"
+
+migrate-down:
+	@$(MIGRATE_ENV); GO=$(GO) scripts/migrate.sh timeseries down "$$ts" && GO=$(GO) scripts/migrate.sh relational down "$$rel"
+
+migrate-status:
+	@$(MIGRATE_ENV); GO=$(GO) scripts/migrate.sh relational status "$$rel" && GO=$(GO) scripts/migrate.sh timeseries status "$$ts"
 
 # The InterUSS DSS and uss_qualifier against this USSP: WP-19.
 conformance:

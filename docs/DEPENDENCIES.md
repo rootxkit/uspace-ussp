@@ -15,11 +15,12 @@ rules); the allowed list is `docs/PLAN.md` §14. Versions are the ones
 | `github.com/prometheus/client_golang` | v1.24.1 | WP-0 | `/metrics`: `ussp_build_info`, `ussp_dependency_*`, the counters (E-09) |
 | `go.opentelemetry.io/otel`, `otel/sdk`, `otel/trace`, `otel/exporters/otlp/otlptrace/otlptracehttp` | v1.46.0 | WP-0 | tracing with the OTLP/HTTP exporter when `USSP_OTLP_URL` is set, a no-op provider otherwise |
 | `github.com/oapi-codegen/oapi-codegen/v2` (tool) | v2.8.0 | WP-0 | generates `internal/national/gen` and `internal/national/client` from `api/openapi.yaml` (D4); a `tool` directive, run with `go tool`, never linked into a binary |
+| `github.com/pressly/goose/v3` | v3.28.0 | WP-1 | the two embedded migration trees with their own version tables and session advisory locks (`internal/store` only, run only by the `migrate` subcommand); raises the minimum `procfs`, `grpc` and `genproto/rpc` versions by a patch |
+| `github.com/sqlc-dev/sqlc` (generator) | v1.31.1 | WP-1 | generates `internal/store/relational` and `internal/store/timeseries` from the trees and `internal/store/queries`; run by `scripts/generate.sh` with `go run …@v1.31.1` (pinned there), never linked into a binary and not a `go.mod` tool, so its dependency tree stays out of the module |
 | `github.com/lestrrat-go/jwx/v3` | (through core) | — | JWT/JWS inside `uspace-core/auth`; never imported here (depguard) |
 
 Planned by `docs/PLAN.md` §14 and added by the work package that first
-needs them, each with its row: `pressly/goose/v3` and `sqlc` (WP-1),
-`coder/websocket` (WP-8), `golang.org/x/crypto/argon2` and
+needs them, each with its row: `coder/websocket` (WP-8), `golang.org/x/crypto/argon2` and
 `google/uuid` (WP-2).
 
 ## web/ (npm, exact pins)

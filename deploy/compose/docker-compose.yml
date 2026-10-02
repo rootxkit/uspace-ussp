@@ -1,6 +1,6 @@
 # uspace-ussp on one host (docs/PLAN.md §11): the seven processes from
 # one image, the web portal, one TimescaleDB container holding both
-# databases (M37), NATS JetStream, and the one-shot migrate service, on
+# databases (M37), NATS JetStream, and the two one-shot migrate services, on
 # the project's own network. Secrets come from deploy/compose/.env
 # (`make compose-up` writes random ones on first use; see .env.example).
 #
@@ -25,6 +25,7 @@ x-go: &go
   security_opt: ["no-new-privileges:true"]
   depends_on:
     migrate: {condition: service_completed_successfully}
+    migrate-timeseries: {condition: service_completed_successfully}
     nats: {condition: service_healthy}
 
 x-env: &env
@@ -75,9 +76,10 @@ services:
       timeout: 3s
       retries: 20
 
-  # One-shot: applies the migration trees and exits; the processes start
-  # only after it succeeded (D5, M36). Until WP-1 it applies nothing and
-  # logs that it applied nothing.
+  # One-shot: applies the relational tree as its owner ussp_api and
+  # exits; the processes start only after both migrate services
+  # succeeded (D5, M36). No process migrates at start: each waits for
+  # the version it needs and refuses an older one (USSP_SCHEMA_WAIT_S).
   migrate:
     <<: *go
     # The one service that builds the Go image; the seven processes run
@@ -92,8 +94,22 @@ services:
     entrypoint: ["/usr/bin/ussp-api", "migrate"]
     environment:
       <<: *env
+      USSP_PG_URL: postgres://ussp_api:${USSP_PG_API_PASSWORD}@timescaledb:5432/ussp_relational?sslmode=disable
     depends_on:
       timescaledb: {condition: service_healthy}
+
+  # One-shot: the time-series tree as its owner ussp_tsdb.
+  migrate-timeseries:
+    <<: *go
+    restart: "no"
+    entrypoint: ["/usr/bin/ussp-tsdb-writer", "migrate"]
+    environment:
+      <<: *env
+      USSP_TS_URL: postgres://ussp_tsdb:${USSP_PG_TSDB_PASSWORD}@timescaledb:5432/ussp_timeseries?sslmode=disable
+    depends_on:
+      timescaledb: {condition: service_healthy}
+      # Built by migrate; started after it so the image exists.
+      migrate: {condition: service_completed_successfully}
 
   api:
     <<: *go

@@ -33,6 +33,7 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_TSDB_WRITER_ADDR` | `tsdb-writer` |  | `:8086` |  | listen address of tsdb-writer (health and metrics only) |
 | `USSP_PG_URL` | `api` | `api` |  |  | relational database (PostgreSQL + PostGIS); only api opens it |
 | `USSP_TS_URL` | `api,tsdb-writer` | `api,tsdb-writer` |  |  | time-series database (TimescaleDB); tsdb-writer writes, api reads |
+| `USSP_SCHEMA_WAIT_S` | `api,tsdb-writer` |  | `60` | s | how long a process waits at start for the migrate subcommand to bring its schema to the version it needs; then it refuses to start, naming both versions |
 | `USSP_NATS_URL` | `all` | `all` |  |  | NATS JetStream; the process reconnects forever and starts degraded when it is down |
 | `USSP_NATS_CREDS` | `all` |  |  |  | path of the NATS credentials file of this process; empty uses the URL's userinfo |
 | `USSP_SYSTEM_ID` | `api,rid-sp,dss-sync` |  | `USSP-DEV` |  | the USSP code from the authority's certificate (M8); never an audience |

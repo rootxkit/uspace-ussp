@@ -12,6 +12,9 @@ trap 'rm -rf "$scratch"' EXIT
 if command -v cygpath >/dev/null 2>&1; then scratch=$(cygpath -m "$scratch"); fi
 
 files=(internal/national/gen/server.gen.go internal/national/client/client.gen.go)
+# The sqlc packages are compared file by file, both ways: a stale file
+# left behind is as wrong as a missing one.
+sqlc_dirs=(internal/store/relational internal/store/timeseries)
 
 OUT_DIR="$scratch" "$root/scripts/generate.sh" >/dev/null
 
@@ -27,7 +30,13 @@ for f in "${files[@]}"; do
     status=1
   fi
 done
+for d in "${sqlc_dirs[@]}"; do
+  if ! diff -ru "$root/$d" "$scratch/$d"; then
+    echo "out of date: $d (run make generate and commit the result)"
+    status=1
+  fi
+done
 if [ "$status" -eq 0 ]; then
-  echo "check-generated: ${#files[@]} files up to date: ${files[*]}"
+  echo "check-generated: ${#files[@]} files and ${#sqlc_dirs[@]} sqlc packages up to date: ${files[*]} ${sqlc_dirs[*]}"
 fi
 exit "$status"
