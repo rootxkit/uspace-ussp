@@ -2,6 +2,7 @@ package bus
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -118,6 +119,10 @@ func (c *Conn) Maintain(t Topology, logger *slog.Logger) *Maintainer {
 	return c.topo
 }
 
+func notConnected(since time.Time, reason string) string {
+	return "not connected since " + since.UTC().Format(time.RFC3339) + ": " + reason
+}
+
 // topologyStale is how old the last topology check may be before the
 // probe repeats it inline.
 const topologyStale = time.Minute
@@ -130,11 +135,19 @@ const topologyStale = time.Minute
 // up otherwise.
 func (c *Conn) Probe() obs.Probe {
 	return func(ctx context.Context) (obs.State, string) {
-		connected, since, reason := c.Link()
-		if !connected {
-			return obs.StateDown, "not connected since " + since.UTC().Format(time.RFC3339) + ": " + reason
+		if connected, since, reason := c.Link(); !connected {
+			return obs.StateDown, notConnected(since, reason)
 		}
 		if _, err := c.js.AccountInfo(ctx); err != nil {
+			if errors.Is(err, nats.ErrConnectionClosed) {
+				// Closed, and the client has not yet delivered its
+				// disconnected and closed events (it runs them on its own
+				// goroutine, after Close has returned): the link is down
+				// for good, not JetStream.
+				c.set(false, "connection closed")
+				_, since, reason := c.Link()
+				return obs.StateDown, notConnected(since, reason)
+			}
 			return obs.StateDegraded, "connected; JetStream does not answer: " + err.Error()
 		}
 		if c.topo == nil {
