@@ -140,12 +140,9 @@ func (c *Conn) Probe() obs.Probe {
 		if c.topo == nil {
 			return obs.StateUp, ""
 		}
-		st := c.topo.State()
-		if !st.Checked || time.Since(st.At) > topologyStale {
-			var err error
-			if st, err = c.topo.TryCheck(ctx); err != nil && !st.Checked {
-				return obs.StateDegraded, "connected; streams and buckets not checked: " + err.Error()
-			}
+		st, err := c.topo.Fresh(ctx, topologyStale)
+		if err != nil && !st.Checked {
+			return obs.StateDegraded, "connected; streams and buckets not checked: " + err.Error()
 		}
 		if len(st.Drift) > 0 {
 			return obs.StateDegraded, "connected; streams and buckets differ from this build: " + strings.Join(st.Drift, "; ")

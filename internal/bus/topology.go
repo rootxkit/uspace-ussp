@@ -279,29 +279,49 @@ type Maintainer struct {
 	// Interval is the period of Run (default 30 s).
 	Interval time.Duration
 
-	run   sync.Mutex // one check at a time; never held by readers
+	once  sync.Once
+	sem   chan struct{} // one check at a time; never held by readers
 	mu    sync.Mutex
 	state TopologyState
 }
 
+// acquire takes the one-check-at-a-time slot, or fails when ctx ends
+// first: nobody waits on a check longer than its own deadline.
+func (m *Maintainer) acquire(ctx context.Context) error {
+	m.once.Do(func() { m.sem = make(chan struct{}, 1) })
+	select {
+	case m.sem <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (m *Maintainer) release() { <-m.sem }
+
 // Check runs Ensure and Verify once and records the result.
 func (m *Maintainer) Check(ctx context.Context) (TopologyState, error) {
-	m.run.Lock()
-	defer m.run.Unlock()
+	if err := m.acquire(ctx); err != nil {
+		return m.State(), err
+	}
+	defer m.release()
 	return m.check(ctx)
 }
 
-// ErrCheckRunning is TryCheck's answer while another check runs.
-var ErrCheckRunning = errors.New("a check of the streams and buckets is running")
-
-// TryCheck is Check unless another check is running, when it returns
-// the last state and ErrCheckRunning at once (a readiness probe never
-// waits on the background check).
-func (m *Maintainer) TryCheck(ctx context.Context) (TopologyState, error) {
-	if !m.run.TryLock() {
-		return m.State(), ErrCheckRunning
+// Fresh returns a check no older than maxAge: the last one when it is,
+// otherwise a new one, waiting for a check already running rather than
+// repeating it (within ctx).
+func (m *Maintainer) Fresh(ctx context.Context, maxAge time.Duration) (TopologyState, error) {
+	if st := m.State(); st.Checked && time.Since(st.At) <= maxAge {
+		return st, nil
 	}
-	defer m.run.Unlock()
+	if err := m.acquire(ctx); err != nil {
+		return m.State(), err
+	}
+	defer m.release()
+	if st := m.State(); st.Checked && time.Since(st.At) <= maxAge {
+		return st, nil
+	}
 	return m.check(ctx)
 }
 
