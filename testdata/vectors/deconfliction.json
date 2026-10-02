@@ -1,0 +1,4186 @@
+{
+ "description": "Strategic deconfliction of two operational intents (pair cases) and the authorisation decision of one intent against the CIS, the registry and the intents already authorised (decision cases). Pair: each intent is a priority, the instant its volumes were filed, the geoid undulation at its volumes and F3548 Volume4D volumes with W84 altitudes; the judgement converts the bands to AMSL (D-01) and decides conflict and precedence. The harness checks every pair both ways (A against B and B against A) and requires the same pair decision. Decision: the fixture request with the case's overrides, decided against the case's CIS features, registry answers, terrain, DSS and existing intents.",
+ "source": [
+  "Reg. (EU) 2021/664 Art. 1(3), 6, 10(2)(b), (7), (8), (9), (10), (11)",
+  "ASTM F3548-21 Volume4D, Priority, IntersectionMinimumPrecisionCm",
+  "docs/WORKPACKAGES/WP-7.md",
+  "utm TASKS.md U-05 done-when (either order, same result; refusal names the item)"
+ ],
+ "units": {
+  "lat/lng": "WGS84 degrees",
+  "altitude": "metres above the WGS84 ellipsoid (W84) as F3548 gives them",
+  "undulation_m": "geoid undulation N, AMSL = HAE - N",
+  "buffer_m, vertical_buffer_m": "metres",
+  "ground_m": "metres AMSL"
+ },
+ "tolerance": {
+  "horizontal": "1 cm plus 1e-4 of the separation, towards conflict",
+  "vertical": "exact",
+  "time": "exact (closed intervals)"
+ },
+ "owners": [
+  "ussp"
+ ],
+ "generated": "2026-10-02",
+ "utm_commit": "none (new in uspace-ussp WP-7)",
+ "cases": [
+  {
+   "name": "same-volume-first-come-a",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a1",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b1",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "Two identical volumes at equal priority: the one filed first keeps the space (Art. 10(9))."
+  },
+  {
+   "name": "same-volume-first-come-b",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a2",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b2",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "b",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "The same pair filed the other way round: the first filed wins again, so filing A then B or B then A gives the same pair decision."
+  },
+  {
+   "name": "same-instant-smaller-id-wins",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a3",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b3",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "Filed at the same instant: the smaller id wins, so the pair decision never depends on the order of the check."
+  },
+  {
+   "name": "special-operation-wins-filed-later",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a4",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b4",
+     "priority": 100,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "b",
+    "rule": "priority",
+    "error": null
+   },
+   "why": "A special operation (SERA Art. 4) has the higher priority and wins over a normal flight filed before it (Art. 10(8))."
+  },
+  {
+   "name": "special-operation-wins-filed-earlier",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a5",
+     "priority": 100,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b5",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "priority",
+    "error": null
+   },
+   "why": "Priority decides before time: the special operation wins whichever was filed first."
+  },
+  {
+   "name": "equal-special-priority-first-come",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a6",
+     "priority": 100,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b6",
+     "priority": 100,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "b",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "Two special operations: equal priority falls back to first come, first served."
+  },
+  {
+   "name": "disjoint-in-space",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a7",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b7",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.73,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.73,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.74,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.74,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": false,
+    "winner": null,
+    "rule": null,
+    "error": null
+   },
+   "why": "Two squares about 2.2 km apart do not conflict."
+  },
+  {
+   "name": "disjoint-in-time",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a8",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b8",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:30:01Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T11:00:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": false,
+    "winner": null,
+    "rule": null,
+    "error": null
+   },
+   "why": "The same airspace one second after the first window ends: no common instant."
+  },
+  {
+   "name": "touching-in-time",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a9",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b9",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T11:00:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "Windows are closed intervals: one ending at 10:30 and one starting at 10:30 share that instant and conflict."
+  },
+  {
+   "name": "disjoint-in-altitude",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a10",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b10",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 150.5,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 200,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": false,
+    "winner": null,
+    "rule": null,
+    "error": null
+   },
+   "why": "Bands 0.5 m apart do not conflict without a vertical buffer."
+  },
+  {
+   "name": "touching-bands",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a11",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b11",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 200,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "A band ending at 150 m and one starting at 150 m touch and conflict (closed bands)."
+  },
+  {
+   "name": "vertical-buffer-on",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 10
+    },
+    "a": {
+     "id": "a12",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b12",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 155,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 200,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "Bands 5 m apart conflict under a 10 m vertical buffer."
+  },
+  {
+   "name": "vertical-buffer-off",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a13",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b13",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 155,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 200,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": false,
+    "winner": null,
+    "rule": null,
+    "error": null
+   },
+   "why": "The same bands do not conflict without the buffer."
+  },
+  {
+   "name": "altitude-in-amsl-not-hae",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a14",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b14",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 30,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 155,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 200,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "Separation is judged in AMSL (D-01): 100-150 m HAE with N 20 is 80-130 m AMSL and 155-200 m HAE with N 30 is 125-170 m AMSL, which overlap although the HAE bands do not."
+  },
+  {
+   "name": "polygons-share-an-edge",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a15",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b15",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.82
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.82
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "Squares sharing an edge touch: outlines are closed sets."
+  },
+  {
+   "name": "gap-50m-no-buffer",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a16",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b16",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8106
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.82
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.82
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8106
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": false,
+    "winner": null,
+    "rule": null,
+    "error": null
+   },
+   "why": "About 50 m of clear air between the outlines and no buffer: no conflict."
+  },
+  {
+   "name": "gap-50m-buffer-100m",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 100,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a17",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b17",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8106
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.82
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.82
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8106
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "The same pair under a 100 m horizontal buffer conflicts."
+  },
+  {
+   "name": "gap-50m-buffer-40m",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 40,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a18",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b18",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8106
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.82
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.82
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8106
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": false,
+    "winner": null,
+    "rule": null,
+    "error": null
+   },
+   "why": "A 40 m buffer is less than the gap: no conflict."
+  },
+  {
+   "name": "polygon-inside-polygon",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a19",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b19",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.703,
+           "lng": 44.803
+          },
+          {
+           "lat": 41.703,
+           "lng": 44.804
+          },
+          {
+           "lat": 41.704,
+           "lng": 44.804
+          },
+          {
+           "lat": 41.704,
+           "lng": 44.803
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "A small square wholly inside a larger one: no edges cross, containment decides."
+  },
+  {
+   "name": "crossing-bars-no-vertex-inside",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a20",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.79
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.83
+          },
+          {
+           "lat": 41.701,
+           "lng": 44.83
+          },
+          {
+           "lat": 41.701,
+           "lng": 44.79
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b20",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.69,
+           "lng": 44.805
+          },
+          {
+           "lat": 41.69,
+           "lng": 44.806
+          },
+          {
+           "lat": 41.72,
+           "lng": 44.806
+          },
+          {
+           "lat": 41.72,
+           "lng": 44.805
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "Two thin bars crossing like a plus sign: no vertex of either is inside the other; the crossing edges decide."
+  },
+  {
+   "name": "concave-notch-clear",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a21",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.83
+          },
+          {
+           "lat": 41.73,
+           "lng": 44.83
+          },
+          {
+           "lat": 41.73,
+           "lng": 44.82
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.82
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.73,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.73,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b21",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.715,
+           "lng": 44.8125
+          },
+          {
+           "lat": 41.715,
+           "lng": 44.8175
+          },
+          {
+           "lat": 41.725,
+           "lng": 44.8175
+          },
+          {
+           "lat": 41.725,
+           "lng": 44.8125
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": false,
+    "winner": null,
+    "rule": null,
+    "error": null
+   },
+   "why": "A square in the notch of a U-shaped polygon, clear of every edge, does not conflict although it is inside the bounding box of the U."
+  },
+  {
+   "name": "circle-inside-polygon",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a22",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b22",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_circle": {
+         "center": {
+          "lat": 41.705,
+          "lng": 44.805
+         },
+         "radius": {
+          "value": 100,
+          "units": "M"
+         }
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "A circle whose centre is inside the polygon conflicts."
+  },
+  {
+   "name": "circle-near-polygon-clear",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a23",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b23",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_circle": {
+         "center": {
+          "lat": 41.705,
+          "lng": 44.813
+         },
+         "radius": {
+          "value": 150,
+          "units": "M"
+         }
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": false,
+    "winner": null,
+    "rule": null,
+    "error": null
+   },
+   "why": "A circle whose centre is about 250 m east of the polygon with a 150 m radius stays clear."
+  },
+  {
+   "name": "circle-reaching-polygon",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a24",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b24",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_circle": {
+         "center": {
+          "lat": 41.705,
+          "lng": 44.813
+         },
+         "radius": {
+          "value": 300,
+          "units": "M"
+         }
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "The same centre with a 300 m radius reaches the polygon: polygon against circle by geodesic distance (Z-11)."
+  },
+  {
+   "name": "circles-overlap",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a25",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_circle": {
+         "center": {
+          "lat": 41.7,
+          "lng": 44.8
+         },
+         "radius": {
+          "value": 300,
+          "units": "M"
+         }
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b25",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_circle": {
+         "center": {
+          "lat": 41.7,
+          "lng": 44.806
+         },
+         "radius": {
+          "value": 300,
+          "units": "M"
+         }
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "Two 300 m circles about 500 m apart overlap."
+  },
+  {
+   "name": "circles-apart",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a26",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_circle": {
+         "center": {
+          "lat": 41.7,
+          "lng": 44.8
+         },
+         "radius": {
+          "value": 200,
+          "units": "M"
+         }
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b26",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_circle": {
+         "center": {
+          "lat": 41.7,
+          "lng": 44.806
+         },
+         "radius": {
+          "value": 200,
+          "units": "M"
+         }
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": false,
+    "winner": null,
+    "rule": null,
+    "error": null
+   },
+   "why": "Two 200 m circles about 500 m apart are about 100 m clear."
+  },
+  {
+   "name": "circles-apart-within-buffer",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 150,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a27",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_circle": {
+         "center": {
+          "lat": 41.7,
+          "lng": 44.8
+         },
+         "radius": {
+          "value": 200,
+          "units": "M"
+         }
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b27",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_circle": {
+         "center": {
+          "lat": 41.7,
+          "lng": 44.806
+         },
+         "radius": {
+          "value": 200,
+          "units": "M"
+         }
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "The same circles under a 150 m buffer conflict."
+  },
+  {
+   "name": "antimeridian-overlap",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a28",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 0.0,
+           "lng": 179.995
+          },
+          {
+           "lat": 0.0,
+           "lng": -179.995
+          },
+          {
+           "lat": 0.01,
+           "lng": -179.995
+          },
+          {
+           "lat": 0.01,
+           "lng": 179.995
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b28",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 0.004,
+           "lng": 179.999
+          },
+          {
+           "lat": 0.004,
+           "lng": -179.999
+          },
+          {
+           "lat": 0.006,
+           "lng": -179.999
+          },
+          {
+           "lat": 0.006,
+           "lng": 179.999
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "A polygon straddling the antimeridian and one inside it conflict: longitudes are unwrapped, the antimeridian is no edge."
+  },
+  {
+   "name": "antimeridian-apart",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a29",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 0.0,
+           "lng": 179.98
+          },
+          {
+           "lat": 0.0,
+           "lng": 179.99
+          },
+          {
+           "lat": 0.01,
+           "lng": 179.99
+          },
+          {
+           "lat": 0.01,
+           "lng": 179.98
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b29",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 0.0,
+           "lng": -179.99
+          },
+          {
+           "lat": 0.0,
+           "lng": -179.98
+          },
+          {
+           "lat": 0.01,
+           "lng": -179.98
+          },
+          {
+           "lat": 0.01,
+           "lng": -179.99
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": false,
+    "winner": null,
+    "rule": null,
+    "error": null
+   },
+   "why": "Squares either side of the antimeridian about 2.2 km apart do not conflict (not 40 000 km apart, and not overlapping)."
+  },
+  {
+   "name": "antimeridian-apart-within-buffer",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 3000,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a30",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 0.0,
+           "lng": 179.98
+          },
+          {
+           "lat": 0.0,
+           "lng": 179.99
+          },
+          {
+           "lat": 0.01,
+           "lng": 179.99
+          },
+          {
+           "lat": 0.01,
+           "lng": 179.98
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b30",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 0.0,
+           "lng": -179.99
+          },
+          {
+           "lat": 0.0,
+           "lng": -179.98
+          },
+          {
+           "lat": 0.01,
+           "lng": -179.98
+          },
+          {
+           "lat": 0.01,
+           "lng": -179.99
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "The same squares under a 3 km buffer conflict across the antimeridian."
+  },
+  {
+   "name": "antimeridian-circle-polygon",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a31",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_circle": {
+         "center": {
+          "lat": 0.005,
+          "lng": -179.9995
+         },
+         "radius": {
+          "value": 150,
+          "units": "M"
+         }
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b31",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 0.0,
+           "lng": 179.99
+          },
+          {
+           "lat": 0.0,
+           "lng": 179.9995
+          },
+          {
+           "lat": 0.01,
+           "lng": 179.9995
+          },
+          {
+           "lat": 0.01,
+           "lng": 179.99
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "A 150 m circle centred 0.0005 degrees east of the antimeridian reaches a polygon ending 0.0005 degrees west of it, about 111 m away across the antimeridian."
+  },
+  {
+   "name": "second-volume-conflicts",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a32",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.73,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.73,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.74,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.74,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      },
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:10:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:20:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b32",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": true,
+    "winner": "a",
+    "rule": "first_come_first_served",
+    "error": null
+   },
+   "why": "Only the second volume of the first intent meets the other: every pair of volumes is judged."
+  },
+  {
+   "name": "negative-horizontal-buffer-refuses",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": -1,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a33",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b33",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.73,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.73,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.74,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.74,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": null,
+    "winner": null,
+    "rule": null,
+    "error": "deconflict_buffer_m"
+   },
+   "why": "A negative buffer refuses the check (E-15) even for intents far apart: an invalid threshold never disarms it."
+  },
+  {
+   "name": "negative-vertical-buffer-refuses",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": -5
+    },
+    "a": {
+     "id": "a34",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b34",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": null,
+    "winner": null,
+    "rule": null,
+    "error": "deconflict_vertical_buffer_m"
+   },
+   "why": "A negative vertical buffer refuses the check rather than shrinking the bands."
+  },
+  {
+   "name": "far-apart-prefilter",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "pair",
+    "policy": {
+     "buffer_m": 0,
+     "vertical_buffer_m": 0
+    },
+    "a": {
+     "id": "a35",
+     "priority": 0,
+     "filed_at": "2026-11-01T08:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "b": {
+     "id": "b35",
+     "priority": 0,
+     "filed_at": "2026-11-01T09:00:00Z",
+     "undulation_m": 20.0,
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 52.0,
+           "lng": 13.0
+          },
+          {
+           "lat": 52.0,
+           "lng": 13.01
+          },
+          {
+           "lat": 52.01,
+           "lng": 13.01
+          },
+          {
+           "lat": 52.01,
+           "lng": 13.0
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 100,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 150,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    }
+   },
+   "expected": {
+    "conflict": false,
+    "winner": null,
+    "rule": null,
+    "error": null
+   },
+   "why": "Intents in different countries are cleared by the box prefilter."
+  }
+ ]
+}
