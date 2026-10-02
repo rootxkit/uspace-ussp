@@ -28,6 +28,7 @@ import (
 
 	"github.com/rootxkit/uspace-ussp/internal/accounts"
 	"github.com/rootxkit/uspace-ussp/internal/auth"
+	"github.com/rootxkit/uspace-ussp/internal/dss/fakedss"
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/national"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
@@ -106,8 +107,8 @@ func newFakeAuthority(t *testing.T) *fakeAuthority {
 
 // withAuth adds this USSP's issuer key, its audiences, the fake
 // authority as the allow-listed issuer and token service, a fake CISP
-// (withCIS) and a fake F8 registry (withRegistry) to a process's
-// variables.
+// (withCIS), a fake F8 registry (withRegistry) and a fake DSS (withDSS)
+// to a process's variables.
 func withAuth(t *testing.T, vars map[string]string, a *fakeAuthority) map[string]string {
 	t.Helper()
 	_, _, p := testKeys(t)
@@ -121,7 +122,18 @@ func withAuth(t *testing.T, vars map[string]string, a *fakeAuthority) map[string
 	withCIS(t, vars)
 	withRegistry(t, vars)
 	withGeoid(t, vars)
+	withDSS(t, vars)
 	return vars
+}
+
+// withDSS points USSP_DSS_BASE_URL at a fake DSS (internal/dss/fakedss)
+// and returns it.
+func withDSS(t *testing.T, vars map[string]string) *fakedss.DSS {
+	t.Helper()
+	d := fakedss.New()
+	t.Cleanup(d.Close)
+	vars["USSP_DSS_BASE_URL"] = d.URL()
+	return d
 }
 
 type clock struct{ ns atomic.Int64 }

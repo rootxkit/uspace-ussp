@@ -161,6 +161,38 @@ func TestTelemetryDefaultsAndFlightEndAfterTelemetryLost(t *testing.T) {
 	}
 }
 
+// The Service Provider bounds (WP-9): a recent-positions bound outside 1
+// to its maximum, and a session ISA without a positive radius or
+// horizon, are refused; the bounds themselves are accepted (E-01 pair).
+func TestRIDServiceProviderBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		set   func(*Values)
+		field string
+	}{
+		{"no samples", func(v *Values) { v.RIDRecentPositionsMaxCount = 0 }, "rid_recent_positions_max_count"},
+		{"too many samples", func(v *Values) { v.RIDRecentPositionsMaxCount = MaxRIDRecentPositionsMaxCount + 1 }, "rid_recent_positions_max_count"},
+		{"no radius", func(v *Values) { v.SessionISARadiusM = 0 }, "session_isa_radius_m"},
+		{"no horizon", func(v *Values) { v.SessionISAHorizonS = math.Inf(1) }, "session_isa_horizon_s"},
+	} {
+		v := Defaults()
+		tc.set(&v)
+		if err := v.Validate(); err == nil || !strings.Contains(err.Error(), tc.field) {
+			t.Errorf("%s: accepted or not named: %v", tc.name, err)
+		}
+	}
+	v := Defaults()
+	if v.RIDRecentPositionsMaxCount != 120 || v.SessionISARadiusM != 2000 || v.SessionISAHorizonS != 3600 {
+		t.Errorf("Service Provider defaults %d %v %v", v.RIDRecentPositionsMaxCount, v.SessionISARadiusM, v.SessionISAHorizonS)
+	}
+	for _, n := range []int{1, MaxRIDRecentPositionsMaxCount} {
+		v.RIDRecentPositionsMaxCount = n
+		if err := v.Validate(); err != nil {
+			t.Errorf("bound %d refused: %v", n, err)
+		}
+	}
+}
+
 // E-01 pair, B-09: a failing projection refuses the write with the
 // 503-shaped error and leaves nothing; a succeeding one leaves one row
 // that Current and Load return.

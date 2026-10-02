@@ -49,6 +49,16 @@ func closedAddr(t *testing.T) string {
 // a client of its national API.
 func run(t *testing.T, spec proc.Spec, vars map[string]string) *client.ClientWithResponses {
 	t.Helper()
+	c, err := client.NewClientWithResponses("http://" + runAt(t, spec, vars))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// runAt is run returning the process's listen address.
+func runAt(t *testing.T, spec proc.Spec, vars map[string]string) string {
+	t.Helper()
 	vars["USSP_STATUS_INTERVAL_S"] = "3600"
 	cfg, err := config.LoadFrom(func(n string) (string, bool) { v, ok := vars[n]; return v, ok })
 	if err != nil {
@@ -75,17 +85,13 @@ func run(t *testing.T, spec proc.Spec, vars map[string]string) *client.ClientWit
 	})
 	select {
 	case a := <-addr:
-		c, err := client.NewClientWithResponses("http://" + a)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return c
+		return a
 	case err := <-done:
 		t.Fatalf("Run returned before listening: %v", err)
 	case <-time.After(15 * time.Second):
 		t.Fatal("no listener within 15 s")
 	}
-	return nil
+	return ""
 }
 
 // logBuffer collects the process log; it is printed when the test
@@ -156,8 +162,8 @@ func wantStates(t *testing.T, body *client.Readiness, want map[string]client.Dep
 }
 
 // With every dependency running, api reports postgres, timescaledb,
-// nats, its issuer key and the ecosystem JWKS up and is ready (the
-// success path, E-02).
+// nats, its issuer key, the ecosystem JWKS and the DSS up and is ready
+// (the success path, E-02).
 func TestIntegrationAPIReadyWithEveryDependencyUp(t *testing.T) {
 	ensureSchemas(t)
 	c := run(t, api.Spec, withAuth(t, map[string]string{
@@ -174,14 +180,14 @@ func TestIntegrationAPIReadyWithEveryDependencyUp(t *testing.T) {
 		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateUp,
 		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
 		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
-		"registry": client.DependencyStateUp, "geoid": client.DependencyStateUp,
+		"registry": client.DependencyStateUp, "geoid": client.DependencyStateUp, "dss": client.DependencyStateUp,
 	})
 }
 
-// Without an issuer key, an audience, a CISP, an authority and a geoid,
-// api still starts (B-08) and says what it cannot do: issuer, jwks,
-// registry and geoid down with their reasons, cis unknown, ready but
-// degraded.
+// Without an issuer key, an audience, a CISP, an authority, a geoid and
+// a DSS, api still starts (B-08) and says what it cannot do: issuer,
+// jwks, registry, geoid and dss down with their reasons, cis unknown,
+// ready but degraded.
 func TestIntegrationAPIDegradedWithoutAuthConfiguration(t *testing.T) {
 	ensureSchemas(t)
 	c := run(t, api.Spec, map[string]string{
@@ -191,16 +197,19 @@ func TestIntegrationAPIDegradedWithoutAuthConfiguration(t *testing.T) {
 		"USSP_NATS_URL": mustEnv(t, "USSP_TEST_NATS_URL"),
 	})
 	code, body := readyz(t, c, client.ReadinessStatusDegraded)
-	if code != 200 || strings.Join(body.Degraded, ",") != "cis,geoid,issuer,jwks,registry" {
+	if code != 200 || strings.Join(body.Degraded, ",") != "cis,dss,geoid,issuer,jwks,registry" {
 		t.Fatalf("readyz %d %+v", code, body)
 	}
 	wantStates(t, body, map[string]client.DependencyState{
 		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateUp,
 		"issuer": client.DependencyStateDown, "jwks": client.DependencyStateDown, "cis": client.DependencyStateUnknown,
-		"registry": client.DependencyStateDown, "geoid": client.DependencyStateDown,
+		"registry": client.DependencyStateDown, "geoid": client.DependencyStateDown, "dss": client.DependencyStateDown,
 	})
 	if d := body.Dependencies["geoid"].Detail; d == nil || !strings.Contains(*d, "USSP_GEOID_FILE is not set") {
 		t.Fatalf("geoid detail %v", d)
+	}
+	if d := body.Dependencies["dss"].Detail; d == nil || !strings.Contains(*d, "USSP_DSS_BASE_URL is not set") {
+		t.Fatalf("dss detail %v", d)
 	}
 }
 
@@ -233,7 +242,7 @@ func TestIntegrationAPINotReadyWithoutNATS(t *testing.T) {
 		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateDown,
 		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
 		"cis": client.DependencyStateDegraded, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
-		"registry": client.DependencyStateUp, "geoid": client.DependencyStateUp,
+		"registry": client.DependencyStateUp, "geoid": client.DependencyStateUp, "dss": client.DependencyStateUp,
 	})
 	if d := body.Dependencies["cis"].Detail; d == nil || !strings.Contains(*d, "projection: ") || !strings.Contains(*d, "cis_current") {
 		t.Fatalf("cis detail %v", d)
@@ -348,7 +357,7 @@ func TestIntegrationAPIFollowsNATSAwayAndBack(t *testing.T) {
 		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateDown,
 		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
 		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
-		"registry": client.DependencyStateUp, "geoid": client.DependencyStateUp,
+		"registry": client.DependencyStateUp, "geoid": client.DependencyStateUp, "dss": client.DependencyStateUp,
 	})
 	if d := body.Dependencies["nats"]; d.AgeS == nil || *d.AgeS <= 0 {
 		t.Errorf("nats down without the age of its last good state: %+v", d)

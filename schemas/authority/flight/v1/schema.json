@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/authority/flight/v1.json",
+  "title": "authority/flight/v1",
+  "description": "One frame of the optional national push WS /v1/authority/flights (spec 02 F7, docs/PLAN.md D12): the common envelope with one airborne flight as body, in the ASTM F3411-22a RIDFlight shape (uas_standards f3411 v22a, the file pinned in api/standards/), once a second per flight. The body is checked by uspace-core's f3411.UnmarshalRIDFlight before it is sent; this schema names the members a consumer dispatches on. Special values (speed 255, track 361, vertical speed 63, altitudes and height -1000) mean unknown. No operator location: that is flight details, served to authorised Display Providers on GET /uss/flights/{id}/details only. backlog is true for a frame buffered while no client was connected.",
+  "allOf": [
+    {
+      "$ref": "https://schemas.uspace.ge/envelope/v1.json"
+    }
+  ],
+  "properties": {
+    "schema": {
+      "const": "authority/flight/v1"
+    },
+    "body": {
+      "$ref": "#/$defs/body"
+    }
+  },
+  "$defs": {
+    "body": {
+      "type": "object",
+      "required": [
+        "id",
+        "aircraft_type",
+        "current_state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "aircraft_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "current_state": {
+          "type": "object",
+          "required": [
+            "timestamp",
+            "timestamp_accuracy",
+            "position",
+            "speed_accuracy"
+          ]
+        },
+        "recent_positions": {
+          "type": "array"
+        },
+        "simulated": {
+          "type": "boolean"
+        },
+        "operator_location": false
+      }
+    }
+  }
+}

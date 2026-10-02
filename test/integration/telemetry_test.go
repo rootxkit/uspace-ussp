@@ -14,6 +14,7 @@ import (
 	"time"
 
 	coreauth "github.com/rootxkit/uspace-core/auth"
+	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/serial"
 
 	"github.com/rootxkit/uspace-ussp/internal/app/telemetryingest"
@@ -448,12 +449,12 @@ func TestIntegrationFlightFactsRecorded(t *testing.T) {
 	var events []*flights.Event
 	b := &flights.Binder{Emit: func(e *flights.Event) { events = append(events, e) }}
 	sn := "TEST-WP8-FLIGHT-" + unique()
-	id := b.Bind("c|"+sn, "wp8-unknown-client", sn, nil, nil, nil, time.Now(), true)
+	id := b.Bind("c|"+sn, "wp8-unknown-client", sn, nil, nil, nil, core.LatLon{LatDeg: 41.7, LonDeg: 44.8}, time.Now(), true)
 	// The intent projection catches up: the same flight, bound to it.
 	// (no operational_intents row: the row keeps intent_id null and
 	// takes the authorisation and the operator)
 	auth, reg, unknownIntent := "GE-WP8-TEST", "GEO-WP8-TEST", "8c1f3f2e-7d0e-4a8b-9a51-0e4b7d6f2c99"
-	if b.Bind("c|"+sn, "wp8-unknown-client", sn, &unknownIntent, &auth, &reg, time.Now(), true) != id {
+	if b.Bind("c|"+sn, "wp8-unknown-client", sn, &unknownIntent, &auth, &reg, core.LatLon{LatDeg: 41.7, LonDeg: 44.8}, time.Now(), true) != id {
 		t.Fatal("the flight was not bound to the intent")
 	}
 	b.End("c|"+sn, flights.EndOperator, time.Now().Add(time.Second))

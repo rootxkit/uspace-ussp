@@ -1576,6 +1576,28 @@ type ClientInterface interface {
 	// Corresponds with DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial} (the `UnbindSerial` operationId).
 	UnbindSerial(ctx context.Context, operatorId OperatorID, clientId ClientID, serial string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// OpenAuthorityFlights Stream every airborne flight to the authority (WebSocket, optional)
+	//
+	// The optional national extension of spec 02 F7 (docs/PLAN.md D12),
+	// served by rid-sp only when USSP_AUTHORITY_PUSH=on; otherwise the
+	// path is not served (404). It never replaces the F3411 Display
+	// Provider path (GET /uss/flights), which works with it off.
+	//
+	// A WebSocket upgrade with an ecosystem bearer token granting
+	// rid.display_provider (aud this host). Server to client only, the
+	// console frame (M29): console/status/v1 on connect and every 2 s,
+	// and one authority/flight/v1 frame (schemas/authority/flight/v1:
+	// the common envelope with an ASTM F3411-22a RIDFlight as body,
+	// operator_location never included) per airborne flight per second.
+	// While no client is connected the frames are buffered for ten
+	// minutes and sent on the next connection with backlog true; what
+	// the buffer sheds is a gap: counted, logged and shown as
+	// dropped_frames and the degraded slug authority_push_gap on the
+	// next status frame. Client messages are ignored.
+	//
+	// Corresponds with GET /v1/authority/flights (the `OpenAuthorityFlights` operationId).
+	OpenAuthorityFlights(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ReceiveCISNotificationWithBody Receive a CIS change notification (F3 push)
 	//
 	// The receiver of every subscriber in the ecosystem (M1): the CISP
@@ -2206,6 +2228,38 @@ func (c *Client) BindSerial(ctx context.Context, operatorId OperatorID, clientId
 // Corresponds with DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial} (the `UnbindSerial` operationId).
 func (c *Client) UnbindSerial(ctx context.Context, operatorId OperatorID, clientId ClientID, serial string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUnbindSerialRequest(c.Server, operatorId, clientId, serial)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// OpenAuthorityFlights Stream every airborne flight to the authority (WebSocket, optional)
+//
+// The optional national extension of spec 02 F7 (docs/PLAN.md D12),
+// served by rid-sp only when USSP_AUTHORITY_PUSH=on; otherwise the
+// path is not served (404). It never replaces the F3411 Display
+// Provider path (GET /uss/flights), which works with it off.
+//
+// A WebSocket upgrade with an ecosystem bearer token granting
+// rid.display_provider (aud this host). Server to client only, the
+// console frame (M29): console/status/v1 on connect and every 2 s,
+// and one authority/flight/v1 frame (schemas/authority/flight/v1:
+// the common envelope with an ASTM F3411-22a RIDFlight as body,
+// operator_location never included) per airborne flight per second.
+// While no client is connected the frames are buffered for ten
+// minutes and sent on the next connection with backlog true; what
+// the buffer sheds is a gap: counted, logged and shown as
+// dropped_frames and the degraded slug authority_push_gap on the
+// next status frame. Client messages are ignored.
+//
+// Corresponds with GET /v1/authority/flights (the `OpenAuthorityFlights` operationId).
+func (c *Client) OpenAuthorityFlights(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOpenAuthorityFlightsRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -3031,6 +3085,33 @@ func NewUnbindSerialRequest(server string, operatorId OperatorID, clientId Clien
 	return req, nil
 }
 
+// NewOpenAuthorityFlightsRequest constructs an http.Request for the OpenAuthorityFlights method
+func NewOpenAuthorityFlightsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/authority/flights")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewReceiveCISNotificationRequestWithBody constructs an http.Request for the ReceiveCISNotification method, with any body, and a specified content type
 func NewReceiveCISNotificationRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
@@ -3743,6 +3824,30 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial} (the `UnbindSerial` operationId).
 	UnbindSerialWithResponse(ctx context.Context, operatorId OperatorID, clientId ClientID, serial string, reqEditors ...RequestEditorFn) (*UnbindSerialResponse, error)
+
+	// OpenAuthorityFlightsWithResponse Stream every airborne flight to the authority (WebSocket, optional)
+	//
+	// The optional national extension of spec 02 F7 (docs/PLAN.md D12),
+	// served by rid-sp only when USSP_AUTHORITY_PUSH=on; otherwise the
+	// path is not served (404). It never replaces the F3411 Display
+	// Provider path (GET /uss/flights), which works with it off.
+	//
+	// A WebSocket upgrade with an ecosystem bearer token granting
+	// rid.display_provider (aud this host). Server to client only, the
+	// console frame (M29): console/status/v1 on connect and every 2 s,
+	// and one authority/flight/v1 frame (schemas/authority/flight/v1:
+	// the common envelope with an ASTM F3411-22a RIDFlight as body,
+	// operator_location never included) per airborne flight per second.
+	// While no client is connected the frames are buffered for ten
+	// minutes and sent on the next connection with backlog true; what
+	// the buffer sheds is a gap: counted, logged and shown as
+	// dropped_frames and the degraded slug authority_push_gap on the
+	// next status frame. Client messages are ignored.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/authority/flights (the `OpenAuthorityFlights` operationId).
+	OpenAuthorityFlightsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OpenAuthorityFlightsResponse, error)
 
 	// ReceiveCISNotificationWithBodyWithResponse Receive a CIS change notification (F3 push)
 	//
@@ -4912,6 +5017,54 @@ func (r UnbindSerialResponse) ContentType() string {
 	return ""
 }
 
+type OpenAuthorityFlightsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r OpenAuthorityFlightsResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r OpenAuthorityFlightsResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r OpenAuthorityFlightsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r OpenAuthorityFlightsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r OpenAuthorityFlightsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r OpenAuthorityFlightsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ReceiveCISNotificationResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -5956,6 +6109,36 @@ func (c *ClientWithResponses) UnbindSerialWithResponse(ctx context.Context, oper
 		return nil, err
 	}
 	return ParseUnbindSerialResponse(rsp)
+}
+
+// OpenAuthorityFlightsWithResponse Stream every airborne flight to the authority (WebSocket, optional)
+//
+// The optional national extension of spec 02 F7 (docs/PLAN.md D12),
+// served by rid-sp only when USSP_AUTHORITY_PUSH=on; otherwise the
+// path is not served (404). It never replaces the F3411 Display
+// Provider path (GET /uss/flights), which works with it off.
+//
+// A WebSocket upgrade with an ecosystem bearer token granting
+// rid.display_provider (aud this host). Server to client only, the
+// console frame (M29): console/status/v1 on connect and every 2 s,
+// and one authority/flight/v1 frame (schemas/authority/flight/v1:
+// the common envelope with an ASTM F3411-22a RIDFlight as body,
+// operator_location never included) per airborne flight per second.
+// While no client is connected the frames are buffered for ten
+// minutes and sent on the next connection with backlog true; what
+// the buffer sheds is a gap: counted, logged and shown as
+// dropped_frames and the degraded slug authority_push_gap on the
+// next status frame. Client messages are ignored.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/authority/flights (the `OpenAuthorityFlights` operationId).
+func (c *ClientWithResponses) OpenAuthorityFlightsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OpenAuthorityFlightsResponse, error) {
+	rsp, err := c.OpenAuthorityFlights(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOpenAuthorityFlightsResponse(rsp)
 }
 
 // ReceiveCISNotificationWithBodyWithResponse Receive a CIS change notification (F3 push)
@@ -7010,6 +7193,42 @@ func ParseUnbindSerialResponse(rsp *http.Response) (*UnbindSerialResponse, error
 			return nil, err
 		}
 		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseOpenAuthorityFlightsResponse parses an HTTP response from a OpenAuthorityFlightsWithResponse call
+func ParseOpenAuthorityFlightsResponse(rsp *http.Response) (*OpenAuthorityFlightsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &OpenAuthorityFlightsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 101:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Problem

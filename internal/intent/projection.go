@@ -40,6 +40,12 @@ type StateBody struct {
 	PolicyVersion       int64            `json:"policy_version"`
 	ChangeReason        *string          `json:"change_reason"`
 	UpdatedAt           time.Time        `json:"updated_at"`
+	// Category, ClassLabel and UARegistration are the Annex IV
+	// declarations (items 4 and 10) the F3411 flight details carry
+	// (WP-9); ClassLabel and UARegistration are null when not declared.
+	Category       string  `json:"category,omitempty"`
+	ClassLabel     *string `json:"class_label"`
+	UARegistration *string `json:"ua_registration"`
 }
 
 // StateMessage is the message of intent.v1.<state>.<id>: the envelope
@@ -62,7 +68,16 @@ func StateOf(r *Record) StateBody {
 		Volumes: r.Request.Volumes, VolumesAMSL: r.VolumesAMSL, DeviationThresholds: r.Decision.DeviationThresholds,
 		CellSet: cells, TimeStart: r.TimeStart, TimeEnd: r.TimeEnd, InUSpaceAirspace: r.Decision.InUSpaceAirspace,
 		PolicyVersion: r.Decision.PolicyVersion, ChangeReason: r.Decision.ChangeReason, UpdatedAt: r.Decision.UpdatedAt,
+		Category: r.Request.Category, ClassLabel: optional(r.Request.ClassLabel), UARegistration: optional(r.Request.UARegistration),
 	}
+}
+
+// optional is nil for an empty string.
+func optional(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // KVWriter is the KV side of internal/bus.Projector.

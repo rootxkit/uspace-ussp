@@ -16,7 +16,8 @@ info:
     tags. Every later work package adds its paths under its tag. WP-4:
     the CIS change-notification receiver. WP-5: the cached registry
     validity lookup. WP-7: operational intents and flight authorisation.
-    WP-8: operator telemetry (served by telemetry-ingest).
+    WP-8: operator telemetry (served by telemetry-ingest). WP-9: the
+    optional authority flight push (served by rid-sp).
   license:
     name: Apache-2.0
 servers:
@@ -402,6 +403,37 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/authority/flights:
+    get:
+      operationId: openAuthorityFlights
+      tags: [authority]
+      summary: Stream every airborne flight to the authority (WebSocket, optional)
+      description: |
+        The optional national extension of spec 02 F7 (docs/PLAN.md D12),
+        served by rid-sp only when USSP_AUTHORITY_PUSH=on; otherwise the
+        path is not served (404). It never replaces the F3411 Display
+        Provider path (GET /uss/flights), which works with it off.
+
+        A WebSocket upgrade with an ecosystem bearer token granting
+        rid.display_provider (aud this host). Server to client only, the
+        console frame (M29): console/status/v1 on connect and every 2 s,
+        and one authority/flight/v1 frame (schemas/authority/flight/v1:
+        the common envelope with an ASTM F3411-22a RIDFlight as body,
+        operator_location never included) per airborne flight per second.
+        While no client is connected the frames are buffered for ten
+        minutes and sent on the next connection with backlog true; what
+        the buffer sheds is a gap: counted, logged and shown as
+        dropped_frames and the degraded slug authority_push_gap on the
+        next status frame. Client messages are ignored.
+      security:
+      - ecosystemToken: []
+      responses:
+        "101":
+          description: Switching protocols; the stream described above follows.
+        "404":
+          $ref: "#/components/responses/Problem"
         default:
           $ref: "#/components/responses/Problem"
   /v1/telemetry/batch:

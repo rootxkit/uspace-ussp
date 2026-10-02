@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/rootxkit/uspace-core/f3411"
 
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 )
@@ -31,7 +32,10 @@ const (
 )
 
 // Bucket names (docs/PLAN.md D6, §7); written by api only, except
-// telemetry_seen, telemetry-ingest's own replay window (SeenWindow).
+// telemetry_seen, telemetry-ingest's own replay window (SeenWindow), and
+// rid_isa_notifications, the F3411 ISA notifications rid-sp receives
+// from peer Service Providers for the Display Provider views (WP-9,
+// read by WP-14).
 const (
 	BucketCISCurrent       = "cis_current"
 	BucketPolicy           = "policy"
@@ -40,6 +44,7 @@ const (
 	BucketClientBindings   = "client_bindings"
 	BucketIntentActive     = "intent_active"
 	BucketTelemetrySeen    = "telemetry_seen"
+	BucketISANotifications = "rid_isa_notifications"
 )
 
 // Bounds (E-10). The server's max_payload is 1 MiB by default, so no
@@ -61,6 +66,11 @@ const (
 	SeenTTL = time.Hour
 	// SeenValueBytes bounds a telemetry_seen value (16 bytes are used).
 	SeenValueBytes = 64
+	// ISANotificationTTL is rid_isa_notifications' TTL: peer data is
+	// kept at most a day (F3411 NetDpMaxDataRetentionPeriodSeconds).
+	ISANotificationTTL = f3411.NetDpMaxDataRetentionPeriodSeconds * time.Second
+	// ISANotificationBytes bounds one stored ISA notification.
+	ISANotificationBytes = 64 << 10
 )
 
 // DuplicateWindow is every stream's dedupe window: a durable publish
@@ -116,6 +126,7 @@ func DefaultTopology() Topology {
 			bucket(BucketClientBindings, "client id -> bound serial fold keys", 64<<10, 0),
 			bucket(BucketIntentActive, "active intents: volumes AMSL, thresholds, flight, cells", 256<<10, 0),
 			bucket(BucketTelemetrySeen, "telemetry replay window: samples published, by client, serial, epoch and seq (telemetry-ingest)", SeenValueBytes, SeenTTL),
+			bucket(BucketISANotifications, "F3411 ISA notifications from peer Service Providers, by ISA id (rid-sp)", ISANotificationBytes, ISANotificationTTL),
 		},
 	}
 }

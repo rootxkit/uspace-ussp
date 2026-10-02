@@ -16,6 +16,7 @@ const (
 	OutboxOIRDelete  = "oir_delete"
 	OutboxISAPut     = "isa_put"
 	OutboxISADelete  = "isa_delete"
+	OutboxISANotify  = "isa_notify"
 	OutboxPeerNotify = "peer_notify"
 	OutboxUSSReport  = "uss_report"
 )

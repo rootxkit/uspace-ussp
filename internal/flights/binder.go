@@ -49,7 +49,21 @@ type Body struct {
 	AuthorisationNumber *string   `json:"authorisation_number"`
 	OperatorReg         *string   `json:"operator_reg"`
 	EndReason           *string   `json:"end_reason"`
+	// Position is the newest position of the flight when the fact was
+	// made (on started, its first): what a flight without an intent
+	// centres its F3411 Identification Service Area on (WP-9). Null
+	// when the producer did not know one.
+	Position *Point `json:"position,omitempty"`
 }
+
+// Point is a WGS84 position in decimal degrees.
+type Point struct {
+	Lat float64 `json:"lat"`
+	Lng float64 `json:"lng"`
+}
+
+// LatLon is p for uspace-core.
+func (p Point) LatLon() core.LatLon { return core.LatLon{LatDeg: p.Lat, LonDeg: p.Lng} }
 
 // Event is one flight/event/v1 message.
 type Event struct {
@@ -82,6 +96,9 @@ type flight struct {
 	intentID, authNo, opReg    *string
 	startedAt, lastLive, lastS time.Time
 	lost                       bool
+	// pos is the newest sample's position (hasPos when one was valid).
+	pos    core.LatLon
+	hasPos bool
 }
 
 // Binder holds the running flight of each aircraft (keyed by the
@@ -158,9 +175,10 @@ func clone(s *string) *string {
 }
 
 // Bind returns the flight the sample of the aircraft key belongs to (see
-// the package documentation); capturedAt is the sample's placement and
-// live false for a backlog sample, which never resumes a lost flight.
-func (b *Binder) Bind(key, clientID, uasSerial string, intentID, authorisationNumber, operatorReg *string, capturedAt time.Time, live bool) string {
+// the package documentation); position is the sample's, carried by the
+// flight's facts; capturedAt is the sample's placement and live false
+// for a backlog sample, which never resumes a lost flight.
+func (b *Binder) Bind(key, clientID, uasSerial string, intentID, authorisationNumber, operatorReg *string, position core.LatLon, capturedAt time.Time, live bool) string {
 	now := b.now()
 	var events []*Event
 	b.mu.Lock()
@@ -198,11 +216,19 @@ func (b *Binder) Bind(key, clientID, uasSerial string, intentID, authorisationNu
 		}
 		f = &flight{id: newID(), key: key, clientID: clientID, serial: uasSerial, intentID: clone(intentID),
 			authNo: clone(authorisationNumber), opReg: clone(operatorReg), startedAt: capturedAt}
+		if position.Valid() {
+			f.pos, f.hasPos = position, true
+		}
 		b.flights[key] = f
 		b.counters().Inc(CounterStarted)
 		events = append(events, b.event(f, EventStarted, now, nil))
 	}
 	f.lastS = now
+	if live && position.Valid() {
+		// A backlog sample is history: the flight's newest position is
+		// a live one's.
+		f.pos, f.hasPos = position, true
+	}
 	if live {
 		if capturedAt.After(f.lastLive) {
 			f.lastLive = capturedAt
@@ -297,9 +323,16 @@ func (b *Binder) event(f *flight, kind string, at time.Time, reason *string) *Ev
 		Body: Body{
 			FlightID: f.id, Event: kind, At: bus.Stamp{Time: at.UTC()}, StartedAt: bus.Stamp{Time: f.startedAt.UTC()},
 			ClientID: f.clientID, UASSerial: f.serial, IntentID: clone(f.intentID), AuthorisationNumber: clone(f.authNo),
-			OperatorReg: clone(f.opReg), EndReason: reason,
+			OperatorReg: clone(f.opReg), EndReason: reason, Position: f.point(),
 		},
 	}
+}
+
+func (f *flight) point() *Point {
+	if !f.hasPos {
+		return nil
+	}
+	return &Point{Lat: f.pos.LatDeg, Lng: f.pos.LonDeg}
 }
 
 func (b *Binder) emit(events []*Event) {

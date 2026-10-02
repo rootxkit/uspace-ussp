@@ -225,6 +225,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/authority/flights": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream every airborne flight to the authority (WebSocket, optional)
+         * @description The optional national extension of spec 02 F7 (docs/PLAN.md D12),
+         *     served by rid-sp only when USSP_AUTHORITY_PUSH=on; otherwise the
+         *     path is not served (404). It never replaces the F3411 Display
+         *     Provider path (GET /uss/flights), which works with it off.
+         *
+         *     A WebSocket upgrade with an ecosystem bearer token granting
+         *     rid.display_provider (aud this host). Server to client only, the
+         *     console frame (M29): console/status/v1 on connect and every 2 s,
+         *     and one authority/flight/v1 frame (schemas/authority/flight/v1:
+         *     the common envelope with an ASTM F3411-22a RIDFlight as body,
+         *     operator_location never included) per airborne flight per second.
+         *     While no client is connected the frames are buffered for ten
+         *     minutes and sent on the next connection with backlog true; what
+         *     the buffer sheds is a gap: counted, logged and shown as
+         *     dropped_frames and the degraded slug authority_push_gap on the
+         *     next status frame. Client messages are ignored.
+         */
+        get: operations["openAuthorityFlights"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/telemetry/batch": {
         parameters: {
             query?: never;
@@ -1371,6 +1406,26 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            default: components["responses"]["Problem"];
+        };
+    };
+    openAuthorityFlights: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Switching protocols; the stream described above follows. */
+            101: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
         };
     };

@@ -64,6 +64,8 @@ func Decode(data []byte) (Event, error) {
 		return Event{}, core.Fieldf("body.intent_id", "not a version 4 UUID")
 	case b.StartedAt.IsZero() || b.At.IsZero():
 		return Event{}, core.Fieldf("body", "at and started_at are required")
+	case b.Position != nil && !b.Position.LatLon().Valid():
+		return Event{}, core.Fieldf("body.position", "not a WGS84 position")
 	}
 	if err := e.Validate(); err != nil {
 		return Event{}, err

@@ -8,7 +8,9 @@
 // WP-5 the registry validity cache (internal/registry), its change feed
 // and GET /v1/registry/validate, and checks operator accounts with it;
 // WP-7 flight authorisation (internal/intent) and /v1/intents; WP-8 the
-// flights table from telemetry-ingest's flight facts (internal/flights).
+// flights table from telemetry-ingest's flight facts (internal/flights);
+// WP-9 the F3411 ISA of every flight, planned with its facts and written
+// to the DSS (internal/ridsp), with dss on /readyz.
 package api
 
 import (
@@ -32,7 +34,6 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/config"
 	"github.com/rootxkit/uspace-ussp/internal/flights"
-	flightstore "github.com/rootxkit/uspace-ussp/internal/flights/pgstore"
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/national"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
@@ -201,14 +202,16 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	}
 	rt.Go(ctx, func(ctx context.Context) { svc.RunSweep(ctx, sweepInterval) })
 	// The flight facts of telemetry-ingest (WP-8, PLAN §3.2): recorded in
-	// the flights table, then acknowledged.
+	// the flights table with their F3411 ISA plan (WP-9), then
+	// acknowledged.
+	planner := startISA(ctx, rt, current, tokens)
 	flightCounters := &core.Counters{}
 	proc.Publish(rt, "flight_records", flightCounters)
 	rec := &flights.Recorder{
 		Source: &bus.StreamSource{Open: bus.PullOpener(rt.Bus.JetStream(), bus.DefaultTopology(), bus.StreamFLIGHT, bus.PullSpec{
 			Durable: FlightsConsumer, FilterSubject: bus.SubjectFlightAll, MaxAckPending: 256,
 		})},
-		Store: flightstore.Store{S: rt.Store}, Counters: flightCounters, Logger: rt.Logger,
+		Store: isaRecorder{S: rt.Store, Planner: planner}, Counters: flightCounters, Logger: rt.Logger,
 	}
 	rt.Go(ctx, rec.Run)
 	return nil

@@ -1,0 +1,32 @@
+{
+  "schema": "authority/flight/v1",
+  "msg_id": "01K6M9S346Q3D25VT4F5V37E3W",
+  "producer": "ussp/rid-sp",
+  "ts": "2026-10-02T09:15:04.000Z",
+  "rx_ts": "2026-10-02T09:15:04.000Z",
+  "captured_at": "2026-10-02T09:15:04.000Z",
+  "time_source": "system",
+  "backlog": false,
+  "body": {
+    "id": "5b0f7c1e-2a4d-4c8e-9f3a-6d2b1e0c9a87",
+    "aircraft_type": "NotDeclared",
+    "current_state": {
+      "timestamp": {
+        "format": "RFC3339",
+        "value": "2026-10-02T09:15:03.214Z"
+      },
+      "timestamp_accuracy": 0,
+      "position": {
+        "lat": 41.7151,
+        "lng": 44.8271
+      },
+      "speed_accuracy": "SAUnknown"
+    },
+    "operator_location": {
+      "position": {
+        "lat": 41.71,
+        "lng": 44.82
+      }
+    }
+  }
+}

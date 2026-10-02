@@ -20,3 +20,20 @@ func (q *Queries) AdvisoryXactLock(ctx context.Context, key int64) error {
 	_, err := q.db.Exec(ctx, advisoryXactLock, key)
 	return err
 }
+
+const advisoryXactLockEntity = `-- name: AdvisoryXactLockEntity :exec
+SELECT pg_advisory_xact_lock($1::integer, hashtext($2::text))
+`
+
+type AdvisoryXactLockEntityParams struct {
+	Class    int32  `json:"class"`
+	EntityID string `json:"entity_id"`
+}
+
+// The lock of one entity of a class (the two-key form, whose key space
+// does not overlap the single-key locks above): the class is an
+// internal/store lock class, the entity is hashed.
+func (q *Queries) AdvisoryXactLockEntity(ctx context.Context, arg AdvisoryXactLockEntityParams) error {
+	_, err := q.db.Exec(ctx, advisoryXactLockEntity, arg.Class, arg.EntityID)
+	return err
+}
