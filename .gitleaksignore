@@ -1,0 +1,7 @@
+# gitleaks false positives, by fingerprint (commit:file:rule:line). Each
+# line says what was flagged and why it is no secret. A real secret is
+# never ignored here: it is rotated.
+#
+# A test's query string ("serial=TEST-SN-A") after a test token variable,
+# read as a generic API key; the line was rewritten in the next commit.
+62f93f73aa3c8c7e885cc74b381be2d42c07924c:internal/national/registry_test.go:generic-api-key:97

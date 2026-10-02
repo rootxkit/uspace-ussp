@@ -54,10 +54,10 @@ func TestValidateRegistryRoute(t *testing.T) {
 	}
 	geo, _ := iss.IssueOperator("client-7", []string{auth.ScopeGeo}, time.Hour, time.Now())
 	sess, _, _ := iss.IssueSession("acc-1", auth.RealmPortal, "s1", []string{auth.RoleOperatorAdmin}, time.Hour, time.Now())
-	call := func(token, query string) *httptest.ResponseRecorder {
+	call := func(query, bearer string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest("GET", "/v1/registry/validate?"+query, nil)
-		if token != "" {
-			r.Header.Set("Authorization", "Bearer "+token)
+		if bearer != "" {
+			r.Header.Set("Authorization", "Bearer "+bearer)
 		}
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, r)
@@ -68,14 +68,14 @@ func TestValidateRegistryRoute(t *testing.T) {
 		token  string
 		status int
 	}{"no token": {"", 401}, "other scope": {geo.Token, 403}, "session": {sess, 403}} {
-		if rec := call(c.token, q); rec.Code != c.status {
+		if rec := call(q, c.token); rec.Code != c.status {
 			t.Errorf("%s: %d %s", name, rec.Code, rec.Body.String())
 		}
 	}
 	if reg.got != nil {
 		t.Fatal("a refused caller reached the lookup")
 	}
-	rec := call(intents.Token, q)
+	rec := call(q, intents.Token)
 	if rec.Code != 200 {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
@@ -94,11 +94,11 @@ func TestValidateRegistryRoute(t *testing.T) {
 	if strings.Contains(rec.Body.String(), "-abc") {
 		t.Fatal("the secret part was echoed")
 	}
-	if rec := call(intents.Token, "serial=TEST-SN-A"); rec.Code != 400 {
+	if rec := call("serial=TEST-SN-A", intents.Token); rec.Code != 400 {
 		t.Fatalf("no purpose: %d %s", rec.Code, rec.Body.String())
 	}
 	reg.err = &registry.AuditError{Err: errors.New("db down")}
-	if rec := call(intents.Token, q); rec.Code != 503 || !strings.Contains(rec.Body.String(), "audit_unavailable") || strings.Contains(rec.Body.String(), "db down") {
+	if rec := call(q, intents.Token); rec.Code != 503 || !strings.Contains(rec.Body.String(), "audit_unavailable") || strings.Contains(rec.Body.String(), "db down") {
 		t.Fatalf("audit failure: %d %s", rec.Code, rec.Body.String())
 	}
 	h, iss = routerWith(t, nil)
