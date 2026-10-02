@@ -38,9 +38,9 @@ func TestSpecsFollowThePlan(t *testing.T) {
 			t.Errorf("%s: migrate %v", s.Process, s.Migrate)
 		}
 		withRoutes := s.Process == config.ProcessAPI || s.Process == config.ProcessRIDSP || s.Process == config.ProcessTSDBWriter ||
-			s.Process == config.ProcessTelemetryIngest
+			s.Process == config.ProcessTelemetryIngest || s.Process == config.ProcessMonitor
 		if (s.Routes != nil) != withRoutes {
-			t.Errorf("%s: routes before their work package (api's arrive with WP-2, rid-sp's with WP-3, tsdb-writer's workers with WP-6, telemetry-ingest's with WP-8)", s.Process)
+			t.Errorf("%s: routes before their work package (api's arrive with WP-2, rid-sp's with WP-3, tsdb-writer's workers with WP-6, telemetry-ingest's with WP-8, monitor's workers with WP-10)", s.Process)
 		}
 	}
 	if !slices.Equal(names, config.Processes) {
