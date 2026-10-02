@@ -298,3 +298,26 @@ func TestStatusLineCarriesCountersAndDependencies(t *testing.T) {
 		}
 	}
 }
+
+// An up dependency keeps what its probe says it is up with (the CIS
+// cache: its versions and age), and says nothing when the probe says
+// nothing (E-01 pair).
+func TestUpKeepsItsDetail(t *testing.T) {
+	h, _, _ := newTestHealth(t)
+	cis := &switchable{}
+	cis.set(StateUp, "zones:3, age 12 s")
+	quiet := &switchable{}
+	quiet.set(StateUp, "")
+	h.Register("cis", false, cis.probe)
+	h.Register("nats", true, quiet.probe)
+	rep := h.Check(context.Background())
+	if d := rep.Dependencies["cis"]; d.State != StateUp || d.Detail != "zones:3, age 12 s" || d.AgeS == nil || *d.AgeS != 0 {
+		t.Fatalf("cis: %+v", d)
+	}
+	if d := rep.Dependencies["nats"]; d.State != StateUp || d.Detail != "" {
+		t.Fatalf("nats: %+v", d)
+	}
+	if rep.Status != StatusReady {
+		t.Fatalf("status %s", rep.Status)
+	}
+}
