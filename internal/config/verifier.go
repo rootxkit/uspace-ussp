@@ -34,3 +34,26 @@ func (c Config) VerifierConfig() (auth.Config, error) {
 		StrictSessionClaims: true,
 	}, nil
 }
+
+// CompactConfig is the core/auth.CompactConfig of the CIS change
+// notification receiver (POST /v1/cis/notifications): the issuers of
+// USSP_CIS_NOTIFY_ISSUERS (the CISP and, on its degraded direct path,
+// the ANSP; M5) with their JWKS URLs, and the audiences USSP_AUDIENCES
+// (aud is this host, M19).
+func (c Config) CompactConfig() (auth.CompactConfig, error) {
+	if len(c.CISNotifyIssuers) == 0 {
+		return auth.CompactConfig{}, &core.FieldError{Field: "USSP_CIS_NOTIFY_ISSUERS", Reason: "required to receive CIS notifications"}
+	}
+	if len(c.Audiences) == 0 {
+		return auth.CompactConfig{}, &core.FieldError{Field: "USSP_AUDIENCES", Reason: "required to receive CIS notifications"}
+	}
+	issuers, err := ParseIssuers(c.CISNotifyIssuers)
+	if err != nil {
+		return auth.CompactConfig{}, &core.FieldError{Field: "USSP_CIS_NOTIFY_ISSUERS", Reason: err.Error()}
+	}
+	allow := make(map[string]auth.IssuerConfig, len(issuers))
+	for _, iss := range issuers {
+		allow[iss.Issuer] = auth.IssuerConfig{JWKSURL: iss.JWKSURL}
+	}
+	return auth.CompactConfig{Issuers: allow, Audiences: append([]string(nil), c.Audiences...)}, nil
+}

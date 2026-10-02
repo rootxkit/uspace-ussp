@@ -124,3 +124,33 @@ func TestVerifierConfigRefusesMalformedSessionClaims(t *testing.T) {
 		})
 	}
 }
+
+// The CIS notification receiver's configuration both ways: issuers and
+// audiences given, it carries them (E-01); either missing, or an issuer
+// without its JWKS URL, is refused naming the variable.
+func TestCompactConfig(t *testing.T) {
+	c, err := LoadFrom(env(map[string]string{
+		"USSP_AUDIENCES":          "ussp.example,ussp.lab",
+		"USSP_CIS_NOTIFY_ISSUERS": "https://cisp.example=https://cisp.example/.well-known/jwks.json,https://ansp.example=https://ansp.example/.well-known/jwks.json",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cc, err := c.CompactConfig()
+	if err != nil || len(cc.Issuers) != 2 || cc.Issuers["https://ansp.example"].JWKSURL != "https://ansp.example/.well-known/jwks.json" ||
+		!slices.Equal(cc.Audiences, []string{"ussp.example", "ussp.lab"}) {
+		t.Fatalf("got %+v %v", cc, err)
+	}
+	c, _ = LoadFrom(env(map[string]string{"USSP_AUDIENCES": "ussp.example"}))
+	if _, err := c.CompactConfig(); !slices.Equal(fieldNames(err), []string{"USSP_CIS_NOTIFY_ISSUERS"}) {
+		t.Fatalf("no issuers: %v", err)
+	}
+	c, _ = LoadFrom(env(map[string]string{"USSP_CIS_NOTIFY_ISSUERS": "https://cisp.example=https://cisp.example/jwks"}))
+	if _, err := c.CompactConfig(); !slices.Equal(fieldNames(err), []string{"USSP_AUDIENCES"}) {
+		t.Fatalf("no audience: %v", err)
+	}
+	c = Config{Audiences: []string{"ussp.example"}, CISNotifyIssuers: []string{"https://cisp.example"}}
+	if _, err := c.CompactConfig(); !slices.Equal(fieldNames(err), []string{"USSP_CIS_NOTIFY_ISSUERS"}) {
+		t.Fatalf("no JWKS URL: %v", err)
+	}
+}

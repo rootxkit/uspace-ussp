@@ -13,7 +13,8 @@ info:
     schema (reconciliation M28).
 
     Skeleton (WP-0): health and readiness, the security schemes and the
-    tags. Every later work package adds its paths under its tag.
+    tags. Every later work package adds its paths under its tag. WP-4:
+    the CIS change-notification receiver.
   license:
     name: Apache-2.0
 servers:
@@ -96,6 +97,57 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Readiness"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/cis/notifications:
+    post:
+      operationId: receiveCISNotification
+      tags: [cis]
+      summary: Receive a CIS change notification (F3 push)
+      description: |
+        The receiver of every subscriber in the ecosystem (M1): the CISP
+        POSTs here the callback it registered, and the ANSP posts here
+        on its degraded direct path while the CISP is down (M5). The body
+        is a compact JWS (application/jose) whose payload is {iss, aud,
+        sub, iat, jti, body}: iss one of USSP_CIS_NOTIFY_ISSUERS (each
+        verified against its JWKS), aud this host (M19), sub the
+        subscription (the restriction id from the ANSP), jti the
+        delivery id, iat at most 5 minutes old, and body the
+        cis/change/v1 record of the CISP's pinned schema. There is no
+        bearer: the signature authenticates the sender.
+
+        A delivery id seen before is acknowledged 204 and not acted on
+        (it is remembered in the database on every replica). The
+        reasons subscription_test and republished, and any reason this
+        USSP does not know, are acknowledged 204 without a pull (M16).
+        Every other reason is logged and triggers a pull of the dataset:
+        from pull_url when its host is the issuer's configured base host
+        (and the issuer is the CISP), otherwise from the configured CISP
+        base URL, the mismatch counted (the SSRF guard). The answer does
+        not wait for the pull.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/jose:
+            schema:
+              type: string
+              description: A compact JWS (three base64url parts separated by dots).
+              maxLength: 262144
+      responses:
+        "204":
+          description: Accepted, acknowledged or a replay; nothing to return.
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
         default:
           $ref: "#/components/responses/Problem"
 
