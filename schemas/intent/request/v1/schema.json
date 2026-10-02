@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/intent/request/v1.json",
+  "title": "intent/request/v1",
+  "description": "An operator's request for a flight authorisation (spec 04 §3.5, 2021/664 Art. 6(4), Annex IV): the ten Annex IV items, numbered as in the Annex in each description, the contingency measures (Art. 6(8)), the emergency contact reference and the client's idempotency reference. Body of POST /v1/intents (api/openapi.yaml). Volumes are ASTM F3548-21 Volume4D with W84 altitudes in metres; the USSP derives AMSL beside them. An unknown member is refused, at any depth.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["client_ref", "uas_serial", "mode", "flight_type", "category", "volumes", "identification_technology",
+    "connectivity_methods", "endurance_s", "loss_of_c2_procedure", "operator_reg", "contingency", "emergency_contact_ref"],
+  "properties": {
+    "client_ref": {
+      "description": "Idempotency reference, unique per client: the same body under it answers the same decision, another body is refused with 409.",
+      "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,64}$"
+    },
+    "uas_serial": { "description": "(1) Serial number of the UA or of its add-on (ANSI/CTA-2063-A where the class requires it).", "type": "string", "minLength": 1, "maxLength": 64 },
+    "mode": { "description": "(2) Mode of operation.", "enum": ["VLOS", "BVLOS"] },
+    "flight_type": { "description": "(3) Type of flight: a special operation per SERA Art. 4, or normal.", "enum": ["normal", "special_operation"] },
+    "priority": {
+      "description": "(3) F3548 priority; when given it must equal the derived one: 0 for normal, the policy's special_operation_priority for special_operation.",
+      "type": "integer", "minimum": 0
+    },
+    "category": { "description": "(4) Category of the operation.", "enum": ["open", "specific", "certified"] },
+    "subcategory": { "description": "(4) Open subcategory.", "enum": ["A1", "A2", "A3"] },
+    "class_label": { "description": "(4) Class label of the UA.", "enum": ["C0", "C1", "C2", "C3", "C4", "C5", "C6"] },
+    "type_certificate": { "description": "(4) Type certificate (certified category).", "type": "string", "minLength": 1, "maxLength": 64 },
+    "privately_built": { "description": "(4) The UA is privately built (Art. 1(3) with mtom_kg).", "type": "boolean" },
+    "mtom_kg": { "description": "(4) Declared maximum take-off mass in kilograms.", "type": "number", "exclusiveMinimum": 0, "maximum": 25000 },
+    "volumes": {
+      "description": "(5) The 4D trajectory: F3548 Volume4D, every one with both times and both altitudes.",
+      "type": "array", "minItems": 1, "maxItems": 16,
+      "items": { "$ref": "#/$defs/volume4d" }
+    },
+    "identification_technology": { "description": "(6) Identification technology.", "enum": ["network", "direct", "both"] },
+    "connectivity_methods": {
+      "description": "(7) Connectivity methods.",
+      "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z0-9_-]{1,32}$" }
+    },
+    "endurance_s": { "description": "(8) Endurance in seconds; it must cover the window of the volumes.", "type": "integer", "minimum": 1, "maximum": 172800 },
+    "loss_of_c2_procedure": { "description": "(9) Procedure on loss of the command and control link.", "type": "string", "minLength": 1, "maxLength": 256 },
+    "operator_reg": { "description": "(10) Operator registration number, public part only.", "type": "string", "minLength": 1, "maxLength": 64 },
+    "ua_registration": { "description": "(10) UA registration number when applicable (required in the certified category).", "type": "string", "minLength": 1, "maxLength": 64 },
+    "pilot_ref": { "description": "Remote pilot identifier for the registry check.", "type": "string", "minLength": 1, "maxLength": 32 },
+    "takeoff": { "$ref": "#/$defs/point" },
+    "landing": { "$ref": "#/$defs/point" },
+    "contingency": {
+      "description": "Contingency measures (Art. 6(8)).",
+      "type": "object", "additionalProperties": false, "required": ["procedure"],
+      "properties": {
+        "procedure": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "landing_sites": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/point" } }
+      }
+    },
+    "emergency_contact_ref": { "description": "Reference to the emergency contact (never the contact itself).", "type": "string", "minLength": 1, "maxLength": 128 },
+    "authorisation_ref": { "description": "A specific-category authorisation from the authority: a zone requiring an authorisation becomes a condition instead of pending_authority.", "type": "string", "minLength": 1, "maxLength": 128 }
+  },
+  "$defs": {
+    "point": {
+      "type": "object", "additionalProperties": false, "required": ["lat", "lng"],
+      "properties": {
+        "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+        "lng": { "type": "number", "minimum": -180, "maximum": 180 }
+      }
+    },
+    "time": {
+      "type": "object", "additionalProperties": false, "required": ["value", "format"],
+      "properties": {
+        "value": { "type": "string", "format": "date-time" },
+        "format": { "const": "RFC3339" }
+      }
+    },
+    "altitude": {
+      "type": "object", "additionalProperties": false, "required": ["value", "reference", "units"],
+      "properties": {
+        "value": { "type": "number", "minimum": -8000, "maximum": 100000 },
+        "reference": { "const": "W84" },
+        "units": { "const": "M" }
+      }
+    },
+    "volume4d": {
+      "type": "object", "additionalProperties": false, "required": ["volume", "time_start", "time_end"],
+      "properties": {
+        "volume": {
+          "type": "object", "additionalProperties": false, "required": ["altitude_lower", "altitude_upper"],
+          "properties": {
+            "outline_polygon": {
+              "type": "object", "additionalProperties": false, "required": ["vertices"],
+              "properties": { "vertices": { "type": "array", "minItems": 3, "maxItems": 1000, "items": { "$ref": "#/$defs/point" } } }
+            },
+            "outline_circle": {
+              "type": "object", "additionalProperties": false, "required": ["center", "radius"],
+              "properties": {
+                "center": { "$ref": "#/$defs/point" },
+                "radius": {
+                  "type": "object", "additionalProperties": false, "required": ["value", "units"],
+                  "properties": { "value": { "type": "number", "exclusiveMinimum": 0 }, "units": { "const": "M" } }
+                }
+              }
+            },
+            "altitude_lower": { "$ref": "#/$defs/altitude" },
+            "altitude_upper": { "$ref": "#/$defs/altitude" }
+          },
+          "oneOf": [{ "required": ["outline_polygon"] }, { "required": ["outline_circle"] }]
+        },
+        "time_start": { "$ref": "#/$defs/time" },
+        "time_end": { "$ref": "#/$defs/time" }
+      }
+    }
+  }
+}

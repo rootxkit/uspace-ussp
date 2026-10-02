@@ -47,7 +47,10 @@ type Server struct {
 	// Registry answers GET /v1/registry/validate (internal/registry's
 	// Cache); nil answers 503 registry_unavailable.
 	Registry RegistryValidator
-	Logger   *slog.Logger
+	// Intents serves /v1/intents (internal/intent.Service); nil answers
+	// 503 intents_unavailable.
+	Intents Intents
+	Logger  *slog.Logger
 }
 
 // RegistryValidator is the cached, audited F8 lookup
@@ -77,6 +80,10 @@ func AccessTable() map[string]httpx.Access {
 		"POST /v1/accounts/operators":                       public, // self-registration, limited per address
 		"POST /v1/cis/notifications":                        public, // no bearer: the compact JWS in the body is verified by internal/cis.Receiver (issuer allow-list, aud, iat, jti)
 		"GET /v1/registry/validate":                         {Scopes: []string{auth.ScopeIntents}},
+		"POST /v1/intents":                                  {Scopes: []string{auth.ScopeIntents}},
+		"GET /v1/intents":                                   {Scopes: []string{auth.ScopeIntents}},
+		"GET /v1/intents/{intent_id}":                       {Scopes: []string{auth.ScopeIntents}},
+		"PATCH /v1/intents/{intent_id}":                     {Scopes: []string{auth.ScopeIntents}},
 		"POST /v1/accounts/logout":                          anySession,
 		"GET /v1/accounts/me":                               anySession,
 		"GET /v1/accounts/operators/{operator_id}":          portalAdmin,

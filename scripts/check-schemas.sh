@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 # Validates every schema under schemas/ as JSON Schema 2020-12 and
-# round-trips its examples (docs/PLAN.md §10). WP-8 adds the first
-# schema and, with it, the validator. Until then there is nothing to
-# validate and the script says so; a schema that appears without the
-# validator fails, so a schema is never reported as checked when it
-# was not.
+# checks its examples both ways (docs/PLAN.md §10): schemas/schemas_test.go
+# (each valid example validates, each one under examples/invalid/ is
+# refused, $id and title as spec 04 §1). The Go types round-trip the
+# valid examples in their own packages' tests (internal/intent). Fails
+# when no schema was checked: a run that validated nothing proves
+# nothing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-shopt -s globstar nullglob
-schemas=(schemas/**/*.json)
-if [ "${#schemas[@]}" -eq 0 ]; then
-  echo "check-schemas: no schema under schemas/ yet (WP-8 adds the first); nothing to validate"
-  exit 0
+GO=${GO:-go}
+out=$("$GO" test -count=1 -v -run 'TestSchemasAndExamplesBothWays' ./schemas/ 2>&1) || { echo "$out"; exit 1; }
+summary=$(printf '%s\n' "$out" | grep -E '[0-9]+ schemas, [0-9]+ valid examples validated' || true)
+if [ -z "$summary" ]; then
+  echo "$out"
+  echo "check-schemas: no schema was validated"
+  exit 1
 fi
-echo "check-schemas: ${#schemas[@]} schema files but no validator yet: WP-8 must add it with the first schema" >&2
-printf '  %s\n' "${schemas[@]}" >&2
-exit 1
+"$GO" test -count=1 -run 'SchemaExamplesRoundTrip' ./internal/intent/ >/dev/null
+echo "check-schemas:${summary#*schemas_test.go:*:}; the intent examples round-trip through the Go types"

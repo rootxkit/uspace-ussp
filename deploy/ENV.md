@@ -68,7 +68,7 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_TOKEN_RATE_PER_MIN` | `api` |  | `60` | 1/min | POST /oauth/token requests per client id and per client address per minute (per process) |
 | `USSP_TRUSTED_PROXIES` | `api,telemetry-ingest,rid-sp,traffic-ws` |  |  |  | CIDRs or addresses of the reverse proxies whose X-Forwarded-For is believed, comma-separated; the client is the rightmost hop that is not one of them; empty: the peer is the client |
 | `USSP_TOKEN_CLIENT_SECRET_FILE` | `api,rid-sp,monitor,dss-sync` |  |  |  | file holding the client secret of this USSP's client ussp-<code>-01 at the first USSP_TOKEN_ISSUERS entry, for outgoing calls |
-| `USSP_GEOID_FILE` | `telemetry-ingest,monitor` |  |  |  | geoid grid file for AMSL |
+| `USSP_GEOID_FILE` | `api,telemetry-ingest,monitor` |  |  |  | geoid grid file for AMSL |
 | `USSP_TERRAIN_DIR` | `monitor` |  |  |  | directory of terrain tiles |
 | `USSP_CELL_OWNERSHIP` | `monitor` |  | `all` |  | cells this monitor instance owns: all, or a comma list of c3 cells |
 | `USSP_AUTHORITY_PUSH` | `rid-sp` |  | `off` |  | the optional WS /v1/authority/flights extension (D12) |

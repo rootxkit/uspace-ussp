@@ -74,7 +74,31 @@ type Values struct {
 	// 5 min). The change feed invalidates either sooner.
 	RegistryPositiveTTLS float64 `json:"registry_positive_ttl_s"`
 	RegistryNegativeTTLS float64 `json:"registry_negative_ttl_s"`
+
+	// SpecialOperationPriority is the F3548 priority of a special
+	// operation (SERA Art. 4, Art. 10(8)); a normal flight has 0. It is
+	// dimensionless (an ordinal), so its name carries no unit.
+	SpecialOperationPriority int `json:"special_operation_priority"`
+	// DeconflictBufferM and DeconflictVerticalBufferM widen the
+	// strategic deconfliction of intents horizontally and vertically
+	// (AMSL); 0 is no buffer, a negative or non-finite value refuses
+	// the check (E-15).
+	DeconflictBufferM         float64 `json:"deconflict_buffer_m"`
+	DeconflictVerticalBufferM float64 `json:"deconflict_vertical_buffer_m"`
+	// ActivationLeadS is how long before its time_start an accepted
+	// intent may be activated.
+	ActivationLeadS float64 `json:"activation_lead_s"`
+	// IntentOpenMaxCount bounds the intents one operator may hold that
+	// are not ended, rejected or withdrawn (every write is bounded).
+	IntentOpenMaxCount int `json:"intent_open_max_count"`
 }
+
+// MaxSpecialOperationPriority bounds SpecialOperationPriority (an
+// int32 column and the F3548 integer).
+const MaxSpecialOperationPriority = 1 << 30
+
+// MaxIntentOpenMaxCount bounds IntentOpenMaxCount.
+const MaxIntentOpenMaxCount = 100_000
 
 // MaxOperatorTokenTTLS bounds OperatorTokenTTLS: an operator token
 // lives at most one hour. MaxClientSecretOverlapS bounds the overlap of
@@ -95,7 +119,9 @@ const TelemetryRetentionFloorDays = 30
 // 300 s, escalation every 10 s, telemetry 90 days, records 5 years,
 // audit 10 years, operator tokens for one hour and a rotated client
 // secret overlapping its successor for one day, registry answers cached
-// for 24 h and an unknown for 5 min (spec 02 F8). ProximityRadiusM has no figure in the plan; it takes
+// for 24 h and an unknown for 5 min (spec 02 F8), special operations at
+// priority 100, no deconfliction buffer (WP-7 brief), activation from 10
+// minutes before time_start, and 1000 open intents per operator. ProximityRadiusM has no figure in the plan; it takes
 // the CPA neighbour radius until GCAA answers Q6. They are shown with
 // their policy_version, never presented as the policy answer.
 func Defaults() Values {
@@ -122,6 +148,11 @@ func Defaults() Values {
 		ClientSecretOverlapS:        24 * 3600,
 		RegistryPositiveTTLS:        24 * 3600,
 		RegistryNegativeTTLS:        300,
+		SpecialOperationPriority:    100,
+		DeconflictBufferM:           0,
+		DeconflictVerticalBufferM:   0,
+		ActivationLeadS:             600,
+		IntentOpenMaxCount:          1000,
 	}
 }
 
@@ -140,6 +171,9 @@ func (v Values) CPA() cpa.Policy {
 // finite; every minimum, radius, timeout and repeat positive (a zero
 // minimum would read every pair as clear); the CPA window and maximum
 // age may be zero (cpa.Policy: "now only", "same instant only");
+// the deconfliction buffers may be zero (no buffer); the special
+// operation priority at least 1 (above a normal flight's 0) and the
+// open-intent bound at least 1;
 // retentions at least one day and telemetry at least the floor; the
 // operator token TTL from 60 s to one hour and the secret overlap from 0
 // to seven days. Every refusal names its field.
@@ -156,6 +190,7 @@ func (v Values) Validate() error {
 		{"cpa_horizontal_min_m", v.CPAHorizontalMinM}, {"cpa_vertical_min_m", v.CPAVerticalMinM},
 		{"cpa_neighbour_radius_m", v.CPANeighbourRadiusM},
 		{"registry_positive_ttl_s", v.RegistryPositiveTTLS}, {"registry_negative_ttl_s", v.RegistryNegativeTTLS},
+		{"activation_lead_s", v.ActivationLeadS},
 	}
 	for _, f := range positive {
 		if !finite(f.v) || f.v <= 0 {
@@ -165,7 +200,8 @@ func (v Values) Validate() error {
 	for _, f := range []struct {
 		name string
 		v    float64
-	}{{"cpa_tcpa_max_s", v.CPATCPAMaxS}, {"cpa_neighbour_max_age_s", v.CPANeighbourMaxAgeS}} {
+	}{{"cpa_tcpa_max_s", v.CPATCPAMaxS}, {"cpa_neighbour_max_age_s", v.CPANeighbourMaxAgeS},
+		{"deconflict_buffer_m", v.DeconflictBufferM}, {"deconflict_vertical_buffer_m", v.DeconflictVerticalBufferM}} {
 		if !finite(f.v) || f.v < 0 {
 			errs = append(errs, core.Fieldf(f.name, "must be a finite number of at least 0, got %v", f.v))
 		}
@@ -181,6 +217,12 @@ func (v Values) Validate() error {
 	}
 	if v.OperatorTokenTTLS < 60 || v.OperatorTokenTTLS > MaxOperatorTokenTTLS {
 		errs = append(errs, core.Fieldf("operator_token_ttl_s", "must be from 60 to %d, got %d", MaxOperatorTokenTTLS, v.OperatorTokenTTLS))
+	}
+	if v.SpecialOperationPriority < 1 || v.SpecialOperationPriority > MaxSpecialOperationPriority {
+		errs = append(errs, core.Fieldf("special_operation_priority", "must be from 1 to %d, got %d", MaxSpecialOperationPriority, v.SpecialOperationPriority))
+	}
+	if v.IntentOpenMaxCount < 1 || v.IntentOpenMaxCount > MaxIntentOpenMaxCount {
+		errs = append(errs, core.Fieldf("intent_open_max_count", "must be from 1 to %d, got %d", MaxIntentOpenMaxCount, v.IntentOpenMaxCount))
 	}
 	if v.ClientSecretOverlapS < 0 || v.ClientSecretOverlapS > MaxClientSecretOverlapS {
 		errs = append(errs, core.Fieldf("client_secret_overlap_s", "must be from 0 to %d, got %d", MaxClientSecretOverlapS, v.ClientSecretOverlapS))

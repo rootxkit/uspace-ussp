@@ -1,0 +1,75 @@
+{
+  "intent_id": "7239fc8c-db97-438c-917d-37f4f3a577cc",
+  "version": 1,
+  "client_ref": "ref-2",
+  "decision": "rejected",
+  "state": "rejected",
+  "dss_state": null,
+  "authorisation_number": null,
+  "exempt_art_1_3": false,
+  "in_uspace_airspace": false,
+  "uspace_airspace_ids": [],
+  "priority": 0,
+  "deviation_thresholds": null,
+  "alternative": null,
+  "conflicts": [
+    {
+      "kind": "registry",
+      "reason": "uas_suspended",
+      "effect": "rejects",
+      "ref": "TEST0001",
+      "item": 1,
+      "volume": null,
+      "overlap": null,
+      "detail": "the registry says the uas is suspended"
+    },
+    {
+      "kind": "zone",
+      "reason": "zone_prohibited",
+      "effect": "rejects",
+      "ref": "TZP-TEST-1",
+      "item": 5,
+      "volume": 0,
+      "overlap": {
+        "h_m": 0,
+        "v_m": 50,
+        "t_s": 1800
+      },
+      "detail": "the volume overlaps a PROHIBITED zone in space, altitude and time"
+    },
+    {
+      "kind": "intent",
+      "reason": "intent_filed_first",
+      "effect": "rejects",
+      "ref": "60ab262e-e477-4650-ad8d-14977599eb0a",
+      "item": 5,
+      "volume": 0,
+      "overlap": {
+        "h_m": 0,
+        "v_m": 50,
+        "t_s": 1800
+      },
+      "detail": "the volume conflicts with an authorised intent that has precedence (first_come_first_served)"
+    }
+  ],
+  "conditions": [],
+  "volumes_amsl": [
+    {
+      "lower_amsl_m": 480,
+      "upper_amsl_m": 530,
+      "undulation_m": 20,
+      "lower_w84_m": 500,
+      "upper_w84_m": 550
+    }
+  ],
+  "valid_from": "2026-11-02T10:00:00Z",
+  "valid_to": "2026-11-02T10:30:00Z",
+  "cis_version_checked": "zones:1,uspace_airspace:1,restrictions:1",
+  "cis_age_s": 3,
+  "registry_checked_at": "2026-11-01T12:00:00Z",
+  "policy_version": 7,
+  "weather_checked_ref": null,
+  "change_reason": null,
+  "decided_at": "2026-11-01T12:00:00Z",
+  "updated_at": "2026-11-01T12:00:00Z"
+}

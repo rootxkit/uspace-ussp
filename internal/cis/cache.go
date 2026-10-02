@@ -582,6 +582,40 @@ func (c *Cache) sweepLoop(ctx context.Context) {
 	}
 }
 
+// Outdated lists why the versions the Evaluator answers from are known
+// not to be the CISP's newest, for a caller that must not act on an old
+// picture (an authorisation, brief WP-7): a newer version held
+// untrusted (its publisher's signature is missing or does not verify),
+// a newer publication refused, a version notified and not pulled yet,
+// and restrictions published while the ANSP is stale
+// (cis_publisher_stale_since). Empty when none of these is known; it
+// says nothing about age, which Evaluator.Age reports.
+func (c *Cache) Outdated() []string {
+	snap := c.cfg.Evaluator.Snapshot()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []string
+	for _, d := range ED318Datasets {
+		cur := int64(0)
+		if v := snap.Version(d); v != nil {
+			cur = v.Number
+		}
+		if h := c.held[d]; h != nil && h.Version > cur {
+			out = append(out, h.Error())
+		}
+		if rf := c.refused[d]; rf != nil && (rf.Version > cur || rf.Version == 0) {
+			out = append(out, fmt.Sprintf("a newer %s publication (version %d, 0 when unread) was refused: %s", d, rf.Version, rf.First))
+		}
+		if p := c.pending[d]; p != nil && p.Version > cur {
+			out = append(out, fmt.Sprintf("%s version %d is notified and not pulled yet", d, p.Version))
+		}
+	}
+	if v := snap.Version(Restrictions); v != nil && len(v.Meta.PublisherStaleSince) > 0 {
+		out = append(out, "the restrictions are published while their publisher (the ANSP) is stale since "+string(v.Meta.PublisherStaleSince))
+	}
+	return out
+}
+
 // Probe is the readiness of the cache (the /readyz entry cis, also on
 // the E-09 status line): unknown with no version loaded, degraded when
 // a publication was refused, a version is held untrusted (or no

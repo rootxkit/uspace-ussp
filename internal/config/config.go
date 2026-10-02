@@ -94,7 +94,7 @@ type Config struct {
 	TokenRatePerMin         int      `env:"USSP_TOKEN_RATE_PER_MIN" default:"60" by:"api" min:"1" max:"10000" unit:"1/min" help:"POST /oauth/token requests per client id and per client address per minute (per process)"`
 	TrustedProxies          []string `env:"USSP_TRUSTED_PROXIES" by:"api,telemetry-ingest,rid-sp,traffic-ws" kind:"cidrs" help:"CIDRs or addresses of the reverse proxies whose X-Forwarded-For is believed, comma-separated; the client is the rightmost hop that is not one of them; empty: the peer is the client"`
 	TokenClientSecretFile   string   `env:"USSP_TOKEN_CLIENT_SECRET_FILE" by:"api,rid-sp,monitor,dss-sync" secret:"true" help:"file holding the client secret of this USSP's client ussp-<code>-01 at the first USSP_TOKEN_ISSUERS entry, for outgoing calls"`
-	GeoidFile               string   `env:"USSP_GEOID_FILE" by:"telemetry-ingest,monitor" help:"geoid grid file for AMSL"`
+	GeoidFile               string   `env:"USSP_GEOID_FILE" by:"api,telemetry-ingest,monitor" help:"geoid grid file for AMSL"`
 	TerrainDir              string   `env:"USSP_TERRAIN_DIR" by:"monitor" help:"directory of terrain tiles"`
 	CellOwnership           string   `env:"USSP_CELL_OWNERSHIP" default:"all" by:"monitor" help:"cells this monitor instance owns: all, or a comma list of c3 cells"`
 	AuthorityPush           string   `env:"USSP_AUTHORITY_PUSH" default:"off" by:"rid-sp" enum:"on|off" help:"the optional WS /v1/authority/flights extension (D12)"`

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/intent/state/v1.json",
+  "title": "intent/state/v1",
+  "description": "An intent's state as the other processes read it (spec 04 §3.5, internal): the body of intent.v1.<state>.<intent_id> under the common envelope (envelope/v1, schema intent/state/v1) and the value of the KV bucket intent_active, which holds the intents in accepted, activated, nonconforming or contingent and nothing else. volumes are the F3548 volumes as authorised (W84, the outlines conformance judges against), volumes_amsl their bands in AMSL; flight_id is null until a flight binds (WP-8).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["intent_id", "version", "local_state", "dss_state", "priority", "exempt_art_1_3", "authorisation_number",
+    "operator_reg", "uas_serial", "volumes", "volumes_amsl", "deviation_thresholds", "flight_id", "cell_set", "time_start",
+    "time_end", "in_uspace_airspace", "policy_version", "change_reason", "updated_at"],
+  "properties": {
+    "intent_id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "version": { "type": "integer", "minimum": 1 },
+    "local_state": { "enum": ["pending_validation", "pending_dss", "pending_authority", "accepted", "activated", "nonconforming", "contingent", "ended", "rejected", "withdrawn"] },
+    "dss_state": { "enum": ["Accepted", "Activated", "Nonconforming", "Contingent", null] },
+    "priority": { "type": "integer", "minimum": 0 },
+    "exempt_art_1_3": { "type": "boolean" },
+    "authorisation_number": { "type": ["string", "null"] },
+    "operator_reg": { "type": "string" },
+    "uas_serial": { "type": "string" },
+    "volumes": { "type": "array", "items": { "$ref": "https://schemas.uspace.ge/intent/request/v1.json#/$defs/volume4d" } },
+    "volumes_amsl": { "$ref": "https://schemas.uspace.ge/intent/decision/v1.json#/properties/volumes_amsl" },
+    "deviation_thresholds": { "$ref": "https://schemas.uspace.ge/intent/decision/v1.json#/properties/deviation_thresholds" },
+    "flight_id": { "type": ["string", "null"] },
+    "cell_set": { "type": "array", "items": { "type": "string", "pattern": "^c5:-?[0-9]+:-?[0-9]+$" } },
+    "time_start": { "type": "string", "format": "date-time" },
+    "time_end": { "type": "string", "format": "date-time" },
+    "in_uspace_airspace": { "type": "boolean" },
+    "policy_version": { "type": "integer", "minimum": 0 },
+    "change_reason": { "type": ["string", "null"] },
+    "updated_at": { "type": "string", "format": "date-time" }
+  }
+}

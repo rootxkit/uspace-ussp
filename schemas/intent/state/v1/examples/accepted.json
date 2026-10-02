@@ -1,0 +1,87 @@
+{
+  "intent_id": "60ab262e-e477-4650-ad8d-14977599eb0a",
+  "version": 1,
+  "local_state": "accepted",
+  "dss_state": "Accepted",
+  "priority": 0,
+  "exempt_art_1_3": false,
+  "authorisation_number": "USSP-DEV-GEOTESTOP0001-01M6BFP5G0Z7Z0SAGGV6APPASM",
+  "operator_reg": "GEOTESTOP0001",
+  "uas_serial": "TEST0001",
+  "volumes": [
+    {
+      "time_end": {
+        "format": "RFC3339",
+        "value": "2026-11-02T10:30:00Z"
+      },
+      "time_start": {
+        "format": "RFC3339",
+        "value": "2026-11-02T10:00:00Z"
+      },
+      "volume": {
+        "altitude_lower": {
+          "reference": "W84",
+          "units": "M",
+          "value": 500
+        },
+        "altitude_upper": {
+          "reference": "W84",
+          "units": "M",
+          "value": 550
+        },
+        "outline_polygon": {
+          "vertices": [
+            {
+              "lat": 41.7,
+              "lng": 44.8
+            },
+            {
+              "lat": 41.7,
+              "lng": 44.809999999999995
+            },
+            {
+              "lat": 41.71,
+              "lng": 44.809999999999995
+            },
+            {
+              "lat": 41.71,
+              "lng": 44.8
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "volumes_amsl": [
+    {
+      "lower_amsl_m": 480,
+      "upper_amsl_m": 530,
+      "undulation_m": 20,
+      "lower_w84_m": 500,
+      "upper_w84_m": 550
+    }
+  ],
+  "deviation_thresholds": {
+    "h_m": 50,
+    "v_m": 15,
+    "t_s": 60
+  },
+  "flight_id": null,
+  "cell_set": [
+    "c5:1316:2247",
+    "c5:1316:2248",
+    "c5:1316:2249",
+    "c5:1317:2247",
+    "c5:1317:2248",
+    "c5:1317:2249",
+    "c5:1318:2247",
+    "c5:1318:2248",
+    "c5:1318:2249"
+  ],
+  "time_start": "2026-11-02T10:00:00Z",
+  "time_end": "2026-11-02T10:30:00Z",
+  "in_uspace_airspace": false,
+  "policy_version": 7,
+  "change_reason": null,
+  "updated_at": "2026-11-01T12:00:00Z"
+}

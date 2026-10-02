@@ -349,6 +349,223 @@ type Health struct {
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
 
+// IntentAltitude defines model for IntentAltitude.
+type IntentAltitude struct {
+	Reference interface{} `json:"reference"`
+	Units     interface{} `json:"units"`
+	Value     float32     `json:"value"`
+}
+
+// IntentConflict defines model for IntentConflict.
+type IntentConflict struct {
+	Detail string      `json:"detail"`
+	Effect interface{} `json:"effect"`
+
+	// Item The Annex IV item number, null when the conflict is not about one.
+	Item    *int        `json:"item"`
+	Kind    interface{} `json:"kind"`
+	Overlap *struct {
+		// HM Horizontal separation, 0 when the outlines meet; null when not judged.
+		HM *float32 `json:"h_m"`
+
+		// TS Common time in seconds.
+		TS *float32 `json:"t_s"`
+
+		// VM Vertical overlap in AMSL; null when a limit is not AMSL.
+		VM *float32 `json:"v_m"`
+	} `json:"overlap"`
+	Reason string  `json:"reason"`
+	Ref    *string `json:"ref,omitempty"`
+
+	// Volume Index of our volume.
+	Volume *int `json:"volume"`
+}
+
+// IntentDecision intent/decision/v1 (schemas/intent/decision/v1/schema.json, the source of truth).
+type IntentDecision struct {
+	// Alternative Art. 10(4) proposal; none in v1.
+	Alternative any `json:"alternative"`
+
+	// AuthorisationNumber <USSP code>-<operator registration public part>-<ULID> (spec 03 §6); null unless authorised.
+	AuthorisationNumber *string  `json:"authorisation_number"`
+	ChangeReason        *string  `json:"change_reason"`
+	CisAgeS             *float32 `json:"cis_age_s"`
+
+	// CisVersionChecked The CIS versions the decision rests on, one label per ED-318 dataset; null when the CIS was not consulted.
+	CisVersionChecked *string `json:"cis_version_checked"`
+	ClientRef         string  `json:"client_ref"`
+	Conditions        []struct {
+		Code   string  `json:"code"`
+		Detail string  `json:"detail"`
+		Ref    *string `json:"ref,omitempty"`
+	} `json:"conditions"`
+	Conflicts           []IntentConflict `json:"conflicts"`
+	DecidedAt           time.Time        `json:"decided_at"`
+	Decision            interface{}      `json:"decision"`
+	DeviationThresholds *struct {
+		HM float32 `json:"h_m"`
+		TS float32 `json:"t_s"`
+		VM float32 `json:"v_m"`
+	} `json:"deviation_thresholds"`
+
+	// DssState F3548 state of the intent, null when it is not one the DSS holds.
+	DssState         interface{} `json:"dss_state"`
+	ExemptArt13      bool        `json:"exempt_art_1_3"`
+	InUspaceAirspace bool        `json:"in_uspace_airspace"`
+
+	// IntentId UUID, also the DSS entity id.
+	IntentId          string      `json:"intent_id"`
+	PolicyVersion     int         `json:"policy_version"`
+	Priority          int         `json:"priority"`
+	RegistryCheckedAt *time.Time  `json:"registry_checked_at"`
+	State             interface{} `json:"state"`
+	UpdatedAt         time.Time   `json:"updated_at"`
+	UspaceAirspaceIds []string    `json:"uspace_airspace_ids"`
+	ValidFrom         time.Time   `json:"valid_from"`
+	ValidTo           time.Time   `json:"valid_to"`
+	Version           int         `json:"version"`
+	VolumesAmsl       []struct {
+		LowerAmslM  float32 `json:"lower_amsl_m"`
+		LowerW84M   float32 `json:"lower_w84_m"`
+		UndulationM float32 `json:"undulation_m"`
+		UpperAmslM  float32 `json:"upper_amsl_m"`
+		UpperW84M   float32 `json:"upper_w84_m"`
+	} `json:"volumes_amsl"`
+
+	// WeatherCheckedRef Art. 10(3); null until weather (WP-16).
+	WeatherCheckedRef *string `json:"weather_checked_ref"`
+}
+
+// IntentList defines model for IntentList.
+type IntentList struct {
+	Intents []IntentDecision `json:"intents"`
+}
+
+// IntentPatch activate (confirmed in the response, Art. 10(5)), modify (new volumes re-decided as a new version, Art. 6(6)) or end.
+type IntentPatch struct {
+	Action       interface{} `json:"action"`
+	ChangeReason *string     `json:"change_reason,omitempty"`
+
+	// Volumes Required for modify, refused otherwise.
+	Volumes *[]IntentVolume4D `json:"volumes,omitempty"`
+}
+
+// IntentPoint defines model for IntentPoint.
+type IntentPoint struct {
+	Lat float32 `json:"lat"`
+	Lng float32 `json:"lng"`
+}
+
+// IntentRequest intent/request/v1 (schemas/intent/request/v1/schema.json, the source of truth): the ten Annex IV items numbered as in the Annex, the contingency measures, the emergency contact reference and the idempotency reference.
+type IntentRequest struct {
+	// AuthorisationRef A specific-category authorisation from the authority: a zone requiring an authorisation becomes a condition instead of pending_authority.
+	AuthorisationRef *string `json:"authorisation_ref,omitempty"`
+
+	// Category (4) Category of the operation.
+	Category interface{} `json:"category"`
+
+	// ClassLabel (4) Class label of the UA.
+	ClassLabel interface{} `json:"class_label,omitempty"`
+
+	// ClientRef Idempotency reference, unique per client: the same body under it answers the same decision, another body is refused with 409.
+	ClientRef string `json:"client_ref"`
+
+	// ConnectivityMethods (7) Connectivity methods.
+	ConnectivityMethods []string `json:"connectivity_methods"`
+
+	// Contingency Contingency measures (Art. 6(8)).
+	Contingency struct {
+		LandingSites *[]IntentPoint `json:"landing_sites,omitempty"`
+		Procedure    string         `json:"procedure"`
+	} `json:"contingency"`
+
+	// EmergencyContactRef Reference to the emergency contact (never the contact itself).
+	EmergencyContactRef string `json:"emergency_contact_ref"`
+
+	// EnduranceS (8) Endurance in seconds; it must cover the window of the volumes.
+	EnduranceS int `json:"endurance_s"`
+
+	// FlightType (3) Type of flight: a special operation per SERA Art. 4, or normal.
+	FlightType interface{} `json:"flight_type"`
+
+	// IdentificationTechnology (6) Identification technology.
+	IdentificationTechnology interface{}  `json:"identification_technology"`
+	Landing                  *IntentPoint `json:"landing,omitempty"`
+
+	// LossOfC2Procedure (9) Procedure on loss of the command and control link.
+	LossOfC2Procedure string `json:"loss_of_c2_procedure"`
+
+	// Mode (2) Mode of operation.
+	Mode interface{} `json:"mode"`
+
+	// MtomKg (4) Declared maximum take-off mass in kilograms.
+	MtomKg *float32 `json:"mtom_kg,omitempty"`
+
+	// OperatorReg (10) Operator registration number, public part only.
+	OperatorReg string `json:"operator_reg"`
+
+	// PilotRef Remote pilot identifier for the registry check.
+	PilotRef *string `json:"pilot_ref,omitempty"`
+
+	// Priority (3) F3548 priority; when given it must equal the derived one: 0 for normal, the policy's special_operation_priority for special_operation.
+	Priority *int `json:"priority,omitempty"`
+
+	// PrivatelyBuilt (4) The UA is privately built (Art. 1(3) with mtom_kg).
+	PrivatelyBuilt *bool `json:"privately_built,omitempty"`
+
+	// Subcategory (4) Open subcategory.
+	Subcategory interface{}  `json:"subcategory,omitempty"`
+	Takeoff     *IntentPoint `json:"takeoff,omitempty"`
+
+	// TypeCertificate (4) Type certificate (certified category).
+	TypeCertificate *string `json:"type_certificate,omitempty"`
+
+	// UaRegistration (10) UA registration number when applicable (required in the certified category).
+	UaRegistration *string `json:"ua_registration,omitempty"`
+
+	// UasSerial (1) Serial number of the UA or of its add-on (ANSI/CTA-2063-A where the class requires it).
+	UasSerial string `json:"uas_serial"`
+
+	// Volumes (5) The 4D trajectory: F3548 Volume4D, every one with both times and both altitudes.
+	Volumes []IntentVolume4D `json:"volumes"`
+}
+
+// IntentTime defines model for IntentTime.
+type IntentTime struct {
+	Format interface{} `json:"format"`
+	Value  time.Time   `json:"value"`
+}
+
+// IntentVolume4D defines model for IntentVolume4D.
+type IntentVolume4D struct {
+	TimeEnd   IntentTime            `json:"time_end"`
+	TimeStart IntentTime            `json:"time_start"`
+	Volume    IntentVolume4D_Volume `json:"volume"`
+}
+
+// IntentVolume4DVolume0 defines model for IntentVolume4D.Volume.0.
+type IntentVolume4DVolume0 = interface{}
+
+// IntentVolume4DVolume1 defines model for IntentVolume4D.Volume.1.
+type IntentVolume4DVolume1 = interface{}
+
+// IntentVolume4D_Volume defines model for IntentVolume4D.Volume.
+type IntentVolume4D_Volume struct {
+	AltitudeLower IntentAltitude `json:"altitude_lower"`
+	AltitudeUpper IntentAltitude `json:"altitude_upper"`
+	OutlineCircle *struct {
+		Center IntentPoint `json:"center"`
+		Radius struct {
+			Units interface{} `json:"units"`
+			Value float32     `json:"value"`
+		} `json:"radius"`
+	} `json:"outline_circle,omitempty"`
+	OutlinePolygon *struct {
+		Vertices []IntentPoint `json:"vertices"`
+	} `json:"outline_polygon,omitempty"`
+	union json.RawMessage
+}
+
 // JWKS defines model for JWKS.
 type JWKS struct {
 	Keys []map[string]interface{} `json:"keys"`
@@ -605,6 +822,9 @@ type TokenResponseTokenType string
 // ClientID defines model for ClientID.
 type ClientID = string
 
+// IntentID defines model for IntentID.
+type IntentID = openapi_types.UUID
+
 // OperatorID defines model for OperatorID.
 type OperatorID = openapi_types.UUID
 
@@ -612,6 +832,14 @@ type OperatorID = openapi_types.UUID
 // OAuth2 client library reads `error` and a uspace client reads the
 // problem.
 type OAuthError = OAuthProblem
+
+// ListIntentsParams defines parameters for ListIntents.
+type ListIntentsParams struct {
+	From  *time.Time `form:"from,omitempty" json:"from,omitempty"`
+	To    *time.Time `form:"to,omitempty" json:"to,omitempty"`
+	State *string    `form:"state,omitempty" json:"state,omitempty"`
+	Limit *int       `form:"limit,omitempty" json:"limit,omitempty"`
+}
 
 // ValidateRegistryParams defines parameters for ValidateRegistry.
 type ValidateRegistryParams struct {
@@ -638,6 +866,146 @@ type CreateClientJSONRequestBody = ClientRequest
 
 // BindSerialJSONRequestBody defines body for BindSerial for application/json ContentType.
 type BindSerialJSONRequestBody = SerialBindingRequest
+
+// CreateIntentJSONRequestBody defines body for CreateIntent for application/json ContentType.
+type CreateIntentJSONRequestBody = IntentRequest
+
+// ChangeIntentJSONRequestBody defines body for ChangeIntent for application/json ContentType.
+type ChangeIntentJSONRequestBody = IntentPatch
+
+// AsIntentVolume4DVolume0 returns the union data inside the IntentVolume4D_Volume as a IntentVolume4DVolume0
+func (t IntentVolume4D_Volume) AsIntentVolume4DVolume0() (IntentVolume4DVolume0, error) {
+	var body IntentVolume4DVolume0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromIntentVolume4DVolume0 overwrites any union data inside the IntentVolume4D_Volume as the provided IntentVolume4DVolume0
+func (t *IntentVolume4D_Volume) FromIntentVolume4DVolume0(v IntentVolume4DVolume0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeIntentVolume4DVolume0 performs a merge with any union data inside the IntentVolume4D_Volume, using the provided IntentVolume4DVolume0
+func (t *IntentVolume4D_Volume) MergeIntentVolume4DVolume0(v IntentVolume4DVolume0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsIntentVolume4DVolume1 returns the union data inside the IntentVolume4D_Volume as a IntentVolume4DVolume1
+func (t IntentVolume4D_Volume) AsIntentVolume4DVolume1() (IntentVolume4DVolume1, error) {
+	var body IntentVolume4DVolume1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromIntentVolume4DVolume1 overwrites any union data inside the IntentVolume4D_Volume as the provided IntentVolume4DVolume1
+func (t *IntentVolume4D_Volume) FromIntentVolume4DVolume1(v IntentVolume4DVolume1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeIntentVolume4DVolume1 performs a merge with any union data inside the IntentVolume4D_Volume, using the provided IntentVolume4DVolume1
+func (t *IntentVolume4D_Volume) MergeIntentVolume4DVolume1(v IntentVolume4DVolume1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t IntentVolume4D_Volume) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	object := make(map[string]json.RawMessage)
+	if t.union != nil {
+		err = json.Unmarshal(b, &object)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	object["altitude_lower"], err = json.Marshal(t.AltitudeLower)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'altitude_lower': %w", err)
+	}
+
+	object["altitude_upper"], err = json.Marshal(t.AltitudeUpper)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'altitude_upper': %w", err)
+	}
+
+	if t.OutlineCircle != nil {
+		object["outline_circle"], err = json.Marshal(t.OutlineCircle)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'outline_circle': %w", err)
+		}
+	}
+
+	if t.OutlinePolygon != nil {
+		object["outline_polygon"], err = json.Marshal(t.OutlinePolygon)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'outline_polygon': %w", err)
+		}
+	}
+	b, err = json.Marshal(object)
+	return b, err
+}
+
+func (t *IntentVolume4D_Volume) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	if err != nil {
+		return err
+	}
+	object := make(map[string]json.RawMessage)
+	err = json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["altitude_lower"]; found {
+		err = json.Unmarshal(raw, &t.AltitudeLower)
+		if err != nil {
+			return fmt.Errorf("error reading 'altitude_lower': %w", err)
+		}
+	}
+
+	if raw, found := object["altitude_upper"]; found {
+		err = json.Unmarshal(raw, &t.AltitudeUpper)
+		if err != nil {
+			return fmt.Errorf("error reading 'altitude_upper': %w", err)
+		}
+	}
+
+	if raw, found := object["outline_circle"]; found {
+		err = json.Unmarshal(raw, &t.OutlineCircle)
+		if err != nil {
+			return fmt.Errorf("error reading 'outline_circle': %w", err)
+		}
+	}
+
+	if raw, found := object["outline_polygon"]; found {
+		err = json.Unmarshal(raw, &t.OutlinePolygon)
+		if err != nil {
+			return fmt.Errorf("error reading 'outline_polygon': %w", err)
+		}
+	}
+
+	return err
+}
 
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -1000,6 +1368,56 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /v1/cis/notifications (the `ReceiveCISNotification` operationId).
 	ReceiveCISNotificationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListIntents The operator's intents, newest first
+	//
+	// At most 500; from and to keep the intents whose window overlaps them; state filters.
+	//
+	// Corresponds with GET /v1/intents (the `ListIntents` operationId).
+	ListIntents(ctx context.Context, params *ListIntentsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateIntentWithBody File an operational intent and get the authorisation decision
+	//
+	// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/intents (the `CreateIntent` operationId).
+	CreateIntentWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateIntent File an operational intent and get the authorisation decision
+	//
+	// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/intents (the `CreateIntent` operationId).
+	CreateIntent(ctx context.Context, body CreateIntentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetIntent One of the operator's intents: its decision and state
+	//
+	// Another operator's intent is 404, never 403.
+	//
+	// Corresponds with GET /v1/intents/{intent_id} (the `GetIntent` operationId).
+	GetIntent(ctx context.Context, intentId IntentID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ChangeIntentWithBody Activate, modify or end an intent
+	//
+	// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /v1/intents/{intent_id} (the `ChangeIntent` operationId).
+	ChangeIntentWithBody(ctx context.Context, intentId IntentID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ChangeIntent Activate, modify or end an intent
+	//
+	// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /v1/intents/{intent_id} (the `ChangeIntent` operationId).
+	ChangeIntent(ctx context.Context, intentId IntentID, body ChangeIntentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ValidateRegistry Validity of an operator, a UAS and a remote pilot (F8, cached)
 	//
@@ -1510,6 +1928,116 @@ func (c *Client) UnbindSerial(ctx context.Context, operatorId OperatorID, client
 // Corresponds with POST /v1/cis/notifications (the `ReceiveCISNotification` operationId).
 func (c *Client) ReceiveCISNotificationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewReceiveCISNotificationRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListIntents The operator's intents, newest first
+//
+// At most 500; from and to keep the intents whose window overlaps them; state filters.
+//
+// Corresponds with GET /v1/intents (the `ListIntents` operationId).
+func (c *Client) ListIntents(ctx context.Context, params *ListIntentsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListIntentsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateIntentWithBody File an operational intent and get the authorisation decision
+//
+// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/intents (the `CreateIntent` operationId).
+func (c *Client) CreateIntentWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIntentRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateIntent File an operational intent and get the authorisation decision
+//
+// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/intents (the `CreateIntent` operationId).
+func (c *Client) CreateIntent(ctx context.Context, body CreateIntentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIntentRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetIntent One of the operator's intents: its decision and state
+//
+// Another operator's intent is 404, never 403.
+//
+// Corresponds with GET /v1/intents/{intent_id} (the `GetIntent` operationId).
+func (c *Client) GetIntent(ctx context.Context, intentId IntentID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetIntentRequest(c.Server, intentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ChangeIntentWithBody Activate, modify or end an intent
+//
+// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /v1/intents/{intent_id} (the `ChangeIntent` operationId).
+func (c *Client) ChangeIntentWithBody(ctx context.Context, intentId IntentID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewChangeIntentRequestWithBody(c.Server, intentId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ChangeIntent Activate, modify or end an intent
+//
+// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /v1/intents/{intent_id} (the `ChangeIntent` operationId).
+func (c *Client) ChangeIntent(ctx context.Context, intentId IntentID, body ChangeIntentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewChangeIntentRequest(c.Server, intentId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2105,6 +2633,217 @@ func NewReceiveCISNotificationRequestWithBody(server string, contentType string,
 	return req, nil
 }
 
+// NewListIntentsRequest constructs an http.Request for the ListIntents method
+func NewListIntentsRequest(server string, params *ListIntentsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/intents")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.From != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "from", *params.From, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.To != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.State != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "state", *params.State, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateIntentRequest calls the generic CreateIntent builder with application/json body
+func NewCreateIntentRequest(server string, body CreateIntentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateIntentRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateIntentRequestWithBody constructs an http.Request for the CreateIntent method, with any body, and a specified content type
+func NewCreateIntentRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/intents")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetIntentRequest constructs an http.Request for the GetIntent method
+func NewGetIntentRequest(server string, intentId IntentID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "intent_id", intentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/intents/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewChangeIntentRequest calls the generic ChangeIntent builder with application/json body
+func NewChangeIntentRequest(server string, intentId IntentID, body ChangeIntentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewChangeIntentRequestWithBody(server, intentId, "application/json", bodyReader)
+}
+
+// NewChangeIntentRequestWithBody constructs an http.Request for the ChangeIntent method, with any body, and a specified content type
+func NewChangeIntentRequestWithBody(server string, intentId IntentID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "intent_id", intentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/intents/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewValidateRegistryRequest constructs an http.Request for the ValidateRegistry method
 func NewValidateRegistryRequest(server string, params *ValidateRegistryParams) (*http.Request, error) {
 	var err error
@@ -2538,6 +3277,60 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /v1/cis/notifications (the `ReceiveCISNotification` operationId).
 	ReceiveCISNotificationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReceiveCISNotificationResponse, error)
+
+	// ListIntentsWithResponse The operator's intents, newest first
+	//
+	// At most 500; from and to keep the intents whose window overlaps them; state filters.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/intents (the `ListIntents` operationId).
+	ListIntentsWithResponse(ctx context.Context, params *ListIntentsParams, reqEditors ...RequestEditorFn) (*ListIntentsResponse, error)
+
+	// CreateIntentWithBodyWithResponse File an operational intent and get the authorisation decision
+	//
+	// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/intents (the `CreateIntent` operationId).
+	CreateIntentWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIntentResponse, error)
+
+	// CreateIntentWithResponse File an operational intent and get the authorisation decision
+	//
+	// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/intents (the `CreateIntent` operationId).
+	CreateIntentWithResponse(ctx context.Context, body CreateIntentJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIntentResponse, error)
+
+	// GetIntentWithResponse One of the operator's intents: its decision and state
+	//
+	// Another operator's intent is 404, never 403.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/intents/{intent_id} (the `GetIntent` operationId).
+	GetIntentWithResponse(ctx context.Context, intentId IntentID, reqEditors ...RequestEditorFn) (*GetIntentResponse, error)
+
+	// ChangeIntentWithBodyWithResponse Activate, modify or end an intent
+	//
+	// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /v1/intents/{intent_id} (the `ChangeIntent` operationId).
+	ChangeIntentWithBodyWithResponse(ctx context.Context, intentId IntentID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ChangeIntentResponse, error)
+
+	// ChangeIntentWithResponse Activate, modify or end an intent
+	//
+	// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /v1/intents/{intent_id} (the `ChangeIntent` operationId).
+	ChangeIntentWithResponse(ctx context.Context, intentId IntentID, body ChangeIntentJSONRequestBody, reqEditors ...RequestEditorFn) (*ChangeIntentResponse, error)
 
 	// ValidateRegistryWithResponse Validity of an operator, a UAS and a remote pilot (F8, cached)
 	//
@@ -3618,6 +4411,359 @@ func (r ReceiveCISNotificationResponse) ContentType() string {
 	return ""
 }
 
+type ListIntentsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *IntentList
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListIntentsResponse) GetJSON200() *IntentList {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r ListIntentsResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ListIntentsResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ListIntentsResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ListIntentsResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListIntentsResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListIntentsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListIntentsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListIntentsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListIntentsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateIntentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *IntentDecision
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *IntentDecision
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *Problem
+	// ApplicationproblemJSON413 the response for an HTTP 413 `application/problem+json` response
+	ApplicationproblemJSON413 *Problem
+	// ApplicationproblemJSON429 the response for an HTTP 429 `application/problem+json` response
+	ApplicationproblemJSON429 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CreateIntentResponse) GetJSON200() *IntentDecision {
+	return r.JSON200
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateIntentResponse) GetJSON201() *IntentDecision {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r CreateIntentResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r CreateIntentResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r CreateIntentResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r CreateIntentResponse) GetApplicationproblemJSON409() *Problem {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON413 returns the response for an HTTP 413 `application/problem+json` response
+func (r CreateIntentResponse) GetApplicationproblemJSON413() *Problem {
+	return r.ApplicationproblemJSON413
+}
+
+// GetApplicationproblemJSON429 returns the response for an HTTP 429 `application/problem+json` response
+func (r CreateIntentResponse) GetApplicationproblemJSON429() *Problem {
+	return r.ApplicationproblemJSON429
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r CreateIntentResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r CreateIntentResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateIntentResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateIntentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateIntentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateIntentResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetIntentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *IntentDecision
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetIntentResponse) GetJSON200() *IntentDecision {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r GetIntentResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r GetIntentResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r GetIntentResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r GetIntentResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetIntentResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetIntentResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetIntentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetIntentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetIntentResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ChangeIntentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *IntentDecision
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *Problem
+	// ApplicationproblemJSON413 the response for an HTTP 413 `application/problem+json` response
+	ApplicationproblemJSON413 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ChangeIntentResponse) GetJSON200() *IntentDecision {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r ChangeIntentResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ChangeIntentResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ChangeIntentResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r ChangeIntentResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r ChangeIntentResponse) GetApplicationproblemJSON409() *Problem {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON413 returns the response for an HTTP 413 `application/problem+json` response
+func (r ChangeIntentResponse) GetApplicationproblemJSON413() *Problem {
+	return r.ApplicationproblemJSON413
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ChangeIntentResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ChangeIntentResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ChangeIntentResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ChangeIntentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ChangeIntentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ChangeIntentResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ValidateRegistryResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -4122,6 +5268,96 @@ func (c *ClientWithResponses) ReceiveCISNotificationWithBodyWithResponse(ctx con
 		return nil, err
 	}
 	return ParseReceiveCISNotificationResponse(rsp)
+}
+
+// ListIntentsWithResponse The operator's intents, newest first
+//
+// At most 500; from and to keep the intents whose window overlaps them; state filters.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/intents (the `ListIntents` operationId).
+func (c *ClientWithResponses) ListIntentsWithResponse(ctx context.Context, params *ListIntentsParams, reqEditors ...RequestEditorFn) (*ListIntentsResponse, error) {
+	rsp, err := c.ListIntents(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListIntentsResponse(rsp)
+}
+
+// CreateIntentWithBodyWithResponse File an operational intent and get the authorisation decision
+//
+// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/intents (the `CreateIntent` operationId).
+func (c *ClientWithResponses) CreateIntentWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIntentResponse, error) {
+	rsp, err := c.CreateIntentWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIntentResponse(rsp)
+}
+
+// CreateIntentWithResponse File an operational intent and get the authorisation decision
+//
+// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/intents (the `CreateIntent` operationId).
+func (c *ClientWithResponses) CreateIntentWithResponse(ctx context.Context, body CreateIntentJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIntentResponse, error) {
+	rsp, err := c.CreateIntent(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIntentResponse(rsp)
+}
+
+// GetIntentWithResponse One of the operator's intents: its decision and state
+//
+// Another operator's intent is 404, never 403.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/intents/{intent_id} (the `GetIntent` operationId).
+func (c *ClientWithResponses) GetIntentWithResponse(ctx context.Context, intentId IntentID, reqEditors ...RequestEditorFn) (*GetIntentResponse, error) {
+	rsp, err := c.GetIntent(ctx, intentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetIntentResponse(rsp)
+}
+
+// ChangeIntentWithBodyWithResponse Activate, modify or end an intent
+//
+// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /v1/intents/{intent_id} (the `ChangeIntent` operationId).
+func (c *ClientWithResponses) ChangeIntentWithBodyWithResponse(ctx context.Context, intentId IntentID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ChangeIntentResponse, error) {
+	rsp, err := c.ChangeIntentWithBody(ctx, intentId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseChangeIntentResponse(rsp)
+}
+
+// ChangeIntentWithResponse Activate, modify or end an intent
+//
+// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /v1/intents/{intent_id} (the `ChangeIntent` operationId).
+func (c *ClientWithResponses) ChangeIntentWithResponse(ctx context.Context, intentId IntentID, body ChangeIntentJSONRequestBody, reqEditors ...RequestEditorFn) (*ChangeIntentResponse, error) {
+	rsp, err := c.ChangeIntent(ctx, intentId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseChangeIntentResponse(rsp)
 }
 
 // ValidateRegistryWithResponse Validity of an operator, a UAS and a remote pilot (F8, cached)
@@ -5008,6 +6244,299 @@ func ParseReceiveCISNotificationResponse(rsp *http.Response) (*ReceiveCISNotific
 			return nil, err
 		}
 		response.ApplicationproblemJSON415 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListIntentsResponse parses an HTTP response from a ListIntentsWithResponse call
+func ParseListIntentsResponse(rsp *http.Response) (*ListIntentsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListIntentsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IntentList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateIntentResponse parses an HTTP response from a CreateIntentWithResponse call
+func ParseCreateIntentResponse(rsp *http.Response) (*CreateIntentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateIntentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IntentDecision
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest IntentDecision
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON413 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetIntentResponse parses an HTTP response from a GetIntentWithResponse call
+func ParseGetIntentResponse(rsp *http.Response) (*GetIntentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetIntentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IntentDecision
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseChangeIntentResponse parses an HTTP response from a ChangeIntentWithResponse call
+func ParseChangeIntentResponse(rsp *http.Response) (*ChangeIntentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ChangeIntentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IntentDecision
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON413 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Problem

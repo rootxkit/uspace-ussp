@@ -120,6 +120,7 @@ func withAuth(t *testing.T, vars map[string]string, a *fakeAuthority) map[string
 	vars["USSP_TOKEN_ISSUERS"] = a.url + "=" + a.jwks
 	withCIS(t, vars)
 	withRegistry(t, vars)
+	withGeoid(t, vars)
 	return vars
 }
 
@@ -161,6 +162,12 @@ type stack struct {
 }
 
 func newStack(t *testing.T, c *clock, logs *logBuffer) *stack {
+	t.Helper()
+	return newStackWith(t, c, logs, nil)
+}
+
+// newStackWith is newStack serving /v1/intents from intents (nil: 503).
+func newStackWith(t *testing.T, c *clock, logs *logBuffer, intents national.Intents) *stack {
 	t.Helper()
 	ensureSchemas(t)
 	own, _, _ := testKeys(t)
@@ -204,7 +211,7 @@ func newStack(t *testing.T, c *clock, logs *logBuffer) *stack {
 	token := &auth.TokenEndpoint{Issuer: iss, Clients: s.svc, Hasher: hasher, Audit: s.svc, Counters: s.counters, Logger: logger, Now: c.Now,
 		TTL: func() time.Duration { return time.Duration(pol.OperatorTokenTTLS) * time.Second }}
 	mux := http.NewServeMux()
-	if err := national.Register(mux, &national.Server{Health: noHealth{}, Token: token, Issuer: iss, Accounts: s.svc, Logger: logger}, guard.Require); err != nil {
+	if err := national.Register(mux, &national.Server{Health: noHealth{}, Token: token, Issuer: iss, Accounts: s.svc, Intents: intents, Logger: logger}, guard.Require); err != nil {
 		t.Fatal(err)
 	}
 	mux.HandleFunc("/", httpx.NotFound)

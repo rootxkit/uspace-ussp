@@ -6,7 +6,8 @@
 // USS endpoints (internal/stdapi), 501 until WP-13; WP-4 runs the CIS
 // cache (internal/cis) and its receiver POST /v1/cis/notifications;
 // WP-5 the registry validity cache (internal/registry), its change feed
-// and GET /v1/registry/validate, and checks operator accounts with it.
+// and GET /v1/registry/validate, and checks operator accounts with it;
+// WP-7 flight authorisation (internal/intent) and /v1/intents.
 package api
 
 import (
@@ -182,8 +183,9 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 		IPLimiter:     httpx.NewRateLimiter(perMin(cfg.TokenRatePerMin), burst(cfg.TokenRatePerMin), 100_000, counters),
 		Counters:      counters, Logger: rt.Logger,
 	}
+	intents := startIntents(ctx, rt, pol, cisState, reg.Cache, kv)
 	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc,
-		CIS: cisState.Receiver, Registry: reg.Cache, Logger: rt.Logger}
+		CIS: cisState.Receiver, Registry: reg.Cache, Intents: intents, Logger: rt.Logger}
 	if err := national.Register(mux, srv, guard.Require); err != nil {
 		return fmt.Errorf("access table: %w", err)
 	}

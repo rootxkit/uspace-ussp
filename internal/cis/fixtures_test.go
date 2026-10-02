@@ -88,6 +88,15 @@ func prohibited(id string) feat {
 	return feat{id: id, typ: "PROHIBITED", lower: f64(0), lowerRef: "AGL", upper: f64(120), upperRef: "AGL", rect: tbilisi}
 }
 
+// featureOf is a feature the dataset d holds: a U-space airspace for
+// uspace_airspace (which holds nothing else), else a PROHIBITED zone.
+func featureOf(d Dataset, id string) feat {
+	if d == USpaceAirspace {
+		return airspace(id)
+	}
+	return prohibited(id)
+}
+
 // requirements is a cis/uspace_requirements/v1 block.
 func requirements() map[string]any {
 	return map[string]any{"uspace_requirements": map[string]any{

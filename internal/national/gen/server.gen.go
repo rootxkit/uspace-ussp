@@ -6,6 +6,7 @@
 package gen
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -346,6 +347,223 @@ type Health struct {
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
 
+// IntentAltitude defines model for IntentAltitude.
+type IntentAltitude struct {
+	Reference interface{} `json:"reference"`
+	Units     interface{} `json:"units"`
+	Value     float32     `json:"value"`
+}
+
+// IntentConflict defines model for IntentConflict.
+type IntentConflict struct {
+	Detail string      `json:"detail"`
+	Effect interface{} `json:"effect"`
+
+	// Item The Annex IV item number, null when the conflict is not about one.
+	Item    *int        `json:"item"`
+	Kind    interface{} `json:"kind"`
+	Overlap *struct {
+		// HM Horizontal separation, 0 when the outlines meet; null when not judged.
+		HM *float32 `json:"h_m"`
+
+		// TS Common time in seconds.
+		TS *float32 `json:"t_s"`
+
+		// VM Vertical overlap in AMSL; null when a limit is not AMSL.
+		VM *float32 `json:"v_m"`
+	} `json:"overlap"`
+	Reason string  `json:"reason"`
+	Ref    *string `json:"ref,omitempty"`
+
+	// Volume Index of our volume.
+	Volume *int `json:"volume"`
+}
+
+// IntentDecision intent/decision/v1 (schemas/intent/decision/v1/schema.json, the source of truth).
+type IntentDecision struct {
+	// Alternative Art. 10(4) proposal; none in v1.
+	Alternative any `json:"alternative"`
+
+	// AuthorisationNumber <USSP code>-<operator registration public part>-<ULID> (spec 03 §6); null unless authorised.
+	AuthorisationNumber *string  `json:"authorisation_number"`
+	ChangeReason        *string  `json:"change_reason"`
+	CisAgeS             *float32 `json:"cis_age_s"`
+
+	// CisVersionChecked The CIS versions the decision rests on, one label per ED-318 dataset; null when the CIS was not consulted.
+	CisVersionChecked *string `json:"cis_version_checked"`
+	ClientRef         string  `json:"client_ref"`
+	Conditions        []struct {
+		Code   string  `json:"code"`
+		Detail string  `json:"detail"`
+		Ref    *string `json:"ref,omitempty"`
+	} `json:"conditions"`
+	Conflicts           []IntentConflict `json:"conflicts"`
+	DecidedAt           time.Time        `json:"decided_at"`
+	Decision            interface{}      `json:"decision"`
+	DeviationThresholds *struct {
+		HM float32 `json:"h_m"`
+		TS float32 `json:"t_s"`
+		VM float32 `json:"v_m"`
+	} `json:"deviation_thresholds"`
+
+	// DssState F3548 state of the intent, null when it is not one the DSS holds.
+	DssState         interface{} `json:"dss_state"`
+	ExemptArt13      bool        `json:"exempt_art_1_3"`
+	InUspaceAirspace bool        `json:"in_uspace_airspace"`
+
+	// IntentId UUID, also the DSS entity id.
+	IntentId          string      `json:"intent_id"`
+	PolicyVersion     int         `json:"policy_version"`
+	Priority          int         `json:"priority"`
+	RegistryCheckedAt *time.Time  `json:"registry_checked_at"`
+	State             interface{} `json:"state"`
+	UpdatedAt         time.Time   `json:"updated_at"`
+	UspaceAirspaceIds []string    `json:"uspace_airspace_ids"`
+	ValidFrom         time.Time   `json:"valid_from"`
+	ValidTo           time.Time   `json:"valid_to"`
+	Version           int         `json:"version"`
+	VolumesAmsl       []struct {
+		LowerAmslM  float32 `json:"lower_amsl_m"`
+		LowerW84M   float32 `json:"lower_w84_m"`
+		UndulationM float32 `json:"undulation_m"`
+		UpperAmslM  float32 `json:"upper_amsl_m"`
+		UpperW84M   float32 `json:"upper_w84_m"`
+	} `json:"volumes_amsl"`
+
+	// WeatherCheckedRef Art. 10(3); null until weather (WP-16).
+	WeatherCheckedRef *string `json:"weather_checked_ref"`
+}
+
+// IntentList defines model for IntentList.
+type IntentList struct {
+	Intents []IntentDecision `json:"intents"`
+}
+
+// IntentPatch activate (confirmed in the response, Art. 10(5)), modify (new volumes re-decided as a new version, Art. 6(6)) or end.
+type IntentPatch struct {
+	Action       interface{} `json:"action"`
+	ChangeReason *string     `json:"change_reason,omitempty"`
+
+	// Volumes Required for modify, refused otherwise.
+	Volumes *[]IntentVolume4D `json:"volumes,omitempty"`
+}
+
+// IntentPoint defines model for IntentPoint.
+type IntentPoint struct {
+	Lat float32 `json:"lat"`
+	Lng float32 `json:"lng"`
+}
+
+// IntentRequest intent/request/v1 (schemas/intent/request/v1/schema.json, the source of truth): the ten Annex IV items numbered as in the Annex, the contingency measures, the emergency contact reference and the idempotency reference.
+type IntentRequest struct {
+	// AuthorisationRef A specific-category authorisation from the authority: a zone requiring an authorisation becomes a condition instead of pending_authority.
+	AuthorisationRef *string `json:"authorisation_ref,omitempty"`
+
+	// Category (4) Category of the operation.
+	Category interface{} `json:"category"`
+
+	// ClassLabel (4) Class label of the UA.
+	ClassLabel interface{} `json:"class_label,omitempty"`
+
+	// ClientRef Idempotency reference, unique per client: the same body under it answers the same decision, another body is refused with 409.
+	ClientRef string `json:"client_ref"`
+
+	// ConnectivityMethods (7) Connectivity methods.
+	ConnectivityMethods []string `json:"connectivity_methods"`
+
+	// Contingency Contingency measures (Art. 6(8)).
+	Contingency struct {
+		LandingSites *[]IntentPoint `json:"landing_sites,omitempty"`
+		Procedure    string         `json:"procedure"`
+	} `json:"contingency"`
+
+	// EmergencyContactRef Reference to the emergency contact (never the contact itself).
+	EmergencyContactRef string `json:"emergency_contact_ref"`
+
+	// EnduranceS (8) Endurance in seconds; it must cover the window of the volumes.
+	EnduranceS int `json:"endurance_s"`
+
+	// FlightType (3) Type of flight: a special operation per SERA Art. 4, or normal.
+	FlightType interface{} `json:"flight_type"`
+
+	// IdentificationTechnology (6) Identification technology.
+	IdentificationTechnology interface{}  `json:"identification_technology"`
+	Landing                  *IntentPoint `json:"landing,omitempty"`
+
+	// LossOfC2Procedure (9) Procedure on loss of the command and control link.
+	LossOfC2Procedure string `json:"loss_of_c2_procedure"`
+
+	// Mode (2) Mode of operation.
+	Mode interface{} `json:"mode"`
+
+	// MtomKg (4) Declared maximum take-off mass in kilograms.
+	MtomKg *float32 `json:"mtom_kg,omitempty"`
+
+	// OperatorReg (10) Operator registration number, public part only.
+	OperatorReg string `json:"operator_reg"`
+
+	// PilotRef Remote pilot identifier for the registry check.
+	PilotRef *string `json:"pilot_ref,omitempty"`
+
+	// Priority (3) F3548 priority; when given it must equal the derived one: 0 for normal, the policy's special_operation_priority for special_operation.
+	Priority *int `json:"priority,omitempty"`
+
+	// PrivatelyBuilt (4) The UA is privately built (Art. 1(3) with mtom_kg).
+	PrivatelyBuilt *bool `json:"privately_built,omitempty"`
+
+	// Subcategory (4) Open subcategory.
+	Subcategory interface{}  `json:"subcategory,omitempty"`
+	Takeoff     *IntentPoint `json:"takeoff,omitempty"`
+
+	// TypeCertificate (4) Type certificate (certified category).
+	TypeCertificate *string `json:"type_certificate,omitempty"`
+
+	// UaRegistration (10) UA registration number when applicable (required in the certified category).
+	UaRegistration *string `json:"ua_registration,omitempty"`
+
+	// UasSerial (1) Serial number of the UA or of its add-on (ANSI/CTA-2063-A where the class requires it).
+	UasSerial string `json:"uas_serial"`
+
+	// Volumes (5) The 4D trajectory: F3548 Volume4D, every one with both times and both altitudes.
+	Volumes []IntentVolume4D `json:"volumes"`
+}
+
+// IntentTime defines model for IntentTime.
+type IntentTime struct {
+	Format interface{} `json:"format"`
+	Value  time.Time   `json:"value"`
+}
+
+// IntentVolume4D defines model for IntentVolume4D.
+type IntentVolume4D struct {
+	TimeEnd   IntentTime            `json:"time_end"`
+	TimeStart IntentTime            `json:"time_start"`
+	Volume    IntentVolume4D_Volume `json:"volume"`
+}
+
+// IntentVolume4DVolume0 defines model for IntentVolume4D.Volume.0.
+type IntentVolume4DVolume0 = interface{}
+
+// IntentVolume4DVolume1 defines model for IntentVolume4D.Volume.1.
+type IntentVolume4DVolume1 = interface{}
+
+// IntentVolume4D_Volume defines model for IntentVolume4D.Volume.
+type IntentVolume4D_Volume struct {
+	AltitudeLower IntentAltitude `json:"altitude_lower"`
+	AltitudeUpper IntentAltitude `json:"altitude_upper"`
+	OutlineCircle *struct {
+		Center IntentPoint `json:"center"`
+		Radius struct {
+			Units interface{} `json:"units"`
+			Value float32     `json:"value"`
+		} `json:"radius"`
+	} `json:"outline_circle,omitempty"`
+	OutlinePolygon *struct {
+		Vertices []IntentPoint `json:"vertices"`
+	} `json:"outline_polygon,omitempty"`
+	union json.RawMessage
+}
+
 // JWKS defines model for JWKS.
 type JWKS struct {
 	Keys []map[string]interface{} `json:"keys"`
@@ -602,6 +820,9 @@ type TokenResponseTokenType string
 // ClientID defines model for ClientID.
 type ClientID = string
 
+// IntentID defines model for IntentID.
+type IntentID = openapi_types.UUID
+
 // OperatorID defines model for OperatorID.
 type OperatorID = openapi_types.UUID
 
@@ -609,6 +830,14 @@ type OperatorID = openapi_types.UUID
 // OAuth2 client library reads `error` and a uspace client reads the
 // problem.
 type OAuthError = OAuthProblem
+
+// ListIntentsParams defines parameters for ListIntents.
+type ListIntentsParams struct {
+	From  *time.Time `form:"from,omitempty" json:"from,omitempty"`
+	To    *time.Time `form:"to,omitempty" json:"to,omitempty"`
+	State *string    `form:"state,omitempty" json:"state,omitempty"`
+	Limit *int       `form:"limit,omitempty" json:"limit,omitempty"`
+}
 
 // ValidateRegistryParams defines parameters for ValidateRegistry.
 type ValidateRegistryParams struct {
@@ -635,6 +864,146 @@ type CreateClientJSONRequestBody = ClientRequest
 
 // BindSerialJSONRequestBody defines body for BindSerial for application/json ContentType.
 type BindSerialJSONRequestBody = SerialBindingRequest
+
+// CreateIntentJSONRequestBody defines body for CreateIntent for application/json ContentType.
+type CreateIntentJSONRequestBody = IntentRequest
+
+// ChangeIntentJSONRequestBody defines body for ChangeIntent for application/json ContentType.
+type ChangeIntentJSONRequestBody = IntentPatch
+
+// AsIntentVolume4DVolume0 returns the union data inside the IntentVolume4D_Volume as a IntentVolume4DVolume0
+func (t IntentVolume4D_Volume) AsIntentVolume4DVolume0() (IntentVolume4DVolume0, error) {
+	var body IntentVolume4DVolume0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromIntentVolume4DVolume0 overwrites any union data inside the IntentVolume4D_Volume as the provided IntentVolume4DVolume0
+func (t *IntentVolume4D_Volume) FromIntentVolume4DVolume0(v IntentVolume4DVolume0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeIntentVolume4DVolume0 performs a merge with any union data inside the IntentVolume4D_Volume, using the provided IntentVolume4DVolume0
+func (t *IntentVolume4D_Volume) MergeIntentVolume4DVolume0(v IntentVolume4DVolume0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsIntentVolume4DVolume1 returns the union data inside the IntentVolume4D_Volume as a IntentVolume4DVolume1
+func (t IntentVolume4D_Volume) AsIntentVolume4DVolume1() (IntentVolume4DVolume1, error) {
+	var body IntentVolume4DVolume1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromIntentVolume4DVolume1 overwrites any union data inside the IntentVolume4D_Volume as the provided IntentVolume4DVolume1
+func (t *IntentVolume4D_Volume) FromIntentVolume4DVolume1(v IntentVolume4DVolume1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeIntentVolume4DVolume1 performs a merge with any union data inside the IntentVolume4D_Volume, using the provided IntentVolume4DVolume1
+func (t *IntentVolume4D_Volume) MergeIntentVolume4DVolume1(v IntentVolume4DVolume1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t IntentVolume4D_Volume) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	object := make(map[string]json.RawMessage)
+	if t.union != nil {
+		err = json.Unmarshal(b, &object)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	object["altitude_lower"], err = json.Marshal(t.AltitudeLower)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'altitude_lower': %w", err)
+	}
+
+	object["altitude_upper"], err = json.Marshal(t.AltitudeUpper)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'altitude_upper': %w", err)
+	}
+
+	if t.OutlineCircle != nil {
+		object["outline_circle"], err = json.Marshal(t.OutlineCircle)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'outline_circle': %w", err)
+		}
+	}
+
+	if t.OutlinePolygon != nil {
+		object["outline_polygon"], err = json.Marshal(t.OutlinePolygon)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'outline_polygon': %w", err)
+		}
+	}
+	b, err = json.Marshal(object)
+	return b, err
+}
+
+func (t *IntentVolume4D_Volume) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	if err != nil {
+		return err
+	}
+	object := make(map[string]json.RawMessage)
+	err = json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["altitude_lower"]; found {
+		err = json.Unmarshal(raw, &t.AltitudeLower)
+		if err != nil {
+			return fmt.Errorf("error reading 'altitude_lower': %w", err)
+		}
+	}
+
+	if raw, found := object["altitude_upper"]; found {
+		err = json.Unmarshal(raw, &t.AltitudeUpper)
+		if err != nil {
+			return fmt.Errorf("error reading 'altitude_upper': %w", err)
+		}
+	}
+
+	if raw, found := object["outline_circle"]; found {
+		err = json.Unmarshal(raw, &t.OutlineCircle)
+		if err != nil {
+			return fmt.Errorf("error reading 'outline_circle': %w", err)
+		}
+	}
+
+	if raw, found := object["outline_polygon"]; found {
+		err = json.Unmarshal(raw, &t.OutlinePolygon)
+		if err != nil {
+			return fmt.Errorf("error reading 'outline_polygon': %w", err)
+		}
+	}
+
+	return err
+}
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -683,6 +1052,18 @@ type ServerInterface interface {
 	// ReceiveCISNotification Receive a CIS change notification (F3 push)
 	// (POST /v1/cis/notifications)
 	ReceiveCISNotification(w http.ResponseWriter, r *http.Request)
+	// ListIntents The operator's intents, newest first
+	// (GET /v1/intents)
+	ListIntents(w http.ResponseWriter, r *http.Request, params ListIntentsParams)
+	// CreateIntent File an operational intent and get the authorisation decision
+	// (POST /v1/intents)
+	CreateIntent(w http.ResponseWriter, r *http.Request)
+	// GetIntent One of the operator's intents: its decision and state
+	// (GET /v1/intents/{intent_id})
+	GetIntent(w http.ResponseWriter, r *http.Request, intentId IntentID)
+	// ChangeIntent Activate, modify or end an intent
+	// (PATCH /v1/intents/{intent_id})
+	ChangeIntent(w http.ResponseWriter, r *http.Request, intentId IntentID)
 	// ValidateRegistry Validity of an operator, a UAS and a remote pilot (F8, cached)
 	// (GET /v1/registry/validate)
 	ValidateRegistry(w http.ResponseWriter, r *http.Request, params ValidateRegistryParams)
@@ -1015,6 +1396,144 @@ func (siw *ServerInterfaceWrapper) ReceiveCISNotification(w http.ResponseWriter,
 	handler.ServeHTTP(w, r)
 }
 
+// ListIntents operation middleware
+func (siw *ServerInterfaceWrapper) ListIntents(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListIntentsParams
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListIntents(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateIntent operation middleware
+func (siw *ServerInterfaceWrapper) CreateIntent(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateIntent(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetIntent operation middleware
+func (siw *ServerInterfaceWrapper) GetIntent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "intent_id" -------------
+	var intentId IntentID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "intent_id", r.PathValue("intent_id"), &intentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "intent_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetIntent(w, r, intentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ChangeIntent operation middleware
+func (siw *ServerInterfaceWrapper) ChangeIntent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "intent_id" -------------
+	var intentId IntentID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "intent_id", r.PathValue("intent_id"), &intentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "intent_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ChangeIntent(w, r, intentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ValidateRegistry operation middleware
 func (siw *ServerInterfaceWrapper) ValidateRegistry(w http.ResponseWriter, r *http.Request) {
 
@@ -1211,6 +1730,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/readyz", wrapper.GetReadyz)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/cis/notifications", wrapper.ReceiveCISNotification)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/registry/validate", wrapper.ValidateRegistry)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/intents", wrapper.ListIntents)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/intents", wrapper.CreateIntent)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/intents/{intent_id}", wrapper.GetIntent)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/intents/{intent_id}", wrapper.ChangeIntent)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/oauth/token", wrapper.RequestToken)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/jwks.json", wrapper.GetJWKS)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/login", wrapper.Login)

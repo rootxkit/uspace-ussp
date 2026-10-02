@@ -121,6 +121,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/intents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The operator's intents, newest first
+         * @description At most 500; from and to keep the intents whose window overlaps them; state filters.
+         */
+        get: operations["listIntents"];
+        put?: never;
+        /**
+         * File an operational intent and get the authorisation decision
+         * @description Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+         */
+        post: operations["createIntent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/intents/{intent_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                intent_id: components["parameters"]["IntentID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * One of the operator's intents: its decision and state
+         * @description Another operator's intent is 404, never 403.
+         */
+        get: operations["getIntent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Activate, modify or end an intent
+         * @description activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409.
+         */
+        patch: operations["changeIntent"];
+        trace?: never;
+    };
     "/oauth/token": {
         parameters: {
             query?: never;
@@ -644,6 +694,203 @@ export interface components {
             /** Format: date-time */
             bound_at: string;
         };
+        /** @description intent/request/v1 (schemas/intent/request/v1/schema.json, the source of truth): the ten Annex IV items numbered as in the Annex, the contingency measures, the emergency contact reference and the idempotency reference. */
+        IntentRequest: {
+            /** @description Idempotency reference, unique per client: the same body under it answers the same decision, another body is refused with 409. */
+            client_ref: string;
+            /** @description (1) Serial number of the UA or of its add-on (ANSI/CTA-2063-A where the class requires it). */
+            uas_serial: string;
+            /**
+             * @description (2) Mode of operation.
+             * @enum {unknown}
+             */
+            mode: "VLOS" | "BVLOS";
+            /**
+             * @description (3) Type of flight: a special operation per SERA Art. 4, or normal.
+             * @enum {unknown}
+             */
+            flight_type: "normal" | "special_operation";
+            /** @description (3) F3548 priority; when given it must equal the derived one: 0 for normal, the policy's special_operation_priority for special_operation. */
+            priority?: number;
+            /**
+             * @description (4) Category of the operation.
+             * @enum {unknown}
+             */
+            category: "open" | "specific" | "certified";
+            /**
+             * @description (4) Open subcategory.
+             * @enum {unknown}
+             */
+            subcategory?: "A1" | "A2" | "A3";
+            /**
+             * @description (4) Class label of the UA.
+             * @enum {unknown}
+             */
+            class_label?: "C0" | "C1" | "C2" | "C3" | "C4" | "C5" | "C6";
+            /** @description (4) Type certificate (certified category). */
+            type_certificate?: string;
+            /** @description (4) The UA is privately built (Art. 1(3) with mtom_kg). */
+            privately_built?: boolean;
+            /** @description (4) Declared maximum take-off mass in kilograms. */
+            mtom_kg?: number;
+            /** @description (5) The 4D trajectory: F3548 Volume4D, every one with both times and both altitudes. */
+            volumes: components["schemas"]["IntentVolume4D"][];
+            /**
+             * @description (6) Identification technology.
+             * @enum {unknown}
+             */
+            identification_technology: "network" | "direct" | "both";
+            /** @description (7) Connectivity methods. */
+            connectivity_methods: string[];
+            /** @description (8) Endurance in seconds; it must cover the window of the volumes. */
+            endurance_s: number;
+            /** @description (9) Procedure on loss of the command and control link. */
+            loss_of_c2_procedure: string;
+            /** @description (10) Operator registration number, public part only. */
+            operator_reg: string;
+            /** @description (10) UA registration number when applicable (required in the certified category). */
+            ua_registration?: string;
+            /** @description Remote pilot identifier for the registry check. */
+            pilot_ref?: string;
+            takeoff?: components["schemas"]["IntentPoint"];
+            landing?: components["schemas"]["IntentPoint"];
+            /** @description Contingency measures (Art. 6(8)). */
+            contingency: {
+                procedure: string;
+                landing_sites?: components["schemas"]["IntentPoint"][];
+            };
+            /** @description Reference to the emergency contact (never the contact itself). */
+            emergency_contact_ref: string;
+            /** @description A specific-category authorisation from the authority: a zone requiring an authorisation becomes a condition instead of pending_authority. */
+            authorisation_ref?: string;
+        };
+        IntentPoint: {
+            lat: number;
+            lng: number;
+        };
+        IntentTime: {
+            /** Format: date-time */
+            value: string;
+            /** @constant */
+            format: "RFC3339";
+        };
+        IntentAltitude: {
+            value: number;
+            /** @constant */
+            reference: "W84";
+            /** @constant */
+            units: "M";
+        };
+        IntentVolume4D: {
+            volume: {
+                outline_polygon?: {
+                    vertices: components["schemas"]["IntentPoint"][];
+                };
+                outline_circle?: {
+                    center: components["schemas"]["IntentPoint"];
+                    radius: {
+                        value: number;
+                        /** @constant */
+                        units: "M";
+                    };
+                };
+                altitude_lower: components["schemas"]["IntentAltitude"];
+                altitude_upper: components["schemas"]["IntentAltitude"];
+            } & (unknown | unknown);
+            time_start: components["schemas"]["IntentTime"];
+            time_end: components["schemas"]["IntentTime"];
+        };
+        /** @description intent/decision/v1 (schemas/intent/decision/v1/schema.json, the source of truth). */
+        IntentDecision: {
+            /** @description UUID, also the DSS entity id. */
+            intent_id: string;
+            version: number;
+            client_ref: string;
+            /** @enum {unknown} */
+            decision: "authorised" | "accepted_voluntary" | "rejected" | "pending_validation" | "pending_authority" | "pending_dss";
+            /** @enum {unknown} */
+            state: "pending_validation" | "pending_dss" | "pending_authority" | "accepted" | "activated" | "nonconforming" | "contingent" | "ended" | "rejected" | "withdrawn";
+            /**
+             * @description F3548 state of the intent, null when it is not one the DSS holds.
+             * @enum {unknown}
+             */
+            dss_state: "Accepted" | "Activated" | "Nonconforming" | "Contingent" | null;
+            /** @description <USSP code>-<operator registration public part>-<ULID> (spec 03 §6); null unless authorised. */
+            authorisation_number: string | null;
+            exempt_art_1_3: boolean;
+            in_uspace_airspace: boolean;
+            uspace_airspace_ids: string[];
+            priority: number;
+            deviation_thresholds: null | {
+                h_m: number;
+                v_m: number;
+                t_s: number;
+            };
+            /** @description Art. 10(4) proposal; none in v1. */
+            alternative: null;
+            conflicts: components["schemas"]["IntentConflict"][];
+            conditions: {
+                code: string;
+                ref?: string;
+                detail: string;
+            }[];
+            volumes_amsl: {
+                lower_amsl_m: number;
+                upper_amsl_m: number;
+                undulation_m: number;
+                lower_w84_m: number;
+                upper_w84_m: number;
+            }[];
+            /** Format: date-time */
+            valid_from: string;
+            /** Format: date-time */
+            valid_to: string;
+            /** @description The CIS versions the decision rests on, one label per ED-318 dataset; null when the CIS was not consulted. */
+            cis_version_checked: string | null;
+            cis_age_s: number | null;
+            /** Format: date-time */
+            registry_checked_at: string | null;
+            policy_version: number;
+            /** @description Art. 10(3); null until weather (WP-16). */
+            weather_checked_ref: string | null;
+            change_reason: string | null;
+            /** Format: date-time */
+            decided_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        IntentConflict: {
+            /** @enum {unknown} */
+            kind: "annex_iv" | "registry" | "cis" | "airspace" | "zone" | "restriction" | "intent" | "policy" | "dss";
+            reason: string;
+            /** @enum {unknown} */
+            effect: "rejects" | "holds" | "flags_other";
+            ref?: string;
+            /** @description The Annex IV item number, null when the conflict is not about one. */
+            item: number | null;
+            /** @description Index of our volume. */
+            volume: number | null;
+            overlap: null | {
+                /** @description Horizontal separation, 0 when the outlines meet; null when not judged. */
+                h_m: number | null;
+                /** @description Vertical overlap in AMSL; null when a limit is not AMSL. */
+                v_m: number | null;
+                /** @description Common time in seconds. */
+                t_s: number | null;
+            };
+            detail: string;
+        };
+        /** @description activate (confirmed in the response, Art. 10(5)), modify (new volumes re-decided as a new version, Art. 6(6)) or end. */
+        IntentPatch: {
+            /** @enum {unknown} */
+            action: "activate" | "modify" | "end";
+            /** @description Required for modify, refused otherwise. */
+            volumes?: components["schemas"]["IntentVolume4D"][];
+            change_reason?: string;
+        };
+        IntentList: {
+            intents: components["schemas"]["IntentDecision"][];
+        };
     };
     responses: {
         /** @description An error, as RFC 9457 problem details. */
@@ -668,6 +915,7 @@ export interface components {
     parameters: {
         OperatorID: string;
         ClientID: string;
+        IntentID: string;
     };
     requestBodies: never;
     headers: never;
@@ -780,6 +1028,138 @@ export interface operations {
             400: components["responses"]["Problem"];
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listIntents: {
+        parameters: {
+            query?: {
+                from?: string;
+                to?: string;
+                state?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The intents. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntentList"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    createIntent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IntentRequest"];
+            };
+        };
+        responses: {
+            /** @description The decision of an earlier request with the same client_ref and body. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntentDecision"];
+                };
+            };
+            /** @description Decided: authorised, accepted_voluntary, rejected or pending_*. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntentDecision"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            413: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getIntent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                intent_id: components["parameters"]["IntentID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The decision as it stands. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntentDecision"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    changeIntent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                intent_id: components["parameters"]["IntentID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IntentPatch"];
+            };
+        };
+        responses: {
+            /** @description The new version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntentDecision"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            413: components["responses"]["Problem"];
             503: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
         };
