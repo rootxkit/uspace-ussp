@@ -71,9 +71,11 @@ func (s *Store) InsertPolicy(ctx context.Context, actor, reason string, v policy
 }
 
 // policyRecord decodes a stored row strictly: an unknown field is an
-// error, never silently dropped.
+// error, never silently dropped. A field the stored version predates
+// (a threshold added by a later work package, such as WP-5's registry
+// TTLs) takes its default, so an older version keeps loading.
 func policyRecord(row relational.Policy) (policy.Record, error) {
-	var v policy.Values
+	v := policy.Defaults()
 	dec := json.NewDecoder(bytes.NewReader(row.Values))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&v); err != nil {
