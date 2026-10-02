@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"time"
 
 	"github.com/rootxkit/uspace-core/core"
@@ -123,12 +124,15 @@ func (s *Server) Shutdown(timeout time.Duration, errc <-chan error) error {
 type BaselineDeps struct {
 	Counters     *core.Counters
 	MaxBodyBytes int64 // <= 0: DefaultMaxBodyBytes
+	// TrustedProxies are the proxies whose X-Forwarded-For RealIP
+	// believes (USSP_TRUSTED_PROXIES); empty: the peer is the client.
+	TrustedProxies []netip.Prefix
 }
 
 // Baseline wraps h with the middleware every listener uses, in order:
-// route tracking, request id, access log, panic recovery and the
-// default body cap. Per-client rate limits arrive with the first route
-// that takes untrusted traffic (Caddy limits per IP before that).
+// route tracking, request id, the client address behind the trusted
+// proxies (RealIP), access log, panic recovery and the default body
+// cap. Rate limits are per route, keyed on RemoteIP or on the client.
 func Baseline(h http.Handler, logger *slog.Logger, deps BaselineDeps) http.Handler {
 	maxBody := deps.MaxBodyBytes
 	if maxBody <= 0 {
@@ -137,6 +141,7 @@ func Baseline(h http.Handler, logger *slog.Logger, deps BaselineDeps) http.Handl
 	return Chain(captureRoute(h),
 		TrackRoute,
 		RequestID,
+		RealIP(deps.TrustedProxies),
 		AccessLog(logger),
 		Recover(logger, deps.Counters),
 		BodyCap(maxBody, deps.Counters),
