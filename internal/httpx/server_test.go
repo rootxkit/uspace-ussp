@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,10 +28,21 @@ func TestNewServerAppliesTimeoutDefaults(t *testing.T) {
 	}
 }
 
+// The slow request is in flight when the context ends, and the drain
+// waits for it. Two races made this test fail about one run in ten on
+// Windows, both with "drain exceeded": a shared keep-alive transport
+// could dial a spare connection for /slow while the /nowhere connection
+// was still being returned to its pool, and that spare connection sat
+// in StateNew, which Shutdown leaves alone for 5 s (net/http issue
+// 22682), the whole drain bound; and fixed sleeps stood in for "the
+// request reached the handler" and "the shutdown has begun". Each
+// request now has its own connection, and both moments are observed.
 func TestServeAnswersThenDrainsOnCancel(t *testing.T) {
 	release := make(chan struct{})
+	entered := make(chan struct{})
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /slow", func(w http.ResponseWriter, _ *http.Request) {
+		close(entered)
 		<-release
 		_, _ = io.WriteString(w, "done")
 	})
@@ -42,11 +54,14 @@ func TestServeAnswersThenDrainsOnCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	served := make(chan error, 1)
 	go func() { served <- s.Serve(ctx, ln, 5*time.Second) }()
 
+	// One connection per request: no idle connection to race with.
+	client := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
 	url := "http://" + ln.Addr().String()
-	resp, err := http.Get(url + "/nowhere")
+	resp, err := client.Get(url + "/nowhere")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +72,7 @@ func TestServeAnswersThenDrainsOnCancel(t *testing.T) {
 
 	got := make(chan string, 1)
 	go func() {
-		resp, err := http.Get(url + "/slow")
+		resp, err := client.Get(url + "/slow")
 		if err != nil {
 			got <- err.Error()
 			return
@@ -66,9 +81,25 @@ func TestServeAnswersThenDrainsOnCancel(t *testing.T) {
 		_ = resp.Body.Close()
 		got <- string(b)
 	}()
-	time.Sleep(50 * time.Millisecond) // the slow request is in flight
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the slow request never reached its handler")
+	}
 	cancel()
-	time.Sleep(50 * time.Millisecond)
+	// The shutdown has begun once the listener refuses new connections.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c, err := net.DialTimeout("tcp", ln.Addr().String(), 100*time.Millisecond)
+		if err != nil {
+			break
+		}
+		_ = c.Close()
+		if time.Now().After(deadline) {
+			t.Fatal("the listener still accepts after the context ended")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	close(release)
 	if body := <-got; body != "done" {
 		t.Fatalf("in-flight request not drained: %q", body)
