@@ -2,6 +2,8 @@
 # Regenerates every committed generated Go file from its source:
 #   api/openapi.yaml -> internal/national/gen/server.gen.go   (oapi-codegen, api/oapi-codegen.server.yaml)
 #   api/openapi.yaml -> internal/national/client/client.gen.go (oapi-codegen, api/oapi-codegen.client.yaml)
+#   api/openapi.yaml -> internal/telemetry/gen/server.gen.go  (oapi-codegen, api/oapi-codegen.telemetry.yaml;
+#                       the telemetry and health tags, served by telemetry-ingest)
 #   api/standards/f3411-v22a.yaml -> internal/stdapi/f3411/{server,client}.gen.go
 #   api/standards/f3548-v21.yaml  -> internal/stdapi/f3548/{server,client}.gen.go
 #                       (oapi-codegen, api/standards/oapi-codegen.<std>.<side>.yaml;
@@ -42,6 +44,7 @@ gen() {
 
 gen api/oapi-codegen.server.yaml internal/national/gen/server.gen.go
 gen api/oapi-codegen.client.yaml internal/national/client/client.gen.go
+gen api/oapi-codegen.telemetry.yaml internal/telemetry/gen/server.gen.go
 
 # The standard interfaces, from the pinned copies only (never fetched
 # here; scripts/fetch-standards.sh re-fetches and checks the SHA-256).

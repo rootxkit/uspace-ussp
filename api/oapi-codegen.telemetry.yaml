@@ -1,0 +1,14 @@
+# oapi-codegen configuration for internal/telemetry/gen: the net/http
+# server interface (Go 1.22 routing) of the operations telemetry-ingest
+# serves from api/openapi.yaml, the telemetry and health tags. No
+# models: the handlers read and write the shapes of schemas/telemetry/v1
+# through internal/telemetry. Run through `make generate`; never edit
+# the generated file.
+package: gen
+generate:
+  std-http-server: true
+  strict-server: false
+  models: false
+  embedded-spec: false
+output-options:
+  include-tags: [health, telemetry]
