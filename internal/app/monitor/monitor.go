@@ -9,7 +9,8 @@
 // once), and the projections intent_active, policy and source_control
 // (D6: it never opens a database). One worker per home cell3 judges its
 // flights with internal/conformance on every sample and on a 1 s tick,
-// and publishes conformance/state/v1 on conf.v1.<flight_id> and alert/v1
+// and publishes conformance/state/v1 on conf.v1.<flight_id> (each
+// transition, then a heartbeat of at most 0.1 Hz per flight) and alert/v1
 // on alrt.v1 (nonconformance, lost_link, nonconformance_nearby), every
 // active alert republished each tick with its current numbers (C-08).
 //

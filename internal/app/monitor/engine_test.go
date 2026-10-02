@@ -540,3 +540,28 @@ func (f *flakySink) Publish(context.Context, string, bus.Enveloped) error {
 	}
 	return nil
 }
+
+// CONF carries the transitions and a heartbeat of at most one state per
+// ConfHeartbeat per flight, not one per sample: 30 samples inside over
+// 29 s publish the first state and two heartbeats; a sample that moves
+// the flight is published at once (E-01 pair).
+func TestEngineStateHeartbeat(t *testing.T) {
+	g := newRig(t, true)
+	a := ptr(intentA)
+	for i := range 30 {
+		if i > 0 {
+			g.clk.Add(time.Second)
+		}
+		g.offer(flightA, a, origin, "Airborne")
+	}
+	waitFor(t, "the samples judged", func() bool { return g.eng.Counters.Get(conformance.CounterJudged) == 30 })
+	if n := len(g.sink.states(flightA)); n != 3 {
+		t.Fatalf("%d states for 30 samples over 29 s, want 3", n)
+	}
+	g.clk.Add(time.Second)
+	g.offer(flightA, a, geodesy.Destination(origin, 90, 600), "Airborne")
+	waitFor(t, "the transition", func() bool {
+		s := g.sink.states(flightA)
+		return len(s) == 4 && s[3].Transition && s[3].State == conformance.StateNonconforming
+	})
+}

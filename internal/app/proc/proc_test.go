@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/config"
 	"github.com/rootxkit/uspace-ussp/internal/national/client"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
@@ -289,5 +290,29 @@ func TestMainAllRunsEveryProcessAndFailsOnABindError(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"process":"monitor"`) {
 		t.Fatalf("monitor did not start: %s", out.String())
+	}
+}
+
+// The CONF bounds the configuration names are the ones every process
+// ensures (E-10).
+func TestTopologyOfConfiguresCONF(t *testing.T) {
+	cfg, err := config.LoadFrom(func(k string) (string, bool) {
+		v, ok := map[string]string{"USSP_CONF_STREAM_MAX_AGE_S": "7200", "USSP_CONF_STREAM_MAX_BYTES": "1073741824"}[k]
+		return v, ok
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf, _ := TopologyOf(cfg).Stream(bus.StreamCONF)
+	if conf.MaxAge != 2*time.Hour || conf.MaxBytes != 1<<30 {
+		t.Fatalf("CONF %v %d", conf.MaxAge, conf.MaxBytes)
+	}
+	def, err := config.LoadFrom(func(string) (string, bool) { return "", false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf, _ = TopologyOf(def).Stream(bus.StreamCONF)
+	if conf.MaxAge != bus.DefaultConfMaxAge || conf.MaxBytes != bus.DefaultConfMaxBytes {
+		t.Fatalf("CONF defaults %v %d", conf.MaxAge, conf.MaxBytes)
 	}
 }

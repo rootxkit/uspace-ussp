@@ -56,13 +56,15 @@ type Config struct {
 	DSSSyncAddr         string `env:"USSP_DSS_SYNC_ADDR" default:":8085" by:"dss-sync" help:"listen address of dss-sync (health and metrics only)"`
 	TSDBWriterAddr      string `env:"USSP_TSDB_WRITER_ADDR" default:":8086" by:"tsdb-writer" help:"listen address of tsdb-writer (health and metrics only)"`
 
-	PGURL          string `env:"USSP_PG_URL" by:"api" need:"api" kind:"url" secret:"url" help:"relational database (PostgreSQL + PostGIS); only api opens it"`
-	TSURL          string `env:"USSP_TS_URL" by:"api,tsdb-writer" need:"api,tsdb-writer" kind:"url" secret:"url" help:"time-series database (TimescaleDB); tsdb-writer writes, api reads"`
-	SchemaWaitS    int    `env:"USSP_SCHEMA_WAIT_S" default:"60" by:"api,tsdb-writer" min:"0" max:"3600" unit:"s" help:"how long a process waits at start for the migrate subcommand to bring its schema to the version it needs; then it refuses to start, naming both versions"`
-	WriterQueueS   int    `env:"USSP_WRITER_QUEUE_S" default:"10" by:"tsdb-writer" min:"1" max:"300" unit:"s" help:"how long rows may wait in tsdb-writer's memory while writes succeed; beyond it the writer stops pulling and the streams hold the rest"`
-	WriterHoldRows int    `env:"USSP_WRITER_HOLD_ROWS" default:"50000" by:"tsdb-writer" min:"1000" max:"1000000" unit:"rows" help:"rows tsdb-writer holds in memory per stream, also while TimescaleDB is down (B-07); at the bound it stops pulling and the streams hold the rest"`
-	NATSURL        string `env:"USSP_NATS_URL" by:"all" need:"all" kind:"url" secret:"url" help:"NATS JetStream; the process reconnects forever and starts degraded when it is down"`
-	NATSCreds      string `env:"USSP_NATS_CREDS" by:"all" help:"path of the NATS credentials file of this process; empty uses the URL's userinfo"`
+	PGURL              string `env:"USSP_PG_URL" by:"api" need:"api" kind:"url" secret:"url" help:"relational database (PostgreSQL + PostGIS); only api opens it"`
+	TSURL              string `env:"USSP_TS_URL" by:"api,tsdb-writer" need:"api,tsdb-writer" kind:"url" secret:"url" help:"time-series database (TimescaleDB); tsdb-writer writes, api reads"`
+	SchemaWaitS        int    `env:"USSP_SCHEMA_WAIT_S" default:"60" by:"api,tsdb-writer" min:"0" max:"3600" unit:"s" help:"how long a process waits at start for the migrate subcommand to bring its schema to the version it needs; then it refuses to start, naming both versions"`
+	WriterQueueS       int    `env:"USSP_WRITER_QUEUE_S" default:"10" by:"tsdb-writer" min:"1" max:"300" unit:"s" help:"how long rows may wait in tsdb-writer's memory while writes succeed; beyond it the writer stops pulling and the streams hold the rest"`
+	WriterHoldRows     int    `env:"USSP_WRITER_HOLD_ROWS" default:"50000" by:"tsdb-writer" min:"1000" max:"1000000" unit:"rows" help:"rows tsdb-writer holds in memory per stream, also while TimescaleDB is down (B-07); at the bound it stops pulling and the streams hold the rest"`
+	NATSURL            string `env:"USSP_NATS_URL" by:"all" need:"all" kind:"url" secret:"url" help:"NATS JetStream; the process reconnects forever and starts degraded when it is down"`
+	NATSCreds          string `env:"USSP_NATS_CREDS" by:"all" help:"path of the NATS credentials file of this process; empty uses the URL's userinfo"`
+	ConfStreamMaxAgeS  int    `env:"USSP_CONF_STREAM_MAX_AGE_S" default:"172800" by:"all" min:"3600" max:"2592000" unit:"s" help:"how long the CONF stream keeps a conformance state when every process ensures the topology; the record is TimescaleDB's conformance_samples"`
+	ConfStreamMaxBytes int    `env:"USSP_CONF_STREAM_MAX_BYTES" default:"4294967296" by:"all" min:"67108864" max:"1099511627776" unit:"bytes" help:"size bound of the CONF stream, the oldest message discarded beyond it"`
 
 	SystemID                string   `env:"USSP_SYSTEM_ID" default:"USSP-DEV" by:"api,rid-sp,dss-sync" help:"the USSP code from the authority's certificate (M8); never an audience"`
 	Audiences               []string `env:"USSP_AUDIENCES" by:"api,telemetry-ingest,rid-sp,traffic-ws" help:"hosts accepted as JWT aud, comma-separated: the public host and a lab alias (M18)"`

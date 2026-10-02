@@ -480,3 +480,25 @@ func TestHolesOf(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+// E-10: CONF is bounded in time and in bytes (the 30-day record of
+// conformance is TimescaleDB's conformance_samples, not the stream),
+// and both bounds are configurable; an option left zero keeps the
+// default.
+func TestConfStreamCapped(t *testing.T) {
+	conf, _ := DefaultTopology().Stream(StreamCONF)
+	if conf.MaxAge != DefaultConfMaxAge || conf.MaxBytes != DefaultConfMaxBytes || conf.Discard != jetstream.DiscardOld {
+		t.Fatalf("CONF %v %d %v", conf.MaxAge, conf.MaxBytes, conf.Discard)
+	}
+	if DefaultConfMaxAge != 48*time.Hour || DefaultConfMaxBytes != 4<<30 {
+		t.Fatalf("defaults %v %d", DefaultConfMaxAge, DefaultConfMaxBytes)
+	}
+	conf, _ = TopologyWith(TopologyOptions{ConfMaxAge: 6 * time.Hour, ConfMaxBytes: 1 << 30}).Stream(StreamCONF)
+	if conf.MaxAge != 6*time.Hour || conf.MaxBytes != 1<<30 {
+		t.Fatalf("CONF configured %v %d", conf.MaxAge, conf.MaxBytes)
+	}
+	conf, _ = TopologyWith(TopologyOptions{}).Stream(StreamCONF)
+	if conf.MaxAge != DefaultConfMaxAge || conf.MaxBytes != DefaultConfMaxBytes {
+		t.Fatalf("CONF zero options %v %d", conf.MaxAge, conf.MaxBytes)
+	}
+}

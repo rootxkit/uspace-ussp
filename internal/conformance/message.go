@@ -14,8 +14,10 @@ import (
 // Schemas of the messages the monitor publishes for conformance.
 const (
 	// SchemaState is conformance/state/v1 on conf.v1.<flight_id>: one per
-	// admitted sample of a flight with an intent and one per transition a
-	// tick decides. tsdb-writer records each in conformance_samples; api
+	// transition (a sample's or a tick's), one per tick for a link-lost
+	// flight, and otherwise a heartbeat of at most one per 10 s per
+	// flight (monitor.DefaultConfHeartbeat), never one per sample.
+	// tsdb-writer records each in conformance_samples; api
 	// records the transitions in conformance_states and moves the intent
 	// (internal subject; NATS never crosses a system, PLAN §7).
 	SchemaState = "conformance/state/v1"

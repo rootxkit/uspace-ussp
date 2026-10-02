@@ -34,6 +34,11 @@ const (
 	MaxWorkers = cell.MaxOwnedCells
 	// MaxTableFlights bounds the neighbour table.
 	MaxTableFlights = 100_000
+	// DefaultConfHeartbeat is the longest a flight's conformance/state/v1
+	// waits between two publishes while nothing changes (at most 0.1 Hz
+	// per flight): CONF carries the transitions and this heartbeat, not
+	// one message per sample.
+	DefaultConfHeartbeat = 10 * time.Second
 )
 
 // Counters of the engine.
@@ -94,6 +99,9 @@ type Engine struct {
 	MaxFlights int
 	// OutboxLen bounds the outbox (DefaultOutboxLen).
 	OutboxLen int
+	// ConfHeartbeat is the period of an unchanged flight's state
+	// (DefaultConfHeartbeat).
+	ConfHeartbeat time.Duration
 
 	once    sync.Once
 	ctx     context.Context
@@ -138,6 +146,9 @@ func (e *Engine) init() {
 		}
 		if e.MaxFlights <= 0 {
 			e.MaxFlights = DefaultMaxFlights
+		}
+		if e.ConfHeartbeat <= 0 {
+			e.ConfHeartbeat = DefaultConfHeartbeat
 		}
 		e.workers, e.home = map[string]*worker{}, map[string]string{}
 		e.table = &table{flights: map[string]tableEntry{}}
@@ -325,6 +336,8 @@ type flight struct {
 	instance string // the client the samples came from (the source instance)
 	intentID string
 	lastAt   time.Time
+	// lastConf is when the flight's state was last published.
+	lastConf time.Time
 }
 
 // worker is one home cell3's loop: samples and a tick every Engine.Tick.
@@ -421,8 +434,10 @@ func (w *worker) take(ctx context.Context, it item) {
 	w.authorisation(&in, f.intentID)
 	cfg, _ := w.config()
 	ev := f.tr.Observe(in, cfg, now)
-	if ev.Admitted || ev.Refusal == "source_disabled" {
-		w.publishState(ctx, f.tr, ev, tr.Times(), cfg.PolicyVersion)
+	// A change is published at once; an admitted sample that changed
+	// nothing only as the heartbeat.
+	if len(ev.Transitions) > 0 || len(ev.Alerts) > 0 || (ev.Admitted && now.Sub(f.lastConf) >= w.e.ConfHeartbeat) {
+		w.publishState(ctx, f, ev, tr.Times(), cfg.PolicyVersion, now)
 	}
 	w.publishAlerts(ctx, ev.Alerts, now)
 }
@@ -462,7 +477,7 @@ func (w *worker) tick(ctx context.Context) {
 				// Published once, when it changes the flight: a flight
 				// already disabled has nothing new to say.
 				if ev := f.tr.Disable(now); len(ev.Transitions) > 0 || len(ev.Alerts) > 0 {
-					w.publishState(ctx, f.tr, ev, systemTimes(now), cfg.PolicyVersion)
+					w.publishState(ctx, f, ev, systemTimes(now), cfg.PolicyVersion, now)
 					w.publishAlerts(ctx, ev.Alerts, now)
 				}
 			}
@@ -471,7 +486,7 @@ func (w *worker) tick(ctx context.Context) {
 		// A link-lost flight sends no sample that would heal a dropped
 		// state, so its state is republished every tick.
 		if len(ev.Transitions) > 0 || f.tr.Snapshot().LinkLost {
-			w.publishState(ctx, f.tr, ev, systemTimes(now), cfg.PolicyVersion)
+			w.publishState(ctx, f, ev, systemTimes(now), cfg.PolicyVersion, now)
 		}
 		w.publishAlerts(ctx, ev.Alerts, now)
 		// A flight silent past the flight end with nothing active and no
@@ -543,13 +558,14 @@ func systemTimes(now time.Time) core.Times {
 }
 
 // publishState sends the flight's conformance/state/v1.
-func (w *worker) publishState(_ context.Context, tr *conformance.Tracker, ev conformance.Events, times core.Times, pv int64) {
-	subject, err := bus.Conf(tr.FlightID)
+func (w *worker) publishState(_ context.Context, f *flight, ev conformance.Events, times core.Times, pv int64, now time.Time) {
+	subject, err := bus.Conf(f.tr.FlightID)
 	if err != nil {
 		w.e.Counters.Inc(CounterPublishFailed)
 		return
 	}
-	w.e.out.put(subject, conformance.StateMessageOf(tr.Snapshot(), ev, times, pv))
+	f.lastConf = now
+	w.e.out.put(subject, conformance.StateMessageOf(f.tr.Snapshot(), ev, times, pv))
 }
 
 // publishAlerts sends each event; a source alert's clear clears its

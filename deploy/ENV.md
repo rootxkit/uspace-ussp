@@ -38,6 +38,8 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_WRITER_HOLD_ROWS` | `tsdb-writer` |  | `50000` | rows | rows tsdb-writer holds in memory per stream, also while TimescaleDB is down (B-07); at the bound it stops pulling and the streams hold the rest |
 | `USSP_NATS_URL` | `all` | `all` |  |  | NATS JetStream; the process reconnects forever and starts degraded when it is down |
 | `USSP_NATS_CREDS` | `all` |  |  |  | path of the NATS credentials file of this process; empty uses the URL's userinfo |
+| `USSP_CONF_STREAM_MAX_AGE_S` | `all` |  | `172800` | s | how long the CONF stream keeps a conformance state when every process ensures the topology; the record is TimescaleDB's conformance_samples |
+| `USSP_CONF_STREAM_MAX_BYTES` | `all` |  | `4294967296` | bytes | size bound of the CONF stream, the oldest message discarded beyond it |
 | `USSP_SYSTEM_ID` | `api,rid-sp,dss-sync` |  | `USSP-DEV` |  | the USSP code from the authority's certificate (M8); never an audience |
 | `USSP_AUDIENCES` | `api,telemetry-ingest,rid-sp,traffic-ws` |  |  |  | hosts accepted as JWT aud, comma-separated: the public host and a lab alias (M18) |
 | `USSP_TOKEN_ISSUERS` | `api,telemetry-ingest,rid-sp,traffic-ws` |  |  |  | allow-listed token issuers as iss=jwks_url, comma-separated; the first is the token service for outgoing calls |

@@ -444,7 +444,7 @@ D7's. A subject that carries an `04` message carries the envelope.
 | `trk.v1.<cell3>.<cell5>.<track_id>` | core + JetStream mirror `TRK` (1 h) | telemetry-ingest, peers, manned → monitor, traffic-ws, rid-sp, tsdb-writer | `track/telemetry/v1` with `trust`, `source`, `identification`, `flight_id`, `intent_id` |
 | `man.v1.<cell3>.<cell5>.<icao24>` | core | manned → monitor, traffic-ws, tsdb-writer | `track/manned/v1` |
 | `alrt.v1.<kind>.<cell5>.<alert_id>` | JetStream `ALRT` (7 d) | monitor → api (record), traffic-ws (push); republished every 1 s while active (C-08) | `alert/v1` |
-| `conf.v1.<flight_id>` | JetStream `CONF` (30 d) | monitor → api (state record, DSS state change, Annex V notice, nearby fan-out), tsdb-writer | conformance state change |
+| `conf.v1.<flight_id>` | JetStream `CONF` (48 h, 4 GiB, `USSP_CONF_STREAM_*`; transitions and a heartbeat of at most 0.1 Hz per flight; the record is `conformance_samples`) | monitor → api (state record, DSS state change, Annex V notice, nearby fan-out), tsdb-writer | conformance state change |
 | `ident.v1.<track_id>` | JetStream `IDENT` (24 h) | telemetry-ingest, peers → api, console | identification change |
 | `intent.v1.<state>.<intent_id>` | JetStream `INTENT` (30 d) | api → dss-sync (outbox trigger), monitor (via KV `intent_active`), console | `intent/state/v1` |
 | `cis.v1.<dataset>` | JetStream `CIS` (30 d) + KV `cis_current` | api → monitor, traffic-ws, geo | version, feature ids, reason |
