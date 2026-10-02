@@ -290,6 +290,36 @@ func TestIntegrationStaffAdminTOTP(t *testing.T) {
 	if r := replica.login(auth.RealmConsole, "admin."+u, "staff-password-"+u, code); r.status != 401 {
 		t.Fatalf("the same code again on another replica: %d", r.status)
 	}
+	key := "console:admin." + u
+	failures := func() int64 {
+		return count(t, relOwner(t), "SELECT coalesce(max(failures), 0) FROM login_lockouts WHERE realm || ':' || username = $1", key)
+	}
+	refusals := func() int64 { return events(t, "login", key, accounts.EventLoginRefused) }
+	// Review fix: the replay the row lock catches (the code spent by
+	// another sign-in between the check and the lock) is a failure like
+	// the one caught before: counted against the username and audited.
+	c.Add(30 * time.Second)
+	next := totpNow(t, created.TOTPSecret, c.Now())
+	f0, r0 := failures(), refusals()
+	s.svc.Config.BeforeSessionTx = func() {
+		step := c.Now().Unix() / 30
+		if _, err := relOwner(t).Exec(context.Background(), "UPDATE staff_accounts SET mfa_last_step = $1 WHERE username = $2", step, "admin."+u); err != nil {
+			t.Error(err)
+		}
+	}
+	r = s.login(auth.RealmConsole, "admin."+u, "staff-password-"+u, next)
+	s.svc.Config.BeforeSessionTx = nil
+	if r.status != 401 || r.slug() != accounts.SlugInvalidCredentials {
+		t.Fatalf("replay under the lock: %d %s", r.status, r.raw)
+	}
+	if failures() != f0+1 || refusals() != r0+1 {
+		t.Fatalf("the replay under the lock was not counted and audited: failures %d -> %d, refusals %d -> %d", f0, failures(), r0, refusals())
+	}
+	// The presence twin: the next code without interference signs in.
+	c.Add(30 * time.Second)
+	if r := s.login(auth.RealmConsole, "admin."+u, "staff-password-"+u, totpNow(t, created.TOTPSecret, c.Now())); r.status != 200 {
+		t.Fatalf("a fresh code: %d %s", r.status, r.raw)
+	}
 	if _, err := s.svc.CreateStaff(context.Background(), "super."+u, "staff-password-"+u, auth.RoleSupervisor, "test"); err != nil {
 		t.Fatal(err)
 	}

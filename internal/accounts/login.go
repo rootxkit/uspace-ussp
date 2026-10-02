@@ -257,6 +257,9 @@ func (s *Service) startSession(ctx context.Context, realm string, acc account, m
 	if err != nil {
 		return SessionResult{}, err
 	}
+	if s.Config.BeforeSessionTx != nil {
+		s.Config.BeforeSessionTx()
+	}
 	err = s.Store.Tx(ctx, func(q *relational.Queries) error {
 		if mfaStep > 0 {
 			// The row lock makes two sign-ins with one code race to one
@@ -266,7 +269,7 @@ func (s *Service) startSession(ctx context.Context, realm string, acc account, m
 				return err
 			}
 			if st.MfaLastStep >= mfaStep {
-				return invalidCredentials()
+				return errCodeReplayed
 			}
 			if err := q.SetStaffMFAStep(ctx, relational.SetStaffMFAStepParams{Step: mfaStep, ID: accountID}); err != nil {
 				return err
@@ -282,6 +285,12 @@ func (s *Service) startSession(ctx context.Context, realm string, acc account, m
 		return s.audit(ctx, q, loginEvent(realm, acc.username, acc.id, EventLoginSucceeded, map[string]any{
 			"session": jti, "roles": roles, "exp": exp, "kid": s.Issuer.Keys().Current.KID, "mfa": mfaStep > 0, "remote_ip": ip}))
 	})
+	if errors.Is(err, errCodeReplayed) {
+		// The code was spent between the check and the row lock (another
+		// sign-in, maybe on another replica): a failure like any wrong
+		// code, counted against the username and audited.
+		return SessionResult{}, s.failure(ctx, realm, acc.username, acc.id, "code_replayed", ip)
+	}
 	if err != nil {
 		return SessionResult{}, fmt.Errorf("start session: %w", err)
 	}
@@ -289,6 +298,10 @@ func (s *Service) startSession(ctx context.Context, realm string, acc account, m
 	return SessionResult{Token: token, CSRF: csrf, AccountID: acc.id, Realm: realm, Roles: roles, OperatorID: acc.operatorID,
 		ExpiresAt: exp, IdleExpiresAt: earlier(exp, now.Add(s.Config.SessionIdle))}, nil
 }
+
+// errCodeReplayed is a TOTP step already accepted, found under the row
+// lock.
+var errCodeReplayed = errors.New("the TOTP code was already used")
 
 // touchEvery bounds the writes of last_seen_at to one a minute per
 // session.

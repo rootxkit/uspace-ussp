@@ -104,6 +104,10 @@ type Config struct {
 	// TOTPIssuer names this USSP in an authenticator app.
 	TOTPIssuer string
 	Now        func() time.Time
+	// BeforeSessionTx, tests only, runs after the credentials were
+	// checked and before the transaction that starts the session: the
+	// window in which another sign-in can spend the same TOTP code.
+	BeforeSessionTx func()
 }
 
 // Service is operator accounts, their clients and serial bindings,
