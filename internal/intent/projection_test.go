@@ -57,7 +57,8 @@ func (p *fakePub) Publish(_ context.Context, subject string, m bus.Enveloped) er
 
 // An active intent is put in intent_active and published with the
 // envelope; an ended one is deleted and published; either side failing
-// is a ProjectionError (B-09: the write is refused with 503).
+// is a ProjectionError, which after the commit leaves the intent stored
+// and marked unprojected for Republish.
 func TestBusProjector(t *testing.T) {
 	s, st, _ := newService(newRig())
 	kv, pub := &fakeKV{}, &fakePub{}
@@ -89,12 +90,17 @@ func TestBusProjector(t *testing.T) {
 		"kv":  {KV: &fakeKV{err: errors.New("timeout")}, Pub: &fakePub{}},
 		"pub": {KV: &fakeKV{}, Pub: &fakePub{err: errors.New("no responders")}},
 	} {
+		// Either side failing is a ProjectionError; after the commit it
+		// leaves the decision standing and the intent unprojected.
+		var pe *policy.ProjectionError
+		if err := p.Project(t.Context(), st.byID[d.IntentID]); !errors.As(err, &pe) || pe.HTTPStatus() != 503 {
+			t.Fatalf("%s: %v", name, err)
+		}
 		s2, st2, _ := newService(newRig())
 		s2.Projector = p
-		_, _, err := submit(t, s2, baseRequest())
-		var pe *policy.ProjectionError
-		if !errors.As(err, &pe) || pe.HTTPStatus() != 503 || len(st2.byID) != 0 {
-			t.Fatalf("%s: %v, %d stored", name, err, len(st2.byID))
+		d2, _, err := submit(t, s2, baseRequest())
+		if ids, _ := st2.Unprojected(t.Context(), 10); err != nil || len(st2.byID) != 1 || len(ids) != 1 || ids[0] != d2.IntentID {
+			t.Fatalf("%s: %v, %d stored, unprojected %v", name, err, len(st2.byID), ids)
 		}
 	}
 }

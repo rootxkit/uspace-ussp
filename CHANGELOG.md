@@ -39,7 +39,9 @@ additively within `/v1`.
   priority then first come first served), the DSS, the deviation
   thresholds and the authorisation number. A missing, stale or untrusted
   input refuses or holds; it never authorises. States, versions, the
-  time_end sweep, KV `intent_active` and `intent.v1.<state>.<id>`.
+  time_end sweep, KV `intent_active` and `intent.v1.<state>.<id>`
+  written after the commit (an intent the bus did not take is
+  republished by the sweep; relational migration 00012).
   Schemas `intent/request/v1`, `intent/decision/v1`, `intent/state/v1`
   with examples both ways and `scripts/check-schemas.sh` validating them;
   `testdata/vectors/deconfliction.json` (72 cases). Relational migration

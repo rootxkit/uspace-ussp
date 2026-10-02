@@ -1,6 +1,6 @@
 // Package pgstore is internal/intent's Store on the relational database:
 // operational_intents, intent_versions, peer_intents and the operator
-// accounts (migrations 00002, 00003, 00011), through the sqlc queries of
+// accounts (migrations 00002, 00003, 00011, 00012), through the sqlc queries of
 // internal/store/queries/relational/intents.sql. Every time is the
 // database clock; every decision runs under the intents advisory lock
 // (store.LockIntents), so two overlapping requests are judged one after
@@ -33,6 +33,10 @@ type Store struct {
 	// began and before it asks for the intents lock (the integration
 	// tests hold a transaction there to race two decisions).
 	BeforeLock func(ctx context.Context)
+	// BeforeCommit, when set, runs after fn succeeded and before the
+	// commit; an error rolls the transaction back (the integration tests
+	// fail a commit with it).
+	BeforeCommit func(ctx context.Context) error
 }
 
 var _ intent.Store = Store{}
@@ -124,8 +128,72 @@ func (p Store) InTx(ctx context.Context, fn func(ctx context.Context, tx intent.
 		if err := store.Lock(ctx, q, store.LockIntents); err != nil {
 			return err
 		}
-		return fn(ctx, tx{q: q})
+		if err := fn(ctx, tx{q: q}); err != nil {
+			return err
+		}
+		if p.BeforeCommit != nil {
+			return p.BeforeCommit(ctx)
+		}
+		return nil
 	})
+}
+
+// Unprojected are the intents committed but not projected, oldest
+// change first.
+func (p Store) Unprojected(ctx context.Context, limit int) ([]string, error) {
+	ids, err := p.S.Queries().IntentUnprojected(ctx, int32(limit))
+	if err != nil {
+		return nil, fmt.Errorf("intents unprojected: %w", err)
+	}
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = store.UUIDText(id)
+	}
+	return out, nil
+}
+
+// Project runs fn on the intent's newest version with its row locked,
+// unless that version is projected, and marks it projected when fn
+// succeeds. It does not take the intents lock: a decision is never
+// held up by the bus.
+func (p Store) Project(ctx context.Context, id string, fn func(ctx context.Context, r *intent.Record) error) (bool, error) {
+	u, err := store.UUID("id", id)
+	if err != nil {
+		return false, err
+	}
+	done := false
+	err = p.S.Tx(ctx, func(q *relational.Queries) error {
+		st, err := q.IntentProjectionLock(ctx, u)
+		if store.IsNoRows(err) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("intent projection lock: %w", err)
+		}
+		if st.ProjectedVersion >= st.Version {
+			return nil
+		}
+		r, err := q.IntentByID(ctx, u)
+		if err != nil {
+			return fmt.Errorf("intent: %w", err)
+		}
+		rec, err := recordOf(r)
+		if err != nil {
+			return err
+		}
+		if err := fn(ctx, rec); err != nil {
+			return err
+		}
+		if _, err := q.IntentMarkProjected(ctx, relational.IntentMarkProjectedParams{ID: u, Version: st.Version}); err != nil {
+			return fmt.Errorf("intent mark projected: %w", err)
+		}
+		done = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return done, nil
 }
 
 // row is the shape every intent query returns.

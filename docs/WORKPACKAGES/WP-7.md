@@ -265,10 +265,18 @@ and where it is stricter than the brief; each is in the PR body as well.
   `schemas/examples/`. `check-schemas.sh` gained its validator here
   (`schemas/schemas_test.go`, santhosh-tekuri/jsonschema already in
   go.mod) since WP-7's schemas are the first.
-- The KV put and the `intent.v1` publish run inside the transaction
-  before it commits (B-09: either failing refuses with 503 and nothing is
-  written); a commit that fails after them leaves a projection without a
-  row until the next transition of that id.
+- The KV put and the `intent.v1` publish run only after the
+  transaction committed (review fix; it deviates from PLAN §3's "inside
+  the transaction's commit hook, 503 when the store cannot take it",
+  which let a failed commit leave a projection of an intent that does
+  not exist). `operational_intents.projected_version` (migration 00012)
+  records the newest version projected; a projection runs with the row
+  locked, so two of one intent never interleave, and always projects the
+  newest version. When the bus fails after the commit the decision
+  stands and is answered, `intent_projection_deferred` counts it, and
+  the sweep (every minute) republishes every row whose version is ahead
+  (`intent_republished`). Until then the hot path does not see that
+  change: at most one sweep interval while the bus is up.
 - The lab scenario is run in process (docs/RUNBOOKS/WP-7.md): the lab has
   no runner for this USSP's intents yet.
 

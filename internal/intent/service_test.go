@@ -262,10 +262,12 @@ func TestSubmitRefusals(t *testing.T) {
 			o.OperatorStatus = "suspended"
 			st.owners[testClient] = o
 		}, baseRequest(), 403, "operator_inactive"},
-		"unknown client":   {func(_ *Service, st *memStore, _ *memProjector) { delete(st.owners, testClient) }, baseRequest(), 403, "client_unknown"},
-		"projection fails": {func(_ *Service, _ *memStore, pr *memProjector) { pr.err = errors.New("nats: timeout") }, baseRequest(), 503, "projection_unavailable"},
-		"database down":    {func(_ *Service, st *memStore, _ *memProjector) { st.failTx = errors.New("conn refused") }, baseRequest(), 503, "database_unavailable"},
-		"clock down":       {func(_ *Service, st *memStore, _ *memProjector) { st.failNow = errors.New("conn refused") }, baseRequest(), 503, "database_unavailable"},
+		"unknown client": {func(_ *Service, st *memStore, _ *memProjector) { delete(st.owners, testClient) }, baseRequest(), 403, "client_unknown"},
+		"commit fails": {func(_ *Service, st *memStore, _ *memProjector) {
+			st.failCommit = errors.New("commit: connection reset")
+		}, baseRequest(), 503, "database_unavailable"},
+		"database down": {func(_ *Service, st *memStore, _ *memProjector) { st.failTx = errors.New("conn refused") }, baseRequest(), 503, "database_unavailable"},
+		"clock down":    {func(_ *Service, st *memStore, _ *memProjector) { st.failNow = errors.New("conn refused") }, baseRequest(), 503, "database_unavailable"},
 	}
 	for name, c := range cases {
 		s, st, pr := newService(newRig())
@@ -524,6 +526,60 @@ func TestEndDue(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	s.RunSweep(ctx, time.Hour) // returns at once on a cancelled context
+}
+
+// B-09 after the commit: intent_active and intent.v1 are written only
+// once the transaction has committed, so a commit that fails leaves no
+// projection of an intent the database does not hold.
+func TestFailedCommitProjectsNothing(t *testing.T) {
+	s, st, pr := newService(newRig())
+	st.failCommit = errors.New("commit: connection reset")
+	_, _, err := submit(t, s, baseRequest())
+	if code, slug := statusOf(t, err); code != 503 || slug != "database_unavailable" {
+		t.Fatalf("%d %s", code, slug)
+	}
+	if len(st.byID) != 0 || len(pr.kv) != 0 || len(pr.subjects) != 0 {
+		t.Fatalf("phantom: %d rows, intent_active %v, published %v", len(st.byID), pr.kv, pr.subjects)
+	}
+}
+
+// A projection that fails after the commit does not undo the decision:
+// the operator gets it, the intent is left marked unprojected and
+// counted, and the sweep's Republish projects it once the bus takes it
+// (the newest version, once). Twin: a projection that succeeds marks the
+// intent projected at once and Republish has nothing to do.
+func TestProjectionFailureIsRepublished(t *testing.T) {
+	g := newRig()
+	s, st, pr := newService(g)
+	pr.err = errors.New("nats: timeout")
+	d, created, err := submit(t, s, baseRequest())
+	if err != nil || !created || d.Decision != DecisionAuthorised {
+		t.Fatalf("%v %v %s", created, err, d.Decision)
+	}
+	if _, ok := st.byID[d.IntentID]; !ok || len(pr.kv) != 0 || g.counters.Snapshot()["intent_projection_deferred"] != 1 {
+		t.Fatalf("stored %v, intent_active %v, counters %v", ok, pr.kv, g.counters.Snapshot())
+	}
+	if n, err := s.Republish(t.Context()); err == nil || n != 0 {
+		t.Fatalf("republish with the bus down: %d %v", n, err)
+	}
+	pr.err = nil
+	if n, err := s.Republish(t.Context()); err != nil || n != 1 {
+		t.Fatalf("republish: %d %v", n, err)
+	}
+	if kv, ok := pr.kv[d.IntentID]; !ok || kv.Version != 1 || pr.last() != "intent.v1.accepted."+d.IntentID {
+		t.Fatalf("intent_active %v published %v", pr.kv, pr.subjects)
+	}
+	if n, err := s.Republish(t.Context()); err != nil || n != 0 {
+		t.Fatalf("second republish: %d %v", n, err)
+	}
+	clear := wireVolumeJSON(squareWire(42.70, 44.80, 0.01), 500, 550, t0, t1)
+	d2, _, err := submit(t, s, with(baseRequest(), "client_ref", "twin", "volumes", []any{clear}))
+	if err != nil || pr.kv[d2.IntentID].IntentID != d2.IntentID {
+		t.Fatalf("twin: %v %v", err, pr.kv)
+	}
+	if n, err := s.Republish(t.Context()); err != nil || n != 0 {
+		t.Fatalf("republish after a projected submit: %d %v", n, err)
+	}
 }
 
 // The decision when a dependency is absent: each one refuses or holds,

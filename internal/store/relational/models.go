@@ -301,6 +301,7 @@ type OperationalIntent struct {
 	PrivatelyBuilt      bool       `json:"privately_built"`
 	MtomKg              *float64   `json:"mtom_kg"`
 	UpdateRequired      []byte     `json:"update_required"`
+	ProjectedVersion    int32      `json:"projected_version"`
 }
 
 type OperatorAccount struct {

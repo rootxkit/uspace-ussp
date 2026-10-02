@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -552,6 +553,73 @@ func TestIntegrationIntentFirstComeRanksAfterTheLock(t *testing.T) {
 	flagged := count(t, relOwner(t), "SELECT count(*) FROM operational_intents WHERE id = $1 AND update_required IS NOT NULL", second.IntentID)
 	if authorised != 1 || flagged != 0 {
 		t.Fatalf("%d authorised, %d flagged", authorised, flagged)
+	}
+}
+
+// intentProjected reads an intent's version and projected version.
+func intentProjected(t *testing.T, id string) (version, projected int64) {
+	t.Helper()
+	if err := relOwner(t).QueryRow(context.Background(), "SELECT version, projected_version FROM operational_intents WHERE id = $1", id).
+		Scan(&version, &projected); err != nil {
+		t.Fatal(err)
+	}
+	return version, projected
+}
+
+// failingProjector is a bus that cannot take a write.
+type failingProjector struct{}
+
+func (failingProjector) Project(context.Context, *intent.Record) error {
+	return &policy.ProjectionError{Bucket: bus.BucketIntentActive, Err: errors.New("nats: timeout (integration)")}
+}
+
+// B-09 after the commit, on PostgreSQL and NATS: a transaction that
+// fails at its commit leaves no intent_active key and no row; a bus that
+// fails after the commit leaves the decision standing and the row
+// unprojected, and the sweep's Republish projects it once the bus takes
+// it. Twin: a normal submit is projected at once and marked so.
+func TestIntegrationIntentProjectedAfterCommit(t *testing.T) {
+	g := newIntentRig(t)
+	g.publishAll(nil, nil, nil)
+	number, serial, _ := g.operatorClient()
+	clientID := clientOf(t, serial)
+	ctx := context.Background()
+
+	before := g.activeKeys()
+	failing := *g.svc
+	failing.Store = intentstore.Store{S: appStore(t), BeforeCommit: func(context.Context) error { return errors.New("commit refused (integration)") }}
+	if _, _, err := failing.Submit(ctx, clientID, mustJSON(t, g.request(number, serial, "commit-fails", g.box(0, 0, 0.01)))); err == nil {
+		t.Fatal("a failed commit answered a decision")
+	}
+	if n := count(t, relOwner(t), "SELECT count(*) FROM operational_intents WHERE client_id = $1 AND client_ref = 'commit-fails'", clientID); n != 0 {
+		t.Fatalf("%d rows after a failed commit", n)
+	}
+	if after := g.activeKeys(); len(after) != len(before) {
+		t.Fatalf("intent_active gained %d keys after a failed commit", len(after)-len(before))
+	}
+
+	down := *g.svc
+	down.Projector = failingProjector{}
+	d, created, err := down.Submit(ctx, clientID, mustJSON(t, g.request(number, serial, "bus-down", g.box(1, 0, 0.01))))
+	if err != nil || !created || d.Decision != intent.DecisionAuthorised {
+		t.Fatalf("bus down: %v %v %s", created, err, d.Decision)
+	}
+	if v, p := intentProjected(t, d.IntentID); v != 1 || p != 0 || slices.Contains(g.activeKeys(), d.IntentID) {
+		t.Fatalf("bus down: version %d projected %d, in intent_active %v", v, p, slices.Contains(g.activeKeys(), d.IntentID))
+	}
+	if _, err := g.svc.Republish(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if v, p := intentProjected(t, d.IntentID); v != 1 || p != 1 || !slices.Contains(g.activeKeys(), d.IntentID) {
+		t.Fatalf("after republish: version %d projected %d", v, p)
+	}
+
+	ok, _, err := g.svc.Submit(ctx, clientID, mustJSON(t, g.request(number, serial, "bus-up", g.box(2, 0, 0.01))))
+	if err != nil || !slices.Contains(g.activeKeys(), ok.IntentID) {
+		t.Fatalf("bus up: %v", err)
+	}
+	if v, p := intentProjected(t, ok.IntentID); v != 1 || p != 1 {
+		t.Fatalf("bus up: version %d projected %d", v, p)
 	}
 }
 

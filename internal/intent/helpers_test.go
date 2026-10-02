@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"sort"
 	"sync"
@@ -329,6 +330,10 @@ type memStore struct {
 	peers    []PeerIntent
 	failNow  error
 	failTx   error
+	// failCommit fails a transaction after fn succeeded (the commit).
+	failCommit error
+	// projected is the version of each intent last projected.
+	projected map[string]int
 }
 
 func newMemStore() *memStore {
@@ -340,6 +345,7 @@ func newMemStore() *memStore {
 		}},
 		bound: map[string]bool{testClient + "/" + serial.FoldKey(testSerial): true},
 		byID:  map[string]*Record{}, flags: map[string]string{}, versions: map[string][]Record{},
+		projected: map[string]int{},
 	}
 }
 
@@ -422,11 +428,45 @@ func (m *memStore) InTx(ctx context.Context, fn func(ctx context.Context, tx Tx)
 	for k, v := range m.flags {
 		savedFlags[k] = v
 	}
-	if err := fn(ctx, memTx{m}); err != nil {
+	err := fn(ctx, memTx{m})
+	if err == nil && m.failCommit != nil {
+		err = fmt.Errorf("commit: %w", m.failCommit)
+	}
+	if err != nil {
 		m.byID, m.flags = saved, savedFlags
 		return err
 	}
 	return nil
+}
+
+func (m *memStore) Unprojected(_ context.Context, limit int) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []string
+	for id, r := range m.byID {
+		if m.projected[id] < r.Version {
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (m *memStore) Project(ctx context.Context, id string, fn func(context.Context, *Record) error) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, ok := m.byID[id]
+	if !ok || m.projected[id] >= r.Version {
+		return false, nil
+	}
+	if err := fn(ctx, clone(r)); err != nil {
+		return false, err
+	}
+	m.projected[id] = r.Version
+	return true, nil
 }
 
 type memTx struct{ m *memStore }

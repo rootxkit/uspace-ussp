@@ -189,6 +189,14 @@ type Store interface {
 	// decision that reads the active intents and writes one is
 	// serialised, so two overlapping requests are never both granted.
 	InTx(ctx context.Context, fn func(ctx context.Context, tx Tx) error) error
+	// Unprojected are the ids of the intents whose newest version has
+	// not been projected yet, oldest change first, at most limit.
+	Unprojected(ctx context.Context, limit int) ([]string, error)
+	// Project runs fn on the intent's newest version with its row locked
+	// (so two projections of one intent never interleave) unless that
+	// version is already projected, and records it projected when fn
+	// succeeds; false when there was nothing to project.
+	Project(ctx context.Context, id string, fn func(ctx context.Context, r *Record) error) (bool, error)
 }
 
 // Tx is the store inside InTx.
@@ -224,7 +232,10 @@ type Tx interface {
 // Projector writes an intent's state where the hot path and the other
 // processes read it: the KV bucket intent_active (put for an active
 // state, delete otherwise) and the subject intent.v1.<state>.<id>. It
-// runs inside the transaction; an error rolls it back (B-09).
+// runs only after the transaction committed, through Store.Project, so
+// a failed commit leaves no projection of an intent that does not
+// exist; a projection that fails is retried by Republish (the row keeps
+// its newest version marked unprojected until one succeeds).
 type Projector interface {
 	Project(ctx context.Context, r *Record) error
 }
@@ -380,9 +391,6 @@ func (s *Service) Submit(ctx context.Context, clientID string, raw []byte) (Deci
 				return err
 			}
 		}
-		if err := s.project(ctx, r); err != nil {
-			return err
-		}
 		out = r.Decision
 		return nil
 	})
@@ -396,6 +404,7 @@ func (s *Service) Submit(ctx context.Context, clientID string, raw []byte) (Deci
 		return Decision{}, false, s.txError(err)
 	}
 	s.count("submitted")
+	s.projectCommitted(ctx, id)
 	return out, true, nil
 }
 
@@ -604,6 +613,51 @@ func (s *Service) project(ctx context.Context, r *Record) error {
 	return nil
 }
 
+// projectTimeout bounds the projection after a commit (it outlives the
+// request that caused it).
+const projectTimeout = 10 * time.Second
+
+// projectCommitted projects the intents a committed transaction changed.
+// The decision stands whatever happens here: a projection that fails is
+// counted (intent_projection_deferred), logged, and left to Republish.
+func (s *Service) projectCommitted(ctx context.Context, ids ...string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), projectTimeout)
+	defer cancel()
+	for _, id := range ids {
+		if _, err := s.Store.Project(ctx, id, s.project); err != nil {
+			s.count("projection_deferred")
+			obs.Error(ctx, s.logger(), "intent committed but not projected; the sweep republishes it", err, slog.String("intent_id", id))
+		}
+	}
+}
+
+// Republish projects the intents whose newest version is not projected
+// yet (a projection that failed after its commit), at most SweepBatch,
+// and returns how many it projected; the error is the first failure.
+func (s *Service) Republish(ctx context.Context) (int, error) {
+	ids, err := s.Store.Unprojected(ctx, SweepBatch)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	var first error
+	for _, id := range ids {
+		ok, err := s.Store.Project(ctx, id, s.project)
+		switch {
+		case err != nil:
+			if first == nil {
+				first = fmt.Errorf("intent %s: %w", id, err)
+			}
+		case ok:
+			n++
+		}
+	}
+	if s.Counters != nil {
+		s.Counters.Add("intent_republished", uint64(n))
+	}
+	return n, first
+}
+
 // View is an intent as GET answers it: the decision as it stands.
 type View = Decision
 
@@ -750,15 +804,13 @@ func (s *Service) Change(ctx context.Context, clientID, id string, raw []byte) (
 		if err := tx.Update(ctx, r, event); err != nil {
 			return err
 		}
-		if err := s.project(ctx, r); err != nil {
-			return err
-		}
 		out = r.Decision
 		return nil
 	})
 	if err != nil {
 		return Decision{}, s.txError(err)
 	}
+	s.projectCommitted(ctx, id)
 	if p.Action == ActionActivate {
 		s.count("activated")
 	} else {
@@ -868,9 +920,6 @@ func (s *Service) modify(ctx context.Context, o Owner, cur *Record, p Patch) (De
 				return err
 			}
 		}
-		if err := s.project(ctx, r); err != nil {
-			return err
-		}
 		out = r.Decision
 		return nil
 	})
@@ -878,14 +927,16 @@ func (s *Service) modify(ctx context.Context, o Owner, cur *Record, p Patch) (De
 		return Decision{}, s.txError(err)
 	}
 	s.count("modified")
+	s.projectCommitted(ctx, cur.ID)
 	return out, nil
 }
 
 // EndDue ends the open intents whose time_end has passed (on the
 // database clock), at most SweepBatch, and returns how many.
 func (s *Service) EndDue(ctx context.Context) (int, error) {
-	n := 0
+	var ended []string
 	err := s.Store.InTx(ctx, func(ctx context.Context, tx Tx) error {
+		ended = nil
 		now, err := tx.Now(ctx)
 		if err != nil {
 			return err
@@ -902,23 +953,23 @@ func (s *Service) EndDue(ctx context.Context) (int, error) {
 			if err := tx.Update(ctx, r, EventExpired); err != nil {
 				return err
 			}
-			if err := s.project(ctx, r); err != nil {
-				return err
-			}
+			ended = append(ended, r.ID)
 		}
-		n = len(due)
 		return nil
 	})
 	if err != nil {
 		return 0, err
 	}
+	n := len(ended)
+	s.projectCommitted(ctx, ended...)
 	if s.Counters != nil {
 		s.Counters.Add("intent_expired", uint64(n))
 	}
 	return n, nil
 }
 
-// RunSweep ends due intents every interval until ctx ends.
+// RunSweep ends due intents and republishes the ones a failed
+// projection left behind, every interval until ctx ends.
 func (s *Service) RunSweep(ctx context.Context, interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -927,6 +978,11 @@ func (s *Service) RunSweep(ctx context.Context, interval time.Duration) {
 			obs.Error(ctx, s.logger(), "intents past time_end not ended", err)
 		} else if n > 0 {
 			s.logger().Info("intents past time_end ended", slog.Int("ended", n))
+		}
+		if n, err := s.Republish(ctx); err != nil {
+			obs.Error(ctx, s.logger(), "intents not republished", err, slog.Int("republished", n))
+		} else if n > 0 {
+			s.logger().Info("intents republished after a failed projection", slog.Int("republished", n))
 		}
 		select {
 		case <-ctx.Done():

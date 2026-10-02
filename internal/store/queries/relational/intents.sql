@@ -154,3 +154,25 @@ SELECT id, operator_id, client_id, client_ref, request_hash, request, decision_b
  ORDER BY time_end, id
  LIMIT sqlc.arg(max_rows)
    FOR UPDATE SKIP LOCKED;
+
+-- name: IntentProjectionLock :one
+-- Locks the intent's row for its projection after the commit (two
+-- projections of one intent never interleave) and says whether its
+-- newest version is projected.
+SELECT version, projected_version
+  FROM operational_intents
+ WHERE id = sqlc.arg(id)
+   FOR UPDATE;
+
+-- name: IntentMarkProjected :execrows
+UPDATE operational_intents SET projected_version = sqlc.arg(version)
+ WHERE id = sqlc.arg(id) AND version = sqlc.arg(version);
+
+-- name: IntentUnprojected :many
+-- The intents committed but not projected (the bus failed after the
+-- commit), oldest change first.
+SELECT id
+  FROM operational_intents
+ WHERE projected_version < version
+ ORDER BY updated_at, id
+ LIMIT sqlc.arg(max_rows);

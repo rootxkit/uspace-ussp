@@ -533,6 +533,24 @@ func (q *Queries) IntentLockedNow(ctx context.Context) (time.Time, error) {
 	return now, err
 }
 
+const intentMarkProjected = `-- name: IntentMarkProjected :execrows
+UPDATE operational_intents SET projected_version = $1
+ WHERE id = $2 AND version = $1
+`
+
+type IntentMarkProjectedParams struct {
+	Version int32       `json:"version"`
+	ID      pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) IntentMarkProjected(ctx context.Context, arg IntentMarkProjectedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, intentMarkProjected, arg.Version, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const intentNow = `-- name: IntentNow :one
 
 SELECT now()::timestamptz AS now
@@ -720,6 +738,28 @@ func (q *Queries) IntentPeerOverlapping(ctx context.Context, arg IntentPeerOverl
 	return items, nil
 }
 
+const intentProjectionLock = `-- name: IntentProjectionLock :one
+SELECT version, projected_version
+  FROM operational_intents
+ WHERE id = $1
+   FOR UPDATE
+`
+
+type IntentProjectionLockRow struct {
+	Version          int32 `json:"version"`
+	ProjectedVersion int32 `json:"projected_version"`
+}
+
+// Locks the intent's row for its projection after the commit (two
+// projections of one intent never interleave) and says whether its
+// newest version is projected.
+func (q *Queries) IntentProjectionLock(ctx context.Context, id pgtype.UUID) (IntentProjectionLockRow, error) {
+	row := q.db.QueryRow(ctx, intentProjectionLock, id)
+	var i IntentProjectionLockRow
+	err := row.Scan(&i.Version, &i.ProjectedVersion)
+	return i, err
+}
+
 const intentSerialBound = `-- name: IntentSerialBound :one
 SELECT EXISTS (SELECT 1 FROM client_serial_bindings
                 WHERE client_id = $1 AND serial_fold = $2 AND unbound_at IS NULL) AS bound
@@ -735,6 +775,36 @@ func (q *Queries) IntentSerialBound(ctx context.Context, arg IntentSerialBoundPa
 	var bound bool
 	err := row.Scan(&bound)
 	return bound, err
+}
+
+const intentUnprojected = `-- name: IntentUnprojected :many
+SELECT id
+  FROM operational_intents
+ WHERE projected_version < version
+ ORDER BY updated_at, id
+ LIMIT $1
+`
+
+// The intents committed but not projected (the bus failed after the
+// commit), oldest change first.
+func (q *Queries) IntentUnprojected(ctx context.Context, maxRows int32) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, intentUnprojected, maxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const intentUpdate = `-- name: IntentUpdate :execrows
