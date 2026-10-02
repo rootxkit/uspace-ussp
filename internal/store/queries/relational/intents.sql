@@ -22,19 +22,22 @@ SELECT EXISTS (SELECT 1 FROM client_serial_bindings
 
 -- name: IntentByClientRef :one
 SELECT id, operator_id, client_id, client_ref, request_hash, request, decision_body, version, local_state,
-       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set
+       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set,
+       update_required
   FROM operational_intents
  WHERE client_id = sqlc.arg(client_id) AND client_ref = sqlc.arg(client_ref);
 
 -- name: IntentByID :one
 SELECT id, operator_id, client_id, client_ref, request_hash, request, decision_body, version, local_state,
-       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set
+       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set,
+       update_required
   FROM operational_intents
  WHERE id = sqlc.arg(id);
 
 -- name: IntentForUpdate :one
 SELECT id, operator_id, client_id, client_ref, request_hash, request, decision_body, version, local_state,
-       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set
+       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set,
+       update_required
   FROM operational_intents
  WHERE id = sqlc.arg(id)
    FOR UPDATE;
@@ -43,7 +46,8 @@ SELECT id, operator_id, client_id, client_ref, request_hash, request, decision_b
 -- An operator's intents, newest first; from and to bound the window
 -- (an intent is listed when its window overlaps them), state filters.
 SELECT id, operator_id, client_id, client_ref, request_hash, request, decision_body, version, local_state,
-       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set
+       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set,
+       update_required
   FROM operational_intents
  WHERE operator_id = sqlc.arg(operator_id)
    AND (sqlc.narg(from_at)::timestamptz IS NULL OR time_end >= sqlc.narg(from_at)::timestamptz)
@@ -58,7 +62,8 @@ SELECT id, operator_id, client_id, client_ref, request_hash, request, decision_b
 -- overlaps [from_at, to_at], without exclude_id: a prefilter, the
 -- judgement is internal/intent/deconflict's.
 SELECT id, operator_id, client_id, client_ref, request_hash, request, decision_body, version, local_state,
-       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set
+       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set,
+       update_required
   FROM operational_intents
  WHERE local_state IN ('accepted', 'activated', 'nonconforming', 'contingent')
    AND NOT exempt_art_1_3
@@ -141,7 +146,8 @@ UPDATE operational_intents
 -- name: IntentDueToEnd :many
 -- The open intents whose time_end has passed, oldest first, locked.
 SELECT id, operator_id, client_id, client_ref, request_hash, request, decision_body, version, local_state,
-       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set
+       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set,
+       update_required
   FROM operational_intents
  WHERE time_end < sqlc.arg(now_at)::timestamptz
    AND local_state IN ('pending_validation', 'pending_dss', 'pending_authority', 'accepted', 'activated', 'nonconforming', 'contingent')

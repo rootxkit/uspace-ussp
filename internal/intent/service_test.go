@@ -291,6 +291,40 @@ func patch(t *testing.T, s *Service, id string, m map[string]any) (Decision, err
 	return s.Change(t.Context(), testClient, id, encode(t, m))
 }
 
+// An authorisation flagged for an update (a later intent with
+// precedence overlaps it, Art. 10(10)) is not activated until it is
+// updated: 409 update_required, nothing written or projected. Twin: the
+// same intent unflagged activates in the same window.
+func TestActivationRefusedWhileUpdateRequired(t *testing.T) {
+	s, st, pr := newService(newRig())
+	flagged, _, err := submit(t, s, with(baseRequest(), "client_ref", "flagged"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clear := wireVolumeJSON(squareWire(42.70, 44.80, 0.01), 500, 550, t0, t1)
+	other, _, err := submit(t, s, with(baseRequest(), "client_ref", "other", "volumes", []any{clear}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.InTx(t.Context(), func(ctx context.Context, tx Tx) error {
+		return tx.FlagUpdate(ctx, []string{flagged.IntentID}, "00000000-0000-4000-8000-0000000000ff", testNow)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	st.now = t0.Add(-5 * time.Minute)
+	published := len(pr.subjects)
+	_, err = patch(t, s, flagged.IntentID, map[string]any{"action": "activate"})
+	if code, slug := statusOf(t, err); code != 409 || slug != "update_required" {
+		t.Fatalf("flagged: %d %s", code, slug)
+	}
+	if r := st.byID[flagged.IntentID]; r.LocalState != StateAccepted || r.Version != 1 || len(pr.subjects) != published {
+		t.Fatalf("written: %s v%d, %d published", r.LocalState, r.Version, len(pr.subjects)-published)
+	}
+	if a, err := patch(t, s, other.IntentID, map[string]any{"action": "activate"}); err != nil || a.State != StateActivated {
+		t.Fatalf("unflagged: %v %+v", err, a)
+	}
+}
+
 // Activation is confirmed in the response inside its window and refused
 // outside it or in another state; end removes the intent from
 // intent_active.

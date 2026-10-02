@@ -235,6 +235,11 @@ and where it is stricter than the brief; each is in the PR body as well.
   regulation's special operations should be verified by the authority);
   the priority follows the flight type and a stated priority must equal
   it.
+- An authorisation flagged with `update_required` (a later intent with
+  precedence overlaps it, Art. 10(10)) is not activated: 409
+  `update_required`, counted as
+  `intent_activation_refused_update_required` (review fix). The store
+  reads the column on every intent it returns.
 - Modify is accepted only in `accepted` (not in flight); a modification
   that is not authorised leaves the intent in its new decision's state
   without its number.

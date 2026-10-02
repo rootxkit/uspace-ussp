@@ -494,6 +494,9 @@ func (t memTx) Update(_ context.Context, r *Record, _ string) error {
 func (t memTx) FlagUpdate(_ context.Context, ids []string, by string, _ time.Time) error {
 	for _, id := range ids {
 		t.m.flags[id] = by
+		if r, ok := t.m.byID[id]; ok && slices.Contains(ActiveStates, r.LocalState) {
+			r.UpdateRequired = json.RawMessage(`{"by_intent_id":"` + by + `"}`)
+		}
 	}
 	return nil
 }

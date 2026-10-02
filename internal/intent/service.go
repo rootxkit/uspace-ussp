@@ -143,6 +143,15 @@ type Record struct {
 	// ChangeReason and Actor describe the version being written.
 	ChangeReason string
 	Actor        string
+	// UpdateRequired is set (by_intent_id, at, reason) when a later
+	// intent with precedence overlaps this authorisation (Art. 10(10));
+	// nil when none. Such an intent is not activated until it is updated.
+	UpdateRequired json.RawMessage
+}
+
+// Flagged reports whether the intent is flagged for an update.
+func (r *Record) Flagged() bool {
+	return len(r.UpdateRequired) > 0 && string(r.UpdateRequired) != "null"
 }
 
 // PeerIntent is a peer USSP's intent the DSS told us about (WP-13
@@ -758,13 +767,20 @@ func (s *Service) Change(ctx context.Context, clientID, id string, raw []byte) (
 	return out, nil
 }
 
-// activatable refuses an activation outside the state or the window:
-// only an accepted intent, from time_start - activation_lead_s to
-// time_end, on the database clock.
+// activatable refuses an activation outside the state or the window, or
+// of an authorisation flagged for an update: only an accepted, unflagged
+// intent, from time_start - activation_lead_s to time_end, on the
+// database clock.
 func (s *Service) activatable(r *Record, now time.Time) error {
 	if r.LocalState != StateAccepted {
 		s.count("activation_refused")
 		return refuse(http.StatusConflict, "activation_refused", "the intent is %s; only an accepted intent is activated", r.LocalState)
+	}
+	if r.Flagged() {
+		// Art. 10(10): a later intent with precedence overlaps this
+		// authorisation; it is not flown until it is updated (WP-12).
+		s.count("activation_refused_update_required")
+		return refuse(http.StatusConflict, "update_required", "a later intent with precedence overlaps this authorisation (Art. 10(10)); it must be updated before it is activated")
 	}
 	lead := time.Duration(s.policy().Values.ActivationLeadS * float64(time.Second))
 	if now.Before(r.TimeStart.Add(-lead)) {

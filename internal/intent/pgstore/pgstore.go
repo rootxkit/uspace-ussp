@@ -144,6 +144,9 @@ func recordOf(r row) (*intent.Record, error) {
 	if r.RequestHash != nil {
 		out.RequestHash = *r.RequestHash
 	}
+	if len(r.UpdateRequired) > 0 && string(r.UpdateRequired) != "null" {
+		out.UpdateRequired = json.RawMessage(r.UpdateRequired)
+	}
 	if err := json.Unmarshal(r.Request, &out.Request); err != nil {
 		return nil, fmt.Errorf("intent %s request: %w", out.ID, err)
 	}

@@ -14,7 +14,8 @@ import (
 
 const intentByClientRef = `-- name: IntentByClientRef :one
 SELECT id, operator_id, client_id, client_ref, request_hash, request, decision_body, version, local_state,
-       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set
+       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set,
+       update_required
   FROM operational_intents
  WHERE client_id = $1 AND client_ref = $2
 `
@@ -25,23 +26,24 @@ type IntentByClientRefParams struct {
 }
 
 type IntentByClientRefRow struct {
-	ID           pgtype.UUID `json:"id"`
-	OperatorID   pgtype.UUID `json:"operator_id"`
-	ClientID     string      `json:"client_id"`
-	ClientRef    *string     `json:"client_ref"`
-	RequestHash  *string     `json:"request_hash"`
-	Request      []byte      `json:"request"`
-	DecisionBody []byte      `json:"decision_body"`
-	Version      int32       `json:"version"`
-	LocalState   string      `json:"local_state"`
-	ExemptArt13  bool        `json:"exempt_art_1_3"`
-	Priority     int32       `json:"priority"`
-	TimeStart    time.Time   `json:"time_start"`
-	TimeEnd      time.Time   `json:"time_end"`
-	FiledAt      time.Time   `json:"filed_at"`
-	CreatedAt    time.Time   `json:"created_at"`
-	VolumesAmsl  []byte      `json:"volumes_amsl"`
-	CellSet      []string    `json:"cell_set"`
+	ID             pgtype.UUID `json:"id"`
+	OperatorID     pgtype.UUID `json:"operator_id"`
+	ClientID       string      `json:"client_id"`
+	ClientRef      *string     `json:"client_ref"`
+	RequestHash    *string     `json:"request_hash"`
+	Request        []byte      `json:"request"`
+	DecisionBody   []byte      `json:"decision_body"`
+	Version        int32       `json:"version"`
+	LocalState     string      `json:"local_state"`
+	ExemptArt13    bool        `json:"exempt_art_1_3"`
+	Priority       int32       `json:"priority"`
+	TimeStart      time.Time   `json:"time_start"`
+	TimeEnd        time.Time   `json:"time_end"`
+	FiledAt        time.Time   `json:"filed_at"`
+	CreatedAt      time.Time   `json:"created_at"`
+	VolumesAmsl    []byte      `json:"volumes_amsl"`
+	CellSet        []string    `json:"cell_set"`
+	UpdateRequired []byte      `json:"update_required"`
 }
 
 func (q *Queries) IntentByClientRef(ctx context.Context, arg IntentByClientRefParams) (IntentByClientRefRow, error) {
@@ -65,35 +67,38 @@ func (q *Queries) IntentByClientRef(ctx context.Context, arg IntentByClientRefPa
 		&i.CreatedAt,
 		&i.VolumesAmsl,
 		&i.CellSet,
+		&i.UpdateRequired,
 	)
 	return i, err
 }
 
 const intentByID = `-- name: IntentByID :one
 SELECT id, operator_id, client_id, client_ref, request_hash, request, decision_body, version, local_state,
-       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set
+       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set,
+       update_required
   FROM operational_intents
  WHERE id = $1
 `
 
 type IntentByIDRow struct {
-	ID           pgtype.UUID `json:"id"`
-	OperatorID   pgtype.UUID `json:"operator_id"`
-	ClientID     string      `json:"client_id"`
-	ClientRef    *string     `json:"client_ref"`
-	RequestHash  *string     `json:"request_hash"`
-	Request      []byte      `json:"request"`
-	DecisionBody []byte      `json:"decision_body"`
-	Version      int32       `json:"version"`
-	LocalState   string      `json:"local_state"`
-	ExemptArt13  bool        `json:"exempt_art_1_3"`
-	Priority     int32       `json:"priority"`
-	TimeStart    time.Time   `json:"time_start"`
-	TimeEnd      time.Time   `json:"time_end"`
-	FiledAt      time.Time   `json:"filed_at"`
-	CreatedAt    time.Time   `json:"created_at"`
-	VolumesAmsl  []byte      `json:"volumes_amsl"`
-	CellSet      []string    `json:"cell_set"`
+	ID             pgtype.UUID `json:"id"`
+	OperatorID     pgtype.UUID `json:"operator_id"`
+	ClientID       string      `json:"client_id"`
+	ClientRef      *string     `json:"client_ref"`
+	RequestHash    *string     `json:"request_hash"`
+	Request        []byte      `json:"request"`
+	DecisionBody   []byte      `json:"decision_body"`
+	Version        int32       `json:"version"`
+	LocalState     string      `json:"local_state"`
+	ExemptArt13    bool        `json:"exempt_art_1_3"`
+	Priority       int32       `json:"priority"`
+	TimeStart      time.Time   `json:"time_start"`
+	TimeEnd        time.Time   `json:"time_end"`
+	FiledAt        time.Time   `json:"filed_at"`
+	CreatedAt      time.Time   `json:"created_at"`
+	VolumesAmsl    []byte      `json:"volumes_amsl"`
+	CellSet        []string    `json:"cell_set"`
+	UpdateRequired []byte      `json:"update_required"`
 }
 
 func (q *Queries) IntentByID(ctx context.Context, id pgtype.UUID) (IntentByIDRow, error) {
@@ -117,6 +122,7 @@ func (q *Queries) IntentByID(ctx context.Context, id pgtype.UUID) (IntentByIDRow
 		&i.CreatedAt,
 		&i.VolumesAmsl,
 		&i.CellSet,
+		&i.UpdateRequired,
 	)
 	return i, err
 }
@@ -137,7 +143,8 @@ func (q *Queries) IntentCountOpen(ctx context.Context, operatorID pgtype.UUID) (
 
 const intentDueToEnd = `-- name: IntentDueToEnd :many
 SELECT id, operator_id, client_id, client_ref, request_hash, request, decision_body, version, local_state,
-       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set
+       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set,
+       update_required
   FROM operational_intents
  WHERE time_end < $1::timestamptz
    AND local_state IN ('pending_validation', 'pending_dss', 'pending_authority', 'accepted', 'activated', 'nonconforming', 'contingent')
@@ -152,23 +159,24 @@ type IntentDueToEndParams struct {
 }
 
 type IntentDueToEndRow struct {
-	ID           pgtype.UUID `json:"id"`
-	OperatorID   pgtype.UUID `json:"operator_id"`
-	ClientID     string      `json:"client_id"`
-	ClientRef    *string     `json:"client_ref"`
-	RequestHash  *string     `json:"request_hash"`
-	Request      []byte      `json:"request"`
-	DecisionBody []byte      `json:"decision_body"`
-	Version      int32       `json:"version"`
-	LocalState   string      `json:"local_state"`
-	ExemptArt13  bool        `json:"exempt_art_1_3"`
-	Priority     int32       `json:"priority"`
-	TimeStart    time.Time   `json:"time_start"`
-	TimeEnd      time.Time   `json:"time_end"`
-	FiledAt      time.Time   `json:"filed_at"`
-	CreatedAt    time.Time   `json:"created_at"`
-	VolumesAmsl  []byte      `json:"volumes_amsl"`
-	CellSet      []string    `json:"cell_set"`
+	ID             pgtype.UUID `json:"id"`
+	OperatorID     pgtype.UUID `json:"operator_id"`
+	ClientID       string      `json:"client_id"`
+	ClientRef      *string     `json:"client_ref"`
+	RequestHash    *string     `json:"request_hash"`
+	Request        []byte      `json:"request"`
+	DecisionBody   []byte      `json:"decision_body"`
+	Version        int32       `json:"version"`
+	LocalState     string      `json:"local_state"`
+	ExemptArt13    bool        `json:"exempt_art_1_3"`
+	Priority       int32       `json:"priority"`
+	TimeStart      time.Time   `json:"time_start"`
+	TimeEnd        time.Time   `json:"time_end"`
+	FiledAt        time.Time   `json:"filed_at"`
+	CreatedAt      time.Time   `json:"created_at"`
+	VolumesAmsl    []byte      `json:"volumes_amsl"`
+	CellSet        []string    `json:"cell_set"`
+	UpdateRequired []byte      `json:"update_required"`
 }
 
 // The open intents whose time_end has passed, oldest first, locked.
@@ -199,6 +207,7 @@ func (q *Queries) IntentDueToEnd(ctx context.Context, arg IntentDueToEndParams) 
 			&i.CreatedAt,
 			&i.VolumesAmsl,
 			&i.CellSet,
+			&i.UpdateRequired,
 		); err != nil {
 			return nil, err
 		}
@@ -234,30 +243,32 @@ func (q *Queries) IntentFlagUpdate(ctx context.Context, arg IntentFlagUpdatePara
 
 const intentForUpdate = `-- name: IntentForUpdate :one
 SELECT id, operator_id, client_id, client_ref, request_hash, request, decision_body, version, local_state,
-       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set
+       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set,
+       update_required
   FROM operational_intents
  WHERE id = $1
    FOR UPDATE
 `
 
 type IntentForUpdateRow struct {
-	ID           pgtype.UUID `json:"id"`
-	OperatorID   pgtype.UUID `json:"operator_id"`
-	ClientID     string      `json:"client_id"`
-	ClientRef    *string     `json:"client_ref"`
-	RequestHash  *string     `json:"request_hash"`
-	Request      []byte      `json:"request"`
-	DecisionBody []byte      `json:"decision_body"`
-	Version      int32       `json:"version"`
-	LocalState   string      `json:"local_state"`
-	ExemptArt13  bool        `json:"exempt_art_1_3"`
-	Priority     int32       `json:"priority"`
-	TimeStart    time.Time   `json:"time_start"`
-	TimeEnd      time.Time   `json:"time_end"`
-	FiledAt      time.Time   `json:"filed_at"`
-	CreatedAt    time.Time   `json:"created_at"`
-	VolumesAmsl  []byte      `json:"volumes_amsl"`
-	CellSet      []string    `json:"cell_set"`
+	ID             pgtype.UUID `json:"id"`
+	OperatorID     pgtype.UUID `json:"operator_id"`
+	ClientID       string      `json:"client_id"`
+	ClientRef      *string     `json:"client_ref"`
+	RequestHash    *string     `json:"request_hash"`
+	Request        []byte      `json:"request"`
+	DecisionBody   []byte      `json:"decision_body"`
+	Version        int32       `json:"version"`
+	LocalState     string      `json:"local_state"`
+	ExemptArt13    bool        `json:"exempt_art_1_3"`
+	Priority       int32       `json:"priority"`
+	TimeStart      time.Time   `json:"time_start"`
+	TimeEnd        time.Time   `json:"time_end"`
+	FiledAt        time.Time   `json:"filed_at"`
+	CreatedAt      time.Time   `json:"created_at"`
+	VolumesAmsl    []byte      `json:"volumes_amsl"`
+	CellSet        []string    `json:"cell_set"`
+	UpdateRequired []byte      `json:"update_required"`
 }
 
 func (q *Queries) IntentForUpdate(ctx context.Context, id pgtype.UUID) (IntentForUpdateRow, error) {
@@ -281,6 +292,7 @@ func (q *Queries) IntentForUpdate(ctx context.Context, id pgtype.UUID) (IntentFo
 		&i.CreatedAt,
 		&i.VolumesAmsl,
 		&i.CellSet,
+		&i.UpdateRequired,
 	)
 	return i, err
 }
@@ -420,7 +432,8 @@ func (q *Queries) IntentInsert(ctx context.Context, arg IntentInsertParams) erro
 
 const intentList = `-- name: IntentList :many
 SELECT id, operator_id, client_id, client_ref, request_hash, request, decision_body, version, local_state,
-       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set
+       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set,
+       update_required
   FROM operational_intents
  WHERE operator_id = $1
    AND ($2::timestamptz IS NULL OR time_end >= $2::timestamptz)
@@ -439,23 +452,24 @@ type IntentListParams struct {
 }
 
 type IntentListRow struct {
-	ID           pgtype.UUID `json:"id"`
-	OperatorID   pgtype.UUID `json:"operator_id"`
-	ClientID     string      `json:"client_id"`
-	ClientRef    *string     `json:"client_ref"`
-	RequestHash  *string     `json:"request_hash"`
-	Request      []byte      `json:"request"`
-	DecisionBody []byte      `json:"decision_body"`
-	Version      int32       `json:"version"`
-	LocalState   string      `json:"local_state"`
-	ExemptArt13  bool        `json:"exempt_art_1_3"`
-	Priority     int32       `json:"priority"`
-	TimeStart    time.Time   `json:"time_start"`
-	TimeEnd      time.Time   `json:"time_end"`
-	FiledAt      time.Time   `json:"filed_at"`
-	CreatedAt    time.Time   `json:"created_at"`
-	VolumesAmsl  []byte      `json:"volumes_amsl"`
-	CellSet      []string    `json:"cell_set"`
+	ID             pgtype.UUID `json:"id"`
+	OperatorID     pgtype.UUID `json:"operator_id"`
+	ClientID       string      `json:"client_id"`
+	ClientRef      *string     `json:"client_ref"`
+	RequestHash    *string     `json:"request_hash"`
+	Request        []byte      `json:"request"`
+	DecisionBody   []byte      `json:"decision_body"`
+	Version        int32       `json:"version"`
+	LocalState     string      `json:"local_state"`
+	ExemptArt13    bool        `json:"exempt_art_1_3"`
+	Priority       int32       `json:"priority"`
+	TimeStart      time.Time   `json:"time_start"`
+	TimeEnd        time.Time   `json:"time_end"`
+	FiledAt        time.Time   `json:"filed_at"`
+	CreatedAt      time.Time   `json:"created_at"`
+	VolumesAmsl    []byte      `json:"volumes_amsl"`
+	CellSet        []string    `json:"cell_set"`
+	UpdateRequired []byte      `json:"update_required"`
 }
 
 // An operator's intents, newest first; from and to bound the window
@@ -493,6 +507,7 @@ func (q *Queries) IntentList(ctx context.Context, arg IntentListParams) ([]Inten
 			&i.CreatedAt,
 			&i.VolumesAmsl,
 			&i.CellSet,
+			&i.UpdateRequired,
 		); err != nil {
 			return nil, err
 		}
@@ -534,7 +549,8 @@ func (q *Queries) IntentNow(ctx context.Context) (time.Time, error) {
 
 const intentOverlapping = `-- name: IntentOverlapping :many
 SELECT id, operator_id, client_id, client_ref, request_hash, request, decision_body, version, local_state,
-       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set
+       exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set,
+       update_required
   FROM operational_intents
  WHERE local_state IN ('accepted', 'activated', 'nonconforming', 'contingent')
    AND NOT exempt_art_1_3
@@ -555,23 +571,24 @@ type IntentOverlappingParams struct {
 }
 
 type IntentOverlappingRow struct {
-	ID           pgtype.UUID `json:"id"`
-	OperatorID   pgtype.UUID `json:"operator_id"`
-	ClientID     string      `json:"client_id"`
-	ClientRef    *string     `json:"client_ref"`
-	RequestHash  *string     `json:"request_hash"`
-	Request      []byte      `json:"request"`
-	DecisionBody []byte      `json:"decision_body"`
-	Version      int32       `json:"version"`
-	LocalState   string      `json:"local_state"`
-	ExemptArt13  bool        `json:"exempt_art_1_3"`
-	Priority     int32       `json:"priority"`
-	TimeStart    time.Time   `json:"time_start"`
-	TimeEnd      time.Time   `json:"time_end"`
-	FiledAt      time.Time   `json:"filed_at"`
-	CreatedAt    time.Time   `json:"created_at"`
-	VolumesAmsl  []byte      `json:"volumes_amsl"`
-	CellSet      []string    `json:"cell_set"`
+	ID             pgtype.UUID `json:"id"`
+	OperatorID     pgtype.UUID `json:"operator_id"`
+	ClientID       string      `json:"client_id"`
+	ClientRef      *string     `json:"client_ref"`
+	RequestHash    *string     `json:"request_hash"`
+	Request        []byte      `json:"request"`
+	DecisionBody   []byte      `json:"decision_body"`
+	Version        int32       `json:"version"`
+	LocalState     string      `json:"local_state"`
+	ExemptArt13    bool        `json:"exempt_art_1_3"`
+	Priority       int32       `json:"priority"`
+	TimeStart      time.Time   `json:"time_start"`
+	TimeEnd        time.Time   `json:"time_end"`
+	FiledAt        time.Time   `json:"filed_at"`
+	CreatedAt      time.Time   `json:"created_at"`
+	VolumesAmsl    []byte      `json:"volumes_amsl"`
+	CellSet        []string    `json:"cell_set"`
+	UpdateRequired []byte      `json:"update_required"`
 }
 
 // The active, non-exempt intents whose envelope is within dist_m of the
@@ -612,6 +629,7 @@ func (q *Queries) IntentOverlapping(ctx context.Context, arg IntentOverlappingPa
 			&i.CreatedAt,
 			&i.VolumesAmsl,
 			&i.CellSet,
+			&i.UpdateRequired,
 		); err != nil {
 			return nil, err
 		}

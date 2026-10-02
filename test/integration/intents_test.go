@@ -616,6 +616,43 @@ func TestIntegrationIntentActivation(t *testing.T) {
 	}
 }
 
+// An authorisation whose row carries update_required (a later intent
+// with precedence overlaps it, Art. 10(10)) is not activated: the store
+// reads the column and activation answers 409 update_required, leaving
+// the intent accepted. Twin: an unflagged intent in the same window
+// activates.
+func TestIntegrationIntentActivationRefusedWhileUpdateRequired(t *testing.T) {
+	g := newIntentRig(t)
+	g.publishAll(nil, nil, nil)
+	number, serial, token := g.operatorClient()
+	now := time.Now().UTC().Truncate(time.Second)
+	soon := func(ref string, dlat float64) map[string]any {
+		m := g.request(number, serial, ref, g.box(dlat, 0, 0.01))
+		m["volumes"] = []any{g.volume(g.box(dlat, 0, 0.01), 120, 170, now.Add(5*time.Minute), now.Add(35*time.Minute))}
+		return m
+	}
+	a, b := g.file(token, soon("flagged", 0)), g.file(token, soon("unflagged", 1))
+	if a.str("decision") != "authorised" || b.str("decision") != "authorised" {
+		t.Fatalf("%s / %s", a.raw, b.raw)
+	}
+	if _, err := relOwner(t).Exec(context.Background(),
+		`UPDATE operational_intents SET update_required = '{"by_intent_id":"00000000-0000-4000-8000-0000000000ff","reason":"intent_flagged_for_update"}' WHERE id = $1`,
+		a.str("intent_id")); err != nil {
+		t.Fatal(err)
+	}
+	r := g.stack.call("PATCH", "/v1/intents/"+a.str("intent_id"), map[string]any{"action": "activate"}, bearer(token))
+	if r.status != 409 || r.slug() != "update_required" {
+		t.Fatalf("flagged: %d %s", r.status, r.raw)
+	}
+	if got := g.stack.call("GET", "/v1/intents/"+a.str("intent_id"), nil, bearer(token)); got.str("state") != "accepted" {
+		t.Fatalf("flagged intent changed: %s", got.raw)
+	}
+	if r := g.stack.call("PATCH", "/v1/intents/"+b.str("intent_id"), map[string]any{"action": "activate"}, bearer(token)); r.status != 200 ||
+		r.str("state") != "activated" {
+		t.Fatalf("unflagged: %d %s", r.status, r.raw)
+	}
+}
+
 // S-M1: a C0 A1 flight is accepted without an authorisation (Art. 1(3)).
 func TestIntegrationIntentC0A1Voluntary(t *testing.T) {
 	g := newIntentRig(t)
