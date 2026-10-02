@@ -25,7 +25,7 @@ VERSION      ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo
 COMMIT       ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 
 .PHONY: all build vet fmt fmt-check tools staticcheck lint tidy test race cover \
-        integration generate check-generated check-schemas check-deps check-hostnames \
+        integration generate fetch-standards check-generated check-schemas check-deps check-hostnames \
         check-contracts secrets vulncheck image compose-deps compose-up compose-down \
         conformance ci clean migrate-up migrate-down migrate-status
 
@@ -98,8 +98,14 @@ generate:
 	GO=$(GO) scripts/generate.sh
 	cd web && pnpm gen:api
 
-# The committed generated Go files are what the sources produce
-# (offline; the web types are checked by the web job).
+# Re-fetches the pinned standard files and compares them (network;
+# never in CI, which runs scripts/check-standards.sh offline).
+fetch-standards:
+	scripts/fetch-standards.sh -check
+
+# The committed generated Go files are what the sources produce, and
+# the pinned standard files are the ones api/standards/SOURCE and
+# uspace-core record (offline; the web types are checked by the web job).
 check-generated:
 	GO=$(GO) scripts/check-generated.sh
 
