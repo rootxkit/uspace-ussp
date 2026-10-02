@@ -86,6 +86,12 @@ type Runtime struct {
 	// Store holds the pools this process opened (Rel for api only, TS
 	// for api and tsdb-writer); nil fields are databases it does not use.
 	Store *store.Store
+	// Bus is the NATS connection (nil for a process without NATS). The
+	// topology of docs/PLAN.md §7 is kept in place in the background and
+	// its drift is on /readyz under nats.
+	Bus *bus.Conn
+
+	topology *bus.Maintainer
 
 	work sync.WaitGroup
 }
@@ -95,6 +101,10 @@ type Runtime struct {
 func (rt *Runtime) Go(ctx context.Context, fn func(context.Context)) {
 	rt.work.Go(func() { fn(ctx) })
 }
+
+// topologyCheckTimeout bounds one background check of the streams and
+// buckets.
+const topologyCheckTimeout = 10 * time.Second
 
 // Options are the parts of Run a test replaces.
 type Options struct {
@@ -140,6 +150,9 @@ func Run(ctx context.Context, cfg config.Config, spec Spec, opts Options) error 
 
 	workCtx, stopWork := context.WithCancel(context.WithoutCancel(ctx))
 	defer func() { stopWork(); rt.work.Wait() }()
+	if rt.topology != nil {
+		rt.Go(workCtx, func(ctx context.Context) { rt.topology.Run(ctx, topologyCheckTimeout) })
+	}
 	mux := http.NewServeMux()
 	if spec.Routes != nil {
 		MetricsRoute(mux, rt.Registry)
@@ -253,6 +266,8 @@ func openDependencies(rt *Runtime, spec Spec) ([]schemaPool, func(), error) {
 			return nil, nil, errors.New("nats: " + err.Error())
 		}
 		closers = append(closers, nc.Close)
+		rt.Bus = nc
+		rt.topology = nc.Maintain(bus.DefaultTopology(), rt.Logger)
 		rt.Health.Register(DepNATS, spec.NATS == Required, nc.Probe())
 	}
 	return pools, closeAll, nil
