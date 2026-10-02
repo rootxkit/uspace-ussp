@@ -375,7 +375,8 @@ func TestEngineBounds(t *testing.T) {
 	if e2.Counters.Get(CounterNotOwned) != 1 {
 		t.Fatal("a cell not owned was judged")
 	}
-	// A sink that fails is counted, never retried in a loop.
+	// A sink that fails is counted, retried a bounded number of times,
+	// then dropped, counted; never retried in a loop.
 	s := &sink{err: errors.New("down")}
 	e3 := &Engine{Ownership: own, Intents: &fakeIntents{}, Sink: s}
 	ctx3, cancel3 := context.WithCancel(context.Background())
@@ -383,7 +384,10 @@ func TestEngineBounds(t *testing.T) {
 	go e3.Run(ctx3)
 	waitFor(t, "engine 3", func() bool { e3.mu.Lock(); defer e3.mu.Unlock(); return e3.ctx == ctx3 })
 	e3.out.put("conf.v1."+flightA, &conformance.StateMessage{})
-	waitFor(t, "publish failure counted", func() bool { return e3.Counters.Get(CounterPublishFailed) == 1 })
+	waitFor(t, "publish dropped", func() bool { return e3.Counters.Get(CounterPublishDropped) == 1 })
+	if e3.Counters.Get(CounterPublishFailed) != PublishAttempts {
+		t.Fatal(e3.Counters.Snapshot())
+	}
 }
 
 func TestTrackSubjects(t *testing.T) {
@@ -475,4 +479,64 @@ func TestEngineDisabledPublishesOnce(t *testing.T) {
 	if n := disabled(); n != 1 {
 		t.Fatalf("%d source_disabled states for one switch-off", n)
 	}
+}
+
+// A lost link is the one state no sample refreshes, so a dropped
+// lost_link state would never be healed: the tick republishes the state
+// of every link-lost flight, and a conforming flight's state is not
+// republished by the tick (E-01 pair).
+func TestEngineRepublishesLostLinkState(t *testing.T) {
+	g := newRig(t, true)
+	g.offer(flightA, ptr(intentA), origin, "Airborne")
+	waitFor(t, "conforming", func() bool { return len(g.sink.states(flightA)) == 1 })
+	ticks := g.eng.Counters.Get(CounterTicks)
+	waitFor(t, "five ticks", func() bool { return g.eng.Counters.Get(CounterTicks) >= ticks+5 })
+	if n := len(g.sink.states(flightA)); n != 1 {
+		t.Fatalf("a conforming flight's state republished: %d", n)
+	}
+	g.clk.Add(16 * time.Second)
+	lost := func() int {
+		n := 0
+		for _, s := range g.sink.states(flightA) {
+			if s.State == conformance.StateLostLink {
+				n++
+			}
+		}
+		return n
+	}
+	waitFor(t, "lost_link republished", func() bool { return lost() >= 3 })
+}
+
+// The outbox retries a failed publish a bounded number of times (the
+// msg_id makes a repeat idempotent in the stream) and then drops the
+// message, counted: a sink that recovers within the attempts delivers.
+func TestOutboxRetriesBounded(t *testing.T) {
+	var fails atomic.Int32
+	fails.Store(PublishAttempts - 1)
+	s := &flakySink{fails: &fails}
+	c := &core.Counters{}
+	o := &outbox{sink: s, counters: c, logger: obs.Discard(), ch: make(chan outMsg, 4), backoff: time.Millisecond}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go o.run(ctx)
+	o.put("conf.v1."+flightA, &conformance.StateMessage{})
+	waitFor(t, "delivered after retries", func() bool { return c.Get(CounterPublished) == 1 })
+	if c.Get(CounterPublishFailed) != PublishAttempts-1 || c.Get(CounterPublishDropped) != 0 {
+		t.Fatal(c.Snapshot())
+	}
+	fails.Store(PublishAttempts)
+	o.put("conf.v1."+flightA, &conformance.StateMessage{})
+	waitFor(t, "dropped after the attempts", func() bool { return c.Get(CounterPublishDropped) == 1 })
+	if c.Get(CounterPublished) != 1 || c.Get(CounterPublishFailed) != 2*PublishAttempts-1 {
+		t.Fatal(c.Snapshot())
+	}
+}
+
+type flakySink struct{ fails *atomic.Int32 }
+
+func (f *flakySink) Publish(context.Context, string, bus.Enveloped) error {
+	if f.fails.Add(-1) >= 0 {
+		return errors.New("down")
+	}
+	return nil
 }

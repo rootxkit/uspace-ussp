@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -21,6 +22,16 @@ const DefaultOutboxLen = 16_384
 // publishTimeout bounds one publish of the outbox.
 const publishTimeout = 2 * time.Second
 
+// PublishAttempts bounds the tries of one message (E-10): a failed
+// publish is retried, the envelope's msg_id making a repeat one stored
+// message, and after the last try the message is dropped, counted
+// (monitor_publish_dropped) and logged.
+const PublishAttempts = 3
+
+// defaultPublishBackoff is the wait after the first failed try, doubled
+// after each further one.
+const defaultPublishBackoff = 100 * time.Millisecond
+
 type outMsg struct {
 	subject string
 	m       bus.Enveloped
@@ -29,14 +40,18 @@ type outMsg struct {
 // outbox publishes the workers' messages in order, off their loops: a
 // worker never waits on NATS (C-13). Full, it drops the message,
 // counted and logged; a dropped state is healed by the next sample's
-// (the consumers apply the latest state), a dropped alert by the next
-// second's republish (C-08). A failed publish is counted and logged,
-// not retried: the next one carries the current state.
+// (the consumers apply the latest state) or, for a link-lost flight
+// that sends none, by the tick's republish; a dropped alert by the next
+// second's republish (C-08). A failed publish is retried PublishAttempts
+// times, then dropped, counted and logged.
 type outbox struct {
 	sink     Sink
 	counters *core.Counters
 	logger   *slog.Logger
 	ch       chan outMsg
+	// backoff is the wait after the first failed try
+	// (defaultPublishBackoff).
+	backoff time.Duration
 
 	mu       sync.Mutex
 	lastWarn time.Time
@@ -70,21 +85,47 @@ func (o *outbox) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case m := <-o.ch:
-			if o.sink == nil {
-				o.counters.Inc(CounterPublishFailed)
-				continue
-			}
-			pctx, cancel := context.WithTimeout(ctx, publishTimeout)
-			err := o.sink.Publish(pctx, m.subject, m.m)
-			cancel()
-			if err != nil {
-				o.counters.Inc(CounterPublishFailed)
-				o.warn("monitor publish failed: "+err.Error(), m.subject)
-				continue
-			}
-			o.counters.Inc(CounterPublished)
+			o.send(ctx, m)
 		}
 	}
+}
+
+// send publishes m in at most PublishAttempts tries; each failed try is
+// counted (monitor_publish_failed), a message that failed every try is
+// dropped, counted (monitor_publish_dropped) and logged.
+func (o *outbox) send(ctx context.Context, m outMsg) {
+	wait := o.backoff
+	if wait <= 0 {
+		wait = defaultPublishBackoff
+	}
+	var err error
+	for try := range PublishAttempts {
+		if try > 0 {
+			t := time.NewTimer(wait)
+			select {
+			case <-ctx.Done():
+				t.Stop()
+				o.counters.Inc(CounterPublishDropped)
+				return
+			case <-t.C:
+			}
+			wait *= 2
+		}
+		if o.sink == nil {
+			err = errors.New("no sink")
+		} else {
+			pctx, cancel := context.WithTimeout(ctx, publishTimeout)
+			err = o.sink.Publish(pctx, m.subject, m.m)
+			cancel()
+		}
+		if err == nil {
+			o.counters.Inc(CounterPublished)
+			return
+		}
+		o.counters.Inc(CounterPublishFailed)
+	}
+	o.counters.Inc(CounterPublishDropped)
+	o.warn("monitor publish failed after its tries: message dropped; the next state or republish replaces it: "+err.Error(), m.subject)
 }
 
 // tableEntry is one flight's last sample in the neighbour table.

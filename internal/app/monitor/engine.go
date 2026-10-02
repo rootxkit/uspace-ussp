@@ -52,6 +52,7 @@ const (
 	CounterAlertNoCell      = "monitor_alert_without_cell"
 	CounterOutboxFull       = "monitor_outbox_full"
 	CounterPublishFailed    = "monitor_publish_failed"
+	CounterPublishDropped   = "monitor_publish_dropped"
 	CounterPublished        = "monitor_published"
 	CounterTicks            = "monitor_ticks"
 	CounterTableSwept       = "monitor_table_swept"
@@ -467,7 +468,9 @@ func (w *worker) tick(ctx context.Context) {
 			}
 		}
 		ev := f.tr.Tick(cfg, now)
-		if len(ev.Transitions) > 0 {
+		// A link-lost flight sends no sample that would heal a dropped
+		// state, so its state is republished every tick.
+		if len(ev.Transitions) > 0 || f.tr.Snapshot().LinkLost {
 			w.publishState(ctx, f.tr, ev, systemTimes(now), cfg.PolicyVersion)
 		}
 		w.publishAlerts(ctx, ev.Alerts, now)
