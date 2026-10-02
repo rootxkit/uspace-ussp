@@ -33,6 +33,12 @@ var lastState = map[string]string{
 // it to one), and the fact is audited
 // with telemetry-ingest as the system actor.
 func (p Store) Record(ctx context.Context, b flights.Body) error {
+	return p.S.Tx(ctx, func(q *relational.Queries) error { return RecordIn(ctx, q, b) })
+}
+
+// RecordIn is Record inside the caller's transaction q, for a caller
+// that commits more work with the fact (the F3411 ISA plan, WP-9).
+func RecordIn(ctx context.Context, q *relational.Queries, b flights.Body) error {
 	id, err := store.UUID("flight_id", b.FlightID)
 	if err != nil {
 		return err
@@ -51,14 +57,12 @@ func (p Store) Record(ctx context.Context, b flights.Body) error {
 		at := b.At.Time
 		params.EndedAt = &at
 	}
-	return p.S.Tx(ctx, func(q *relational.Queries) error {
-		if err := q.RecordFlightEvent(ctx, params); err != nil {
-			return fmt.Errorf("flight %s %s: %w", b.FlightID, b.Event, err)
-		}
-		_, err := store.Audit(ctx, q, store.Event{
-			ActorType: store.ActorSystem, ActorID: "telemetry-ingest", EntityType: "flight", EntityID: b.FlightID,
-			EventType: "flight_" + b.Event, Payload: b,
-		})
-		return err
+	if err := q.RecordFlightEvent(ctx, params); err != nil {
+		return fmt.Errorf("flight %s %s: %w", b.FlightID, b.Event, err)
+	}
+	_, err = store.Audit(ctx, q, store.Event{
+		ActorType: store.ActorSystem, ActorID: "telemetry-ingest", EntityType: "flight", EntityID: b.FlightID,
+		EventType: "flight_" + b.Event, Payload: b,
 	})
+	return err
 }
