@@ -455,22 +455,37 @@ func envelopeOfRecord(r *intent.Record) []geodesy.BBox {
 	return out
 }
 
-// WKT is the boxes as a MULTIPOLYGON in WGS84 (lon lat), a box across
-// the antimeridian split into its two halves.
+// maxSpanDeg is the widest longitude span of one WKT polygon: a
+// geography edge is a great circle, and a polygon 180 degrees wide or
+// more is ambiguous, so wider boxes are cut into pieces.
+const maxSpanDeg = 90
+
+// WKT is the boxes as a MULTIPOLYGON in WGS84 (lon lat): a box across
+// the antimeridian is split into its two halves, and every piece wider
+// than maxSpanDeg is cut again, so no polygon is ambiguous on the
+// sphere (the boxes come padded by intent.PadForGeography for the bulge
+// of their edges).
 func WKT(boxes []geodesy.BBox) string {
 	var polys []string
-	ring := func(minLon, minLat, maxLon, maxLat float64) string {
-		f := func(x float64) string { return strconv.FormatFloat(x, 'f', -1, 64) }
-		pt := func(lon, lat float64) string { return f(lon) + " " + f(lat) }
-		return "((" + strings.Join([]string{pt(minLon, minLat), pt(maxLon, minLat), pt(maxLon, maxLat), pt(minLon, maxLat), pt(minLon, minLat)}, ",") + "))"
+	f := func(x float64) string { return strconv.FormatFloat(x, 'f', -1, 64) }
+	pt := func(lon, lat float64) string { return f(lon) + " " + f(lat) }
+	ring := func(minLon, minLat, maxLon, maxLat float64) {
+		for lo := minLon; lo < maxLon || lo == minLon; lo += maxSpanDeg {
+			hi := min(lo+maxSpanDeg, maxLon)
+			polys = append(polys, "(("+strings.Join([]string{pt(lo, minLat), pt(hi, minLat), pt(hi, maxLat), pt(lo, maxLat), pt(lo, minLat)}, ",")+"))")
+			if hi >= maxLon {
+				break
+			}
+		}
 	}
 	for _, b := range boxes {
 		lat0, lat1 := clampLat(b.MinLat), clampLat(b.MaxLat)
 		if b.MinLon <= b.MaxLon {
-			polys = append(polys, ring(b.MinLon, lat0, b.MaxLon, lat1))
+			ring(b.MinLon, lat0, b.MaxLon, lat1)
 			continue
 		}
-		polys = append(polys, ring(b.MinLon, lat0, 180, lat1), ring(-180, lat0, b.MaxLon, lat1))
+		ring(b.MinLon, lat0, 180, lat1)
+		ring(-180, lat0, b.MaxLon, lat1)
 	}
 	return "MULTIPOLYGON(" + strings.Join(polys, ",") + ")"
 }
