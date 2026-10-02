@@ -10,7 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
+
 	"github.com/rootxkit/uspace-ussp/internal/app/proc"
+	"github.com/rootxkit/uspace-ussp/internal/auth"
 	"github.com/rootxkit/uspace-ussp/internal/config"
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
@@ -101,5 +104,82 @@ func TestRIDSPServesTheF3411EndpointsGuarded(t *testing.T) {
 	res, body := get("/metrics")
 	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), obs.MetricName("auth_no_credential")) {
 		t.Errorf("the guard's refusals are not on /metrics: %d", res.StatusCode)
+	}
+}
+
+// startRIDSP runs rid-sp with the push switch and returns its base URL.
+func startRIDSP(t *testing.T, push string) string {
+	t.Helper()
+	kv := map[string]string{
+		"USSP_RID_SP_ADDR":       "127.0.0.1:0",
+		"USSP_NATS_URL":          "nats://" + closedAddr(t),
+		"USSP_AUDIENCES":         "ussp.test",
+		"USSP_STATUS_INTERVAL_S": "3600",
+		"USSP_AUTHORITY_PUSH":    push,
+	}
+	cfg, err := config.LoadFrom(func(k string) (string, bool) { v, ok := kv[k]; return v, ok })
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	addr := make(chan string, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- proc.Run(ctx, cfg, Spec, proc.Options{Out: io.Discard, Listening: func(a string) { addr <- a }})
+	}()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("rid-sp stopped with %v", err)
+		}
+	})
+	select {
+	case a := <-addr:
+		return a
+	case err := <-done:
+		t.Fatalf("rid-sp did not start: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("rid-sp did not listen within 10 s")
+	}
+	return ""
+}
+
+// D12 both ways: with USSP_AUTHORITY_PUSH off (the default) WS
+// /v1/authority/flights does not exist (404) and the Service Provider
+// path is served; with it on the upgrade is served (an unauthenticated
+// one is accepted and closed with 4401, M22) and the Service Provider
+// path is served all the same.
+func TestAuthorityPushOffAndOn(t *testing.T) {
+	for _, push := range []string{"off", "on"} {
+		addr := startRIDSP(t, push)
+		res, err := http.Get("http://" + addr + "/v1/authority/flights")
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if push == "off" && res.StatusCode != http.StatusNotFound {
+			t.Errorf("push off: %d, want 404", res.StatusCode)
+		}
+		if push == "on" {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			conn, _, err := websocket.Dial(ctx, "ws://"+addr+"/v1/authority/flights", nil)
+			if err != nil {
+				cancel()
+				t.Fatalf("push on: %v", err)
+			}
+			_, _, err = conn.Read(ctx)
+			cancel()
+			if websocket.CloseStatus(err) != auth.CloseRelogin {
+				t.Errorf("push on, no token: %v", err)
+			}
+		}
+		res, err = http.Get("http://" + addr + "/uss/flights?view=41.7,44.8,41.71,44.81")
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusUnauthorized {
+			t.Errorf("push %s: /uss/flights %d, want 401 (served, guarded)", push, res.StatusCode)
+		}
 	}
 }

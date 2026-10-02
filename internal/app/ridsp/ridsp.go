@@ -3,7 +3,9 @@
 // serves GET /uss/flights and GET /uss/flights/{id}/details from the
 // in-memory 60 s window of our own flights (fed from the TRK stream),
 // and POST /uss/identification_service_areas/{id} into the KV bucket
-// rid_isa_notifications, each behind the standard's scope. It never
+// rid_isa_notifications, each behind the standard's scope; with
+// USSP_AUTHORITY_PUSH=on also the optional WS /v1/authority/flights
+// (D12), which the Service Provider path never depends on. It never
 // opens a database (D6): the intents are the intent_active projection,
 // the policy the policy bucket. The ISAs of our flights are written to
 // the DSS by api, which records the flights (internal/ridsp ISAWorker).
@@ -81,12 +83,13 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	proc.Publish(rt, "projections", followCounters)
 	pol := &bus.Follower[policy.Record]{JS: js, Bucket: bus.BucketPolicy, Key: bus.KeyPolicy, Decode: telemetry.DecodePolicy,
 		Core: rt.Bus.Conn, Push: bus.CtlPolicy, Counters: followCounters, Logger: rt.Logger}
-	current := func() policy.Values {
+	record := func() policy.Record {
 		if r, _, ok := pol.Value(); ok {
-			return r.Values
+			return r
 		}
-		return policy.Defaults()
+		return policy.Record{Values: policy.Defaults()}
 	}
+	current := func() policy.Values { return record().Values }
 	intents := &bus.Mirror[sp.IntentFacts]{JS: js, Bucket: bus.BucketIntentActive, Counters: followCounters, Logger: rt.Logger}
 	rt.Health.Register(DepIntentActive, false, func(context.Context) (obs.State, string) {
 		_, age, loaded := intents.Snapshot()
@@ -129,7 +132,23 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	if err := stdapi.MountF3411(mux, srv, stdapi.Options{Guard: guard.Require, Validate: auth.ValidateAccess, Counters: std}); err != nil {
 		return fmt.Errorf("F3411 access table: %w", err)
 	}
-	for _, run := range []func(context.Context){pol.Run, intents.Run, feed.Run, func(ctx context.Context) { sweep(ctx, window) }} {
+	runs := []func(context.Context){pol.Run, intents.Run, feed.Run, func(ctx context.Context) { sweep(ctx, window) }}
+	// The optional authority push (D12): off by default, and then the
+	// route is not served at all (404).
+	if rt.Config.AuthorityPush == "on" {
+		pushCounters := &core.Counters{}
+		proc.Publish(rt, "authority_push", pushCounters)
+		push := &sp.Push{
+			Window: window, WS: &auth.WSAuth{Guard: guard}, Policy: record, Ctx: ctx, Counters: pushCounters, Logger: rt.Logger,
+			Degraded: func() []string { return rt.Health.Snapshot().Degraded },
+		}
+		if err := sp.RegisterPush(mux, push, guard.Require); err != nil {
+			return fmt.Errorf("authority push access table: %w", err)
+		}
+		runs = append(runs, push.Run)
+		rt.Logger.Info("the authority push WS /v1/authority/flights is on (USSP_AUTHORITY_PUSH)")
+	}
+	for _, run := range runs {
 		rt.Go(ctx, run)
 	}
 	return nil

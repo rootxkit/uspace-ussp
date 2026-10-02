@@ -3,7 +3,8 @@
 # api/openapi.yaml. No strict server: handlers write their own bodies
 # (cookies, RFC 6749 errors) through internal/httpx. The telemetry tag
 # is served by telemetry-ingest, from its own generated interface
-# (api/oapi-codegen.telemetry.yaml). Run through `make generate`; never
+# (api/oapi-codegen.telemetry.yaml), the authority tag by rid-sp
+# (api/oapi-codegen.ridsp.yaml). Run through `make generate`; never
 # edit the generated file.
 package: gen
 generate:
@@ -13,4 +14,4 @@ generate:
   embedded-spec: false
 output-options:
   skip-prune: true
-  exclude-tags: [telemetry]
+  exclude-tags: [telemetry, authority]

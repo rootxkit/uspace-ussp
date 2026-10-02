@@ -1,0 +1,14 @@
+# oapi-codegen configuration for internal/ridsp/gen: the net/http
+# server interface (Go 1.22 routing) of the operation rid-sp serves from
+# api/openapi.yaml, the authority tag (the optional WS
+# /v1/authority/flights). No models: the frames are the shapes of
+# schemas/authority/flight/v1 and console/status/v1. Run through `make
+# generate`; never edit the generated file.
+package: gen
+generate:
+  std-http-server: true
+  strict-server: false
+  models: false
+  embedded-spec: false
+output-options:
+  include-tags: [authority]
