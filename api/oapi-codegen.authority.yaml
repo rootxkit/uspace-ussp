@@ -1,0 +1,13 @@
+# oapi-codegen configuration for internal/registry/authclient: the Go
+# client of the authority's national API (api/clients/authority.yaml,
+# the pinned copy named in api/clients/SOURCE; reconciliation M11).
+# Only the F8 operations this USSP calls (the registry-f8 tag: the
+# validity lookups and the change feed) are generated, with the models
+# they name. Run through `make generate`; never edit the generated file.
+package: authclient
+generate:
+  client: true
+  models: true
+output-options:
+  include-tags:
+    - registry-f8
