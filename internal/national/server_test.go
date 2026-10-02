@@ -49,6 +49,12 @@ var (
 // every refusal before a service call can be exercised.
 func router(t *testing.T) (http.Handler, *auth.Issuer) {
 	t.Helper()
+	return routerWith(t, nil)
+}
+
+// routerWith is router with reg as the registry lookup.
+func routerWith(t *testing.T, reg RegistryValidator) (http.Handler, *auth.Issuer) {
+	t.Helper()
 	keyOnce.Do(func() {
 		var err error
 		if testKey, err = rsa.GenerateKey(rand.Reader, 2048); err != nil {
@@ -79,7 +85,7 @@ func router(t *testing.T) (http.Handler, *auth.Issuer) {
 	guard := &auth.Guard{Verifier: v, OwnIssuer: iss.URL, Counters: &core.Counters{}}
 	token := &auth.TokenEndpoint{Issuer: iss, Clients: noClients{}, Hasher: hasher, Audit: noAudit{}, TTL: func() time.Duration { return time.Hour }}
 	mux := http.NewServeMux()
-	if err := Register(mux, &Server{Health: health{}, Token: token, Issuer: iss}, guard.Require); err != nil {
+	if err := Register(mux, &Server{Health: health{}, Token: token, Issuer: iss, Registry: reg}, guard.Require); err != nil {
 		t.Fatalf("the access table does not cover the routes: %v", err)
 	}
 	mux.HandleFunc("/", httpx.NotFound)

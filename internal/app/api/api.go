@@ -4,7 +4,9 @@
 // issuer, the JWKS and the accounts, every operation behind the
 // fail-closed access table of internal/national; WP-3 mounts the F3548
 // USS endpoints (internal/stdapi), 501 until WP-13; WP-4 runs the CIS
-// cache (internal/cis) and its receiver POST /v1/cis/notifications.
+// cache (internal/cis) and its receiver POST /v1/cis/notifications;
+// WP-5 the registry validity cache (internal/registry), its change feed
+// and GET /v1/registry/validate, and checks operator accounts with it.
 package api
 
 import (
@@ -29,6 +31,7 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/national"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
+	"github.com/rootxkit/uspace-ussp/internal/registry"
 	"github.com/rootxkit/uspace-ussp/internal/stdapi"
 	"github.com/rootxkit/uspace-ussp/internal/store"
 )
@@ -129,7 +132,22 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 		return policy.Defaults()
 	}
 
-	cisState, err := startCIS(ctx, rt, current)
+	// One outgoing token client for every call this process makes (the
+	// CISP, the authority), with a token cached per audience and scope.
+	tokens, err := outgoingTokens(cfg)
+	if err != nil {
+		return err
+	}
+	var registryTokens registry.TokenSource
+	if tokens != nil {
+		proc.Publish(rt, "token_client", tokens.Counters())
+		registryTokens = tokens
+	}
+	cisState, err := startCIS(ctx, rt, current, tokens)
+	if err != nil {
+		return err
+	}
+	reg, err := startRegistry(ctx, rt, current, registryTokens)
 	if err != nil {
 		return err
 	}
@@ -139,7 +157,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	perMin := func(n int) float64 { return float64(n) / 60 }
 	burst := func(n int) int { return max(1, n/6) }
 	svc := &accounts.Service{
-		Store: rt.Store, Hasher: hasher, Issuer: issuer, Registry: accounts.UnknownRegistry{},
+		Store: rt.Store, Hasher: hasher, Issuer: issuer, Registry: reg.Cache,
 		Bindings: auth.NewMemoryBindings(), Policy: current, MFA: sealer,
 		LoginLimiter: httpx.NewRateLimiter(perMin(cfg.LoginRatePerMin), burst(cfg.LoginRatePerMin), 100_000, counters),
 		Counters:     counters, Logger: rt.Logger,
@@ -157,7 +175,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 		Counters:      counters, Logger: rt.Logger,
 	}
 	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc,
-		CIS: cisState.Receiver, Logger: rt.Logger}
+		CIS: cisState.Receiver, Registry: reg.Cache, Logger: rt.Logger}
 	if err := national.Register(mux, srv, guard.Require); err != nil {
 		return fmt.Errorf("access table: %w", err)
 	}

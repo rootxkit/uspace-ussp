@@ -71,6 +71,7 @@ type Fake struct {
 	srv *httptest.Server
 
 	mu        sync.Mutex
+	bearer    string
 	down      bool
 	extra     map[string]any
 	echoAs    string
@@ -84,7 +85,7 @@ type Fake struct {
 
 // New starts a fake.
 func New() *Fake {
-	f := &Fake{operators: map[string]operator{}, uas: map[string]uas{}, pilots: map[string]pilot{}, requests: map[string]int{}}
+	f := &Fake{bearer: Token, operators: map[string]operator{}, uas: map[string]uas{}, pilots: map[string]pilot{}, requests: map[string]int{}}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	return f
 }
@@ -94,6 +95,10 @@ func (f *Fake) Close() { f.srv.Close() }
 
 // URL is the fake's base URL.
 func (f *Fake) URL() string { return f.srv.URL }
+
+// AcceptBearer makes the fake accept tok instead of Token (a test whose
+// token service hands out another bearer).
+func (f *Fake) AcceptBearer(tok string) { f.mu.Lock(); f.bearer = tok; f.mu.Unlock() }
 
 // Down makes every request answer 503 until Up.
 func (f *Fake) Down() { f.mu.Lock(); f.down = true; f.mu.Unlock() }
@@ -174,7 +179,7 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusServiceUnavailable, "unavailable")
 		return
 	}
-	if r.Header.Get("Authorization") != "Bearer "+Token {
+	if r.Header.Get("Authorization") != "Bearer "+f.bearer {
 		problem(w, http.StatusUnauthorized, "unauthenticated")
 		return
 	}

@@ -78,7 +78,7 @@ const (
 )
 
 // RegistryChecker asks the authority's registry (F8) about an operator
-// registration number. WP-5 implements it; until then UnknownRegistry
+// registration number. WP-5's registry.Cache implements it; UnknownRegistry
 // answers "unknown" and every operator stays pending_validation. An
 // error is treated as "unknown": the operator stays pending, never
 // passes by default (CLAUDE.md rule 4).
@@ -86,7 +86,7 @@ type RegistryChecker interface {
 	OperatorStatus(ctx context.Context, registrationNumber string) (string, error)
 }
 
-// UnknownRegistry is the RegistryChecker until WP-5: it knows nothing.
+// UnknownRegistry is a RegistryChecker that knows nothing (tests).
 type UnknownRegistry struct{}
 
 // OperatorStatus answers unknown.

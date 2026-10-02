@@ -174,6 +174,66 @@ func (e Realm) Valid() bool {
 	}
 }
 
+// Defines values for RegistryAnswerReason.
+const (
+	RegistryAnswerRefused RegistryAnswerReason = "registry_answer_refused"
+	RegistryUnavailable   RegistryAnswerReason = "registry_unavailable"
+)
+
+// Valid indicates whether the value is a known member of the RegistryAnswerReason enum.
+func (e RegistryAnswerReason) Valid() bool {
+	switch e {
+	case RegistryAnswerRefused:
+		return true
+	case RegistryUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RegistryPurpose.
+const (
+	Authorisation  RegistryPurpose = "authorisation"
+	Identification RegistryPurpose = "identification"
+)
+
+// Valid indicates whether the value is a known member of the RegistryPurpose enum.
+func (e RegistryPurpose) Valid() bool {
+	switch e {
+	case Authorisation:
+		return true
+	case Identification:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RegistryStatus.
+const (
+	RegistryStatusRevoked   RegistryStatus = "revoked"
+	RegistryStatusSuspended RegistryStatus = "suspended"
+	RegistryStatusUnknown   RegistryStatus = "unknown"
+	RegistryStatusValid     RegistryStatus = "valid"
+)
+
+// Valid indicates whether the value is a known member of the RegistryStatus enum.
+func (e RegistryStatus) Valid() bool {
+	switch e {
+	case RegistryStatusRevoked:
+		return true
+	case RegistryStatusSuspended:
+		return true
+	case RegistryStatusUnknown:
+		return true
+	case RegistryStatusValid:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SerialBindingRequestClassLabel.
 const (
 	C0 SerialBindingRequestClassLabel = "C0"
@@ -422,6 +482,52 @@ type ReadinessStatus string
 // Realm portal for operator users, console for staff (M20).
 type Realm string
 
+// RegistryAnswer One entity's answer, status only.
+type RegistryAnswer struct {
+	// CacheAgeS The age of the answer in seconds (0 when the authority was just asked); absent when there is no answer.
+	CacheAgeS    *float64              `json:"cache_age_s,omitempty"`
+	ClassLabel   *string               `json:"class_label,omitempty"`
+	Competencies *[]RegistryCompetency `json:"competencies,omitempty"`
+
+	// Key The key as answered (an operator number's public part, the serial, the pilot id).
+	Key      string  `json:"key"`
+	MtomBand *string `json:"mtom_band,omitempty"`
+
+	// Reason Why the status is unknown without the registry having said so; absent when it did.
+	Reason *RegistryAnswerReason `json:"reason,omitempty"`
+	Status RegistryStatus        `json:"status"`
+
+	// ValidUntil The registration's end of validity (an operator's), as the authority answers it.
+	ValidUntil *time.Time `json:"valid_until,omitempty"`
+}
+
+// RegistryAnswerReason Why the status is unknown without the registry having said so; absent when it did.
+type RegistryAnswerReason string
+
+// RegistryCompetency defines model for RegistryCompetency.
+type RegistryCompetency struct {
+	Competency string    `json:"competency"`
+	ValidUntil time.Time `json:"valid_until"`
+}
+
+// RegistryPurpose Why the lookup is made; recorded on every call here and at the authority (spec 02 F8).
+type RegistryPurpose string
+
+// RegistryStatus defines model for RegistryStatus.
+type RegistryStatus string
+
+// RegistryValidation One part per key asked.
+type RegistryValidation struct {
+	// Operator One entity's answer, status only.
+	Operator *RegistryAnswer `json:"operator,omitempty"`
+
+	// Pilot One entity's answer, status only.
+	Pilot *RegistryAnswer `json:"pilot,omitempty"`
+
+	// Uas One entity's answer, status only.
+	Uas *RegistryAnswer `json:"uas,omitempty"`
+}
+
 // SerialBinding defines model for SerialBinding.
 type SerialBinding struct {
 	BoundAt  time.Time `json:"bound_at"`
@@ -506,6 +612,14 @@ type OperatorID = openapi_types.UUID
 // OAuth2 client library reads `error` and a uspace client reads the
 // problem.
 type OAuthError = OAuthProblem
+
+// ValidateRegistryParams defines parameters for ValidateRegistry.
+type ValidateRegistryParams struct {
+	Purpose  RegistryPurpose `form:"purpose" json:"purpose"`
+	Operator *string         `form:"operator,omitempty" json:"operator,omitempty"`
+	Serial   *string         `form:"serial,omitempty" json:"serial,omitempty"`
+	Pilot    *string         `form:"pilot,omitempty" json:"pilot,omitempty"`
+}
 
 // RequestTokenFormdataRequestBody defines body for RequestToken for application/x-www-form-urlencoded ContentType.
 type RequestTokenFormdataRequestBody = TokenRequest
@@ -886,6 +1000,26 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /v1/cis/notifications (the `ReceiveCISNotification` operationId).
 	ReceiveCISNotificationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ValidateRegistry Validity of an operator, a UAS and a remote pilot (F8, cached)
+	//
+	// The authority's F8 answer through this USSP's cache, status only:
+	// `valid`, `suspended`, `revoked` or `unknown` per key asked, with
+	// the end of validity, the class label and MTOM band of a UAS and
+	// the competency set of a pilot, never a name, address, phone or
+	// e-mail (spec 02 F8, 06 §5). An answer cached within the policy's
+	// TTL (`registry_positive_ttl_s`, `registry_negative_ttl_s`) carries
+	// its `cache_age_s`; otherwise the authority is asked and the answer
+	// cached. When the authority cannot answer, a key without a cached
+	// answer is `unknown` with `reason: registry_unavailable` (or
+	// `registry_answer_refused` when its answer was refused), never an
+	// error and never `valid`. `operator` is compared on its public part
+	// (a secret part is neither sent, stored nor echoed); `serial` as
+	// given, trimmed. Every call is an `events` row
+	// (`registry_validated`) with the client and the purpose.
+	//
+	// Corresponds with GET /v1/registry/validate (the `ValidateRegistry` operationId).
+	ValidateRegistry(ctx context.Context, params *ValidateRegistryParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // GetJWKS The issuer's public keys
@@ -1376,6 +1510,36 @@ func (c *Client) UnbindSerial(ctx context.Context, operatorId OperatorID, client
 // Corresponds with POST /v1/cis/notifications (the `ReceiveCISNotification` operationId).
 func (c *Client) ReceiveCISNotificationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewReceiveCISNotificationRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ValidateRegistry Validity of an operator, a UAS and a remote pilot (F8, cached)
+//
+// The authority's F8 answer through this USSP's cache, status only:
+// `valid`, `suspended`, `revoked` or `unknown` per key asked, with
+// the end of validity, the class label and MTOM band of a UAS and
+// the competency set of a pilot, never a name, address, phone or
+// e-mail (spec 02 F8, 06 §5). An answer cached within the policy's
+// TTL (`registry_positive_ttl_s`, `registry_negative_ttl_s`) carries
+// its `cache_age_s`; otherwise the authority is asked and the answer
+// cached. When the authority cannot answer, a key without a cached
+// answer is `unknown` with `reason: registry_unavailable` (or
+// `registry_answer_refused` when its answer was refused), never an
+// error and never `valid`. `operator` is compared on its public part
+// (a secret part is neither sent, stored nor echoed); `serial` as
+// given, trimmed. Every call is an `events` row
+// (`registry_validated`) with the client and the purpose.
+//
+// Corresponds with GET /v1/registry/validate (the `ValidateRegistry` operationId).
+func (c *Client) ValidateRegistry(ctx context.Context, params *ValidateRegistryParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewValidateRegistryRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1941,6 +2105,92 @@ func NewReceiveCISNotificationRequestWithBody(server string, contentType string,
 	return req, nil
 }
 
+// NewValidateRegistryRequest constructs an http.Request for the ValidateRegistry method
+func NewValidateRegistryRequest(server string, params *ValidateRegistryParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/registry/validate")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "purpose", params.Purpose, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.Operator != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "operator", *params.Operator, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Serial != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "serial", *params.Serial, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Pilot != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pilot", *params.Pilot, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -2288,6 +2538,28 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /v1/cis/notifications (the `ReceiveCISNotification` operationId).
 	ReceiveCISNotificationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReceiveCISNotificationResponse, error)
+
+	// ValidateRegistryWithResponse Validity of an operator, a UAS and a remote pilot (F8, cached)
+	//
+	// The authority's F8 answer through this USSP's cache, status only:
+	// `valid`, `suspended`, `revoked` or `unknown` per key asked, with
+	// the end of validity, the class label and MTOM band of a UAS and
+	// the competency set of a pilot, never a name, address, phone or
+	// e-mail (spec 02 F8, 06 §5). An answer cached within the policy's
+	// TTL (`registry_positive_ttl_s`, `registry_negative_ttl_s`) carries
+	// its `cache_age_s`; otherwise the authority is asked and the answer
+	// cached. When the authority cannot answer, a key without a cached
+	// answer is `unknown` with `reason: registry_unavailable` (or
+	// `registry_answer_refused` when its answer was refused), never an
+	// error and never `valid`. `operator` is compared on its public part
+	// (a secret part is neither sent, stored nor echoed); `serial` as
+	// given, trimmed. Every call is an `events` row
+	// (`registry_validated`) with the client and the purpose.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/registry/validate (the `ValidateRegistry` operationId).
+	ValidateRegistryWithResponse(ctx context.Context, params *ValidateRegistryParams, reqEditors ...RequestEditorFn) (*ValidateRegistryResponse, error)
 }
 
 // GetJWKSResponse200Headers the declared response headers of an HTTP 200 response for GetJWKS
@@ -3346,6 +3618,82 @@ func (r ReceiveCISNotificationResponse) ContentType() string {
 	return ""
 }
 
+type ValidateRegistryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *RegistryValidation
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ValidateRegistryResponse) GetJSON200() *RegistryValidation {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r ValidateRegistryResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ValidateRegistryResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ValidateRegistryResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ValidateRegistryResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ValidateRegistryResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ValidateRegistryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ValidateRegistryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ValidateRegistryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ValidateRegistryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetJWKSWithResponse The issuer's public keys
 //
 // The RS256 keys of this USSP's issuer (`use: sig`, `kid` = the RFC
@@ -3774,6 +4122,34 @@ func (c *ClientWithResponses) ReceiveCISNotificationWithBodyWithResponse(ctx con
 		return nil, err
 	}
 	return ParseReceiveCISNotificationResponse(rsp)
+}
+
+// ValidateRegistryWithResponse Validity of an operator, a UAS and a remote pilot (F8, cached)
+//
+// The authority's F8 answer through this USSP's cache, status only:
+// `valid`, `suspended`, `revoked` or `unknown` per key asked, with
+// the end of validity, the class label and MTOM band of a UAS and
+// the competency set of a pilot, never a name, address, phone or
+// e-mail (spec 02 F8, 06 §5). An answer cached within the policy's
+// TTL (`registry_positive_ttl_s`, `registry_negative_ttl_s`) carries
+// its `cache_age_s`; otherwise the authority is asked and the answer
+// cached. When the authority cannot answer, a key without a cached
+// answer is `unknown` with `reason: registry_unavailable` (or
+// `registry_answer_refused` when its answer was refused), never an
+// error and never `valid`. `operator` is compared on its public part
+// (a secret part is neither sent, stored nor echoed); `serial` as
+// given, trimmed. Every call is an `events` row
+// (`registry_validated`) with the client and the purpose.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/registry/validate (the `ValidateRegistry` operationId).
+func (c *ClientWithResponses) ValidateRegistryWithResponse(ctx context.Context, params *ValidateRegistryParams, reqEditors ...RequestEditorFn) (*ValidateRegistryResponse, error) {
+	rsp, err := c.ValidateRegistry(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseValidateRegistryResponse(rsp)
 }
 
 // ParseGetJWKSResponse parses an HTTP response from a GetJWKSWithResponse call
@@ -4632,6 +5008,67 @@ func ParseReceiveCISNotificationResponse(rsp *http.Response) (*ReceiveCISNotific
 			return nil, err
 		}
 		response.ApplicationproblemJSON415 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseValidateRegistryResponse parses an HTTP response from a ValidateRegistryWithResponse call
+func ParseValidateRegistryResponse(rsp *http.Response) (*ValidateRegistryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ValidateRegistryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RegistryValidation
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Problem

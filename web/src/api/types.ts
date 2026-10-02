@@ -88,6 +88,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/registry/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Validity of an operator, a UAS and a remote pilot (F8, cached)
+         * @description The authority's F8 answer through this USSP's cache, status only:
+         *     `valid`, `suspended`, `revoked` or `unknown` per key asked, with
+         *     the end of validity, the class label and MTOM band of a UAS and
+         *     the competency set of a pilot, never a name, address, phone or
+         *     e-mail (spec 02 F8, 06 §5). An answer cached within the policy's
+         *     TTL (`registry_positive_ttl_s`, `registry_negative_ttl_s`) carries
+         *     its `cache_age_s`; otherwise the authority is asked and the answer
+         *     cached. When the authority cannot answer, a key without a cached
+         *     answer is `unknown` with `reason: registry_unavailable` (or
+         *     `registry_answer_refused` when its answer was refused), never an
+         *     error and never `valid`. `operator` is compared on its public part
+         *     (a secret part is neither sent, stored nor echoed); `serial` as
+         *     given, trimmed. Every call is an `events` row
+         *     (`registry_validated`) with the client and the purpose.
+         */
+        get: operations["validateRegistry"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/oauth/token": {
         parameters: {
             query?: never;
@@ -400,6 +433,48 @@ export interface components {
             field: string;
             reason: string;
         };
+        /**
+         * @description Why the lookup is made; recorded on every call here and at the authority (spec 02 F8).
+         * @enum {string}
+         */
+        RegistryPurpose: "authorisation" | "identification";
+        /** @enum {string} */
+        RegistryStatus: "valid" | "suspended" | "revoked" | "unknown";
+        RegistryCompetency: {
+            competency: string;
+            /** Format: date-time */
+            valid_until: string;
+        };
+        /** @description One entity's answer, status only. */
+        RegistryAnswer: {
+            /** @description The key as answered (an operator number's public part, the serial, the pilot id). */
+            key: string;
+            status: components["schemas"]["RegistryStatus"];
+            /**
+             * @description Why the status is unknown without the registry having said so; absent when it did.
+             * @enum {string}
+             */
+            reason?: "registry_unavailable" | "registry_answer_refused";
+            /**
+             * Format: date-time
+             * @description The registration's end of validity (an operator's), as the authority answers it.
+             */
+            valid_until?: string;
+            class_label?: string;
+            mtom_band?: string;
+            competencies?: components["schemas"]["RegistryCompetency"][];
+            /**
+             * Format: double
+             * @description The age of the answer in seconds (0 when the authority was just asked); absent when there is no answer.
+             */
+            cache_age_s?: number;
+        };
+        /** @description One part per key asked. */
+        RegistryValidation: {
+            operator?: components["schemas"]["RegistryAnswer"];
+            uas?: components["schemas"]["RegistryAnswer"];
+            pilot?: components["schemas"]["RegistryAnswer"];
+        };
         Health: {
             /** @enum {string} */
             status: "ok";
@@ -675,6 +750,36 @@ export interface operations {
             401: components["responses"]["Problem"];
             413: components["responses"]["Problem"];
             415: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    validateRegistry: {
+        parameters: {
+            query: {
+                purpose: components["schemas"]["RegistryPurpose"];
+                operator?: string;
+                serial?: string;
+                pilot?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One part per key asked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistryValidation"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
             503: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
         };

@@ -105,8 +105,9 @@ func newFakeAuthority(t *testing.T) *fakeAuthority {
 }
 
 // withAuth adds this USSP's issuer key, its audiences, the fake
-// authority as the allow-listed issuer and token service, and a fake
-// CISP (withCIS) to a process's variables.
+// authority as the allow-listed issuer and token service, a fake CISP
+// (withCIS) and a fake F8 registry (withRegistry) to a process's
+// variables.
 func withAuth(t *testing.T, vars map[string]string, a *fakeAuthority) map[string]string {
 	t.Helper()
 	_, _, p := testKeys(t)
@@ -118,6 +119,7 @@ func withAuth(t *testing.T, vars map[string]string, a *fakeAuthority) map[string
 	vars["USSP_AUDIENCES"] = testHost + "," + testAlias
 	vars["USSP_TOKEN_ISSUERS"] = a.url + "=" + a.jwks
 	withCIS(t, vars)
+	withRegistry(t, vars)
 	return vars
 }
 

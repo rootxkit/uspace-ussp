@@ -487,7 +487,7 @@ func TestIntegrationNoSecretInTheLog(t *testing.T) {
 
 // The api process itself, with its issuer key and the fake authority:
 // /readyz says issuer and jwks up; an operator registers (pending: the
-// registry is not wired before WP-5), signs in and reads /me through
+// fake registry does not hold its number), signs in and reads /me through
 // the generated client; when the authority's JWKS goes away, jwks is
 // degraded with the age of the cached keys (E-02).
 func TestIntegrationAPIProcessAuth(t *testing.T) {
