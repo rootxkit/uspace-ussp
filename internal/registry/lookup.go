@@ -118,6 +118,21 @@ func NewLookup(f Fleet, cached []Cached, loaded bool, ttl TTL) *Lookup {
 	return l
 }
 
+// Keys are the cache keys NewLookup reads for f: one per operator and
+// one per aircraft, derived exactly as NewLookup derives them, so a
+// caller that reads only these entries of the projection resolves the
+// same as one that reads them all.
+func Keys(f Fleet) []Key {
+	out := make([]Key, 0, len(f.Operators)+len(f.Aircraft))
+	for _, o := range f.Operators {
+		out = append(out, Key{EntityOperator, regnum.CompareKey(o.RegistrationNumber)})
+	}
+	for _, a := range f.Aircraft {
+		out = append(out, Key{EntityUAS, serial.Normalize(a.Serial)})
+	}
+	return out
+}
+
 // ProjectionSource is the KV projection as the hot path reads it
 // (MemoryProjector until WP-6).
 type ProjectionSource interface {
