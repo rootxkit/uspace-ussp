@@ -313,10 +313,19 @@ func Validate(r Request, env ValidateEnv) (*Normalised, *ed269.Problems, error) 
 	}
 	ps.text("loss_of_c2_procedure", r.LossOfC2Procedure, 256)
 	// (10)
-	if err := regValidator.Validate(r.OperatorReg); err != nil {
-		ps.add("operator_reg", "%s", reasonOf(err))
-	} else {
-		n.OperatorPublic, n.OperatorKey = regnum.Public(r.OperatorReg)
+	// The number's format is the registry's (F8 answers unknown for one
+	// it does not hold); here it is text without white space, compared on
+	// its public part as uspace-core's regnum compares it, as the
+	// operator account stores it.
+	switch op := strings.TrimSpace(r.OperatorReg); {
+	case op == "":
+		ps.add("operator_reg", "required")
+	case len(op) > regnum.MaxLen:
+		ps.add("operator_reg", "longer than %d characters", regnum.MaxLen)
+	case strings.IndexFunc(op, func(c rune) bool { return unicode.IsSpace(c) || unicode.IsControl(c) }) >= 0:
+		ps.add("operator_reg", "contains white space or a control character")
+	default:
+		n.OperatorPublic, n.OperatorKey = regnum.Public(op)
 	}
 	if r.Category == CategoryCertified && strings.TrimSpace(r.UARegistration) == "" {
 		ps.add("ua_registration", "required in the certified category")
@@ -558,13 +567,6 @@ func validateVolumes(ps *problems, n *Normalised, env ValidateEnv) error {
 	n.Cells = sortedKeys(cellSet)
 	return nil
 }
-
-// regValidator is uspace-core's registration number check under its
-// default pattern (NewValidator("") never fails).
-var regValidator = func() *regnum.Validator {
-	v, _ := regnum.NewValidator("")
-	return v
-}()
 
 func sortedKeys(m map[string]bool) []string {
 	out := make([]string, 0, len(m))

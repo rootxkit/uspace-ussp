@@ -76,7 +76,7 @@ func TestValidateNamesTheAnnexIVItem(t *testing.T) {
 		"8 endurance":            {with(baseRequest(), "endurance_s", 0), "endurance_s: annex_iv.8:"},
 		"8 short endurance":      {with(baseRequest(), "endurance_s", 600), "endurance_s: annex_iv.8: 600 s does not cover the window of 1800 s"},
 		"9 loss of C2":           {with(baseRequest(), "loss_of_c2_procedure", ""), "loss_of_c2_procedure: annex_iv.9: required"},
-		"10 operator":            {with(baseRequest(), "operator_reg", "GEO-TEST-1"), "operator_reg: annex_iv.10:"},
+		"10 operator":            {with(baseRequest(), "operator_reg", "GEO TEST 1"), "operator_reg: annex_iv.10: contains white space"},
 		"10 UA registration":     {with(baseRequest(), "category", "certified", "type_certificate", "TC-TEST-1"), "ua_registration: annex_iv.10: required"},
 		"client ref":             {with(baseRequest(), "client_ref", "a b"), "client_ref: required"},
 		"contingency":            {with(baseRequest(), "contingency", map[string]any{"procedure": ""}), "contingency.procedure: required"},

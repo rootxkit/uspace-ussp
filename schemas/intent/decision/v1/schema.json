@@ -18,7 +18,7 @@
     "dss_state": { "description": "F3548 state of the intent, null when it is not one the DSS holds.", "enum": ["Accepted", "Activated", "Nonconforming", "Contingent", null] },
     "authorisation_number": {
       "description": "<USSP code>-<operator registration public part>-<ULID> (spec 03 §6); null unless authorised.",
-      "type": ["string", "null"], "pattern": "^[A-Z0-9-]{1,16}-[A-Za-z0-9]{1,64}-[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+      "type": ["string", "null"], "pattern": "^[A-Z0-9-]{1,16}-[A-Za-z0-9-]{1,64}-[0-7][0-9A-HJKMNP-TV-Z]{25}$"
     },
     "exempt_art_1_3": { "type": "boolean" },
     "in_uspace_airspace": { "type": "boolean" },
