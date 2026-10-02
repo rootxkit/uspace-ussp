@@ -44,7 +44,7 @@ additively within `/v1`.
   republished by the sweep; relational migration 00012).
   Schemas `intent/request/v1`, `intent/decision/v1`, `intent/state/v1`
   with examples both ways and `scripts/check-schemas.sh` validating them;
-  `testdata/vectors/deconfliction.json` (72 cases). Relational migration
+  `testdata/vectors/deconfliction.json` (74 cases). Relational migration
   00011; policy thresholds `special_operation_priority`,
   `deconflict_buffer_m`, `deconflict_vertical_buffer_m`,
   `activation_lead_s`, `intent_open_max_count`; `cis.Cache.Outdated`;
