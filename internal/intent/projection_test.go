@@ -104,3 +104,28 @@ func TestBusProjector(t *testing.T) {
 		}
 	}
 }
+
+// WP-9: intent/state/v1 carries the Annex IV category, class label and UA
+// registration for the F3411 flight details; an undeclared class label
+// or registration is null, a declared one is carried (E-01 pair).
+func TestStateCarriesTheEUClassification(t *testing.T) {
+	r := &Record{Request: Request{Category: CategoryCertified, ClassLabel: "C2", UARegistration: "GEO-TEST-UA-1"}}
+	b := StateOf(r)
+	if b.Category != CategoryCertified || b.ClassLabel == nil || *b.ClassLabel != "C2" || b.UARegistration == nil || *b.UARegistration != "GEO-TEST-UA-1" {
+		t.Fatalf("declared: %+v", b)
+	}
+	raw, err := json.Marshal(StateOf(&Record{Request: Request{Category: CategoryOpen}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["category"] != CategoryOpen || m["class_label"] != nil || m["ua_registration"] != nil {
+		t.Fatalf("undeclared: %s", raw)
+	}
+	if _, ok := m["class_label"]; !ok {
+		t.Fatalf("class_label absent rather than null: %s", raw)
+	}
+}

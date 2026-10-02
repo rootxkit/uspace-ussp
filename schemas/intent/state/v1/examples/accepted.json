@@ -83,5 +83,8 @@
   "in_uspace_airspace": false,
   "policy_version": 7,
   "change_reason": null,
-  "updated_at": "2026-11-01T12:00:00Z"
+  "updated_at": "2026-11-01T12:00:00Z",
+  "category": "open",
+  "class_label": "C1",
+  "ua_registration": null
 }
