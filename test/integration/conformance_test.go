@@ -148,6 +148,7 @@ type flyer struct {
 	last     atomic.Int64 // captured_at of the last sample, unix ns
 	stop     chan struct{}
 	stopped  sync.Once
+	mu       sync.Mutex // one send or move at a time
 	seq      atomic.Int64
 }
 
@@ -172,9 +173,18 @@ func (g *confRig) fly(id string, intentID *string, p core.LatLon, altM *float64,
 
 func (f *flyer) halt() { f.stopped.Do(func() { close(f.stop) }) }
 
-func (f *flyer) move(p core.LatLon) { f.pos.Store(&p) }
+// move sets the next samples' position and returns the captured_at of
+// the last sample sent at the old one.
+func (f *flyer) move(p core.LatLon) time.Time {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.pos.Store(&p)
+	return time.Unix(0, f.last.Load())
+}
 
 func (f *flyer) send() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	now := time.Now()
 	p := *f.pos.Load()
 	c5, _, err := cell.Key(p)
@@ -274,17 +284,16 @@ func TestIntegrationConformanceLifecycle(t *testing.T) {
 		t.Fatalf("a flight 5 km away received %+v", n)
 	}
 
-	back := time.Now()
-	fa.move(centre)
+	back := fa.move(centre) // the last sample outside
 	within(t, 10*time.Second, func() bool { return len(g.alertsOf("nonconformance", "cleared", flightA)) == 1 })
 	cl := g.alertsOf("nonconformance", "cleared", flightA)[0]
 	if *cl.b.ClearReason != conformance.ClearResolved || cl.b.ClearingDetail == nil || cl.b.Detail["distance_outside_m"] == nil {
 		t.Fatalf("%+v", cl.b)
 	}
 	if held := cl.at.Sub(back); held < secs(pv.ConformanceClearAfterS) {
-		t.Fatalf("cleared %v after the return, inside the %v s hysteresis", held, pv.ConformanceClearAfterS)
+		t.Fatalf("cleared %v after the last sample outside, inside the %v s hysteresis", held, pv.ConformanceClearAfterS)
 	}
-	t.Logf("cleared resolved %v after the return, distance_outside_m %v", cl.at.Sub(back), cl.b.Detail["distance_outside_m"])
+	t.Logf("cleared resolved %v after the last sample outside, distance_outside_m %v", cl.at.Sub(back), cl.b.Detail["distance_outside_m"])
 	within(t, 5*time.Second, func() bool {
 		c := g.alertsOf("nonconformance_nearby", "cleared", flightB)
 		return len(c) == 1 && *c[0].b.ClearReason == conformance.ClearResolved
