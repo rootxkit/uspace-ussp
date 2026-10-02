@@ -15,7 +15,7 @@ info:
     Skeleton (WP-0): health and readiness, the security schemes and the
     tags. Every later work package adds its paths under its tag. WP-4:
     the CIS change-notification receiver. WP-5: the cached registry
-    validity lookup.
+    validity lookup. WP-7: operational intents and flight authorisation.
   license:
     name: Apache-2.0
 servers:
@@ -205,6 +205,144 @@ paths:
           $ref: "#/components/responses/Problem"
         default:
           $ref: "#/components/responses/Problem"
+
+  /v1/intents:
+    post:
+      operationId: createIntent
+      tags:
+      - intents
+      summary: File an operational intent and get the authorisation decision
+      description: 'Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the
+        registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace
+        and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction
+        against the authorised intents of this USSP and the peers'' intents (priority, then first come first
+        served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art.
+        10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight
+        with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)).
+        A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction,
+        intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent
+        on (client, client_ref): the same body answers the decision as it stands (200), another body 409.
+        The UAS serial must be bound to the client and operator_reg must be the client''s operator (403).
+        503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).'
+      security:
+      - operatorToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntentRequest'
+      responses:
+        '201':
+          description: 'Decided: authorised, accepted_voluntary, rejected or pending_*.'
+          content: &id001
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentDecision'
+        '200':
+          description: The decision of an earlier request with the same client_ref and body.
+          content: *id001
+        '400': &id002
+          $ref: '#/components/responses/Problem'
+        '401': *id002
+        '403': *id002
+        '409': *id002
+        '413': *id002
+        '429': *id002
+        '503': *id002
+        default: *id002
+    get:
+      operationId: listIntents
+      tags:
+      - intents
+      summary: The operator's intents, newest first
+      description: At most 500; from and to keep the intents whose window overlaps them; state filters.
+      security:
+      - operatorToken: []
+      parameters:
+      - name: from
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        schema:
+          type: string
+          format: date-time
+      - name: state
+        in: query
+        schema:
+          type: string
+          maxLength: 32
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 500
+      responses:
+        '200':
+          description: The intents.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentList'
+        '400': *id002
+        '401': *id002
+        '403': *id002
+        '503': *id002
+        default: *id002
+  /v1/intents/{intent_id}:
+    parameters:
+    - $ref: '#/components/parameters/IntentID'
+    get:
+      operationId: getIntent
+      tags:
+      - intents
+      summary: 'One of the operator''s intents: its decision and state'
+      description: Another operator's intent is 404, never 403.
+      security:
+      - operatorToken: []
+      responses:
+        '200':
+          description: The decision as it stands.
+          content: *id001
+        '401': *id002
+        '403': *id002
+        '404': *id002
+        '503': *id002
+        default: *id002
+    patch:
+      operationId: changeIntent
+      tags:
+      - intents
+      summary: Activate, modify or end an intent
+      description: 'activate: an accepted intent from time_start - policy.activation_lead_s to time_end,
+        on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent''s new
+        volumes decided as a new version that keeps the id and, when still authorised, the authorisation
+        number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision''s
+        state without a number; end: any open intent. A transition the state does not allow is 409.'
+      security:
+      - operatorToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntentPatch'
+      responses:
+        '200':
+          description: The new version.
+          content: *id001
+        '400': *id002
+        '401': *id002
+        '403': *id002
+        '404': *id002
+        '409': *id002
+        '413': *id002
+        '503': *id002
+        default: *id002
 
   /oauth/token:
     post:
@@ -654,6 +792,14 @@ components:
       required: true
       schema: {type: string, maxLength: 64}
 
+    IntentID:
+      name: intent_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
   responses:
     Problem:
       description: An error, as RFC 9457 problem details.
@@ -1042,3 +1188,564 @@ components:
         bound_at:
           type: string
           format: date-time
+    IntentRequest:
+      description: 'intent/request/v1 (schemas/intent/request/v1/schema.json, the source of truth): the ten
+        Annex IV items numbered as in the Annex, the contingency measures, the emergency contact reference
+        and the idempotency reference.'
+      type: object
+      additionalProperties: false
+      required:
+      - client_ref
+      - uas_serial
+      - mode
+      - flight_type
+      - category
+      - volumes
+      - identification_technology
+      - connectivity_methods
+      - endurance_s
+      - loss_of_c2_procedure
+      - operator_reg
+      - contingency
+      - emergency_contact_ref
+      properties:
+        client_ref:
+          description: 'Idempotency reference, unique per client: the same body under it answers the same
+            decision, another body is refused with 409.'
+          type: string
+          pattern: ^[A-Za-z0-9._:-]{1,64}$
+        uas_serial:
+          description: (1) Serial number of the UA or of its add-on (ANSI/CTA-2063-A where the class requires
+            it).
+          type: string
+          minLength: 1
+          maxLength: 64
+        mode:
+          description: (2) Mode of operation.
+          enum:
+          - VLOS
+          - BVLOS
+        flight_type:
+          description: '(3) Type of flight: a special operation per SERA Art. 4, or normal.'
+          enum:
+          - normal
+          - special_operation
+        priority:
+          description: '(3) F3548 priority; when given it must equal the derived one: 0 for normal, the policy''s
+            special_operation_priority for special_operation.'
+          type: integer
+          minimum: 0
+        category:
+          description: (4) Category of the operation.
+          enum:
+          - open
+          - specific
+          - certified
+        subcategory:
+          description: (4) Open subcategory.
+          enum:
+          - A1
+          - A2
+          - A3
+        class_label:
+          description: (4) Class label of the UA.
+          enum:
+          - C0
+          - C1
+          - C2
+          - C3
+          - C4
+          - C5
+          - C6
+        type_certificate:
+          description: (4) Type certificate (certified category).
+          type: string
+          minLength: 1
+          maxLength: 64
+        privately_built:
+          description: (4) The UA is privately built (Art. 1(3) with mtom_kg).
+          type: boolean
+        mtom_kg:
+          description: (4) Declared maximum take-off mass in kilograms.
+          type: number
+          exclusiveMinimum: 0
+          maximum: 25000
+        volumes:
+          description: '(5) The 4D trajectory: F3548 Volume4D, every one with both times and both altitudes.'
+          type: array
+          minItems: 1
+          maxItems: 16
+          items:
+            $ref: '#/components/schemas/IntentVolume4D'
+        identification_technology:
+          description: (6) Identification technology.
+          enum:
+          - network
+          - direct
+          - both
+        connectivity_methods:
+          description: (7) Connectivity methods.
+          type: array
+          minItems: 1
+          maxItems: 8
+          uniqueItems: true
+          items:
+            type: string
+            pattern: ^[a-z0-9_-]{1,32}$
+        endurance_s:
+          description: (8) Endurance in seconds; it must cover the window of the volumes.
+          type: integer
+          minimum: 1
+          maximum: 172800
+        loss_of_c2_procedure:
+          description: (9) Procedure on loss of the command and control link.
+          type: string
+          minLength: 1
+          maxLength: 256
+        operator_reg:
+          description: (10) Operator registration number, public part only.
+          type: string
+          minLength: 1
+          maxLength: 64
+        ua_registration:
+          description: (10) UA registration number when applicable (required in the certified category).
+          type: string
+          minLength: 1
+          maxLength: 64
+        pilot_ref:
+          description: Remote pilot identifier for the registry check.
+          type: string
+          minLength: 1
+          maxLength: 32
+        takeoff:
+          $ref: '#/components/schemas/IntentPoint'
+        landing:
+          $ref: '#/components/schemas/IntentPoint'
+        contingency:
+          description: Contingency measures (Art. 6(8)).
+          type: object
+          additionalProperties: false
+          required:
+          - procedure
+          properties:
+            procedure:
+              type: string
+              minLength: 1
+              maxLength: 512
+            landing_sites:
+              type: array
+              maxItems: 16
+              items:
+                $ref: '#/components/schemas/IntentPoint'
+        emergency_contact_ref:
+          description: Reference to the emergency contact (never the contact itself).
+          type: string
+          minLength: 1
+          maxLength: 128
+        authorisation_ref:
+          description: 'A specific-category authorisation from the authority: a zone requiring an authorisation
+            becomes a condition instead of pending_authority.'
+          type: string
+          minLength: 1
+          maxLength: 128
+    IntentPoint:
+      type: object
+      additionalProperties: false
+      required:
+      - lat
+      - lng
+      properties:
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lng:
+          type: number
+          minimum: -180
+          maximum: 180
+    IntentTime:
+      type: object
+      additionalProperties: false
+      required:
+      - value
+      - format
+      properties:
+        value:
+          type: string
+          format: date-time
+        format:
+          const: RFC3339
+    IntentAltitude:
+      type: object
+      additionalProperties: false
+      required:
+      - value
+      - reference
+      - units
+      properties:
+        value:
+          type: number
+          minimum: -8000
+          maximum: 100000
+        reference:
+          const: W84
+        units:
+          const: M
+    IntentVolume4D:
+      type: object
+      additionalProperties: false
+      required:
+      - volume
+      - time_start
+      - time_end
+      properties:
+        volume:
+          type: object
+          additionalProperties: false
+          required:
+          - altitude_lower
+          - altitude_upper
+          properties:
+            outline_polygon:
+              type: object
+              additionalProperties: false
+              required:
+              - vertices
+              properties:
+                vertices:
+                  type: array
+                  minItems: 3
+                  maxItems: 1000
+                  items:
+                    $ref: '#/components/schemas/IntentPoint'
+            outline_circle:
+              type: object
+              additionalProperties: false
+              required:
+              - center
+              - radius
+              properties:
+                center:
+                  $ref: '#/components/schemas/IntentPoint'
+                radius:
+                  type: object
+                  additionalProperties: false
+                  required:
+                  - value
+                  - units
+                  properties:
+                    value:
+                      type: number
+                      exclusiveMinimum: 0
+                    units:
+                      const: M
+            altitude_lower:
+              $ref: '#/components/schemas/IntentAltitude'
+            altitude_upper:
+              $ref: '#/components/schemas/IntentAltitude'
+          oneOf:
+          - required:
+            - outline_polygon
+          - required:
+            - outline_circle
+        time_start:
+          $ref: '#/components/schemas/IntentTime'
+        time_end:
+          $ref: '#/components/schemas/IntentTime'
+    IntentDecision:
+      description: intent/decision/v1 (schemas/intent/decision/v1/schema.json, the source of truth).
+      type: object
+      additionalProperties: false
+      required:
+      - intent_id
+      - version
+      - client_ref
+      - decision
+      - state
+      - dss_state
+      - authorisation_number
+      - exempt_art_1_3
+      - in_uspace_airspace
+      - uspace_airspace_ids
+      - priority
+      - deviation_thresholds
+      - alternative
+      - conflicts
+      - conditions
+      - volumes_amsl
+      - valid_from
+      - valid_to
+      - cis_version_checked
+      - cis_age_s
+      - registry_checked_at
+      - policy_version
+      - weather_checked_ref
+      - change_reason
+      - decided_at
+      - updated_at
+      properties:
+        intent_id:
+          description: UUID, also the DSS entity id.
+          type: string
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+        version:
+          type: integer
+          minimum: 1
+        client_ref:
+          type: string
+        decision:
+          enum:
+          - authorised
+          - accepted_voluntary
+          - rejected
+          - pending_validation
+          - pending_authority
+          - pending_dss
+        state:
+          enum:
+          - pending_validation
+          - pending_dss
+          - pending_authority
+          - accepted
+          - activated
+          - nonconforming
+          - contingent
+          - ended
+          - rejected
+          - withdrawn
+        dss_state:
+          description: F3548 state of the intent, null when it is not one the DSS holds.
+          enum:
+          - Accepted
+          - Activated
+          - Nonconforming
+          - Contingent
+          - null
+        authorisation_number:
+          description: <USSP code>-<operator registration public part>-<ULID> (spec 03 §6); null unless authorised.
+          type:
+          - string
+          - 'null'
+          pattern: ^[A-Z0-9-]{1,16}-[A-Za-z0-9-]{1,64}-[0-7][0-9A-HJKMNP-TV-Z]{25}$
+        exempt_art_1_3:
+          type: boolean
+        in_uspace_airspace:
+          type: boolean
+        uspace_airspace_ids:
+          type: array
+          items:
+            type: string
+        priority:
+          type: integer
+          minimum: 0
+        deviation_thresholds:
+          oneOf:
+          - type: 'null'
+          - type: object
+            additionalProperties: false
+            required:
+            - h_m
+            - v_m
+            - t_s
+            properties:
+              h_m:
+                type: number
+                exclusiveMinimum: 0
+              v_m:
+                type: number
+                exclusiveMinimum: 0
+              t_s:
+                type: number
+                exclusiveMinimum: 0
+        alternative:
+          description: Art. 10(4) proposal; none in v1.
+          type: 'null'
+        conflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/IntentConflict'
+        conditions:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - code
+            - detail
+            properties:
+              code:
+                type: string
+                pattern: ^[a-z][a-z0-9_]*$
+              ref:
+                type: string
+              detail:
+                type: string
+        volumes_amsl:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - lower_amsl_m
+            - upper_amsl_m
+            - undulation_m
+            - lower_w84_m
+            - upper_w84_m
+            properties:
+              lower_amsl_m:
+                type: number
+              upper_amsl_m:
+                type: number
+              undulation_m:
+                type: number
+              lower_w84_m:
+                type: number
+              upper_w84_m:
+                type: number
+        valid_from:
+          type: string
+          format: date-time
+        valid_to:
+          type: string
+          format: date-time
+        cis_version_checked:
+          description: The CIS versions the decision rests on, one label per ED-318 dataset; null when the
+            CIS was not consulted.
+          type:
+          - string
+          - 'null'
+        cis_age_s:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+        registry_checked_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        policy_version:
+          type: integer
+          minimum: 0
+        weather_checked_ref:
+          description: Art. 10(3); null until weather (WP-16).
+          type:
+          - string
+          - 'null'
+        change_reason:
+          type:
+          - string
+          - 'null'
+        decided_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    IntentConflict:
+      type: object
+      additionalProperties: false
+      required:
+      - kind
+      - reason
+      - effect
+      - item
+      - volume
+      - overlap
+      - detail
+      properties:
+        kind:
+          enum:
+          - annex_iv
+          - registry
+          - cis
+          - airspace
+          - zone
+          - restriction
+          - intent
+          - policy
+          - dss
+        reason:
+          type: string
+          pattern: ^[a-z][a-z0-9_]*$
+        effect:
+          enum:
+          - rejects
+          - holds
+          - flags_other
+        ref:
+          type: string
+        item:
+          description: The Annex IV item number, null when the conflict is not about one.
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 10
+        volume:
+          description: Index of our volume.
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        overlap:
+          oneOf:
+          - type: 'null'
+          - type: object
+            additionalProperties: false
+            required:
+            - h_m
+            - v_m
+            - t_s
+            properties:
+              h_m:
+                description: Horizontal separation, 0 when the outlines meet; null when not judged.
+                type:
+                - number
+                - 'null'
+              v_m:
+                description: Vertical overlap in AMSL; null when a limit is not AMSL.
+                type:
+                - number
+                - 'null'
+              t_s:
+                description: Common time in seconds.
+                type:
+                - number
+                - 'null'
+        detail:
+          type: string
+    IntentPatch:
+      type: object
+      additionalProperties: false
+      required:
+      - action
+      description: activate (confirmed in the response, Art. 10(5)), modify (new volumes re-decided as a new
+        version, Art. 6(6)) or end.
+      properties:
+        action:
+          enum:
+          - activate
+          - modify
+          - end
+        volumes:
+          type: array
+          minItems: 1
+          maxItems: 16
+          items:
+            $ref: '#/components/schemas/IntentVolume4D'
+          description: Required for modify, refused otherwise.
+        change_reason:
+          type: string
+          minLength: 1
+          maxLength: 256
+    IntentList:
+      type: object
+      required:
+      - intents
+      properties:
+        intents:
+          type: array
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/IntentDecision'
