@@ -36,7 +36,7 @@ build:
 
 vet:
 	$(GO) vet $(PKGS)
-	$(GO) vet -tags integration ./test/...
+	$(GO) vet -tags integration ./test/... ./internal/bus/... ./internal/app/tsdbwriter/...
 
 fmt:
 	gofmt -w .
@@ -88,7 +88,7 @@ integration:
 	export USSP_TEST_TS_URL="$${USSP_TEST_TS_URL:-postgres://ussp_api:$${USSP_PG_API_PASSWORD}@127.0.0.1:57432/ussp_timeseries?sslmode=disable}"; 	export USSP_TEST_TS_OWNER_URL="$${USSP_TEST_TS_OWNER_URL:-postgres://ussp_tsdb:$${USSP_PG_TSDB_PASSWORD}@127.0.0.1:57432/ussp_timeseries?sslmode=disable}"; \
 	export USSP_TEST_NATS_URL="$${USSP_TEST_NATS_URL:-nats://api:$${USSP_NATS_API_PASSWORD}@127.0.0.1:57422}"; \
 	set -o pipefail; \
-	$(GO) test -tags integration -count=1 -v ./test/integration/... 2>&1 | tee integration.log; \
+	$(GO) test -tags integration -count=1 -p 1 -v ./test/integration/... ./internal/bus/... ./internal/app/tsdbwriter/... 2>&1 | tee integration.log; \
 	n=$$(grep -c '^--- PASS' integration.log || true); \
 	echo "integration: $$n top-level tests passed"; \
 	if [ "$$n" -eq 0 ]; then echo "integration: zero tests ran"; exit 1; fi

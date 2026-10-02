@@ -42,7 +42,7 @@ type CIS struct {
 // because a dependency is down; a configuration that cannot be right
 // (an issuer on neither the CISP's nor the ANSP's host, a malformed box)
 // does.
-func startCIS(ctx context.Context, rt *proc.Runtime, current func() policy.Values, tokens *auth.Outgoing) (*CIS, error) {
+func startCIS(ctx context.Context, rt *proc.Runtime, current func() policy.Values, tokens *auth.Outgoing, kv cis.KVWriter) (*CIS, error) {
 	cfg := rt.Config
 	counters := &core.Counters{}
 	proc.Publish(rt, "cis", counters)
@@ -94,6 +94,7 @@ func startCIS(ctx context.Context, rt *proc.Runtime, current func() policy.Value
 		Client: client, Publishers: publishers, Store: st, Evaluator: eval, Counters: counters, Logger: rt.Logger.With("component", "cis"),
 		CallbackURL: callback, BBox: bbox, ReconcileInterval: time.Duration(cfg.CISReconcileS) * time.Second,
 		RetentionDays: func() int { return current().RecordRetentionDays },
+		Projector:     &cis.BusProjector{KV: kv},
 	})
 	rt.Health.Register(DepCIS, false, cache.Probe)
 	out := &CIS{Evaluator: eval, Cache: cache}
