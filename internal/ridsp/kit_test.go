@@ -62,7 +62,7 @@ func sample(n int, p core.LatLon, at time.Time) Sample {
 }
 
 // trackMsg is the trk.v1 message of b captured at at.
-func trackMsg(t *testing.T, b telemetry.TrackBody, at time.Time) []byte {
+func trackMsg(t testing.TB, b telemetry.TrackBody, at time.Time) []byte {
 	t.Helper()
 	m := telemetry.Track{Envelope: bus.NewEnvelope(telemetry.SchemaTrack, telemetry.Producer,
 		core.Times{TS: &at, RxTS: at, CapturedAt: at, Source: core.TimeSourceClock}), Body: b}
