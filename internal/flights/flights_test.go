@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rootxkit/uspace-core/core"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/rootxkit/uspace-ussp/internal/bus"
@@ -19,6 +20,9 @@ import (
 )
 
 var t0 = time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)
+
+// p0 is the position of the samples a test does not care about.
+var p0 = core.LatLon{LatDeg: 41.7151, LonDeg: 44.8271}
 
 type clock struct {
 	mu sync.Mutex
@@ -79,11 +83,11 @@ var uuid4 = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9
 // UUID, started once; another aircraft has its own.
 func TestBindStartsOneFlightPerAircraft(t *testing.T) {
 	r := newBinderRig()
-	a := r.b.Bind("c|A", "c", "A", nil, nil, nil, t0, true)
-	if !uuid4.MatchString(a) || r.b.Bind("c|A", "c", "A", nil, nil, nil, t0.Add(time.Second), true) != a {
+	a := r.b.Bind("c|A", "c", "A", nil, nil, nil, p0, t0, true)
+	if !uuid4.MatchString(a) || r.b.Bind("c|A", "c", "A", nil, nil, nil, p0, t0.Add(time.Second), true) != a {
 		t.Fatalf("flight %q", a)
 	}
-	if b := r.b.Bind("c|B", "c", "B", nil, nil, nil, t0, true); b == a {
+	if b := r.b.Bind("c|B", "c", "B", nil, nil, nil, p0, t0, true); b == a {
 		t.Fatal("two aircraft share a flight")
 	}
 	if !equal(r.kinds(), []string{EventStarted, EventStarted}) || r.b.Len() != 2 {
@@ -104,14 +108,14 @@ func TestBindStartsOneFlightPerAircraft(t *testing.T) {
 func TestIntentChangeStartsTheNextFlight(t *testing.T) {
 	r := newBinderRig()
 	r.active["i-1"], r.active["i-2"] = true, true
-	session := r.b.Bind("c|A", "c", "A", nil, nil, nil, t0, true)
-	i1 := r.b.Bind("c|A", "c", "A", str("i-1"), str("GE-1"), str("GEO-TEST-1"), t0.Add(time.Second), true)
+	session := r.b.Bind("c|A", "c", "A", nil, nil, nil, p0, t0, true)
+	i1 := r.b.Bind("c|A", "c", "A", str("i-1"), str("GE-1"), str("GEO-TEST-1"), p0, t0.Add(time.Second), true)
 	if session != i1 {
 		t.Fatalf("a flight without an intent was not bound to the intent: %v", r.kinds())
 	}
 	r.clk.add(7 * time.Second)
 	r.b.Tick() // telemetry_lost: a fact of the bound flight
-	i2 := r.b.Bind("c|A", "c", "A", str("i-2"), nil, nil, t0.Add(8*time.Second), true)
+	i2 := r.b.Bind("c|A", "c", "A", str("i-2"), nil, nil, p0, t0.Add(8*time.Second), true)
 	if i1 == i2 {
 		t.Fatal("no new flight for another intent")
 	}
@@ -135,7 +139,7 @@ func TestIntentChangeStartsTheNextFlight(t *testing.T) {
 // it), ended after flight_end_after_s of silence.
 func TestTickLostResumedEnded(t *testing.T) {
 	r := newBinderRig()
-	id := r.b.Bind("c|A", "c", "A", nil, nil, nil, t0, true)
+	id := r.b.Bind("c|A", "c", "A", nil, nil, nil, p0, t0, true)
 	r.clk.add(4 * time.Second)
 	r.b.Tick()
 	if len(r.events) != 1 {
@@ -147,11 +151,11 @@ func TestTickLostResumedEnded(t *testing.T) {
 	if !equal(r.kinds(), []string{EventStarted, EventTelemetryLost}) {
 		t.Fatalf("lost: %v", r.kinds())
 	}
-	r.b.Bind("c|A", "c", "A", nil, nil, nil, t0.Add(-time.Minute), false) // backlog
+	r.b.Bind("c|A", "c", "A", nil, nil, nil, p0, t0.Add(-time.Minute), false) // backlog
 	if len(r.events) != 2 {
 		t.Fatalf("a backlog sample resumed it: %v", r.kinds())
 	}
-	if r.b.Bind("c|A", "c", "A", nil, nil, nil, r.clk.now(), true) != id {
+	if r.b.Bind("c|A", "c", "A", nil, nil, nil, p0, r.clk.now(), true) != id {
 		t.Fatal("a new flight after a loss")
 	}
 	if r.events[2].Body.Event != EventTelemetryResumed {
@@ -176,7 +180,7 @@ func TestTickLostResumedEnded(t *testing.T) {
 func TestIntentGoneEndsTheFlight(t *testing.T) {
 	r := newBinderRig()
 	r.active["i-1"] = true
-	r.b.Bind("c|A", "c", "A", str("i-1"), nil, nil, t0, true)
+	r.b.Bind("c|A", "c", "A", str("i-1"), nil, nil, p0, t0, true)
 	r.b.Tick()
 	if r.b.Len() != 1 {
 		t.Fatal("ended while active")
@@ -201,7 +205,7 @@ func TestEnd(t *testing.T) {
 	if len(r.events) != 0 {
 		t.Fatal("an end without a flight")
 	}
-	r.b.Bind("c|A", "c", "A", nil, nil, nil, t0, true)
+	r.b.Bind("c|A", "c", "A", nil, nil, nil, p0, t0, true)
 	r.b.End("c|A", EndOperator, t0.Add(time.Second))
 	if r.b.Len() != 0 || r.kinds()[1] != "ended:"+EndOperator || !r.events[1].Body.At.Equal(t0.Add(time.Second)) {
 		t.Fatalf("%v", r.kinds())
@@ -213,11 +217,11 @@ func TestEnd(t *testing.T) {
 func TestBinderBound(t *testing.T) {
 	r := newBinderRig()
 	r.b.Max = 2
-	r.b.Bind("c|A", "c", "A", nil, nil, nil, t0, true)
+	r.b.Bind("c|A", "c", "A", nil, nil, nil, p0, t0, true)
 	r.clk.add(time.Second)
-	r.b.Bind("c|B", "c", "B", nil, nil, nil, t0, true)
+	r.b.Bind("c|B", "c", "B", nil, nil, nil, p0, t0, true)
 	r.clk.add(time.Second)
-	r.b.Bind("c|C", "c", "C", nil, nil, nil, t0, true)
+	r.b.Bind("c|C", "c", "C", nil, nil, nil, p0, t0, true)
 	if r.b.Len() != 2 || r.b.Counters.Get(CounterOverBound) != 1 {
 		t.Fatalf("len %d counters %v", r.b.Len(), r.b.Counters.Snapshot())
 	}
@@ -231,10 +235,10 @@ func TestBinderBound(t *testing.T) {
 func TestEventsValidateAndDecode(t *testing.T) {
 	sch := flightSchema(t)
 	r := newBinderRig()
-	r.b.Bind("c|A", "c", "A", str("8c1f3f2e-7d0e-4a8b-9a51-0e4b7d6f2c11"), str("GE-1"), str("GEO-TEST-1"), t0, true)
+	r.b.Bind("c|A", "c", "A", str("8c1f3f2e-7d0e-4a8b-9a51-0e4b7d6f2c11"), str("GE-1"), str("GEO-TEST-1"), p0, t0, true)
 	r.clk.add(10 * time.Second)
 	r.b.Tick()
-	r.b.Bind("c|A", "c", "A", str("8c1f3f2e-7d0e-4a8b-9a51-0e4b7d6f2c11"), nil, nil, r.clk.now(), true)
+	r.b.Bind("c|A", "c", "A", str("8c1f3f2e-7d0e-4a8b-9a51-0e4b7d6f2c11"), nil, nil, p0, r.clk.now(), true)
 	r.b.End("c|A", EndOperator, r.clk.now())
 	if len(r.events) != 4 {
 		t.Fatalf("%v", r.kinds())
@@ -355,7 +359,7 @@ func (s *source) Fetch(context.Context, int, time.Duration) ([]bus.Msg, error) {
 // that does not read is logged, counted and acknowledged.
 func TestRecorder(t *testing.T) {
 	r := newBinderRig()
-	r.b.Bind("c|A", "c", "A", nil, nil, nil, t0, true)
+	r.b.Bind("c|A", "c", "A", nil, nil, nil, p0, t0, true)
 	r.b.End("c|A", EndOperator, t0)
 	started, _ := json.Marshal(r.events[0])
 	ended, _ := json.Marshal(r.events[1])
@@ -395,4 +399,39 @@ func TestRecorder(t *testing.T) {
 	}
 	cancel()
 	wg.Wait()
+}
+
+// WP-9: every fact carries the flight's newest live position, its first
+// on started; a backlog sample does not move it and a sample without a
+// valid position leaves the last one (E-01 pair: carried, then kept).
+func TestFactsCarryTheNewestLivePosition(t *testing.T) {
+	r := newBinderRig()
+	p1, p2 := core.LatLon{LatDeg: 41.70, LonDeg: 44.80}, core.LatLon{LatDeg: 41.71, LonDeg: 44.81}
+	r.b.Bind("c|A", "c", "A", nil, nil, nil, p1, t0, true)
+	if len(r.events) != 1 || r.events[0].Body.Position == nil || r.events[0].Body.Position.LatLon() != p1 {
+		t.Fatalf("started without its first position: %+v", r.events)
+	}
+	r.b.Bind("c|A", "c", "A", nil, nil, nil, p2, t0.Add(time.Second), true)
+	r.b.Bind("c|A", "c", "A", nil, nil, nil, core.LatLon{LatDeg: 10, LonDeg: 10}, t0.Add(-time.Minute), false) // backlog
+	r.b.Bind("c|A", "c", "A", nil, nil, nil, core.LatLon{LatDeg: 91, LonDeg: 0}, t0.Add(2*time.Second), true)  // not valid
+	r.b.End("c|A", EndOperator, t0.Add(3*time.Second))
+	last := r.events[len(r.events)-1]
+	if last.Body.Event != EventEnded || last.Body.Position == nil || last.Body.Position.LatLon() != p2 {
+		t.Fatalf("ended with %+v, want the newest live valid position %v", last.Body.Position, p2)
+	}
+	r2 := newBinderRig()
+	r2.b.Bind("c|B", "c", "B", nil, nil, nil, core.LatLon{LatDeg: 91, LonDeg: 0}, t0, true)
+	if r2.events[0].Body.Position != nil {
+		t.Fatalf("a position that is not valid was carried: %+v", r2.events[0].Body.Position)
+	}
+	raw, _ := json.Marshal(r2.events[0])
+	if bytes.Contains(raw, []byte(`"position"`)) {
+		t.Fatalf("an unknown position is written: %s", raw)
+	}
+	e := *r.events[0]
+	e.Body.Position = &Point{Lat: 91, Lng: 0}
+	raw, _ = json.Marshal(&e)
+	if _, err := Decode(raw); err == nil {
+		t.Fatal("a fact with a position that is not WGS84 decoded")
+	}
 }

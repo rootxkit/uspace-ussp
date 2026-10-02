@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.uspace.ge/flight/event/v1.json",
   "title": "flight/event/v1",
-  "description": "A flight's lifecycle fact, from telemetry-ingest to api on flight.v1.<event>.<flight_id> (docs/PLAN.md \u00a73.2: flight start and end cross from the hot path to the control plane on JetStream; api records the flights row). started: the first accepted sample of a flight; telemetry_lost: telemetry_lost_s of silence (the flight goes on, 04 \u00a73.1); telemetry_resumed: a sample after that; ended: flight_end_after_s of silence (end_reason telemetry_lost), the operator's end (operator_ended) or the end of the intent it flew (intent_ended). at is when the fact happened, on the ingest's clock; started_at the flight's first captured_at.",
+  "description": "A flight's lifecycle fact, from telemetry-ingest to api on flight.v1.<event>.<flight_id> (docs/PLAN.md \u00a73.2: flight start and end cross from the hot path to the control plane on JetStream; api records the flights row). started: the first accepted sample of a flight; telemetry_lost: telemetry_lost_s of silence (the flight goes on, 04 \u00a73.1); telemetry_resumed: a sample after that; ended: flight_end_after_s of silence (end_reason telemetry_lost), the operator's end (operator_ended) or the end of the intent it flew (intent_ended). at is when the fact happened, on the ingest's clock; started_at the flight's first captured_at. position (optional within v1) is the flight's newest live position when the fact was made, its first on started: what a flight without an intent centres its F3411 Identification Service Area on (WP-9).",
   "allOf": [
     {
       "$ref": "https://schemas.uspace.ge/envelope/v1.json"
@@ -90,6 +90,33 @@
             "intent_ended",
             "operator_ended",
             null
+          ]
+        },
+        "position": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "lat",
+                "lng"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "lat": {
+                  "type": "number",
+                  "minimum": -90,
+                  "maximum": 90
+                },
+                "lng": {
+                  "type": "number",
+                  "minimum": -180,
+                  "maximum": 180
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },

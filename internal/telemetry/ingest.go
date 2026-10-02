@@ -77,10 +77,11 @@ const (
 
 // FlightBinder is the flight lifecycle (internal/flights.Binder): Bind
 // returns the flight a sample of the aircraft key belongs to, starting
-// one when there is none or when the intent differs; End ends the
-// aircraft's flight. Times are the samples' captured_at.
+// one when there is none or when the intent differs, and keeps the
+// sample's position for the flight facts; End ends the aircraft's
+// flight. Times are the samples' captured_at.
 type FlightBinder interface {
-	Bind(key, clientID, uasSerial string, intentID, authorisationNumber, operatorReg *string, capturedAt time.Time, live bool) string
+	Bind(key, clientID, uasSerial string, intentID, authorisationNumber, operatorReg *string, position core.LatLon, capturedAt time.Time, live bool) string
 	End(key, reason string, at time.Time)
 }
 
@@ -435,7 +436,7 @@ func (in *Ingestor) takeSample(ctx context.Context, ac *aircraft, d Delivery, i 
 			opReg = &reg
 		}
 	}
-	flightID := in.cfg.Flights.Bind(ac.key.String(), d.ClientID, f.Serial, intentID, authNo, opReg, p.capturedAt, !p.backlog)
+	flightID := in.cfg.Flights.Bind(ac.key.String(), d.ClientID, f.Serial, intentID, authNo, opReg, pos, p.capturedAt, !p.backlog)
 	_, c3, err := cell.Key(pos)
 	if err != nil {
 		return RefusedInvalid, "the position has no cell"

@@ -260,7 +260,7 @@ type binder struct {
 	ids   map[string]string
 }
 
-func (b *binder) Bind(key, clientID, sn string, intentID, _, _ *string, at time.Time, live bool) string {
+func (b *binder) Bind(key, clientID, sn string, intentID, _, _ *string, _ core.LatLon, at time.Time, live bool) string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.calls = append(b.calls, binderCall{key: key, client: clientID, serial: sn, intentID: intentID, live: live, at: at})
