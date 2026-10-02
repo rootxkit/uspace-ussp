@@ -186,9 +186,14 @@ func runDecision(t *testing.T, c vectors.Case, fx fixtures) {
 		ft := &dec.CIS.Features[i]
 		fc.features = append(fc.features, ft.candidate(t))
 	}
-	reg := &fakeRegistry{status: map[string]registry.Status{}, reason: dec.Registry["reason"]}
+	// registry: a status per entity (operator, uas, pilot), the reason
+	// of an unknown answer, and what it holds for the UAS.
+	reg := &fakeRegistry{status: map[string]registry.Status{}, reason: dec.Registry["reason"],
+		classLabel: dec.Registry["uas_class_label"], mtomBand: dec.Registry["uas_mtom_band"]}
 	for k, v := range dec.Registry {
-		if k != "reason" {
+		switch k {
+		case "reason", "uas_class_label", "uas_mtom_band":
+		default:
 			reg.status[k] = registry.Status(v)
 		}
 	}

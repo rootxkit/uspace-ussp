@@ -231,10 +231,21 @@ and where it is stricter than the brief; each is in the PR body as well.
   authorisation. Peers' intents rank as filed when fetched (so they
   precede ours at equal priority); a peer intent that cannot be judged
   refuses the decision with 503.
-- `special_operation` is self-declared by the operator (spec gap: the
-  regulation's special operations should be verified by the authority);
-  the priority follows the flight type and a stated priority must equal
-  it.
+- `special_operation` is declared by the operator and nothing the USSP
+  can check verifies it (no F8 flag, every operator scope self-granted),
+  so it is judged at priority 0 with the condition
+  `special_operation_unverified` and flags nothing (review fix; PLAN
+  §15.2 Q19). A stated priority of 0 or the policy's
+  `special_operation_priority` is taken and not applied. The S-M1
+  done-when clause "a special-operation intent wins priority" therefore
+  waits for Q19; the priority rule itself is pinned by the pair vectors
+  and by peer intents, which carry their own priority.
+- The Art. 1(3) exemption rests on the registry (review fix): a
+  `class_label` the F8 answer does not hold for the UAS is refused with
+  `class_label_mismatch` (item 4), whether or not it claims the
+  exemption, and a privately built aircraft is exempt only when the F8
+  MTOM band is `under_<g>g` with g ≤ 250 (`exemption_not_confirmed`
+  otherwise). An answer that is not a status already holds the intent.
 - An authorisation flagged with `update_required` (a later intent with
   precedence overlaps it, Art. 10(10)) is not activated: 409
   `update_required`, counted as

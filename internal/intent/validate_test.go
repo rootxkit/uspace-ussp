@@ -95,19 +95,28 @@ func TestValidateNamesTheAnnexIVItem(t *testing.T) {
 	}
 }
 
-// The special operation's priority is derived from the policy; a
-// normal flight cannot claim it.
+// A special operation is judged at priority 0 until something this
+// USSP can check verifies it: it is marked unverified, and a stated
+// priority of 0 or the policy's special_operation_priority is taken (and
+// not applied); a normal flight cannot claim a priority.
 func TestValidatePriorityFollowsTheFlightType(t *testing.T) {
-	n := normalise(t, with(baseRequest(), "flight_type", "special_operation"))
-	if n.Priority != 100 {
-		t.Fatalf("special priority %d", n.Priority)
+	for _, m := range []map[string]any{
+		with(baseRequest(), "flight_type", "special_operation"),
+		with(baseRequest(), "flight_type", "special_operation", "priority", 100),
+		with(baseRequest(), "flight_type", "special_operation", "priority", 0),
+	} {
+		if n := normalise(t, m); n.Priority != 0 || !n.SpecialUnverified {
+			t.Fatalf("special priority %d unverified %v", n.Priority, n.SpecialUnverified)
+		}
 	}
-	n = normalise(t, with(baseRequest(), "flight_type", "special_operation", "priority", 100))
-	if n.Priority != 100 {
-		t.Fatalf("stated priority %d", n.Priority)
+	if n := normalise(t, baseRequest()); n.Priority != 0 || n.SpecialUnverified {
+		t.Fatalf("normal priority %d unverified %v", n.Priority, n.SpecialUnverified)
 	}
-	if got := problemsOf(t, with(baseRequest(), "flight_type", "special_operation", "priority", 0)); len(got) != 1 {
-		t.Fatalf("a special operation at priority 0: %v", got)
+	if got := problemsOf(t, with(baseRequest(), "flight_type", "special_operation", "priority", 50)); len(got) != 1 {
+		t.Fatalf("a special operation at priority 50: %v", got)
+	}
+	if got := problemsOf(t, with(baseRequest(), "priority", 100)); len(got) != 1 {
+		t.Fatalf("a normal flight at priority 100: %v", got)
 	}
 }
 

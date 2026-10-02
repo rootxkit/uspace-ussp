@@ -4302,7 +4302,9 @@
      "outdated": [],
      "features": []
     },
-    "registry": {},
+    "registry": {
+     "uas_class_label": "C0"
+    },
     "terrain": {
      "min_m": 400,
      "max_m": 450
@@ -4320,6 +4322,47 @@
     "in_uspace_airspace": false
    },
    "why": "Open A1 with a C0 aircraft is outside the regulation's scope (Art. 1(3)): accepted voluntarily, no authorisation number, no thresholds."
+  },
+  {
+   "name": "exempt-c0-class-label-not-held",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {
+     "category": "open",
+     "subcategory": "A1",
+     "class_label": "C0"
+    },
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {
+     "uas_class_label": "C2"
+    },
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "class_label_mismatch"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "The exemption rests on the registry, not on the request: a C0 class label the registry does not hold for the UAS (it holds C2) is refused naming item 4."
   },
   {
    "name": "exempt-privately-built-under-250g",
@@ -4340,7 +4383,9 @@
      "outdated": [],
      "features": []
     },
-    "registry": {},
+    "registry": {
+     "uas_mtom_band": "under_250g"
+    },
     "terrain": {
      "min_m": 400,
      "max_m": 450
@@ -4358,6 +4403,48 @@
     "in_uspace_airspace": false
    },
    "why": "A privately built aircraft below 250 g in A1 is outside the scope too."
+  },
+  {
+   "name": "exempt-privately-built-band-not-below-250g",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {
+     "category": "open",
+     "subcategory": "A1",
+     "privately_built": true,
+     "mtom_kg": 0.249
+    },
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {
+     "uas_mtom_band": "under_900g"
+    },
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "exemption_not_confirmed"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "A privately built aircraft declared below 250 g is exempt only when the registry's MTOM band puts it there; a band of under 900 g does not confirm it, so the request is refused naming item 4."
   },
   {
    "name": "privately-built-250g-is-authorised",
@@ -4441,7 +4528,9 @@
       }
      ]
     },
-    "registry": {},
+    "registry": {
+     "uas_class_label": "C0"
+    },
     "terrain": {
      "min_m": 400,
      "max_m": 450
@@ -6123,14 +6212,15 @@
    "why": "An authorised intent filed earlier at equal priority holds the space: the new one is refused naming it (Art. 10(9))."
   },
   {
-   "name": "special-operation-over-existing",
+   "name": "special-operation-unverified-over-existing",
    "owner": [
     "ussp"
    ],
    "input": {
     "check": "decision",
     "request": {
-     "flight_type": "special_operation"
+     "flight_type": "special_operation",
+     "priority": 100
     },
     "policy": {},
     "cis": {
@@ -6198,19 +6288,19 @@
     ]
    },
    "expected": {
-    "decision": "authorised",
-    "state": "accepted",
+    "decision": "rejected",
+    "state": "rejected",
     "reasons": [
-     "intent_flagged_for_update"
+     "intent_filed_first"
     ],
     "conditions": [
-     "local_deconfliction_only"
+     "special_operation_unverified"
     ],
-    "authorisation_number": true,
-    "deviation_thresholds": true,
+    "authorisation_number": false,
+    "deviation_thresholds": false,
     "in_uspace_airspace": false
    },
-   "why": "A special operation has precedence over an authorised normal flight: it is authorised and the other is flagged for an update (Art. 10(8), (10))."
+   "why": "flight_type special_operation is declared by the operator and nothing the USSP can check verifies it yet, so it is judged at priority 0: the authorised normal flight filed before it keeps the space (Art. 10(9)) and nothing is flagged."
   },
   {
    "name": "existing-special-operation-wins",

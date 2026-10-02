@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -120,7 +121,13 @@ func (d *Decider) Assess(ctx context.Context, n *Normalised, pol policy.Record, 
 	for i := range n.Volumes {
 		a.d.VolumesAMSL = append(a.d.VolumesAMSL, n.Volumes[i].AMSL)
 	}
-	// Step 2: the registry (S8), for every intent, exempt or not.
+	if n.SpecialUnverified {
+		d.count(CondSpecialUnverified)
+		a.condition(Condition{Code: CondSpecialUnverified,
+			Detail: "flight_type special_operation is recorded as declared; nothing this USSP can check verifies it yet, so the intent is judged at priority 0"})
+	}
+	// Step 2: the registry (S8), for every intent, exempt or not; it
+	// also confirms the class label and the exemption the request claims.
 	d.registry(ctx, a)
 	// Steps 3 and 4 run for an exempt intent too: it needs no
 	// authorisation (Art. 1(3)), but the USSP never accepts, voluntarily
@@ -190,6 +197,62 @@ func (d *Decider) registry(ctx context.Context, a *Assessment) {
 		}
 	}
 	a.d.RegistryCheckedAt = ptr(a.now.Add(-time.Duration(oldest * float64(time.Second))).UTC())
+	d.uasClaims(a, rs[0].UAS)
+}
+
+// uasClaims checks what the request says of the aircraft against the
+// registry's answer for it, so that neither the class label nor the
+// Art. 1(3) exemption rests on the request alone: a class_label the
+// registry does not hold for the UAS refuses (item 4), and a privately
+// built aircraft is exempt only when the registry's MTOM band puts it
+// below 250 g. An answer that is not a status (unknown) already holds
+// the intent, so nothing is confirmed from it.
+func (d *Decider) uasClaims(a *Assessment, u *registry.Answer) {
+	if u == nil || u.Status == registry.StatusUnknown || u.Reason != "" {
+		return
+	}
+	r := a.n.Request
+	reject := func(reason, detail string) {
+		d.count(reason)
+		a.conflict(Conflict{Kind: KindRegistry, Reason: reason, Effect: EffectRejects, Ref: u.Key, Item: ptr(4), Detail: detail})
+	}
+	if r.ClassLabel != "" && !strings.EqualFold(strings.TrimSpace(u.ClassLabel), r.ClassLabel) {
+		held := "no class label"
+		if u.ClassLabel != "" {
+			held = "class label " + u.ClassLabel
+		}
+		reject(ReasonClassLabelMismatch, fmt.Sprintf("class_label %s is not what the registry holds for the UAS (%s)", r.ClassLabel, held))
+		return
+	}
+	if a.n.Exempt && r.ClassLabel != "C0" {
+		// Exempt as privately built below Art13MTOMKg: the registry's
+		// band must put the aircraft there.
+		if g, ok := bandBelowG(u.MTOMBand); !ok || g > Art13MTOMKg*1000 {
+			band := u.MTOMBand
+			if band == "" {
+				band = "none"
+			}
+			reject(ReasonExemptionNotConfirmed, fmt.Sprintf("the registry's MTOM band for the UAS (%s) does not put it below %.0f g, so the Art. 1(3) exemption is not confirmed", band, Art13MTOMKg*1000))
+		}
+	}
+}
+
+// bandBelowG reads an authority MTOM band "under_<g>g" as its bound in
+// grams; any other band ("from_<g>g", empty, malformed) is false.
+func bandBelowG(band string) (float64, bool) {
+	rest, ok := strings.CutPrefix(band, "under_")
+	if !ok {
+		return 0, false
+	}
+	rest, ok = strings.CutSuffix(rest, "g")
+	if !ok || rest == "" {
+		return 0, false
+	}
+	g, err := strconv.ParseFloat(rest, 64)
+	if err != nil || !core.IsFinite(g) || g <= 0 {
+		return 0, false
+	}
+	return g, true
 }
 
 // unknown holds the intent on an answer that is not a registry status

@@ -173,6 +173,12 @@ const (
 	ReasonThresholdInvalid     = "threshold_invalid"
 	ReasonDeconflictNotJudged  = "deconfliction_not_judged"
 	ReasonDSSUnavailable       = "dss_unavailable"
+	// ReasonClassLabelMismatch: the request's class_label is not the one
+	// the registry holds for the UAS (item 4).
+	ReasonClassLabelMismatch = "class_label_mismatch"
+	// ReasonExemptionNotConfirmed: a privately built aircraft claimed
+	// under 250 g that the registry's MTOM band does not put there.
+	ReasonExemptionNotConfirmed = "exemption_not_confirmed"
 
 	CondRegistryUnverified   = "registry_unverified"
 	CondAuthorisationRef     = "authorisation_ref_required_zone"
@@ -180,6 +186,10 @@ const (
 	CondLimitNotJudged       = "zone_limit_not_judged"
 	CondAirspaceRequirements = "uspace_airspace_requirements"
 	CondLocalDeconfliction   = "local_deconfliction_only"
+	// CondSpecialUnverified: flight_type special_operation is recorded as
+	// declared, but nothing this USSP can check verifies it, so it is
+	// judged at priority 0.
+	CondSpecialUnverified = "special_operation_unverified"
 )
 
 // Overlap is how a volume meets a zone, an airspace or another intent:

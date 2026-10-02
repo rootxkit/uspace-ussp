@@ -97,9 +97,13 @@ type Normalised struct {
 	// TimeStart and TimeEnd span every volume.
 	TimeStart, TimeEnd time.Time
 	Priority           int
-	// Exempt is the Art. 1(3) scope exemption (open A1 with C0, or
-	// privately built below 250 g).
+	// Exempt is the Art. 1(3) scope exemption as claimed (open A1 with
+	// C0, or privately built below 250 g); the decision keeps it only
+	// when the registry's answer for the UAS confirms it.
 	Exempt bool
+	// SpecialUnverified is a flight_type special_operation judged at
+	// priority 0: nothing this USSP can check verifies it.
+	SpecialUnverified bool
 	// OperatorPublic is the public part of the registration number and
 	// OperatorKey its comparison key (regnum).
 	OperatorPublic, OperatorKey string
@@ -289,15 +293,21 @@ func Validate(r Request, env ValidateEnv) (*Normalised, *ed269.Problems, error) 
 	case FlightNormal:
 		n.Priority = 0
 	case FlightSpecial:
-		n.Priority = env.SpecialPriority
-		if env.SpecialPriority < 1 {
-			ps.add("priority", "the policy's special_operation_priority %d cannot be used", env.SpecialPriority)
-		}
+		// A special operation's priority would beat every other intent,
+		// and nothing this USSP can check verifies one yet (no registry
+		// flag, no scope granted by the authority): it is recorded as
+		// declared and judged at priority 0 (docs/PLAN.md §15.2 Q19).
+		n.Priority = 0
+		n.SpecialUnverified = true
 	default:
 		ps.add("flight_type", "must be normal or special_operation")
 	}
-	if r.Priority != nil && *r.Priority != n.Priority {
-		ps.add("priority", "must be %d for flight_type %q (0 for normal, the special_operation_priority for special_operation)", n.Priority, r.FlightType)
+	switch {
+	case r.Priority == nil:
+	case r.FlightType == FlightSpecial && (*r.Priority == 0 || *r.Priority == env.SpecialPriority):
+		// The class a special operation would have; it is not applied.
+	case *r.Priority != n.Priority:
+		ps.add("priority", "must be 0 for flight_type %q (or the special_operation_priority %d for special_operation)", r.FlightType, env.SpecialPriority)
 	}
 	// (4)
 	validateCategory(ps, r)

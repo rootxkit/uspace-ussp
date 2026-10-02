@@ -555,32 +555,33 @@ func TestIntegrationIntentFirstComeRanksAfterTheLock(t *testing.T) {
 	}
 }
 
-// S-M1: a special operation wins priority over an authorised normal
-// flight (which is flagged for an update, Art. 10(10)); at equal
-// priority the first filed wins.
+// S-M1, as reviewed: flight_type special_operation is declared by the
+// operator and nothing this USSP can check verifies it yet, so it is
+// judged at priority 0 with the condition special_operation_unverified:
+// filed over an authorised normal flight it is refused first come, first
+// served and flags nothing. At equal priority the first filed wins
+// either way: a special operation filed first is authorised and the
+// normal flight after it is refused.
 func TestIntegrationIntentPriorityAndFirstCome(t *testing.T) {
 	g := newIntentRig(t)
 	g.publishAll(nil, nil, nil)
 	number, serial, token := g.operatorClient()
 	b := g.box(0, 0, 0.01)
 	normal := g.file(token, g.request(number, serial, "normal", b))
-	special := g.file(token, g.request(number, serial, "special", b, "flight_type", "special_operation"))
-	if normal.str("decision") != "authorised" || special.str("decision") != "authorised" || special.body["priority"] != 100.0 ||
-		!slices.Equal(reasonsOf(special), []string{"intent_flagged_for_update"}) {
+	special := g.file(token, g.request(number, serial, "special", b, "flight_type", "special_operation", "priority", 100))
+	if normal.str("decision") != "authorised" || special.str("decision") != "rejected" || special.body["priority"] != 0.0 ||
+		!slices.Equal(reasonsOf(special), []string{"intent_filed_first"}) || !strings.Contains(special.raw, "special_operation_unverified") {
 		t.Fatalf("%s / %s", normal.raw, special.raw)
 	}
-	flagged := count(t, relOwner(t), "SELECT count(*) FROM operational_intents WHERE id = $1 AND update_required->>'by_intent_id' = $2",
-		normal.str("intent_id"), special.str("intent_id"))
-	if flagged != 1 || events(t, "operational_intent", normal.str("intent_id"), intent.EventFlagged) != 1 {
-		t.Fatal("the normal flight is not flagged for an update")
+	if count(t, relOwner(t), "SELECT count(*) FROM operational_intents WHERE id = $1 AND update_required IS NOT NULL", normal.str("intent_id")) != 0 {
+		t.Fatal("an unverified special operation flagged the normal flight")
 	}
-	late := g.file(token, g.request(number, serial, "late-normal", b))
-	if late.str("decision") != "rejected" || !slices.Contains(reasonsOf(late), "intent_higher_priority") {
-		t.Fatalf("late normal: %s", late.raw)
-	}
-	special2 := g.file(token, g.request(number, serial, "special-2", b, "flight_type", "special_operation"))
-	if special2.str("decision") != "rejected" || !slices.Contains(reasonsOf(special2), "intent_filed_first") {
-		t.Fatalf("second special operation: %s", special2.raw)
+	b2 := g.box(1, 0, 0.01)
+	first := g.file(token, g.request(number, serial, "special-first", b2, "flight_type", "special_operation"))
+	late := g.file(token, g.request(number, serial, "late-normal", b2))
+	if first.str("decision") != "authorised" || !strings.Contains(first.raw, "special_operation_unverified") ||
+		late.str("decision") != "rejected" || !slices.Equal(reasonsOf(late), []string{"intent_filed_first"}) {
+		t.Fatalf("%s / %s", first.raw, late.raw)
 	}
 }
 
@@ -658,6 +659,7 @@ func TestIntegrationIntentC0A1Voluntary(t *testing.T) {
 	g := newIntentRig(t)
 	g.publishAll(nil, nil, nil)
 	number, serial, token := g.operatorClient()
+	g.auth.SetUAS(serial, "active", "C0", "")
 	r := g.file(token, g.request(number, serial, "c0", g.box(0, 0, 0.01), "category", "open", "subcategory", "A1", "class_label", "C0", "mode", "VLOS"))
 	if r.status != 201 || r.str("decision") != "accepted_voluntary" || r.body["authorisation_number"] != nil || r.body["exempt_art_1_3"] != true {
 		t.Fatalf("%d %s", r.status, r.raw)
@@ -667,6 +669,14 @@ func TestIntegrationIntentC0A1Voluntary(t *testing.T) {
 	n := g.file(token, g.request(number, serial, "after-c0", g.box(0, 0, 0.01)))
 	if n.str("decision") != "authorised" {
 		t.Fatalf("after the exempt one: %s", n.raw)
+	}
+	// The exemption rests on the registry: a C0 the authority does not
+	// hold for the UAS (it holds C2) is refused naming item 4.
+	number2, serial2, token2 := g.operatorClient()
+	g.auth.SetUAS(serial2, "active", "C2", "")
+	m := g.file(token2, g.request(number2, serial2, "c0-not-held", g.box(1, 0, 0.01), "category", "open", "subcategory", "A1", "class_label", "C0", "mode", "VLOS"))
+	if m.str("decision") != "rejected" || !slices.Equal(reasonsOf(m), []string{"class_label_mismatch"}) || !strings.Contains(m.raw, `"item":4`) {
+		t.Fatalf("C0 not held: %s", m.raw)
 	}
 }
 
@@ -783,6 +793,7 @@ func TestIntegrationScenarioSM1(t *testing.T) {
 	)
 	numA, serialA, tokA := g.operatorClient()
 	numB, serialB, tokB := g.operatorClient()
+	g.auth.SetUAS(serialA, "active", "C0", "") // A flies a C0 aircraft
 	step := 0
 	expect := func(what string, r resp, decision string, reasons ...string) resp {
 		t.Helper()
@@ -809,11 +820,12 @@ func TestIntegrationScenarioSM1(t *testing.T) {
 	expect("B files the same volume later", g.file(tokB, g.request(numB, serialB, "sc-b", inUspace)), "rejected", "intent_filed_first")
 	expect("A files into the PROHIBITED zone", g.file(tokA, g.request(numA, serialA, "sc-zone", g.box(0.005, 0.005, 0.005))), "rejected", "zone_prohibited")
 	sp := expect("B files a special operation over A", g.file(tokB, g.request(numB, serialB, "sc-b-special", inUspace, "flight_type", "special_operation")),
-		"authorised", "intent_flagged_for_update")
-	if count(t, relOwner(t), "SELECT count(*) FROM operational_intents WHERE id = $1 AND update_required IS NOT NULL", a.str("intent_id")) != 1 {
-		t.Fatal("A is not flagged for an update")
+		"rejected", "intent_filed_first")
+	if !strings.Contains(sp.raw, "special_operation_unverified") ||
+		count(t, relOwner(t), "SELECT count(*) FROM operational_intents WHERE id = $1 AND update_required IS NOT NULL", a.str("intent_id")) != 0 {
+		t.Fatalf("an unverified special operation took precedence: %s", sp.raw)
 	}
-	t.Logf("         A flagged for an update by %s (Art. 10(10); the update itself is WP-12)", sp.str("intent_id"))
+	t.Logf("         the special operation is unverified (priority 0): A keeps the space, nothing flagged")
 
 	// The ANSP publishes a restriction: new intents over it are refused.
 	g.publish(cis.Restrictions, edFeature("SC-DAR", "PROHIBITED", darBox, 0, 1000, "AMSL", map[string]any{cis.RestrictionMember: map[string]any{

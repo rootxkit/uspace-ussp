@@ -161,6 +161,8 @@ type fakeRegistry struct {
 	calls   int
 	purpose registry.Purpose
 	ageS    float64
+	// classLabel and mtomBand are what the registry holds for the UAS.
+	classLabel, mtomBand string
 }
 
 func (r *fakeRegistry) Validate(_ context.Context, qs []registry.Query, p registry.Purpose) ([]registry.Result, error) {
@@ -182,6 +184,8 @@ func (r *fakeRegistry) Validate(_ context.Context, qs []registry.Query, p regist
 		a := &registry.Answer{Key: key, Status: st, CacheAgeS: &r.ageS}
 		if st == registry.StatusUnknown {
 			a.Reason = r.reason
+		} else if entity == "uas" {
+			a.ClassLabel, a.MTOMBand = r.classLabel, r.mtomBand
 		}
 		return a
 	}

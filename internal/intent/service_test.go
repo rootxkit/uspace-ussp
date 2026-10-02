@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -158,28 +159,87 @@ func TestFirstComeNeverGrantsOverAnAcceptedIntent(t *testing.T) {
 	}
 }
 
-// S-M1: a special operation wins priority over an authorised normal
-// flight, which is flagged for an update; the normal flight filed after
-// a special operation is refused.
-func TestSpecialOperationWinsPriority(t *testing.T) {
+// special_operation is declared by the operator and no source this USSP
+// can check verifies it yet (no registry flag, no scope): it is judged
+// at priority 0 and says so, so it cannot take the space of an intent
+// accepted before it, nor flag it. Twin: filed first, the same request
+// is authorised, and a normal flight filed after it is refused first
+// come, first served.
+func TestSpecialOperationIsNotPriorityUntilVerified(t *testing.T) {
 	s, st, _ := newService(newRig())
 	normal, _, err := submit(t, s, with(baseRequest(), "client_ref", "n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	special, _, err := submit(t, s, with(baseRequest(), "client_ref", "s", "flight_type", "special_operation"))
+	st.now = st.now.Add(time.Second)
+	special, _, err := submit(t, s, with(baseRequest(), "client_ref", "s", "flight_type", "special_operation", "priority", 100))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if special.Decision != DecisionAuthorised || special.Priority != 100 || st.flags[normal.IntentID] != special.IntentID {
-		t.Fatalf("special %s flags %v", special.Decision, st.flags)
+	unverified := func(d Decision) bool {
+		for _, c := range d.Conditions {
+			if c.Code == CondSpecialUnverified {
+				return true
+			}
+		}
+		return false
 	}
+	if special.Decision != DecisionRejected || special.Priority != 0 || len(st.flags) != 0 || !unverified(special) ||
+		!slices.Equal(reasons(special), []string{ReasonIntentFirstCome}) || special.Conflicts[0].Ref != normal.IntentID {
+		t.Fatalf("special after normal: %s priority %d %v %+v flags %v", special.Decision, special.Priority, reasons(special), special.Conditions, st.flags)
+	}
+	s, st, _ = newService(newRig())
+	first, _, err := submit(t, s, with(baseRequest(), "client_ref", "s", "flight_type", "special_operation"))
+	if err != nil || first.Decision != DecisionAuthorised || first.Priority != 0 || !unverified(first) {
+		t.Fatalf("special first: %v %s %d %+v", err, first.Decision, first.Priority, first.Conditions)
+	}
+	st.now = st.now.Add(time.Second)
 	late, _, err := submit(t, s, with(baseRequest(), "client_ref", "l"))
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || late.Decision != DecisionRejected || !slices.Equal(reasons(late), []string{ReasonIntentFirstCome}) || unverified(late) {
+		t.Fatalf("late normal: %v %s %v", err, late.Decision, reasons(late))
 	}
-	if late.Decision != DecisionRejected || !strings.Contains(strings.Join(reasons(late), ","), ReasonIntentPriority) {
-		t.Fatalf("late normal %s %v", late.Decision, reasons(late))
+}
+
+// The Art. 1(3) exemption rests on the registry, not on the request: a
+// class_label the registry does not hold for the UAS is refused naming
+// item 4, and a privately built aircraft is exempt only when the
+// registry's MTOM band puts it below 250 g. Each refusal has its twin
+// that is accepted voluntarily.
+func TestExemptionRestsOnTheRegistry(t *testing.T) {
+	c0 := with(baseRequest(), "category", "open", "subcategory", "A1", "class_label", "C0")
+	built := with(baseRequest(), "category", "open", "subcategory", "A1", "privately_built", true, "mtom_kg", 0.2)
+	for _, c := range []struct {
+		name, class, band string
+		m                 map[string]any
+		decision, reason  string
+	}{
+		{"C0 held", "C0", "", c0, DecisionAcceptedVoluntary, ""},
+		{"C0 claimed, C2 held", "C2", "", c0, DecisionRejected, ReasonClassLabelMismatch},
+		{"C0 claimed, no class held", "", "", c0, DecisionRejected, ReasonClassLabelMismatch},
+		{"specific, C0 claimed, C1 held", "C1", "", with(baseRequest(), "class_label", "C0"), DecisionRejected, ReasonClassLabelMismatch},
+		{"specific, C0 claimed and held", "C0", "", with(baseRequest(), "class_label", "C0"), DecisionAuthorised, ""},
+		{"under 250 g held", "", "under_250g", built, DecisionAcceptedVoluntary, ""},
+		{"under 900 g held", "", "under_900g", built, DecisionRejected, ReasonExemptionNotConfirmed},
+		{"no band held", "", "", built, DecisionRejected, ReasonExemptionNotConfirmed},
+	} {
+		g := newRig()
+		g.reg.classLabel, g.reg.mtomBand = c.class, c.band
+		s, _, _ := newService(g)
+		d, _, err := submit(t, s, c.m)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		want := []string(nil)
+		if c.reason != "" {
+			want = []string{c.reason}
+		}
+		if d.Decision != c.decision || !slices.Equal(reasons(d), want) {
+			t.Errorf("%s: %s %v, want %s %v", c.name, d.Decision, reasons(d), c.decision, want)
+			continue
+		}
+		if c.reason != "" && (d.Conflicts[0].Item == nil || *d.Conflicts[0].Item != 4 || d.Conflicts[0].Ref != testSerial) {
+			t.Errorf("%s: the refusal does not name item 4 and the UAS: %+v", c.name, d.Conflicts[0])
+		}
 	}
 }
 
