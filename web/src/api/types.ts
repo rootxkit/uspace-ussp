@@ -171,6 +171,89 @@ export interface paths {
         patch: operations["changeIntent"];
         trace?: never;
     };
+    "/v1/telemetry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream operator telemetry (WebSocket)
+         * @description A WebSocket upgrade (served by telemetry-ingest). The client is an
+         *     operator machine client with a bearer token granting
+         *     ussp.telemetry (issued by this USSP); the client id is the token's
+         *     sub. A browser upgrade must come from an Origin on
+         *     USSP_WS_ALLOWED_ORIGINS with the uspace_session cookie, and a
+         *     refused upgrade is accepted and closed with 4401 (M22); no session
+         *     realm streams telemetry. A client whose operator_ws source is
+         *     switched off is refused before the upgrade with 503 and
+         *     Retry-After (B-10), and an open socket is closed with 1013 when
+         *     the switch goes off.
+         *
+         *     Client to server: one message per sample, {"schema":
+         *     "telemetry/v1", "body": TelemetryFrame} (the console frame, M29;
+         *     other envelope members are ignored), at most 8 KiB, for a serial
+         *     bound to the client (06 T3). A sample for an unbound serial is
+         *     refused_unbound and the socket stays up. One aircraft is streamed
+         *     by one socket: a later socket that sends for it replaces the
+         *     earlier one, whose next sample for it is refused_replaced (B-14).
+         *     Live samples above 2 Hz per aircraft are dropped and counted; a
+         *     (serial, seq) seen in the last telemetry_dedupe_s (600 s, the
+         *     client's queue) is acknowledged and not published twice. Inside U-space airspace a sample needs an
+         *     activated intent of this aircraft (intent_id), else it is refused
+         *     (refused_no_authorisation, refused_intent_state).
+         *
+         *     Server to client: only console/status/v1 frames, on connect,
+         *     every 2 s and after a refusal, with these extras in the body:
+         *     accepted, refused, dropped, outcomes (count per outcome name),
+         *     rate (accepted samples per second), backlog (history samples
+         *     accepted) and acked_seq (per serial, the highest seq such that
+         *     every sample of that serial sent on this socket up to it is
+         *     published or durably queued, or refused for good: the client may
+         *     let those go, B-05). Nothing else is ever sent: the socket has no
+         *     message that could command an aircraft (CLAUDE.md rule 1).
+         */
+        get: operations["openTelemetryStream"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/telemetry/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send telemetry samples in one request
+         * @description The same pipeline as the WebSocket (served by telemetry-ingest)
+         *     for at most 2000 samples whose own times span at most 1 s per
+         *     serial (telemetry_batch_span_s), placed against the batch's
+         *     sent_at when it has one (T-02); backlog samples (a client
+         *     draining its queue after an outage) carry backlog true and are
+         *     recorded, never alerted (T-04). The answer comes once every
+         *     accepted sample is published or durably queued (B-05): accepted
+         *     counts only those; a sample that could not be handed is
+         *     not_acknowledged and is sent again. A sample that does not read
+         *     as telemetry/v1 is refused_invalid with its field errors and the
+         *     others are taken. 503 with Retry-After when the client's
+         *     operator_ws source is switched off (B-10).
+         */
+        post: operations["postTelemetryBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/oauth/token": {
         parameters: {
             query?: never;
@@ -891,6 +974,99 @@ export interface components {
         IntentList: {
             intents: components["schemas"]["IntentDecision"][];
         };
+        /** @description telemetry/v1 (schemas/telemetry/v1/schema.json, the source of truth). */
+        TelemetryFrame: {
+            /**
+             * Format: date-time
+             * @description The client's clock, RFC 3339 in UTC with Z.
+             */
+            ts: string;
+            serial: string;
+            /** Format: int64 */
+            seq: number;
+            backlog?: boolean;
+            end?: boolean;
+            /** Format: uuid */
+            intent_id?: string | null;
+            position: components["schemas"]["TelemetryPosition"];
+            /** Format: double */
+            alt_wgs84_m: number | null;
+            /** Format: double */
+            alt_pressure_m?: number | null;
+            /** Format: double */
+            height_m: number | null;
+            /** @enum {string|null} */
+            height_ref: "TakeoffLocation" | "GroundLevel" | null;
+            /** Format: double */
+            speed_ms: number | null;
+            /** Format: double */
+            track_deg: number | null;
+            /** Format: double */
+            vspeed_ms: number | null;
+            /** @enum {string} */
+            status: "Undeclared" | "Ground" | "Airborne" | "Emergency" | "RemoteIDSystemFailure";
+            emergency: boolean;
+            operator_position?: components["schemas"]["TelemetryOperatorPosition"] | null;
+            /** @enum {string} */
+            accuracy_h: "HAUnknown" | "HA10NMPlus" | "HA10NM" | "HA4NM" | "HA2NM" | "HA1NM" | "HA05NM" | "HA03NM" | "HA01NM" | "HA005NM" | "HA30m" | "HA10m" | "HA3m" | "HA1m";
+            /** @enum {string} */
+            accuracy_v: "VAUnknown" | "VA150mPlus" | "VA150m" | "VA45m" | "VA25m" | "VA10m" | "VA3m" | "VA1m";
+            /** Format: double */
+            timestamp_accuracy_s: number | null;
+        };
+        TelemetryPosition: {
+            /** Format: double */
+            lat: number;
+            /** Format: double */
+            lng: number;
+        };
+        TelemetryOperatorPosition: {
+            /** Format: double */
+            lat: number;
+            /** Format: double */
+            lng: number;
+            /** Format: double */
+            alt_wgs84_m?: number | null;
+        };
+        TelemetryBatch: {
+            /**
+             * Format: date-time
+             * @description The client's clock when it sent the batch (RFC 3339 in UTC with
+             *     Z). With it every sample is placed at receipt - (sent_at - ts),
+             *     so the client's clock error cancels and a drained backlog keeps
+             *     its own times (T-02); without it the batch rule places the
+             *     samples against the newest one.
+             */
+            sent_at?: string;
+            frames: components["schemas"]["TelemetryFrame"][];
+        };
+        /** @description One sample that was not accepted, by its index in the request. */
+        TelemetryOutcome: {
+            index: number;
+            serial?: string;
+            /** Format: int64 */
+            seq?: number;
+            /**
+             * @description duplicate (taken before: acknowledged), duplicate_pending (taken
+             *     before and still on its way: send it again later),
+             *     refused_invalid, refused_unbound, refused_bindings_unavailable,
+             *     refused_source_disabled, refused_capacity,
+             *     rejected_out_of_order, rejected_too_old, refused_intent_state,
+             *     refused_no_authorisation, refused_batch_span, dropped_rate,
+             *     dropped_queue_full or not_acknowledged (send again).
+             */
+            outcome: string;
+            detail?: string;
+        };
+        TelemetryBatchResult: {
+            /** @description Published or durably queued (B-05). */
+            accepted: number;
+            refused: number;
+            dropped: number;
+            duplicate: number;
+            not_acknowledged: number;
+            outcomes: components["schemas"]["TelemetryOutcome"][];
+        };
     };
     responses: {
         /** @description An error, as RFC 9457 problem details. */
@@ -1159,6 +1335,66 @@ export interface operations {
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            413: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    openTelemetryStream: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Switching protocols; the stream described above follows. */
+            101: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Problem"];
+            /** @description The client's operator_ws source is switched off; retry after the Retry-After seconds. */
+            503: {
+                headers: {
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    postTelemetryBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelemetryBatch"];
+            };
+        };
+        responses: {
+            /** @description Taken; the counts and every sample that was not accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelemetryBatchResult"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
             413: components["responses"]["Problem"];
             503: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
