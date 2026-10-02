@@ -64,7 +64,7 @@ type DSSState struct {
 // documentation). Safe for one Run per process; several processes may
 // run it at once (the outbox leases each item to one of them).
 type ISAWorker struct {
-	// Store is the relational database (PGWorkStore in api).
+	// Store is the relational database (internal/ridsp/pgstore in api).
 	Store WorkStore
 	// DSSBaseURL is USSP_DSS_BASE_URL; the F3411 DSS operations are at
 	// its /rid/v2. USSBaseURL is ours (uss_base_url of the ISA).
