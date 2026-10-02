@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -97,5 +98,48 @@ func TestWSNotAnUpgrade(t *testing.T) {
 	conn, _, err := ws.AcceptWS(rec, r, adminAccess)
 	if conn != nil || err == nil || errors.Is(err, ErrWSRefused) {
 		t.Fatalf("conn %v err %v", conn, err)
+	}
+}
+
+// E-01 pair (B-10): an authenticated caller Admit turns away gets Admit's
+// answer (503 with Retry-After) and no socket; the same caller admitted
+// is upgraded and served.
+func TestWSAdmitAnswersBeforeTheUpgrade(t *testing.T) {
+	f := newGuardFixture(t)
+	var admit atomic.Bool
+	ws := &WSAuth{Guard: f.guard, AllowedOrigins: []string{consoleOrigin}, Admit: func(w http.ResponseWriter, _ *http.Request, p Principal) bool {
+		if admit.Load() {
+			return true
+		}
+		w.Header().Set("Retry-After", "5")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return p.Claims.Subject == "never"
+	}}
+	errs := make(chan error, 2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, _, err := ws.AcceptWS(w, r, adminAccess)
+		errs <- err
+		if err != nil {
+			return
+		}
+		_ = conn.Write(r.Context(), websocket.MessageText, []byte("in"))
+		_ = conn.Close(websocket.StatusNormalClosure, "")
+	}))
+	t.Cleanup(srv.Close)
+	sess := f.session(t, RealmConsole, RoleSupervisor, "s-admit")
+	h := http.Header{"Authorization": {"Bearer " + sess}}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http"), &websocket.DialOptions{HTTPHeader: h})
+	if err == nil || resp == nil || resp.StatusCode != http.StatusServiceUnavailable || resp.Header.Get("Retry-After") != "5" {
+		t.Fatalf("not admitted: %v %+v", err, resp)
+	}
+	if err := <-errs; !errors.Is(err, ErrWSNotAdmitted) || f.counters.Get(CounterWSAccepted) != 0 {
+		t.Fatalf("err %v counters %v", err, f.counters.Snapshot())
+	}
+	admit.Store(true)
+	if msg, status, code := dial(t, srv.URL, h); msg != "in" || status != http.StatusSwitchingProtocols || code != -1 {
+		t.Fatalf("admitted: %q %d %d", msg, status, code)
 	}
 }

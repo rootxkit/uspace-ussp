@@ -20,6 +20,11 @@ type Access struct {
 	Scopes    []string
 	AllScopes []string
 	Sessions  []SessionAccess
+	// WebSocket marks an upgrade that authenticates itself against this
+	// same entry (internal/auth.WSAuth, M22): a refused upgrade must be
+	// accepted and closed with 4401, which a browser can read, so the
+	// mux puts no guard in front of it. It is never public.
+	WebSocket bool
 }
 
 // SessionAccess admits a session of Realm whose roles contain one of
@@ -34,6 +39,8 @@ func (a Access) Validate() error {
 	switch {
 	case a.Public && (len(a.Scopes) > 0 || len(a.AllScopes) > 0 || len(a.Sessions) > 0):
 		return errors.New("public and restricted at once")
+	case a.Public && a.WebSocket:
+		return errors.New("a public WebSocket: an upgrade authenticates itself against its scopes or sessions")
 	case !a.Public && len(a.Scopes) == 0 && len(a.AllScopes) == 0 && len(a.Sessions) == 0:
 		return errors.New("neither public nor restricted to a scope or a session realm")
 	case slices.Contains(a.Scopes, "") || slices.Contains(a.AllScopes, ""):
@@ -53,6 +60,9 @@ func (a Access) String() string {
 		return "public"
 	}
 	var parts []string
+	if a.WebSocket {
+		parts = append(parts, "websocket")
+	}
 	for _, s := range a.Scopes {
 		parts = append(parts, "scope:"+s)
 	}
@@ -115,7 +125,7 @@ func (g *GuardedMux) HandleFunc(pattern string, h func(http.ResponseWriter, *htt
 		}
 	}
 	var handler http.Handler = http.HandlerFunc(h)
-	if !a.Public {
+	if !a.Public && !a.WebSocket {
 		handler = g.guard(a)(handler)
 	}
 	g.mux.Handle(pattern, handler)

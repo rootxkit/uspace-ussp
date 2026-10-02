@@ -71,6 +71,8 @@ func TestGuardedMuxRefusesInvalidEntries(t *testing.T) {
 		"empty of all":        {AllScopes: []string{"ussp.geo", ""}},
 		"public and all":      {Public: true, AllScopes: []string{"ussp.geo"}},
 		"realmless entry":     {Sessions: []SessionAccess{{Roles: []string{"admin"}}}},
+		"public websocket":    {Public: true, WebSocket: true},
+		"websocket alone":     {WebSocket: true},
 		"refused by validate": {Scopes: []string{"made.up"}},
 	} {
 		validate := func(a Access) error {
@@ -99,13 +101,35 @@ func TestAccessAllScopesIsRestricted(t *testing.T) {
 
 func TestAccessString(t *testing.T) {
 	for want, a := range map[string]Access{
-		"public":                           {Public: true},
-		"scope:ussp.geo or session:portal": {Scopes: []string{"ussp.geo"}, Sessions: []SessionAccess{{Realm: "portal"}}},
-		"session:console/supervisor|admin": {Sessions: []SessionAccess{{Realm: "console", Roles: []string{"supervisor", "admin"}}}},
-		"scopes:a.b+c.d":                   {AllScopes: []string{"a.b", "c.d"}},
+		"public":                            {Public: true},
+		"scope:ussp.geo or session:portal":  {Scopes: []string{"ussp.geo"}, Sessions: []SessionAccess{{Realm: "portal"}}},
+		"session:console/supervisor|admin":  {Sessions: []SessionAccess{{Realm: "console", Roles: []string{"supervisor", "admin"}}}},
+		"scopes:a.b+c.d":                    {AllScopes: []string{"a.b", "c.d"}},
+		"websocket or scope:ussp.telemetry": {WebSocket: true, Scopes: []string{"ussp.telemetry"}},
 	} {
 		if got := a.String(); got != want {
 			t.Errorf("%q, want %q", got, want)
 		}
+	}
+}
+
+// E-01 pair: a WebSocket entry is served without the mux's guard (its
+// upgrade authenticates itself, M22), a plain entry of the same scope
+// behind it.
+func TestGuardedMuxLeavesWebSocketsToTheirUpgrade(t *testing.T) {
+	g := NewGuardedMux(http.NewServeMux(), map[string]Access{
+		"GET /ws":    {WebSocket: true, Scopes: []string{"ussp.telemetry"}},
+		"POST /data": {Scopes: []string{"ussp.telemetry"}},
+	}, refuseAll, nil)
+	g.HandleFunc("GET /ws", ok204)
+	g.HandleFunc("POST /data", ok204)
+	if err := g.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if status(g, http.MethodGet, "/ws") != 204 {
+		t.Fatal("the WebSocket route was guarded by the mux")
+	}
+	if status(g, http.MethodPost, "/data") != 401 {
+		t.Fatal("the plain route was served without its guard")
 	}
 }
