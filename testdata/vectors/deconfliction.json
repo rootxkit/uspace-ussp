@@ -23,6 +23,73 @@
  ],
  "generated": "2026-10-02",
  "utm_commit": "none (new in uspace-ussp WP-7)",
+ "fixtures": {
+  "now": "2026-11-01T12:00:00Z",
+  "undulation_m": 20,
+  "system_id": "USSP-DEV",
+  "request": {
+   "client_ref": "ref-1",
+   "uas_serial": "TEST0001",
+   "mode": "VLOS",
+   "flight_type": "normal",
+   "category": "specific",
+   "volumes": [
+    {
+     "volume": {
+      "outline_polygon": {
+       "vertices": [
+        {
+         "lat": 41.7,
+         "lng": 44.8
+        },
+        {
+         "lat": 41.7,
+         "lng": 44.81
+        },
+        {
+         "lat": 41.71,
+         "lng": 44.81
+        },
+        {
+         "lat": 41.71,
+         "lng": 44.8
+        }
+       ]
+      },
+      "altitude_lower": {
+       "value": 500,
+       "reference": "W84",
+       "units": "M"
+      },
+      "altitude_upper": {
+       "value": 550,
+       "reference": "W84",
+       "units": "M"
+      }
+     },
+     "time_start": {
+      "value": "2026-11-02T10:00:00Z",
+      "format": "RFC3339"
+     },
+     "time_end": {
+      "value": "2026-11-02T10:30:00Z",
+      "format": "RFC3339"
+     }
+    }
+   ],
+   "identification_technology": "network",
+   "connectivity_methods": [
+    "lte"
+   ],
+   "endurance_s": 3600,
+   "loss_of_c2_procedure": "return_to_home",
+   "operator_reg": "GEOTESTOP0001",
+   "contingency": {
+    "procedure": "land at the nearest landing site"
+   },
+   "emergency_contact_ref": "EC-TEST-1"
+  }
+ },
  "cases": [
   {
    "name": "same-volume-first-come-a",
@@ -4181,6 +4248,2215 @@
     "error": null
    },
    "why": "Intents in different countries are cleared by the box prefilter."
+  },
+  {
+   "name": "authorised-outside-uspace",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "authorised",
+    "state": "accepted",
+    "reasons": [],
+    "conditions": [
+     "local_deconfliction_only"
+    ],
+    "authorisation_number": true,
+    "deviation_thresholds": true,
+    "in_uspace_airspace": false
+   },
+   "why": "Every check passes outside U-space airspace: authorised with a number and the policy's deviation thresholds; local deconfliction suffices (02 F5)."
+  },
+  {
+   "name": "exempt-c0-a1",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {
+     "category": "open",
+     "subcategory": "A1",
+     "class_label": "C0"
+    },
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "accepted_voluntary",
+    "state": "accepted",
+    "reasons": [],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "Open A1 with a C0 aircraft is outside the regulation's scope (Art. 1(3)): accepted voluntarily, no authorisation number, no thresholds."
+  },
+  {
+   "name": "exempt-privately-built-under-250g",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {
+     "category": "open",
+     "subcategory": "A1",
+     "privately_built": true,
+     "mtom_kg": 0.249
+    },
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "accepted_voluntary",
+    "state": "accepted",
+    "reasons": [],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "A privately built aircraft below 250 g in A1 is outside the scope too."
+  },
+  {
+   "name": "privately-built-250g-is-authorised",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {
+     "category": "open",
+     "subcategory": "A1",
+     "privately_built": true,
+     "mtom_kg": 0.25
+    },
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "authorised",
+    "state": "accepted",
+    "reasons": [],
+    "conditions": [
+     "local_deconfliction_only"
+    ],
+    "authorisation_number": true,
+    "deviation_thresholds": true,
+    "in_uspace_airspace": false
+   },
+   "why": "At 250 g a privately built aircraft is in scope: authorised like any other flight, with a number."
+  },
+  {
+   "name": "exempt-still-refused-by-prohibited-zone",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {
+     "category": "open",
+     "subcategory": "A1",
+     "class_label": "C0"
+    },
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "zones",
+       "id": "TZ-PROH",
+       "type": "PROHIBITED",
+       "polygon": [
+        [
+         41.705,
+         44.805
+        ],
+        [
+         41.705,
+         44.815
+        ],
+        [
+         41.715,
+         44.815
+        ],
+        [
+         41.715,
+         44.805
+        ]
+       ]
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "zone_prohibited"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "An exempt flight needs no authorisation, but the USSP never accepts, voluntarily or not, a volume over a PROHIBITED zone (CLAUDE.md rule 4; a deviation from the brief, which skips the zone check for exempt flights)."
+  },
+  {
+   "name": "cis-stale-outside-uspace",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": true,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "cis_stale"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "A stale CIS cache refuses even outside U-space airspace: whether the volume is outside it is read from the stale cache itself (stricter than 02 F3, which names U-space airspace)."
+  },
+  {
+   "name": "cis-stale-inside-uspace",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": true,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "uspace_airspace",
+       "id": "TSA001",
+       "type": "USPACE",
+       "polygon": [
+        [
+         41.6,
+         44.7
+        ],
+        [
+         41.6,
+         44.9
+        ],
+        [
+         41.8,
+         44.9
+        ],
+        [
+         41.8,
+         44.7
+        ]
+       ],
+       "upper": {
+        "value_m": 3000,
+        "ref": "AMSL"
+       }
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "cis_stale"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "A stale CIS cache inside U-space airspace refuses with cis_stale (02 F3)."
+  },
+  {
+   "name": "cis-outdated-refuses",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [
+      "zones version 2 held, not used: no X-Publisher-Signature"
+     ],
+     "features": []
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "cis_outdated"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "A newer CIS version held untrusted (or refused, or notified and not pulled) means the picture is known to be old: no authorisation rests on it."
+  },
+  {
+   "name": "registry-unknown-inside-uspace",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "uspace_airspace",
+       "id": "TSA001",
+       "type": "USPACE",
+       "polygon": [
+        [
+         41.6,
+         44.7
+        ],
+        [
+         41.6,
+         44.9
+        ],
+        [
+         41.8,
+         44.9
+        ],
+        [
+         41.8,
+         44.7
+        ]
+       ],
+       "upper": {
+        "value_m": 3000,
+        "ref": "AMSL"
+       }
+      }
+     ]
+    },
+    "registry": {
+     "operator": "unknown"
+    },
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "pending_validation",
+    "state": "pending_validation",
+    "reasons": [
+     "registry_unknown"
+    ],
+    "conditions": [
+     "uspace_airspace_requirements"
+    ],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": true
+   },
+   "why": "The registry does not hold the operator and the volume is inside U-space airspace: held pending_validation (02 F8)."
+  },
+  {
+   "name": "registry-unknown-outside-uspace",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {
+     "operator": "unknown"
+    },
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "pending_validation",
+    "state": "pending_validation",
+    "reasons": [
+     "registry_unknown"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "Outside U-space airspace an unknown registry answer also holds the intent (a deviation from the brief's accepted-with-condition: an unverified registration is never authorised)."
+  },
+  {
+   "name": "registry-unavailable-holds",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {
+     "uas": "unknown",
+     "reason": "registry_unavailable"
+    },
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "pending_validation",
+    "state": "pending_validation",
+    "reasons": [
+     "registry_unavailable"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "The authority cannot be asked and nothing is cached: unknown with registry_unavailable, held (02 F5 failure rule)."
+  },
+  {
+   "name": "operator-suspended-refuses-item-10",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {
+     "operator": "suspended"
+    },
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "operator_suspended"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "A suspended operator is refused, naming Annex IV item 10."
+  },
+  {
+   "name": "uas-revoked-refuses-item-1",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {
+     "uas": "revoked"
+    },
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "uas_revoked"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "A revoked UAS registration is refused, naming Annex IV item 1."
+  },
+  {
+   "name": "uspace-ceiling-exceeded",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "uspace_airspace",
+       "id": "TSA001",
+       "type": "USPACE",
+       "polygon": [
+        [
+         41.6,
+         44.7
+        ],
+        [
+         41.6,
+         44.9
+        ],
+        [
+         41.8,
+         44.9
+        ],
+        [
+         41.8,
+         44.7
+        ]
+       ],
+       "upper": {
+        "value_m": 3000,
+        "ref": "AMSL"
+       },
+       "max_height_agl_m": 120
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "airspace_ceiling_exceeded"
+    ],
+    "conditions": [
+     "uspace_airspace_requirements"
+    ],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": true
+   },
+   "why": "The volume reaches 530 m AMSL over ground as low as 400 m: 130 m above the ground, over the airspace's 120 m ceiling, so it is refused naming the airspace."
+  },
+  {
+   "name": "uspace-ceiling-respected",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 480,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 500,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "uspace_airspace",
+       "id": "TSA001",
+       "type": "USPACE",
+       "polygon": [
+        [
+         41.6,
+         44.7
+        ],
+        [
+         41.6,
+         44.9
+        ],
+        [
+         41.8,
+         44.9
+        ],
+        [
+         41.8,
+         44.7
+        ]
+       ],
+       "upper": {
+        "value_m": 3000,
+        "ref": "AMSL"
+       },
+       "max_height_agl_m": 120
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "authorised",
+    "state": "accepted",
+    "reasons": [],
+    "conditions": [
+     "uspace_airspace_requirements"
+    ],
+    "authorisation_number": true,
+    "deviation_thresholds": true,
+    "in_uspace_airspace": true
+   },
+   "why": "A volume up to 480 m AMSL over ground of at least 400 m stays within the 120 m ceiling: authorised inside U-space airspace."
+  },
+  {
+   "name": "uspace-ceiling-not-judged-without-terrain",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 480,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 500,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "uspace_airspace",
+       "id": "TSA001",
+       "type": "USPACE",
+       "polygon": [
+        [
+         41.6,
+         44.7
+        ],
+        [
+         41.6,
+         44.9
+        ],
+        [
+         41.8,
+         44.9
+        ],
+        [
+         41.8,
+         44.7
+        ]
+       ],
+       "upper": {
+        "value_m": 3000,
+        "ref": "AMSL"
+       },
+       "max_height_agl_m": 120
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": null,
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "airspace_ceiling_not_judged"
+    ],
+    "conditions": [
+     "uspace_airspace_requirements"
+    ],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": true
+   },
+   "why": "Without the ground the height against the ceiling cannot be judged: refused, never passed (Z-09)."
+  },
+  {
+   "name": "uspace-requirements-unreadable",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "uspace_airspace",
+       "id": "TSA001",
+       "type": "USPACE",
+       "polygon": [
+        [
+         41.6,
+         44.7
+        ],
+        [
+         41.6,
+         44.9
+        ],
+        [
+         41.8,
+         44.9
+        ],
+        [
+         41.8,
+         44.7
+        ]
+       ],
+       "upper": {
+        "value_m": 3000,
+        "ref": "AMSL"
+       },
+       "no_requirements": true
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "airspace_requirements_unreadable"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": true
+   },
+   "why": "An airspace whose Art. 3(4) requirements cannot be read cannot have its constraints applied: refused."
+  },
+  {
+   "name": "uspace-dss-unavailable-pending",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "uspace_airspace",
+       "id": "TSA001",
+       "type": "USPACE",
+       "polygon": [
+        [
+         41.6,
+         44.7
+        ],
+        [
+         41.6,
+         44.9
+        ],
+        [
+         41.8,
+         44.9
+        ],
+        [
+         41.8,
+         44.7
+        ]
+       ],
+       "upper": {
+        "value_m": 3000,
+        "ref": "AMSL"
+       }
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": false,
+    "existing": []
+   },
+   "expected": {
+    "decision": "pending_dss",
+    "state": "pending_dss",
+    "reasons": [
+     "dss_unavailable"
+    ],
+    "conditions": [
+     "uspace_airspace_requirements"
+    ],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": true
+   },
+   "why": "Inside U-space airspace the intent is deconflicted through the DSS; while the DSS cannot be written it waits as pending_dss (02 F5)."
+  },
+  {
+   "name": "uspace-dss-unavailable-outside-proceeds",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": false,
+    "existing": []
+   },
+   "expected": {
+    "decision": "authorised",
+    "state": "accepted",
+    "reasons": [],
+    "conditions": [
+     "local_deconfliction_only"
+    ],
+    "authorisation_number": true,
+    "deviation_thresholds": true,
+    "in_uspace_airspace": false
+   },
+   "why": "Outside U-space airspace local checks suffice when the DSS is down (02 F5)."
+  },
+  {
+   "name": "prohibited-zone-overlap",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "zones",
+       "id": "TZ-PROH",
+       "type": "PROHIBITED",
+       "polygon": [
+        [
+         41.705,
+         44.805
+        ],
+        [
+         41.705,
+         44.815
+        ],
+        [
+         41.715,
+         44.815
+        ],
+        [
+         41.715,
+         44.805
+        ]
+       ]
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "zone_prohibited"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "A PROHIBITED zone overlapping the volume in space, altitude and time refuses it, naming the zone (Art. 10(7))."
+  },
+  {
+   "name": "prohibited-zone-below-the-volume",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "zones",
+       "id": "TZ-PROH",
+       "type": "PROHIBITED",
+       "polygon": [
+        [
+         41.705,
+         44.805
+        ],
+        [
+         41.705,
+         44.815
+        ],
+        [
+         41.715,
+         44.815
+        ],
+        [
+         41.715,
+         44.805
+        ]
+       ],
+       "upper": {
+        "value_m": 300,
+        "ref": "AMSL"
+       }
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "authorised",
+    "state": "accepted",
+    "reasons": [],
+    "conditions": [
+     "local_deconfliction_only"
+    ],
+    "authorisation_number": true,
+    "deviation_thresholds": true,
+    "in_uspace_airspace": false
+   },
+   "why": "A PROHIBITED zone up to 300 m AMSL under a volume from 480 m AMSL does not overlap it."
+  },
+  {
+   "name": "prohibited-zone-wgs84-limit",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "zones",
+       "id": "TZ-PROH",
+       "type": "PROHIBITED",
+       "polygon": [
+        [
+         41.705,
+         44.805
+        ],
+        [
+         41.705,
+         44.815
+        ],
+        [
+         41.715,
+         44.815
+        ],
+        [
+         41.715,
+         44.805
+        ]
+       ],
+       "upper": {
+        "value_m": 499,
+        "ref": "WGS84"
+       }
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "authorised",
+    "state": "accepted",
+    "reasons": [],
+    "conditions": [
+     "local_deconfliction_only"
+    ],
+    "authorisation_number": true,
+    "deviation_thresholds": true,
+    "in_uspace_airspace": false
+   },
+   "why": "A WGS84 limit is compared with the volume's W84 band as given: a zone up to 499 m WGS84 is below a volume from 500 m W84."
+  },
+  {
+   "name": "prohibited-zone-agl-not-judged",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "zones",
+       "id": "TZ-PROH",
+       "type": "PROHIBITED",
+       "polygon": [
+        [
+         41.705,
+         44.805
+        ],
+        [
+         41.705,
+         44.815
+        ],
+        [
+         41.715,
+         44.815
+        ],
+        [
+         41.715,
+         44.805
+        ]
+       ],
+       "upper": {
+        "value_m": 50,
+        "ref": "AGL"
+       }
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": null,
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "zone_prohibited"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "A PROHIBITED zone up to 50 m AGL with no ground known counts as overlapping (Z-09): refused."
+  },
+  {
+   "name": "prohibited-zone-agl-judged-clear",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {
+     "volumes": [
+      {
+       "volume": {
+        "outline_polygon": {
+         "vertices": [
+          {
+           "lat": 41.7,
+           "lng": 44.8
+          },
+          {
+           "lat": 41.7,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.81
+          },
+          {
+           "lat": 41.71,
+           "lng": 44.8
+          }
+         ]
+        },
+        "altitude_lower": {
+         "value": 600,
+         "reference": "W84",
+         "units": "M"
+        },
+        "altitude_upper": {
+         "value": 650,
+         "reference": "W84",
+         "units": "M"
+        }
+       },
+       "time_start": {
+        "value": "2026-11-02T10:00:00Z",
+        "format": "RFC3339"
+       },
+       "time_end": {
+        "value": "2026-11-02T10:30:00Z",
+        "format": "RFC3339"
+       }
+      }
+     ]
+    },
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "zones",
+       "id": "TZ-PROH",
+       "type": "PROHIBITED",
+       "polygon": [
+        [
+         41.705,
+         44.805
+        ],
+        [
+         41.705,
+         44.815
+        ],
+        [
+         41.715,
+         44.815
+        ],
+        [
+         41.715,
+         44.805
+        ]
+       ],
+       "upper": {
+        "value_m": 50,
+        "ref": "AGL"
+       }
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "authorised",
+    "state": "accepted",
+    "reasons": [],
+    "conditions": [
+     "local_deconfliction_only"
+    ],
+    "authorisation_number": true,
+    "deviation_thresholds": true,
+    "in_uspace_airspace": false
+   },
+   "why": "The same zone over ground of at most 450 m tops out at 500 m AMSL, below a volume from 580 m AMSL."
+  },
+  {
+   "name": "prohibited-zone-far-away",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "zones",
+       "id": "TZ-PROH",
+       "type": "PROHIBITED",
+       "polygon": [
+        [
+         41.8,
+         45.0
+        ],
+        [
+         41.8,
+         45.01
+        ],
+        [
+         41.81,
+         45.01
+        ],
+        [
+         41.81,
+         45.0
+        ]
+       ]
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "authorised",
+    "state": "accepted",
+    "reasons": [],
+    "conditions": [
+     "local_deconfliction_only"
+    ],
+    "authorisation_number": true,
+    "deviation_thresholds": true,
+    "in_uspace_airspace": false
+   },
+   "why": "A PROHIBITED zone 10 km away does not overlap."
+  },
+  {
+   "name": "req-authorisation-without-ref",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "zones",
+       "id": "TZ-REQ_",
+       "type": "REQ_AUTHORIZATION",
+       "polygon": [
+        [
+         41.705,
+         44.805
+        ],
+        [
+         41.705,
+         44.815
+        ],
+        [
+         41.715,
+         44.815
+        ],
+        [
+         41.715,
+         44.805
+        ]
+       ]
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "pending_authority",
+    "state": "pending_authority",
+    "reasons": [
+     "zone_requires_authorisation"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "A zone requiring an authorisation and no authorisation_ref: held pending_authority, nothing sent (spec Q12)."
+  },
+  {
+   "name": "req-authorisation-with-ref",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {
+     "authorisation_ref": "AUTH-TEST-1"
+    },
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "zones",
+       "id": "TZ-REQ_",
+       "type": "REQ_AUTHORIZATION",
+       "polygon": [
+        [
+         41.705,
+         44.805
+        ],
+        [
+         41.705,
+         44.815
+        ],
+        [
+         41.715,
+         44.815
+        ],
+        [
+         41.715,
+         44.805
+        ]
+       ]
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "authorised",
+    "state": "accepted",
+    "reasons": [],
+    "conditions": [
+     "authorisation_ref_required_zone",
+     "local_deconfliction_only"
+    ],
+    "authorisation_number": true,
+    "deviation_thresholds": true,
+    "in_uspace_airspace": false
+   },
+   "why": "With an authorisation_ref the zone becomes a condition of the authorisation."
+  },
+  {
+   "name": "conditional-zone-condition",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "zones",
+       "id": "TZ-COND",
+       "type": "CONDITIONAL",
+       "polygon": [
+        [
+         41.705,
+         44.805
+        ],
+        [
+         41.705,
+         44.815
+        ],
+        [
+         41.715,
+         44.815
+        ],
+        [
+         41.715,
+         44.805
+        ]
+       ],
+       "message": "Coordinate with the aerodrome before take-off"
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "authorised",
+    "state": "accepted",
+    "reasons": [],
+    "conditions": [
+     "local_deconfliction_only",
+     "zone_conditional"
+    ],
+    "authorisation_number": true,
+    "deviation_thresholds": true,
+    "in_uspace_airspace": false
+   },
+   "why": "A CONDITIONAL zone is a condition carrying the zone's message."
+  },
+  {
+   "name": "restriction-active-refuses",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "restrictions",
+       "id": "DAR-TEST-1",
+       "type": "PROHIBITED",
+       "polygon": [
+        [
+         41.705,
+         44.805
+        ],
+        [
+         41.705,
+         44.815
+        ],
+        [
+         41.715,
+         44.815
+        ],
+        [
+         41.715,
+         44.805
+        ]
+       ],
+       "restriction_state": "active"
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "restriction_active"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "An active ANSP restriction overlapping the volume refuses it (Art. 10(7))."
+  },
+  {
+   "name": "restriction-ended-ignored",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "restrictions",
+       "id": "DAR-TEST-2",
+       "type": "PROHIBITED",
+       "polygon": [
+        [
+         41.705,
+         44.805
+        ],
+        [
+         41.705,
+         44.815
+        ],
+        [
+         41.715,
+         44.815
+        ],
+        [
+         41.715,
+         44.805
+        ]
+       ],
+       "restriction_state": "ended"
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "authorised",
+    "state": "accepted",
+    "reasons": [],
+    "conditions": [
+     "local_deconfliction_only"
+    ],
+    "authorisation_number": true,
+    "deviation_thresholds": true,
+    "in_uspace_airspace": false
+   },
+   "why": "A restriction the ANSP ended no longer refuses."
+  },
+  {
+   "name": "restriction-later-window",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": [
+      {
+       "dataset": "restrictions",
+       "id": "DAR-TEST-3",
+       "type": "PROHIBITED",
+       "polygon": [
+        [
+         41.705,
+         44.805
+        ],
+        [
+         41.705,
+         44.815
+        ],
+        [
+         41.715,
+         44.815
+        ],
+        [
+         41.715,
+         44.805
+        ]
+       ],
+       "restriction_state": "planned",
+       "from": "2026-11-02T11:00:00Z",
+       "to": "2026-11-02T12:00:00Z"
+      }
+     ]
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "authorised",
+    "state": "accepted",
+    "reasons": [],
+    "conditions": [
+     "local_deconfliction_only"
+    ],
+    "authorisation_number": true,
+    "deviation_thresholds": true,
+    "in_uspace_airspace": false
+   },
+   "why": "A restriction that starts after the volume ends does not overlap in time."
+  },
+  {
+   "name": "existing-intent-filed-first-wins",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": [
+     {
+      "id": "00000000-0000-4000-8000-0000000000e1",
+      "priority": 0,
+      "filed_at": "2026-11-01T08:00:00Z",
+      "undulation_m": 20.0,
+      "volumes": [
+       {
+        "volume": {
+         "outline_polygon": {
+          "vertices": [
+           {
+            "lat": 41.7,
+            "lng": 44.8
+           },
+           {
+            "lat": 41.7,
+            "lng": 44.81
+           },
+           {
+            "lat": 41.71,
+            "lng": 44.81
+           },
+           {
+            "lat": 41.71,
+            "lng": 44.8
+           }
+          ]
+         },
+         "altitude_lower": {
+          "value": 500,
+          "reference": "W84",
+          "units": "M"
+         },
+         "altitude_upper": {
+          "value": 550,
+          "reference": "W84",
+          "units": "M"
+         }
+        },
+        "time_start": {
+         "value": "2026-11-02T10:00:00Z",
+         "format": "RFC3339"
+        },
+        "time_end": {
+         "value": "2026-11-02T10:30:00Z",
+         "format": "RFC3339"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "intent_filed_first"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "An authorised intent filed earlier at equal priority holds the space: the new one is refused naming it (Art. 10(9))."
+  },
+  {
+   "name": "special-operation-over-existing",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {
+     "flight_type": "special_operation"
+    },
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": [
+     {
+      "id": "00000000-0000-4000-8000-0000000000e2",
+      "priority": 0,
+      "filed_at": "2026-11-01T08:00:00Z",
+      "undulation_m": 20.0,
+      "volumes": [
+       {
+        "volume": {
+         "outline_polygon": {
+          "vertices": [
+           {
+            "lat": 41.7,
+            "lng": 44.8
+           },
+           {
+            "lat": 41.7,
+            "lng": 44.81
+           },
+           {
+            "lat": 41.71,
+            "lng": 44.81
+           },
+           {
+            "lat": 41.71,
+            "lng": 44.8
+           }
+          ]
+         },
+         "altitude_lower": {
+          "value": 500,
+          "reference": "W84",
+          "units": "M"
+         },
+         "altitude_upper": {
+          "value": 550,
+          "reference": "W84",
+          "units": "M"
+         }
+        },
+        "time_start": {
+         "value": "2026-11-02T10:00:00Z",
+         "format": "RFC3339"
+        },
+        "time_end": {
+         "value": "2026-11-02T10:30:00Z",
+         "format": "RFC3339"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "decision": "authorised",
+    "state": "accepted",
+    "reasons": [
+     "intent_flagged_for_update"
+    ],
+    "conditions": [
+     "local_deconfliction_only"
+    ],
+    "authorisation_number": true,
+    "deviation_thresholds": true,
+    "in_uspace_airspace": false
+   },
+   "why": "A special operation has precedence over an authorised normal flight: it is authorised and the other is flagged for an update (Art. 10(8), (10))."
+  },
+  {
+   "name": "existing-special-operation-wins",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": [
+     {
+      "id": "00000000-0000-4000-8000-0000000000e3",
+      "priority": 100,
+      "filed_at": "2026-11-01T08:00:00Z",
+      "undulation_m": 20.0,
+      "volumes": [
+       {
+        "volume": {
+         "outline_polygon": {
+          "vertices": [
+           {
+            "lat": 41.7,
+            "lng": 44.8
+           },
+           {
+            "lat": 41.7,
+            "lng": 44.81
+           },
+           {
+            "lat": 41.71,
+            "lng": 44.81
+           },
+           {
+            "lat": 41.71,
+            "lng": 44.8
+           }
+          ]
+         },
+         "altitude_lower": {
+          "value": 500,
+          "reference": "W84",
+          "units": "M"
+         },
+         "altitude_upper": {
+          "value": 550,
+          "reference": "W84",
+          "units": "M"
+         }
+        },
+        "time_start": {
+         "value": "2026-11-02T10:00:00Z",
+         "format": "RFC3339"
+        },
+        "time_end": {
+         "value": "2026-11-02T10:30:00Z",
+         "format": "RFC3339"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "intent_higher_priority"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "An authorised special operation keeps the space against a normal flight."
+  },
+  {
+   "name": "existing-intent-clear-above",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {},
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": [
+     {
+      "id": "00000000-0000-4000-8000-0000000000e4",
+      "priority": 0,
+      "filed_at": "2026-11-01T08:00:00Z",
+      "undulation_m": 20.0,
+      "volumes": [
+       {
+        "volume": {
+         "outline_polygon": {
+          "vertices": [
+           {
+            "lat": 41.7,
+            "lng": 44.8
+           },
+           {
+            "lat": 41.7,
+            "lng": 44.81
+           },
+           {
+            "lat": 41.71,
+            "lng": 44.81
+           },
+           {
+            "lat": 41.71,
+            "lng": 44.8
+           }
+          ]
+         },
+         "altitude_lower": {
+          "value": 650,
+          "reference": "W84",
+          "units": "M"
+         },
+         "altitude_upper": {
+          "value": 700,
+          "reference": "W84",
+          "units": "M"
+         }
+        },
+        "time_start": {
+         "value": "2026-11-02T10:00:00Z",
+         "format": "RFC3339"
+        },
+        "time_end": {
+         "value": "2026-11-02T10:30:00Z",
+         "format": "RFC3339"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "decision": "authorised",
+    "state": "accepted",
+    "reasons": [],
+    "conditions": [
+     "local_deconfliction_only"
+    ],
+    "authorisation_number": true,
+    "deviation_thresholds": true,
+    "in_uspace_airspace": false
+   },
+   "why": "An authorised intent 100 m above the volume does not conflict."
+  },
+  {
+   "name": "invalid-buffer-refuses",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {
+     "deconflict_buffer_m": -1
+    },
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "threshold_invalid"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "A negative deconfliction buffer refuses the check and so the intent, even with no other intent near (E-15)."
+  },
+  {
+   "name": "zero-deviation-threshold-refuses",
+   "owner": [
+    "ussp"
+   ],
+   "input": {
+    "check": "decision",
+    "request": {},
+    "policy": {
+     "deviation_h_m": 0
+    },
+    "cis": {
+     "stale": false,
+     "outdated": [],
+     "features": []
+    },
+    "registry": {},
+    "terrain": {
+     "min_m": 400,
+     "max_m": 450
+    },
+    "dss_available": true,
+    "existing": []
+   },
+   "expected": {
+    "decision": "rejected",
+    "state": "rejected",
+    "reasons": [
+     "threshold_invalid"
+    ],
+    "conditions": [],
+    "authorisation_number": false,
+    "deviation_thresholds": false,
+    "in_uspace_airspace": false
+   },
+   "why": "A zero deviation threshold cannot be given to an authorisation: refused, never disarmed (E-15)."
   }
  ]
 }
