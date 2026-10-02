@@ -62,7 +62,7 @@ func TestProvenanceValidSignaturePromotes(t *testing.T) {
 	g := newCacheRig(t, "https://ussp.test/v1/cis/notifications")
 	ctx := t.Context()
 	for _, d := range ED318Datasets {
-		g.fake.Publish(string(d), prohibited("TZP001").json())
+		g.fake.Publish(string(d), featureOf(d, "TZP001").json())
 	}
 	g.cache.subscribeLoop(ctx)
 	for _, d := range ED318Datasets {

@@ -209,6 +209,10 @@ and where it is stricter than the brief; each is in the PR body as well.
   airspace's (deconflict geometry), not `AirspacesAt` at a point, so a
   volume that only grazes an airspace is inside it. Zone holes are not
   subtracted (more refusals, never fewer).
+- A `uspace_airspace` version holding a feature of any type other than
+  `USPACE` is refused whole at load (review fix): the decision reads
+  airspaces from that dataset and zones from the other two, so such a
+  feature would otherwise be judged by neither.
 - Geometry: edges are straight in latitude and longitude as core's
   `geodesy.Polygon` reads them; separations are Vincenty distances to
   the nearest point found on the vertex's tangent plane; a pair within

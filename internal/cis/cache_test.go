@@ -148,7 +148,7 @@ func TestCacheRefusedPublication(t *testing.T) {
 	g := newCacheRig(t, "https://ussp.test/v1/cis/notifications")
 	ctx := t.Context()
 	for _, d := range ED318Datasets {
-		g.fake.Publish(string(d), prohibited("TZP001").json())
+		g.fake.Publish(string(d), featureOf(d, "TZP001").json())
 		if d == USpaceAirspace {
 			g.fake.Publish(string(d), airspace("TSA001").json())
 		}
@@ -198,13 +198,39 @@ func TestCacheRefusesUnbuildableAndMislabelled(t *testing.T) {
 	}
 }
 
+// The uspace_airspace dataset holds U-space airspaces only: a feature of
+// any other type there would be read neither as an airspace nor as a
+// zone, so the version is refused whole rather than installed with a
+// zone nobody judges. Twin: the same dataset with airspaces only is
+// installed.
+func TestCacheRefusesAZoneInTheAirspaceDataset(t *testing.T) {
+	g := newCacheRig(t, "")
+	ctx := t.Context()
+	g.fake.Publish(string(USpaceAirspace), airspace("TSA001").json(), prohibited("TZP001").json())
+	err := g.cache.Pull(ctx, USpaceAirspace, nil, false)
+	var rf *RefusalError
+	if !errors.As(err, &rf) || !strings.Contains(rf.First, "features[1]") || !strings.Contains(rf.First, "USPACE") {
+		t.Fatalf("refusal: %v", err)
+	}
+	if g.eval.Snapshot().Version(USpaceAirspace) != nil {
+		t.Fatal("a zone in the airspace dataset was installed")
+	}
+	g.fake.Publish(string(USpaceAirspace), airspace("TSA001").json(), airspace("TSA002").json())
+	if err := g.cache.Pull(ctx, USpaceAirspace, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if es := g.eval.Snapshot().Entries(USpaceAirspace); len(es) != 2 {
+		t.Fatalf("%d airspaces installed", len(es))
+	}
+}
+
 // With the CISP down the age crosses the bound (stale: true), and a
 // confirmation once it is back clears it (both directions).
 func TestCacheAgeCrossesWithCISPDown(t *testing.T) {
 	g := newCacheRig(t, "")
 	ctx := t.Context()
 	for _, d := range ED318Datasets {
-		g.fake.Publish(string(d), prohibited("TZP001").json())
+		g.fake.Publish(string(d), featureOf(d, "TZP001").json())
 		if err := g.cache.Pull(ctx, d, nil, true); err != nil {
 			t.Fatal(err)
 		}
@@ -289,7 +315,7 @@ func TestCacheProbeUp(t *testing.T) {
 	g := newCacheRig(t, "https://ussp.test/v1/cis/notifications")
 	ctx, cancel := context.WithCancel(t.Context())
 	for _, d := range ED318Datasets {
-		g.fake.Publish(string(d), prohibited("TZP001").json())
+		g.fake.Publish(string(d), featureOf(d, "TZP001").json())
 	}
 	g.cache.subscribeLoop(ctx)
 	for _, d := range ED318Datasets {
@@ -411,7 +437,7 @@ func TestCacheProjectionFailure(t *testing.T) {
 func TestCacheWarm(t *testing.T) {
 	g := newCacheRig(t, "")
 	for _, d := range ED318Datasets {
-		g.store.stored = append(g.store.stored, StoredVersion{Version: mustVersion(t, d, 4, prohibited("TZP001").json()), AgeS: 420})
+		g.store.stored = append(g.store.stored, StoredVersion{Version: mustVersion(t, d, 4, featureOf(d, "TZP001").json()), AgeS: 420})
 	}
 	g.cache.Warm(t.Context())
 	v, age, stale := g.eval.Age()

@@ -14,7 +14,7 @@ func TestOutdatedNamesEveryKnownNewerVersion(t *testing.T) {
 	g := newCacheRig(t, "")
 	ctx := t.Context()
 	for _, d := range ED318Datasets {
-		g.fake.Publish(string(d), prohibited("TZP001").json())
+		g.fake.Publish(string(d), featureOf(d, "TZP001").json())
 		if err := g.cache.Pull(ctx, d, nil, false); err != nil {
 			t.Fatal(err)
 		}
@@ -57,7 +57,7 @@ func TestOutdatedNamesEveryKnownNewerVersion(t *testing.T) {
 		}
 	}
 	for range 4 {
-		g.fake.Publish("uspace_airspace", prohibited("TZP004").json())
+		g.fake.Publish("uspace_airspace", airspace("TSA004").json())
 	}
 	if err := g.cache.Pull(ctx, USpaceAirspace, nil, false); err != nil {
 		t.Fatal(err)

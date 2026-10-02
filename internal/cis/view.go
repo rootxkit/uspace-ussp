@@ -105,6 +105,13 @@ func exportFeatures(fc *ed318.FeatureCollection) ([]json.RawMessage, error) {
 }
 
 func buildEntry(v *Version, f *ed318.Feature) (*Entry, error) {
+	// The uspace_airspace dataset holds U-space airspaces only. A feature
+	// of another type there is neither an airspace nor a zone to its
+	// readers (the decision reads zones from the other two datasets), so
+	// it would be dropped silently: the version is refused instead.
+	if v.Dataset == USpaceAirspace && f.Properties.Type != core.ZoneUSpace {
+		return nil, fmt.Errorf("type %q in the %s dataset, which holds %s features only", string(f.Properties.Type), USpaceAirspace, string(core.ZoneUSpace))
+	}
 	// ToZones builds the shape and the limits; applicability is judged
 	// by ed318.Applies, so the periods are left out of the copy it sees
 	// (it refuses open-ended daylight schedules, which Applies judges).
