@@ -193,6 +193,10 @@ and where it is stricter than the brief; each is in the PR body as well.
   number, but not the CIS checks: a C0 A1 volume over a PROHIBITED zone
   or an active restriction is refused (the brief skips steps 3 to 6).
   Exempt intents are never in another intent's deconfliction set.
+- **No re-evaluation on a CIS change.** An intent is judged against the
+  CIS when it is decided or modified; a later zone, airspace or
+  restriction change does not re-decide accepted intents here. That is
+  WP-12's standing re-check (PLAN §15.1 Q20).
 - **No DSS writer before WP-13.** The api process's DSS is never
   available, so an intent inside U-space airspace waits as
   `pending_dss`; outside, local checks suffice (02 F5). Pending intents
