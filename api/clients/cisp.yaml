@@ -1,0 +1,3109 @@
+openapi: 3.1.0
+info:
+  title: uspace-cisp national CIS publication API
+  version: 0.1.0
+  description: |
+    The Common Information Service of the Georgian U-space
+    system-of-systems (Reg. (EU) 2021/664 Art. 5). This file is the
+    contract: an endpoint that is not in it does not exist, and changes
+    within /v1 are additive only. Every error is
+    application/problem+json in the shape of the Problem schema.
+
+    Skeleton (WP-0): health, readiness and the status stub. Every other
+    work package adds its paths under its tag; see api/README.md.
+    WP-2: the signing JWKS. WP-4: the reads (datasets, versions, the
+    change feed, status) and the public subset. WP-5: the dynamic
+    restrictions of the ANSP (F2), their expiry and the publisher
+    staleness. WP-6: subscriptions and the signed webhook delivery
+    (F3 push). WP-7: the WebSocket change stream.
+servers:
+  - url: /
+tags:
+  - name: health
+    description: Liveness and readiness of one process instance.
+  - name: publications
+    description: Publication intake from the authority (F1).
+  - name: restrictions
+    description: Dynamic restrictions from the ANSP (F2).
+  - name: datasets
+    description: Reads, versions and the change feed (F3 pull).
+  - name: subscriptions
+    description: Webhook subscriptions (F3 push).
+  - name: stream
+    description: The WebSocket change stream.
+  - name: console
+    description: The CISP operators' console.
+  - name: status
+    description: Service status for consumers and consoles.
+  - name: keys
+    description: The CISP's public signing keys.
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      tags: [health]
+      summary: Liveness
+      description: 200 while the process runs. Says nothing about dependencies.
+      security: []
+      responses:
+        "200":
+          description: The process is running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        default:
+          $ref: "#/components/responses/Problem"
+  /readyz:
+    get:
+      operationId: getReadyz
+      tags: [health]
+      summary: Readiness
+      description: |
+        200 only when the database is reachable and its migrations are
+        current. A NATS outage is reported in checks.nats but does not
+        make the instance unready (it is ready, degraded). Every check
+        names its state; a check that is not implemented yet says so and
+        counts as not ready, never as ok.
+      security: []
+      responses:
+        "200":
+          description: Ready to serve.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        "503":
+          description: Not ready; checks names why.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/status:
+    get:
+      operationId: getStatus
+      tags: [status]
+      summary: Service status
+      description: |
+        Per dataset the current version, its update time and ETag (from
+        the instance's snapshot cache); per publisher the heartbeat and
+        staleness (stale when the last heartbeat is older than its
+        stale_after_s, 60 s by default: three missed 15 s heartbeats; a
+        configured publisher never heard from is stale with no
+        stale_since); the degraded dependencies with their since-times;
+        the mTLS mode; and the CISP's clock. Token scope cis.read.
+        Served while the database is down: the datasets come from the
+        cache and database is listed in degraded.
+      security:
+        - ecosystemToken: []
+        - consoleSession: []
+      responses:
+        "200":
+          description: The service status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/publications/{dataset}:
+    put:
+      operationId: putPublication
+      tags: [publications]
+      summary: Publish a whole dataset (F1)
+      description: |
+        The authority publishes the whole of zones, uspace_airspace or
+        ussp_list. Token scope cis.publish:zones, cis.publish:uspace or
+        cis.publish:ussp_list for the dataset, and sub the configured
+        authority client id. The body is at most
+        CISP_MAX_PUBLICATION_BYTES, application/geo+json or
+        application/json (415 otherwise), and carries the authority's
+        detached JWS over its exact bytes in X-JWS-Signature; a missing
+        or refused signature is 403 signature before anything else is
+        read (docs/PLAN.md section 15 Q30).
+
+        If-Match must name the current version ("<dataset>:<version>",
+        "zones:0" before the first publication): absent is 428
+        precondition_required, another version is 412
+        precondition_failed with the current one in the ETag header.
+
+        The publication is accepted whole or refused whole (spec 06 T9):
+        a refusal is 400 with every problem named by its JSON path in
+        errors[] (at most 100; truncated says more existed and detail
+        gives the count), and is recorded as an attempt the publisher
+        can read back. Zones and U-space airspace are ED-318 collections
+        parsed by uspace-core/ed318 and then held to the dataset rules
+        (no USPACE in zones, only USPACE in uspace_airspace, no DAR
+        reason, identifiers unique across zones, uspace_airspace and
+        restrictions, every zone buildable by ed318.ToZones, the
+        UspaceRequirements block on every USPACE feature); ussp_list is
+        the closed UsspList schema. A body equal by canonical content to
+        the current version is 200 with unchanged true and no new
+        version; otherwise 201 with the new version and what changed.
+        The bytes stored are the bytes received.
+      parameters:
+        - name: dataset
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [zones, uspace_airspace, ussp_list]
+        - name: If-Match
+          in: header
+          required: false
+          description: The current ETag; required by the server (428 when absent).
+          schema:
+            type: string
+            examples: ['"zones:4"']
+        - name: X-JWS-Signature
+          in: header
+          required: false
+          description: |
+            RFC 7515 Appendix F detached JWS with RFC 7797 b64 false over
+            the exact body bytes (alg RS256, kid, iat, crit ["b64"]);
+            required by the server (403 signature when absent).
+          schema:
+            type: string
+      requestBody:
+        required: true
+        description: The whole dataset, verbatim.
+        content:
+          application/geo+json:
+            schema:
+              $ref: "#/components/schemas/PublicationBody"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublicationBody"
+      responses:
+        "200":
+          description: Equal to the current version; nothing was written.
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicationResult"
+        "201":
+          description: Accepted as a new version.
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicationResult"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "428":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    get:
+      operationId: listPublications
+      tags: [publications]
+      summary: The version history of a dataset
+      description: |
+        Every version of the dataset, newest first, with its publisher,
+        time, counts, reason and warnings; no bodies (they are served by
+        the datasets reads). Token scope cis.read, or the dataset's
+        publisher. Page with before (versions below it) and limit.
+      parameters:
+        - name: dataset
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [zones, uspace_airspace, ussp_list, restrictions]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: before
+          in: query
+          required: false
+          description: Only versions below this one.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The versions, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicationVersionList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/publications/{dataset}/attempts:
+    get:
+      operationId: listPublicationAttempts
+      tags: [publications]
+      summary: The caller's refused publications (Annex III A(5))
+      description: |
+        The refused attempts of the calling publisher on this dataset,
+        newest first, each with every problem by path. Only the dataset's
+        publisher may read them, with the dataset's publish scope (403
+        for another client or without the scope); the console's admin
+        view arrives with WP-8.
+      parameters:
+        - name: dataset
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [zones, uspace_airspace, ussp_list, restrictions]
+        - name: since
+          in: query
+          required: false
+          description: Only attempts received after this instant.
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: The refused attempts, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicationAttemptList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/publishers/heartbeat:
+    post:
+      operationId: postPublisherHeartbeat
+      tags: [publications]
+      summary: Publisher heartbeat (every 15 s)
+      description: |
+        Every publisher sends this every 15 s with any cis.publish:*
+        scope; the CISP records the time it arrived as last_heartbeat_at
+        for the caller's sub and stores active_refs verbatim (the ANSP's
+        ansp_refs; the authority sends none). A publisher silent for 60 s
+        is stale (docs/PLAN.md section 15 Q3). The heartbeat never
+        changes a restriction's state. 403 when sub is not a configured
+        publisher; the ANSP's heartbeat is bound to its client
+        certificate subject like its other routes (section 8.3).
+
+        The ANSP's active_refs are compared with the restrictions the
+        CISP holds as active: a declared ansp_ref the CISP does not hold
+        as active, and an active restriction the ANSP did not declare,
+        are counted (heartbeat_ref_unknown, heartbeat_ref_missing) and
+        listed in GET /v1/status, and never acted on: only the ANSP's
+        POST and PATCH change a restriction.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublisherHeartbeat"
+      responses:
+        "204":
+          description: Recorded.
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/restrictions:
+    post:
+      operationId: createRestriction
+      tags: [restrictions]
+      summary: Create a dynamic restriction (F2)
+      description: |
+        The ANSP publishes a dynamic restriction (ATS.TR.237: activation,
+        deactivation, temporary limitation), planned or active. Token
+        scope cis.publish:restrictions, sub the configured ANSP client
+        id, and the ANSP's client certificate subject
+        (X-Client-Cert-Subject, forwarded by Caddy) equal to
+        CISP_ANSP_MTLS_SUBJECT when CISP_MTLS_MODE is required (403
+        mtls_required otherwise). The body is application/json (415
+        otherwise), at most CISP_MAX_RESTRICTION_BYTES (256 KiB), and
+        carries the ANSP's detached JWS over its exact bytes in
+        X-JWS-Signature, verified with the ANSP's own key from the ANSP's
+        JWKS (CISP_ANSP_JWKS_URL; docs/PLAN.md section 15 Q8): absent or
+        refused is 403 signature, before anything else is read.
+
+        Idempotency: the key is the body pair (ansp_ref, ansp_version),
+        never a header. The same pair with the same body bytes again is
+        200 with the stored head and replay true, and makes no new
+        version (a retry storm from a degraded ANSP cannot flood
+        subscribers); the same pair with another body, and a lower
+        ansp_version for the ansp_ref, are 409 ansp_version. An Idempotency-Key header, if
+        the ANSP's planner sends one, is ignored: nothing depends on it,
+        and two different values on the same pair still replay.
+
+        The body is the closed RestrictionCreate (cis/restriction/v1):
+        an unknown member is refused, never ignored. The feature is
+        parsed strictly as a one-feature ED-318 collection
+        (uspace-core ed318.Parse) and held to the DAR rules: reason holds
+        DAR; type PROHIBITED, REQ_AUTHORIZATION or CONDITIONAL (a DAR
+        that opens airspace is not a restriction); exactly one
+        limitedApplicability period whose startDateTime and endDateTime
+        are starts_at and ends_at, without daylight events; ed318.ToZones
+        can build it; at most 1000 vertices and 10 000 km2 (F3548
+        CstrMaxVertices, CstrMaxAreaKm2); ends_at - starts_at at most 24
+        h, starts_at at most 56 days ahead (CstrMaxDurationHours,
+        CstrMaxPlanningHorizonDays), ends_at after now, and an active
+        create starting within 60 s. The identifier is checked for
+        length (at most 7 characters, ED-318) and uniqueness across
+        zones, uspace_airspace and restrictions only, never for a prefix:
+        the ANSP mints DAR plus 4 base-36 characters (docs/PLAN.md
+        section 15 Q17). uspace_airspace_id must name a current USPACE
+        feature of the uspace_airspace dataset and the restriction must
+        intersect it; there is no option to skip the check, and the lab
+        publishes a designation for every demo (section 15 Q6). A refusal
+        is 400 restriction_refused with every problem by path, recorded
+        as an attempt the ANSP reads at
+        /v1/publications/restrictions/attempts.
+
+        Accepted, the restriction is a new version of the restrictions
+        dataset with reason restriction_created (planned) or
+        restriction_activated (active) and a change record, in the same
+        transaction as the head; 201 with the head and the version. The
+        ANSP is the master of the state (section 15 Q2): the CISP moves a
+        restriction itself only from planned or active to ended, with
+        ended_by expiry, when its ends_at passes (judged on the
+        database's clock); a planned restriction past its starts_at but
+        before its ends_at stays planned.
+      parameters:
+        - $ref: "#/components/parameters/JWSSignature"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RestrictionCreate"
+      responses:
+        "200":
+          $ref: "#/components/responses/RestrictionReplay"
+        "201":
+          description: Accepted as a new version of the restrictions dataset.
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestrictionResult"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/restrictions/heads:
+    get:
+      operationId: listRestrictions
+      tags: [restrictions]
+      summary: The restriction heads, with their events
+      description: |
+        The lifecycle heads, newest window first, each with its events;
+        the restrictions dataset (GET /v1/restrictions) is the ED-318
+        view of the same rows. Token scope cis.read. state keeps one
+        state; airspace keeps the restrictions of one U-space airspace;
+        at keeps the heads whose window [starts_at, ends_at) holds that
+        instant, whatever their state. While the ANSP is stale (no
+        heartbeat for its stale_after_s, 60 s) the list carries
+        cis_publisher_stale_since; nothing is ended or hidden because the
+        ANSP is silent: active restrictions stay active until their
+        ends_at (spec 02 F2).
+
+        This list is at /v1/restrictions/heads, not at /v1/restrictions,
+        because GET /v1/restrictions is the dataset read every consumer
+        already runs for zones (docs/PLAN.md section 15 Q35).
+      parameters:
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [planned, active, ended, cancelled]
+        - name: airspace
+          in: query
+          required: false
+          description: The uspace_airspace_id.
+          schema:
+            type: string
+            maxLength: 7
+        - name: at
+          in: query
+          required: false
+          description: RFC 3339 instant with an offset inside the window.
+          schema:
+            type: string
+            examples: ["2026-10-02T12:00:00Z"]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: The heads.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestrictionList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/restrictions/{id}:
+    get:
+      operationId: getRestriction
+      tags: [restrictions]
+      summary: One restriction head with its events
+      description: |
+        The head and its events by the CISP's id, or by=ansp_ref by the
+        ANSP's reference. Token scope cis.read. 404 when none.
+      parameters:
+        - $ref: "#/components/parameters/RestrictionID"
+        - $ref: "#/components/parameters/RestrictionBy"
+      responses:
+        "200":
+          description: The head.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestrictionHead"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      operationId: patchRestriction
+      tags: [restrictions]
+      summary: Activate, extend, end or cancel a restriction (F2)
+      description: |
+        The ANSP changes a restriction's state: planned to active
+        (activate), planned to cancelled (cancel), active to ended (end,
+        ended_by ansp), and active to active with a later ends_at
+        (extend). Anything else is 409 state; an ended or cancelled
+        restriction changes no more. Authentication, mTLS, the body cap
+        and the signature are those of POST /v1/restrictions; the head
+        is named by its id, or with by=ansp_ref by the ANSP's reference;
+        404 when none.
+
+        ansp_version must rise on every accepted op: the same
+        (ansp_ref, ansp_version) pair with the same body bytes is 200
+        with the stored head and replay true and no new version; the
+        same pair with another op or body, and a lower one, are 409
+        ansp_version.
+        An Idempotency-Key header is ignored.
+
+        An extend carries ends_at and the feature again, its one period
+        ending at the new ends_at (refused otherwise): the published
+        period and ends_at are one truth, and the CISP never edits a
+        published feature, so the ANSP republishes it (docs/PLAN.md
+        section 15 Q36). Its window is held to 24 h from starts_at. The
+        feature may differ from the published one only in its period's
+        endDateTime: any other difference (identifier, geometry, layer,
+        type, texts, members) is 409 feature_changed. Every other op
+        carries neither.
+
+        Each accepted op is a new version of the restrictions dataset
+        with the matching reason (restriction_activated,
+        restriction_extended, restriction_ended, restriction_cancelled)
+        and a change record; an ended or cancelled restriction leaves
+        the current set and stays in history by version.
+      parameters:
+        - $ref: "#/components/parameters/RestrictionID"
+        - $ref: "#/components/parameters/RestrictionBy"
+        - $ref: "#/components/parameters/JWSSignature"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RestrictionPatch"
+      responses:
+        "200":
+          description: Accepted as a new version (replay false), or the same pair again (replay true, no version).
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestrictionResult"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/subscriptions:
+    post:
+      operationId: createSubscription
+      tags: [subscriptions]
+      summary: Register a webhook for changes (F3 push)
+      description: |
+        Any client with cis.read registers a callback for some datasets,
+        optionally within a box. callback_url must be https (plain http
+        only to localhost, and only with CISP_ALLOW_INSECURE_CALLBACKS),
+        an absolute URL without userinfo or fragment, its host at most
+        253 characters, and neither a literal IP address nor a
+        localhost, .local, .internal or .localhost name, nor a name that
+        resolves to a loopback, private, link-local, CGNAT, multicast or
+        unspecified address, unless CISP_ALLOW_PRIVATE_CALLBACKS (the
+        lab). deliver applies the address rule again at every dial, to
+        the address it connects to, and never follows a redirect. A
+        client holds at most CISP_MAX_SUBSCRIPTIONS_PER_CLIENT (20)
+        subscriptions that are not deleted; one more is 409 limit.
+
+        The subscription is created pending_verification and deliver
+        POSTs it a cis/change/v1 with reason subscription_test at once;
+        the first 2xx makes it active. Until then GET says
+        pending_verification and, in verification, the last attempt's
+        status and error. Pending subscriptions are sent changes too.
+
+        Every notification is POSTed to the registered callback_url
+        (receivers in the ecosystem expose POST /v1/cis/notifications,
+        but the CISP never assumes a path) as application/jose: a compact
+        JWS (RS256, a kid of /.well-known/jwks.json) whose payload is
+        {iss, aud, sub, iat, jti, body}: iss is CISP_ISSUER_URL, aud the
+        host of callback_url without its port, sub the subscription id,
+        jti the delivery id, and body the cis/change/v1 record (the
+        Change schema). Receivers answer 2xx within 2 s; anything else,
+        a redirect or a timeout is retried 1, 2, 4 ... s doubling to
+        300 s (with 10 % jitter) until 24 h after the change, then the
+        delivery expires. 50 consecutive failures over at least an hour
+        suspend an active subscription (its suspended_reason says since
+        when and why). Receivers acknowledge reason subscription_test
+        and republished, and any reason they do not know, with 204
+        without pulling; only the publication and restriction reasons
+        trigger a pull of pull_url, and only when its host is this
+        CISP's. A notification is a hint: the subscriber still runs its
+        own 60 s HEAD reconciliation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubscriptionCreate"
+      responses:
+        "201":
+          description: Registered, pending verification.
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    get:
+      operationId: listSubscriptions
+      tags: [subscriptions]
+      summary: The caller's subscriptions
+      description: |
+        The caller's subscriptions that are not deleted, oldest first.
+        Token scope cis.read; a client sees its own only (the console
+        sees every client's, WP-8).
+      responses:
+        "200":
+          description: The subscriptions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionList"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/subscriptions/{id}:
+    get:
+      operationId: getSubscription
+      tags: [subscriptions]
+      summary: One of the caller's subscriptions
+      description: |
+        The subscription with its counters (consecutive_failures,
+        last_success_at) and, while it is pending_verification, its
+        verification ping with the last attempt's status and error.
+        Another client's subscription is 404.
+      parameters:
+        - $ref: "#/components/parameters/SubscriptionID"
+      responses:
+        "200":
+          description: The subscription.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      operationId: patchSubscription
+      tags: [subscriptions]
+      summary: Change a subscription's callback, datasets or box
+      description: |
+        The members given replace the stored ones; bbox [] removes the
+        box. A changed callback_url is held to the rules of POST and
+        verified again: the subscription returns to pending_verification
+        and is pinged (subscription_test). A suspended subscription is
+        re-activated by any PATCH the same way: it is pinged and becomes
+        active on the first 2xx. A deleted subscription is 404.
+      parameters:
+        - $ref: "#/components/parameters/SubscriptionID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubscriptionPatch"
+      responses:
+        "200":
+          description: The subscription as it is now.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteSubscription
+      tags: [subscriptions]
+      summary: Delete a subscription
+      description: |
+        A soft delete: the status becomes deleted, nothing more is sent,
+        and the open deliveries expire (a state, never a deletion; the
+        delivery log keeps every attempt). Audited. A deleted
+        subscription is 404 afterwards.
+      parameters:
+        - $ref: "#/components/parameters/SubscriptionID"
+      responses:
+        "200":
+          description: The subscription, deleted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/subscriptions/{id}/deliveries:
+    get:
+      operationId: listDeliveries
+      tags: [subscriptions]
+      summary: A subscription's deliveries with their attempts
+      description: |
+        The deliveries queued at or after since (default 24 h ago),
+        newest first, each with its attempts from the delivery log (the
+        timeseries database, read through the api's read-only role).
+        log says whether the attempts could be read: complete, unavailable
+        (the timeseries database did not answer; the deliveries are
+        still listed) or not_configured.
+      parameters:
+        - $ref: "#/components/parameters/SubscriptionID"
+        - name: since
+          in: query
+          required: false
+          description: RFC 3339 instant with an offset.
+          schema:
+            type: string
+            examples: ["2026-10-02T12:00:00Z"]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: The deliveries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeliveryList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/subscriptions/{id}/deliveries/{delivery_id}/retry:
+    post:
+      operationId: retryDelivery
+      tags: [subscriptions]
+      summary: Re-queue a delivery now
+      description: |
+        The delivery becomes queued and due now, whatever its state
+        (delivered and expired ones included: a notification is a hint
+        and sending it again is harmless); 409 delivering while an
+        attempt is in flight. It is sent while the subscription is
+        active or pending. Audited.
+      parameters:
+        - $ref: "#/components/parameters/SubscriptionID"
+        - name: delivery_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      responses:
+        "202":
+          description: Re-queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Delivery"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/{dataset}:
+    get:
+      operationId: getDataset
+      tags: [datasets]
+      summary: Read a dataset (F3 pull)
+      description: |
+        The current version of a dataset. Token scope cis.read.
+
+        Without a filter: the stored snapshot of the version (the bytes
+        the CISP signed; X-CIS-Signature is its compact detached JWS
+        over them), gzip when Accept-Encoding allows it. ED-318 datasets
+        are application/geo+json with metadata.issued (the version's
+        received_at) and the top-level cis_dataset, cis_version and
+        cis_updated_at; ussp_list is the UsspList with the same cis_*
+        members, application/json.
+
+        Filters (ED-318 datasets only: on ussp_list bbox, at and
+        applies_at are 400 filter_not_applicable):
+        - bbox=minlng,minlat,maxlng,maxlat keeps the features whose
+          stored shape's bounding box overlaps the box: a prefilter,
+          never a judgement (a circle is its stored buffer, LESSONS
+          Z-11). Finite numbers, longitudes -180..180, latitudes
+          -90..90, min not above max; a box across the antimeridian
+          (minlng above maxlng) is refused 400 for now.
+        - at=<RFC 3339 with an offset> keeps the features that apply at
+          that instant (uspace-core ed318.Applies at the feature's
+          centroid, NOAA daylight) and keeps every feature whose
+          applicability cannot be evaluated, marked
+          extendedProperties.cis_applicability "unknown": never dropped.
+          A time without an offset is 400; encode + as %2B.
+        - applies_at=<RFC 3339 with an offset> annotates without
+          filtering: every feature carries
+          extendedProperties.cis_applicability applies, not_applicable
+          or unknown at that instant. With at it is 400 filter_conflict.
+        - since_version=v is the DatasetDelta from v to the current
+          version (application/json): 400 when v is above the current
+          version, 410 delta_unavailable when it is more than 1000
+          versions back (pull the dataset whole). ussp_list has no
+          features: there since_version answers the whole list.
+        A filtered response is built from the current features, carries
+        X-CIS-Filtered naming the filters and the version's ETag, and is
+        not signed (docs/PLAN.md section 15 Q22).
+
+        If-None-Match with the current ETag is 304. When the database
+        cannot be reached, an unfiltered read serves the snapshot the
+        instance holds with X-CIS-Stale true, X-CIS-Age-S and
+        Cache-Control no-store; a filtered read is 503 cis_stale with
+        Retry-After. A dataset never published is 404 no_version.
+      parameters:
+        - $ref: "#/components/parameters/DatasetPath"
+        - $ref: "#/components/parameters/BBox"
+        - $ref: "#/components/parameters/At"
+        - $ref: "#/components/parameters/AppliesAt"
+        - name: since_version
+          in: query
+          required: false
+          description: The version the client holds; the answer is the delta from it.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - $ref: "#/components/parameters/IfNoneMatch"
+        - $ref: "#/components/parameters/AcceptEncoding"
+      responses:
+        "200":
+          $ref: "#/components/responses/Dataset"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "410":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        default:
+          $ref: "#/components/responses/Problem"
+    head:
+      operationId: headDataset
+      tags: [datasets]
+      summary: The current version's headers (the 60 s reconciliation)
+      description: |
+        The headers an unfiltered GET answers, without the body: the
+        cheap reconciliation a subscriber runs every 60 s on the ETag,
+        served from the instance's snapshot cache. Token scope cis.read.
+      parameters:
+        - $ref: "#/components/parameters/DatasetPath"
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          $ref: "#/components/responses/DatasetHead"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "401":
+          description: Unauthenticated (a HEAD answer has no body).
+        "403":
+          description: Forbidden (a HEAD answer has no body).
+        "404":
+          description: Unknown dataset, or no version yet (a HEAD answer has no body).
+        "503":
+          description: The database cannot be reached and no snapshot is held.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+        default:
+          description: An error (a HEAD answer has no body).
+  /v1/{dataset}/versions:
+    get:
+      operationId: listDatasetVersions
+      tags: [datasets]
+      summary: The versions of a dataset
+      description: |
+        Every version, newest first, with its ETag, received_at, counts,
+        reason and publisher; no bodies. Token scope cis.read. Page with
+        before (versions below it) and limit.
+      parameters:
+        - $ref: "#/components/parameters/DatasetPath"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: before
+          in: query
+          required: false
+          description: Only versions below this one.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The versions, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicationVersionList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/{dataset}/versions/{version}:
+    get:
+      operationId: getDatasetVersion
+      tags: [datasets]
+      summary: One version as published (spec 06 T4)
+      description: |
+        The verbatim bytes the publisher sent, with the Content-Type it
+        sent them as. X-Publisher-Signature and X-Publisher-Kid carry
+        the publisher's detached JWS when the version came from a
+        publisher; X-CIS-Signature always carries the CISP's compact
+        detached JWS over the same bytes, made when first served and
+        kept per version. The stored body_sha256 is checked before
+        serving: a mismatch is 500 integrity and an error log line,
+        never the bytes. Token scope cis.read.
+      parameters:
+        - $ref: "#/components/parameters/DatasetPath"
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The version's bytes as published.
+          headers:
+            ETag:
+              schema:
+                type: string
+            Last-Modified:
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+            X-CIS-Version:
+              schema:
+                type: integer
+                format: int64
+            X-CIS-Signature:
+              required: true
+              description: The CISP's compact detached JWS over the bytes.
+              schema:
+                type: string
+            X-Publisher-Signature:
+              description: The publisher's detached JWS, as received.
+              schema:
+                type: string
+            X-Publisher-Kid:
+              schema:
+                type: string
+          content:
+            application/geo+json:
+              schema:
+                $ref: "#/components/schemas/PublicationBody"
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicationBody"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/changes:
+    get:
+      operationId: listChanges
+      tags: [datasets]
+      summary: The change cursor feed
+      description: |
+        Change records (cis/change/v1) after the cursor since, in cursor
+        order, at most limit (500); next is the cursor to pass next time
+        (since itself when nothing came). since absent is the beginning.
+        Token scope cis.read.
+      parameters:
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+            default: 0
+        - name: dataset
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [zones, uspace_airspace, ussp_list, restrictions]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: The changes after since.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChangeList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/stream:
+    get:
+      operationId: getStream
+      tags: [stream]
+      summary: The WebSocket change stream
+      x-websocket: true
+      description: |
+        A WebSocket upgrade (OpenAPI has no WebSocket verb: this GET is
+        the handshake, and 101 is its success). Public: no token, the
+        upgrade rate-limited per client address like the public reads.
+        A browser's upgrade must carry an Origin in the allow-list (the
+        origin of CISP_PUBLIC_BASE_URL and CISP_STREAM_ALLOWED_ORIGINS),
+        else 403 origin; an upgrade without Origin is not a browser's and
+        is served. The uspace_session cookie of a same-origin upgrade is
+        verified by the shared verifier and marks the client as a console
+        (the content is the same); with CISP_STREAM_PUBLIC=false a missing
+        or invalid session is accepted and then closed with code 4401
+        (re-login, M22). There is no ticket route.
+
+        Every frame is a text message holding the common envelope
+        (StreamFrame, uspace-lab schemas/common envelope/v1) around one
+        of two bodies: console/status/v1 (StreamStatus) on connect, every
+        CISP_STREAM_STATUS_INTERVAL_S (2 s) and at once after the bus
+        returns, and cis/change/v1 (Change) for each change committed
+        while connected, for the datasets asked for. No history (use
+        GET /v1/changes), no snapshot frame and no subscribe frame: the
+        datasets query parameter is the subscription. A status with
+        resync_since says changes may have been missed since that
+        instant (the bus was down): HEAD the datasets and pull by
+        since_version. Close codes: 1013 the client could not keep up
+        (its CISP_STREAM_SEND_BUFFER_FRAMES queue stayed full for a
+        status period), 4401 re-login, 1001 the instance stops. At most
+        CISP_STREAM_MAX_CLIENTS clients per instance; the next is 503
+        stream_full with Retry-After.
+      security: []
+      parameters:
+        - name: datasets
+          in: query
+          required: false
+          description: Comma-separated datasets whose changes to receive; absent or empty is every dataset.
+          schema:
+            type: string
+            maxLength: 256
+        - name: Origin
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        "101":
+          description: |
+            Switched to the WebSocket protocol. Every message from the
+            server is a StreamFrame; the stream reads no data messages
+            (one ends the connection).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamFrame"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "426":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        default:
+          $ref: "#/components/responses/Problem"
+  /public/v1/{dataset}:
+    get:
+      operationId: getPublicDataset
+      tags: [datasets]
+      summary: The public read of a dataset (no token)
+      description: |
+        GET /v1/{dataset} without a token, rate-limited per client
+        address: the same snapshots, filters (bbox, at, applies_at) and
+        headers, X-CIS-Signature on unfiltered ED-318 reads. No
+        since_version (400), no versions and no change feed here. The
+        USSP list is projected without base_url and certificate_id
+        (docs/PLAN.md section 15 Q10), a derived body that carries no
+        X-CIS-Signature. Full reads are limited to CISP_PUBLIC_RPM a
+        minute per client with a burst of 10; HEAD and 304 answers to
+        ten times that; past it, 429 rate_limited with Retry-After.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/DatasetPath"
+        - $ref: "#/components/parameters/BBox"
+        - $ref: "#/components/parameters/At"
+        - $ref: "#/components/parameters/AppliesAt"
+        - $ref: "#/components/parameters/IfNoneMatch"
+        - $ref: "#/components/parameters/AcceptEncoding"
+      responses:
+        "200":
+          $ref: "#/components/responses/PublicDataset"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        default:
+          $ref: "#/components/responses/Problem"
+    head:
+      operationId: headPublicDataset
+      tags: [datasets]
+      summary: The public read's headers (no token)
+      description: HEAD /v1/{dataset} without a token, rate-limited at ten times the full-read rate.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/DatasetPath"
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          $ref: "#/components/responses/DatasetHead"
+        "304":
+          $ref: "#/components/responses/NotModified"
+        "404":
+          description: Unknown dataset, or no version yet (a HEAD answer has no body).
+        "429":
+          description: Rate limited (a HEAD answer has no body).
+          headers:
+            Retry-After:
+              schema:
+                type: string
+        "503":
+          description: The database cannot be reached and no snapshot is held.
+          headers:
+            Retry-After:
+              schema:
+                type: string
+        default:
+          description: An error (a HEAD answer has no body).
+  /.well-known/jwks.json:
+    get:
+      operationId: getJWKS
+      tags: [keys]
+      summary: The CISP's signing keys (JWKS)
+      description: |
+        The public keys of the CISP's signing key ring (RFC 7517): the key
+        that signs, and during a rotation the previous one, each with
+        kid, alg RS256 and use sig. Webhook deliveries and signed
+        snapshots are verified with it. No authentication; cacheable for
+        an hour; If-None-Match with the current ETag answers 304.
+      security: []
+      parameters:
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The key set.
+          headers:
+            ETag:
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JWKS"
+        "304":
+          description: The key set has not changed.
+          headers:
+            ETag:
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+components:
+  securitySchemes:
+    ecosystemToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256 machine token from the authority's token service; aud is this host.
+    consoleSession:
+      type: http
+      scheme: bearer
+      description: Console session JWT forwarded by the web BFF (scope "session").
+
+  parameters:
+    DatasetPath:
+      name: dataset
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [zones, uspace_airspace, ussp_list, restrictions]
+    BBox:
+      name: bbox
+      in: query
+      required: false
+      description: |
+        minlng,minlat,maxlng,maxlat in WGS84 degrees; a prefilter on the
+        stored shapes' bounding boxes. Not across the antimeridian.
+      schema:
+        type: string
+        examples: ["44.70,41.65,44.90,41.80"]
+    At:
+      name: at
+      in: query
+      required: false
+      description: RFC 3339 instant with an offset; keeps what applies then and what cannot be evaluated.
+      schema:
+        type: string
+        examples: ["2026-10-02T12:00:00Z"]
+    AppliesAt:
+      name: applies_at
+      in: query
+      required: false
+      description: RFC 3339 instant with an offset; annotates cis_applicability on every feature, filters nothing.
+      schema:
+        type: string
+        examples: ["2026-10-02T12:00:00Z"]
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      schema:
+        type: string
+        examples: ['"zones:4"']
+    AcceptEncoding:
+      name: Accept-Encoding
+      in: header
+      required: false
+      description: gzip serves the stored snapshot compressed, as it is held.
+      schema:
+        type: string
+
+    JWSSignature:
+      name: X-JWS-Signature
+      in: header
+      required: false
+      description: |
+        RFC 7515 Appendix F detached JWS with RFC 7797 b64 false over
+        the exact body bytes (alg RS256, kid, iat, crit ["b64"]);
+        required by the server (403 signature when absent).
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Ignored. The idempotency key of a restriction is the body pair (ansp_ref, ansp_version).
+      schema:
+        type: string
+    RestrictionID:
+      name: id
+      in: path
+      required: true
+      description: The CISP's id (a ULID), or the ansp_ref with by=ansp_ref.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    RestrictionBy:
+      name: by
+      in: query
+      required: false
+      description: What id names.
+      schema:
+        type: string
+        enum: [id, ansp_ref]
+        default: id
+    SubscriptionID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+  responses:
+    Problem:
+      description: An error, as RFC 9457 problem details.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PreconditionFailed:
+      description: If-Match does not name the current version; ETag is the current one.
+      headers:
+        ETag:
+          schema:
+            type: string
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+    Dataset:
+      description: |
+        The dataset: the snapshot (unfiltered), the filtered collection,
+        or the delta (since_version).
+      headers:
+        ETag:
+          schema:
+            type: string
+        Last-Modified:
+          schema:
+            type: string
+        Cache-Control:
+          schema:
+            type: string
+        Vary:
+          schema:
+            type: string
+        Content-Encoding:
+          schema:
+            type: string
+        X-CIS-Version:
+          schema:
+            type: integer
+            format: int64
+        X-CIS-Signature:
+          description: The CISP's compact detached JWS over the uncompressed body; unfiltered reads only.
+          schema:
+            type: string
+        X-CIS-Filtered:
+          description: The filters applied (bbox, at, applies_at, since_version), comma-separated.
+          schema:
+            type: string
+        X-CIS-Stale:
+          description: true when the database cannot be reached and the held snapshot is served.
+          schema:
+            type: string
+            enum: ["true"]
+        X-CIS-Age-S:
+          description: Seconds since the instance last read the current versions from the database.
+          schema:
+            type: integer
+            minimum: 0
+      content:
+        application/geo+json:
+          schema:
+            $ref: "#/components/schemas/DatasetCollection"
+        application/json:
+          schema:
+            $ref: "#/components/schemas/DatasetDocument"
+    PublicDataset:
+      description: The dataset as GET /v1/{dataset} answers it, the USSP list projected.
+      headers:
+        ETag:
+          schema:
+            type: string
+        Last-Modified:
+          schema:
+            type: string
+        Cache-Control:
+          schema:
+            type: string
+        Vary:
+          schema:
+            type: string
+        Content-Encoding:
+          schema:
+            type: string
+        X-CIS-Version:
+          schema:
+            type: integer
+            format: int64
+        X-CIS-Signature:
+          schema:
+            type: string
+        X-CIS-Filtered:
+          schema:
+            type: string
+        X-CIS-Stale:
+          schema:
+            type: string
+            enum: ["true"]
+        X-CIS-Age-S:
+          schema:
+            type: integer
+            minimum: 0
+      content:
+        application/geo+json:
+          schema:
+            $ref: "#/components/schemas/DatasetCollection"
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PublicUsspList"
+    DatasetHead:
+      description: The headers of the unfiltered read, no body.
+      headers:
+        ETag:
+          schema:
+            type: string
+        Last-Modified:
+          schema:
+            type: string
+        Cache-Control:
+          schema:
+            type: string
+        X-CIS-Version:
+          schema:
+            type: integer
+            format: int64
+        X-CIS-Signature:
+          schema:
+            type: string
+        X-CIS-Stale:
+          schema:
+            type: string
+            enum: ["true"]
+        X-CIS-Age-S:
+          schema:
+            type: integer
+            minimum: 0
+    NotModified:
+      description: If-None-Match names the current version.
+      headers:
+        ETag:
+          schema:
+            type: string
+        Cache-Control:
+          schema:
+            type: string
+        X-CIS-Version:
+          schema:
+            type: integer
+            format: int64
+        X-CIS-Stale:
+          schema:
+            type: string
+            enum: ["true"]
+    Unavailable:
+      description: The database cannot be reached; retry after Retry-After seconds.
+      headers:
+        Retry-After:
+          schema:
+            type: string
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    RateLimited:
+      description: Over the per-client rate; retry after Retry-After seconds.
+      headers:
+        Retry-After:
+          schema:
+            type: string
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    RestrictionReplay:
+      description: The same (ansp_ref, ansp_version) again; the stored head, replay true, no new version.
+      headers:
+        ETag:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RestrictionResult"
+  schemas:
+    Problem:
+      type: object
+      description: |
+        The ecosystem-wide error body (RFC 9457), the same shape as
+        uspace-lab schemas/common/problem/v1.
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: https://schemas.uspace.ge/problems/<slug>
+          examples: ["https://schemas.uspace.ge/problems/not_implemented"]
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          description: The request path, or the request id.
+        errors:
+          type: array
+          description: Field problems, at most 100; truncated says when more existed.
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/FieldProblem"
+        truncated:
+          type: boolean
+    FieldProblem:
+      type: object
+      required: [field, reason]
+      properties:
+        field:
+          type: string
+          description: The JSON path or parameter name.
+        reason:
+          type: string
+
+    JWKS:
+      type: object
+      description: A JSON Web Key Set (RFC 7517 section 5) of RSA signing keys.
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/JWK"
+    JWK:
+      type: object
+      description: One RSA public key (RFC 7517, RFC 7518 section 6.3.1).
+      required: [kty, kid, use, alg, n, e]
+      properties:
+        kty:
+          type: string
+          enum: [RSA]
+        kid:
+          type: string
+        use:
+          type: string
+          enum: [sig]
+        alg:
+          type: string
+          enum: [RS256]
+        n:
+          type: string
+          description: The modulus, base64url without padding.
+        e:
+          type: string
+          description: The exponent, base64url without padding.
+
+    PublicationBody:
+      type: object
+      description: |
+        The whole dataset as the publisher signed it: an ED-318
+        FeatureCollection (zones, uspace_airspace) or a UsspList
+        (ussp_list). The server validates it (uspace-core/ed318, the
+        dataset rules, the UsspList schema) and stores the bytes as
+        received.
+      x-go-type: json.RawMessage
+    Warning:
+      type: object
+      description: |
+        Something a consumer can still judge safely, such as a daylight
+        schedule without end dates that only ed318.Applies evaluates.
+        Anything about geometry or limits is a refusal, never a warning.
+      required: [field, reason]
+      properties:
+        field:
+          type: string
+          description: The JSON path of the feature or member.
+        reason:
+          type: string
+    PublicationResult:
+      type: object
+      description: |
+        The outcome of an accepted PUT: the new version (201) or the
+        current one with unchanged true (200). added, changed and
+        removed list at most 1000 identifiers each; truncated counts the
+        rest.
+      required: [dataset, version, etag]
+      properties:
+        dataset:
+          type: string
+          enum: [zones, uspace_airspace, ussp_list]
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        etag:
+          type: string
+          examples: ['"zones:5"']
+        unchanged:
+          type: boolean
+        received_at:
+          type: string
+          format: date-time
+        feature_count:
+          type: integer
+          minimum: 0
+        added_count:
+          type: integer
+          minimum: 0
+        changed_count:
+          type: integer
+          minimum: 0
+        removed_count:
+          type: integer
+          minimum: 0
+        added:
+          type: array
+          maxItems: 1000
+          items:
+            type: string
+        changed:
+          type: array
+          maxItems: 1000
+          items:
+            type: string
+        removed:
+          type: array
+          maxItems: 1000
+          items:
+            type: string
+        truncated:
+          type: object
+          description: How many identifiers each list left out.
+          required: [added, changed, removed]
+          properties:
+            added:
+              type: integer
+              minimum: 0
+            changed:
+              type: integer
+              minimum: 0
+            removed:
+              type: integer
+              minimum: 0
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Warning"
+    PublicationVersion:
+      type: object
+      required: [dataset, version, etag, publisher, received_at, feature_count, added, changed, removed, reason, warnings, body_sha256, bytes, content_type]
+      properties:
+        dataset:
+          type: string
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        etag:
+          type: string
+        publisher:
+          type: string
+          description: The client id that published the version.
+        received_at:
+          type: string
+          format: date-time
+        feature_count:
+          type: integer
+          minimum: 0
+        added:
+          type: integer
+          minimum: 0
+        changed:
+          type: integer
+          minimum: 0
+        removed:
+          type: integer
+          minimum: 0
+        supersedes_version:
+          type: integer
+          format: int64
+          minimum: 0
+        reason:
+          type: string
+          enum: [publication, restriction_created, restriction_activated, restriction_extended, restriction_ended, restriction_cancelled, restriction_expired, republished]
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Warning"
+        signature_kid:
+          type: string
+          description: The kid of the publisher's detached JWS; absent for versions the CISP made.
+        body_sha256:
+          type: string
+          description: SHA-256 of the verbatim body, lower-case hex.
+          pattern: "^[0-9a-f]{64}$"
+        bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        content_type:
+          type: string
+    PublicationVersionList:
+      type: object
+      required: [dataset, versions]
+      properties:
+        dataset:
+          type: string
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublicationVersion"
+        next_before:
+          type: integer
+          format: int64
+          description: Pass as before for the next page; absent on the last page.
+    PublicationAttempt:
+      type: object
+      required: [id, dataset, received_at, outcome, problems, bytes]
+      properties:
+        id:
+          type: string
+        dataset:
+          type: string
+        received_at:
+          type: string
+          format: date-time
+        outcome:
+          type: string
+          enum: [accepted, refused]
+        publication_id:
+          type: string
+        problems:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/FieldProblem"
+        truncated:
+          type: integer
+          minimum: 0
+          description: How many problems beyond the 100 listed were found.
+        body_sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        bytes:
+          type: integer
+          format: int64
+          minimum: 0
+    PublicationAttemptList:
+      type: object
+      required: [dataset, attempts]
+      properties:
+        dataset:
+          type: string
+        attempts:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublicationAttempt"
+    PublisherHeartbeat:
+      type: object
+      required: [sent_at]
+      properties:
+        sent_at:
+          type: string
+          format: date-time
+          description: The publisher's clock when it sent the heartbeat.
+        active_refs:
+          type: array
+          maxItems: 1000
+          description: The ANSP's active ansp_refs, stored verbatim; the authority sends none.
+          items:
+            type: string
+
+    RestrictionCreate:
+      type: object
+      description: |
+        cis/restriction/v1: the body of POST /v1/restrictions (spec 02
+        F2, 04 section 3.4). A closed schema: an unknown member is
+        refused, never ignored (a misspelt member must not read as an
+        absent one). The version member is ansp_version, never version.
+        The feature is the restriction as one ED-318 UASZone feature;
+        the CISP serves it as published plus
+        extendedProperties.cis_restriction (CisRestriction).
+      additionalProperties: false
+      required: [ansp_ref, ansp_version, uspace_airspace_id, state, starts_at, ends_at, feature]
+      properties:
+        ansp_ref:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The ANSP's reference; with ansp_version the idempotency key.
+        ansp_version:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 2147483647
+          description: The ANSP-side version; rises on every accepted op.
+        uspace_airspace_id:
+          type: string
+          minLength: 1
+          maxLength: 7
+          description: The identifier of the current USPACE feature this restriction modifies.
+        state:
+          type: string
+          enum: [planned, active]
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        feature:
+          $ref: "#/components/schemas/RestrictionFeature"
+    RestrictionFeature:
+      type: object
+      description: |
+        One ED-318 UASZone feature (a Feature of
+        Schema_GeoZoneCollection) with reason DAR, type PROHIBITED,
+        REQ_AUTHORIZATION or CONDITIONAL, one limitedApplicability period
+        equal to [starts_at, ends_at] and no extendedProperties member
+        starting with cis_. The identifier is at most 7 characters (the
+        ANSP mints DAR plus 4 base-36); the CISP checks its length and
+        uniqueness only. Validated by uspace-core ed318.Parse.
+      x-go-type: json.RawMessage
+      required: [type, geometry, properties]
+      properties:
+        type:
+          type: string
+          const: Feature
+        geometry:
+          type: object
+        properties:
+          type: object
+          required: [identifier, type, reason, limitedApplicability]
+          properties:
+            identifier:
+              type: string
+              minLength: 1
+              maxLength: 7
+            type:
+              type: string
+              enum: [PROHIBITED, REQ_AUTHORIZATION, CONDITIONAL]
+            reason:
+              type: array
+              minItems: 1
+              items:
+                type: string
+            limitedApplicability:
+              type: array
+              minItems: 1
+              maxItems: 1
+              items:
+                type: object
+    RestrictionPatch:
+      type: object
+      description: |
+        The body of PATCH /v1/restrictions/{id}. A closed schema. ends_at
+        and feature belong to an extend (required there, refused
+        elsewhere).
+      additionalProperties: false
+      required: [op, ansp_version]
+      properties:
+        op:
+          type: string
+          enum: [activate, extend, end, cancel]
+        ansp_version:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 2147483647
+        ends_at:
+          type: string
+          format: date-time
+          description: The new ends_at of an extend.
+        feature:
+          $ref: "#/components/schemas/RestrictionFeature"
+    CisRestriction:
+      type: object
+      description: |
+        extendedProperties.cis_restriction of a served restriction
+        feature: the only member the CISP adds to a published feature
+        (docs/PLAN.md D4). ended_by is null while the restriction is
+        current (only planned and active restrictions are in the current
+        set; history by version holds the rest).
+      additionalProperties: false
+      required: [id, ansp_ref, ansp_version, state, starts_at, ends_at, ended_by, uspace_airspace_id]
+      properties:
+        id:
+          type: string
+        ansp_ref:
+          type: string
+        ansp_version:
+          type: integer
+          format: int64
+          minimum: 0
+        state:
+          type: string
+          enum: [planned, active, ended, cancelled]
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        ended_by:
+          type: [string, "null"]
+          enum: [ansp, expiry, null]
+        uspace_airspace_id:
+          type: string
+    RestrictionEvent:
+      type: object
+      required: [at, op, ansp_version, actor]
+      properties:
+        at:
+          type: string
+          format: date-time
+        op:
+          type: string
+          enum: [create, activate, extend, end, cancel, expire]
+        ansp_version:
+          type: integer
+          format: int64
+          minimum: 0
+        publication_id:
+          type: string
+          description: The version's publication.
+        actor:
+          type: string
+          description: The client id, or system for the expiry.
+    RestrictionHead:
+      type: object
+      description: A restriction's lifecycle head with its events, oldest first.
+      required: [id, ansp_ref, ansp_version, uspace_airspace_id, feature_id, state, starts_at, ends_at, created_at, updated_at, events]
+      properties:
+        id:
+          type: string
+        ansp_ref:
+          type: string
+        ansp_version:
+          type: integer
+          format: int64
+          minimum: 0
+        uspace_airspace_id:
+          type: string
+        feature_id:
+          type: string
+          maxLength: 7
+        state:
+          type: string
+          enum: [planned, active, ended, cancelled]
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        ended_by:
+          type: string
+          enum: [ansp, expiry]
+          description: Absent while the restriction is planned, active or cancelled.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        last_publisher:
+          type: string
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/RestrictionEvent"
+    RestrictionResult:
+      type: object
+      description: An accepted op (replay false, a new version) or a replay of the same pair (replay true, the current version).
+      required: [restriction, dataset, version, etag, replay]
+      properties:
+        restriction:
+          $ref: "#/components/schemas/RestrictionHead"
+        dataset:
+          type: string
+          const: restrictions
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        etag:
+          type: string
+          examples: ['"restrictions:7"']
+        reason:
+          type: string
+          enum: [restriction_created, restriction_activated, restriction_extended, restriction_ended, restriction_cancelled]
+          description: The version's reason; absent on a replay.
+        replay:
+          type: boolean
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Warning"
+    RestrictionList:
+      type: object
+      required: [restrictions]
+      properties:
+        restrictions:
+          type: array
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/RestrictionHead"
+        cis_publisher_stale_since:
+          type: [string, "null"]
+          format: date-time
+          description: Present only while the ANSP is stale; null when it has never been heard from.
+    UsspList:
+      type: object
+      description: |
+        cis/ussp_list/v1: the national list of certified USSPs and their
+        terms (spec 02 F1, Annex III; docs/PLAN.md section 15 Q5),
+        produced by the authority and published as the ussp_list
+        dataset. A closed schema: an unknown member anywhere is refused.
+        The cis_* members are written by the CISP when it serves the
+        list and are refused in a publication.
+      additionalProperties: false
+      required: [schema, issued, ussps]
+      properties:
+        schema:
+          type: string
+          const: cis/ussp_list/v1
+        issued:
+          type: string
+          format: date-time
+        ussps:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/Ussp"
+        cis_dataset:
+          type: string
+          const: ussp_list
+          description: Served only; refused in a publication.
+        cis_version:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Served only; refused in a publication.
+        cis_updated_at:
+          type: string
+          format: date-time
+          description: Served only; refused in a publication.
+    Ussp:
+      type: object
+      description: One certified USSP. ussp_id is unique in the list.
+      additionalProperties: false
+      required: [ussp_id, name, contact, certificate_id, base_url, services, certification_limitations, valid_from, valid_until, terms_url, status]
+      properties:
+        ussp_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: The authority's certificate code, also the USSP's USSP_SYSTEM_ID (Q5).
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        contact:
+          $ref: "#/components/schemas/UsspContact"
+        certificate_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        base_url:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: https, no userinfo, host at most 253 characters.
+        services:
+          type: array
+          description: The Annex VI services the USSP is certified for.
+          maxItems: 6
+          items:
+            type: string
+            enum: [network_identification, geo_awareness, flight_authorisation, traffic_information, weather, conformance_monitoring]
+        certification_limitations:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            maxLength: 1000
+        valid_from:
+          type: string
+          format: date-time
+        valid_until:
+          type: string
+          format: date-time
+          description: Not before valid_from.
+        terms_url:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: https, no userinfo.
+        status:
+          type: string
+          enum: [operating, suspended, limited]
+    UsspContact:
+      type: object
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          minLength: 3
+          maxLength: 254
+        phone:
+          type: string
+          minLength: 1
+          maxLength: 50
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: https, no userinfo.
+
+    UspaceRequirements:
+      type: object
+      description: |
+        cis/uspace_requirements/v1: the 2021/664 Art. 3(4) requirements
+        of a U-space airspace (spec 02 F1, 03 section 1
+        uspace_airspaces; docs/PLAN.md section 15 Q6). It travels in the
+        extendedProperties of every USPACE feature under the member
+        uspace_requirements (section 15 Q32); other extendedProperties
+        members pass through. The block is closed at its top level:
+        an unknown member is refused. adjacent names U-space airspaces
+        published in the same publication.
+      additionalProperties: false
+      required: [uas_requirements, service_performance, operational_conditions, airspace_constraints, services_required, adjacent]
+      properties:
+        uas_requirements:
+          type: object
+          description: Art. 3(4)(a) UAS performance and equipment requirements (free form).
+        service_performance:
+          $ref: "#/components/schemas/ServicePerformance"
+        operational_conditions:
+          type: object
+          description: Art. 3(4)(b) operational conditions and constraints (free form).
+        airspace_constraints:
+          $ref: "#/components/schemas/AirspaceConstraints"
+        services_required:
+          type: array
+          minItems: 4
+          maxItems: 6
+          uniqueItems: true
+          description: The U-space services required; NID, GEO, FA and TI always (Art. 3(3)).
+          items:
+            type: string
+            enum: [NID, GEO, FA, TI, WX, CM]
+        adjacent:
+          type: array
+          description: Identifiers of the adjacent U-space airspaces in the same publication.
+          maxItems: 1000
+          items:
+            type: string
+            minLength: 1
+            maxLength: 7
+    ServicePerformance:
+      type: object
+      description: Art. 3(4)(c) service performance; the three named members are required, others pass.
+      required: [nid_update_hz, ti_update_hz, cis_latency_s]
+      properties:
+        nid_update_hz:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+        ti_update_hz:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+        cis_latency_s:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+    AirspaceConstraints:
+      type: object
+      description: Art. 3(4)(d) airspace constraints; max_height_agl_m is optional, others pass.
+      properties:
+        max_height_agl_m:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+
+    Readiness:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+        checks:
+          type: object
+          required: [database, migrations, nats]
+          properties:
+            database:
+              type: string
+              description: ok, not configured, or unreachable with the reason.
+            migrations:
+              type: string
+              description: ok, or pending with what is pending.
+            nats:
+              type: string
+              description: ok, not configured, or disconnected.
+
+    DatasetCollection:
+      type: object
+      description: |
+        An ED-318 FeatureCollection as the CISP serves it: the features
+        as published (canonical JSON), metadata.issued the version's
+        received_at, and the top-level cis_dataset, cis_version and
+        cis_updated_at (docs/PLAN.md section 15 Q1). The restrictions
+        dataset carries cis_publisher_stale_since while the ANSP is
+        stale; such a body is signed at serve time (X-CIS-Signature over
+        the bytes served) and not cached (Cache-Control no-store).
+      required: [type, features, cis_dataset, cis_version, cis_updated_at]
+      properties:
+        type:
+          type: string
+          const: FeatureCollection
+        metadata:
+          type: object
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/ZoneFeature"
+        cis_dataset:
+          type: string
+          enum: [zones, uspace_airspace, restrictions]
+        cis_version:
+          type: integer
+          format: int64
+          minimum: 1
+        cis_updated_at:
+          type: string
+          format: date-time
+        cis_publisher_stale_since:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            restrictions only, present only while the ANSP is stale: when
+            it became stale, or null when it has never been heard from.
+            Its restrictions stay as published (spec 02 F2).
+    ZoneFeature:
+      type: object
+      description: |
+        One ED-318 UASZone feature as published. The CISP adds only
+        extendedProperties.cis_applicability (at and applies_at reads)
+        to its copy, never to the stored feature, and to a restriction
+        extendedProperties.cis_restriction (CisRestriction).
+      required: [type, geometry, properties]
+      properties:
+        type:
+          type: string
+          const: Feature
+        geometry:
+          type: object
+        properties:
+          type: object
+          required: [identifier]
+          properties:
+            identifier:
+              type: string
+            extendedProperties:
+              type: object
+              properties:
+                cis_applicability:
+                  type: string
+                  enum: [applies, not_applicable, unknown]
+                cis_restriction:
+                  $ref: "#/components/schemas/CisRestriction"
+    ZoneFeatureCollection:
+      type: object
+      description: A plain FeatureCollection of features as published (the parts of a delta).
+      required: [type, features]
+      properties:
+        type:
+          type: string
+          const: FeatureCollection
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/ZoneFeature"
+    DatasetDocument:
+      description: The application/json read of a dataset, the USSP list or a delta.
+      anyOf:
+        - $ref: "#/components/schemas/UsspList"
+        - $ref: "#/components/schemas/DatasetDelta"
+    DatasetDelta:
+      type: object
+      description: |
+        What changed from from_version to to_version: the features added
+        and changed (as published at to_version) and the identifiers
+        removed. Apply removed, then changed and added, to the
+        from_version set.
+      additionalProperties: false
+      required: [dataset, from_version, to_version, added, changed, removed]
+      properties:
+        dataset:
+          type: string
+          enum: [zones, uspace_airspace, restrictions]
+        from_version:
+          type: integer
+          format: int64
+          minimum: 0
+        to_version:
+          type: integer
+          format: int64
+          minimum: 0
+        added:
+          $ref: "#/components/schemas/ZoneFeatureCollection"
+        changed:
+          $ref: "#/components/schemas/ZoneFeatureCollection"
+        removed:
+          type: array
+          items:
+            type: string
+    PublicUsspList:
+      type: object
+      description: |
+        The USSP list on the public read: cis/ussp_list/v1 without each
+        USSP's base_url and certificate_id (docs/PLAN.md section 15
+        Q10, the demo default until GCAA decides).
+      additionalProperties: false
+      required: [schema, issued, ussps, cis_dataset, cis_version, cis_updated_at]
+      properties:
+        schema:
+          type: string
+          const: cis/ussp_list/v1
+        issued:
+          type: string
+          format: date-time
+        ussps:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/PublicUssp"
+        cis_dataset:
+          type: string
+          const: ussp_list
+        cis_version:
+          type: integer
+          format: int64
+          minimum: 1
+        cis_updated_at:
+          type: string
+          format: date-time
+    PublicUssp:
+      type: object
+      description: One certified USSP without base_url and certificate_id.
+      additionalProperties: false
+      required: [ussp_id, name, contact, services, certification_limitations, valid_from, valid_until, terms_url, status]
+      properties:
+        ussp_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        contact:
+          $ref: "#/components/schemas/UsspContact"
+        services:
+          type: array
+          maxItems: 6
+          items:
+            type: string
+            enum: [network_identification, geo_awareness, flight_authorisation, traffic_information, weather, conformance_monitoring]
+        certification_limitations:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            maxLength: 1000
+        valid_from:
+          type: string
+          format: date-time
+        valid_until:
+          type: string
+          format: date-time
+        terms_url:
+          type: string
+          format: uri
+          maxLength: 2048
+        status:
+          type: string
+          enum: [operating, suspended, limited]
+
+    StreamFrame:
+      type: object
+      description: |
+        One WS /v1/stream frame: the common envelope (uspace-lab
+        schemas/common envelope/v1, M29) around the body named by schema.
+        Times are RFC 3339 UTC with Z and milliseconds, on the CISP's
+        clock (time_source system). producer is cisp/api. msg_id is a
+        ULID per frame (a change's own id is the body's msg_id).
+      required: [schema, msg_id, producer, ts, rx_ts, captured_at, time_source, backlog, body]
+      properties:
+        schema:
+          type: string
+          enum: [console/status/v1, cis/change/v1]
+        msg_id:
+          type: string
+          pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        producer:
+          type: string
+        ts:
+          type: [string, "null"]
+        rx_ts:
+          type: string
+        captured_at:
+          type: string
+        time_source:
+          type: string
+          enum: [system]
+        backlog:
+          type: boolean
+        body:
+          oneOf:
+            - $ref: "#/components/schemas/StreamStatus"
+            - $ref: "#/components/schemas/Change"
+    StreamStatus:
+      type: object
+      description: |
+        The console/status/v1 body (uspace-lab schemas/common, M29) with
+        the CISP's extras. degraded names database, nats, jwks and
+        publisher_stale; degraded_since says since when. nats is
+        connected, reconnecting, never_connected, closed or
+        not_configured, with nats_since while it is not connected.
+        datasets holds each dataset's current version (decimal) and its
+        age; cis_age_s is the age of the newest change. resync_since is
+        set on the first status after the bus returns and on no other.
+        sources is empty: the CISP's data comes from its publishers,
+        listed with their heartbeats in publishers (stale after
+        stale_after_s, 60 s).
+      required: [connection_id, server_ts, policy_version, stale_after_s, live_max_age_s, dropped_frames, degraded, sources, publishers]
+      properties:
+        connection_id:
+          type: string
+        server_ts:
+          type: string
+        policy_version:
+          type: string
+          description: A hash of the instance's configuration (the CISP has no display thresholds of its own).
+        stale_after_s:
+          type: number
+        live_max_age_s:
+          type: number
+        dropped_frames:
+          type: integer
+          minimum: 0
+        degraded:
+          type: array
+          items:
+            type: string
+        degraded_since:
+          type: object
+          additionalProperties:
+            type: string
+        sources:
+          type: array
+          items:
+            type: object
+        datasets:
+          type: object
+          additionalProperties:
+            type: object
+            required: [version, age_s]
+            properties:
+              version:
+                type: string
+              age_s:
+                type: number
+        cis_age_s:
+          type: number
+        nats:
+          type: string
+        nats_since:
+          type: string
+        resync_since:
+          type: string
+        publishers:
+          type: array
+          items:
+            type: object
+            required: [client_id, kind, last_heartbeat_at, heartbeat_age_s, stale_after_s, stale]
+            properties:
+              client_id:
+                type: string
+              kind:
+                type: string
+              last_heartbeat_at:
+                type: [string, "null"]
+              heartbeat_age_s:
+                type: [number, "null"]
+              stale_after_s:
+                type: number
+              stale:
+                type: boolean
+    Change:
+      type: object
+      description: |
+        cis/change/v1: one change record, the body of the change feed,
+        of the webhook payload (inside the JWS claims) and of the
+        stream's change frames (docs/PLAN.md section 6.7, section 15
+        Q28, Q38). msg_id is the change cursor in decimal; pull_url asks
+        for the delta from the previous version on CISP_PUBLIC_BASE_URL;
+        bbox is [min lng, min lat, max lng, max lat] of what changed,
+        absent for the whole dataset. producer is uspace-cisp on the bus,
+        the change feed and the stream, and cisp/deliver-<instance> in a
+        webhook (the deliver instance that sent it).
+
+        reason is an open enumeration (spec 04 section 4: values are
+        added within v1). A receiver pulls pull_url only for publication
+        and the restriction_* reasons, and only when pull_url's host is
+        the CISP's; it acknowledges subscription_test (the verification
+        ping of a new or changed subscription), republished (the current
+        version announced again, content unchanged) and any reason it
+        does not know with 204, without pulling. A subscription_test
+        record names no change: msg_id is the delivery id (a ULID),
+        dataset the first of the subscription's datasets, version and
+        etag its current version (0 before the first), feature_ids and
+        removed_ids empty, at when the ping was queued.
+      additionalProperties: false
+      required: [schema, msg_id, producer, dataset, version, etag, feature_ids, removed_ids, reason, at, pull_url]
+      properties:
+        schema:
+          type: string
+          const: cis/change/v1
+        msg_id:
+          type: string
+          description: The change cursor in decimal; the delivery id (a ULID) for subscription_test.
+          pattern: "^([0-9]+|[0-9A-HJKMNP-TV-Z]{26})$"
+        producer:
+          type: string
+          pattern: "^(uspace-cisp|cisp/deliver-[A-Za-z0-9._-]{1,64})$"
+        dataset:
+          type: string
+          enum: [zones, uspace_airspace, ussp_list, restrictions]
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: The version the change made (at least 1); a subscription_test names the current version, 0 before the first.
+        etag:
+          type: string
+          examples: ['"zones:5"']
+        feature_ids:
+          type: array
+          description: Every identifier added, changed or removed, sorted.
+          items:
+            type: string
+        removed_ids:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+          enum: [publication, restriction_created, restriction_activated, restriction_extended, restriction_ended, restriction_cancelled, restriction_expired, republished, subscription_test]
+        at:
+          type: string
+          format: date-time
+        pull_url:
+          type: string
+          format: uri
+        bbox:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: number
+            format: double
+    SubscriptionCreate:
+      type: object
+      description: The body of POST /v1/subscriptions; unknown members are ignored.
+      required: [callback_url, datasets]
+      properties:
+        callback_url:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          examples: ["https://ussp.example.ge/v1/cis/notifications"]
+        datasets:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items:
+            type: string
+            enum: [zones, uspace_airspace, ussp_list, restrictions]
+        bbox:
+          type: array
+          description: |
+            [min lng, min lat, max lng, max lat] in WGS84 degrees (GeoJSON
+            order), not across the antimeridian; only changes whose box
+            intersects it (touching counts) or that have no box are sent.
+          minItems: 4
+          maxItems: 4
+          items:
+            type: number
+            format: double
+    SubscriptionPatch:
+      type: object
+      description: The body of PATCH /v1/subscriptions/{id}; the members given replace the stored ones.
+      properties:
+        callback_url:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        datasets:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items:
+            type: string
+            enum: [zones, uspace_airspace, ussp_list, restrictions]
+        bbox:
+          type: array
+          description: Four numbers as in SubscriptionCreate, or [] to remove the box.
+          maxItems: 4
+          items:
+            type: number
+            format: double
+    Subscription:
+      type: object
+      required: [id, client_id, callback_url, datasets, status, created_at, consecutive_failures]
+      properties:
+        id:
+          type: string
+        client_id:
+          type: string
+        callback_url:
+          type: string
+        datasets:
+          type: array
+          items:
+            type: string
+            enum: [zones, uspace_airspace, ussp_list, restrictions]
+        bbox:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: number
+            format: double
+        status:
+          type: string
+          enum: [pending_verification, active, suspended, deleted]
+        created_at:
+          type: string
+          format: date-time
+        verified_at:
+          type: string
+          format: date-time
+        suspended_reason:
+          type: string
+          description: Why and since when it is suspended; present while suspended.
+        consecutive_failures:
+          type: integer
+          minimum: 0
+        last_success_at:
+          type: string
+          format: date-time
+        failing_since:
+          type: string
+          format: date-time
+          description: The first failure of the current run of consecutive failures.
+        verification:
+          $ref: "#/components/schemas/Delivery"
+    SubscriptionList:
+      type: object
+      required: [subscriptions]
+      properties:
+        subscriptions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Subscription"
+    Delivery:
+      type: object
+      description: |
+        One delivery of a change (or of the verification ping: change_id
+        absent, reason subscription_test) to a subscription.
+      required: [id, subscription_id, reason, state, attempts, created_at]
+      properties:
+        id:
+          type: string
+        subscription_id:
+          type: string
+        change_id:
+          type: integer
+          format: int64
+          minimum: 1
+        reason:
+          type: string
+          enum: [publication, restriction_created, restriction_activated, restriction_extended, restriction_ended, restriction_cancelled, restriction_expired, republished, subscription_test]
+        state:
+          type: string
+          enum: [queued, delivering, delivered, failed, expired]
+        attempts:
+          type: integer
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+        first_attempt_at:
+          type: string
+          format: date-time
+        last_attempt_at:
+          type: string
+          format: date-time
+        next_retry_at:
+          type: string
+          format: date-time
+        delivered_at:
+          type: string
+          format: date-time
+        last_status_code:
+          type: integer
+        last_error:
+          type: string
+        log:
+          type: array
+          description: Every attempt from the delivery log, oldest first (deliveries list only).
+          items:
+            $ref: "#/components/schemas/DeliveryAttempt"
+    DeliveryAttempt:
+      type: object
+      required: [at, attempt, latency_ms, payload_bytes, deliver_instance]
+      properties:
+        at:
+          type: string
+          format: date-time
+        attempt:
+          type: integer
+          minimum: 1
+        status_code:
+          type: integer
+        error:
+          type: string
+        latency_ms:
+          type: integer
+          minimum: 0
+        payload_bytes:
+          type: integer
+          minimum: 0
+        deliver_instance:
+          type: string
+    DeliveryList:
+      type: object
+      required: [deliveries, log]
+      properties:
+        deliveries:
+          type: array
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/Delivery"
+        log:
+          type: string
+          enum: [complete, unavailable, not_configured]
+          description: Whether the attempts of the delivery log were read.
+
+    ChangeList:
+      type: object
+      required: [changes, next]
+      properties:
+        changes:
+          type: array
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/Change"
+        next:
+          type: integer
+          format: int64
+          minimum: 0
+          description: The cursor to pass as since next time.
+
+    Status:
+      type: object
+      description: The status document (docs/PLAN.md section 6.3).
+      required: [now, datasets, publishers, degraded]
+      properties:
+        now:
+          type: string
+          format: date-time
+        datasets:
+          type: array
+          items:
+            type: object
+            required: [dataset, current_version]
+            properties:
+              dataset:
+                type: string
+              current_version:
+                type: integer
+                format: int64
+                minimum: 0
+              updated_at:
+                type: string
+                format: date-time
+              etag:
+                type: string
+        publishers:
+          type: array
+          items:
+            type: object
+            required: [client_id, stale]
+            properties:
+              client_id:
+                type: string
+              kind:
+                type: string
+                enum: [authority, ansp]
+              last_heartbeat_at:
+                type: string
+                format: date-time
+              last_publication_at:
+                type: string
+                format: date-time
+              stale_after_s:
+                type: integer
+                minimum: 1
+              stale:
+                type: boolean
+              stale_since:
+                type: string
+                format: date-time
+                description: When the publisher became stale (its last heartbeat plus stale_after_s).
+        degraded:
+          type: array
+          items:
+            type: object
+            required: [component, since]
+            properties:
+              component:
+                type: string
+                enum: [database, nats, jwks]
+              since:
+                type: string
+                format: date-time
+              reason:
+                type: string
+        mtls_mode:
+          type: string
+          description: CISP_MTLS_MODE; off is also a degraded line of the status (hard rule 4).
+          enum: [required, off]
+        restrictions:
+          $ref: "#/components/schemas/RestrictionStatus"
+    RestrictionStatus:
+      type: object
+      description: |
+        The restrictions lifecycle as GET /v1/status reports it (WP-5):
+        how many restrictions are active, the expiry job's last run
+        (stale when older than CISP_RESTRICTION_EXPIRY_STALE_AFTER_S, 30
+        s: a dead ticker is an error line, never silence), and the
+        differences between the ANSP's last declared active_refs and the
+        active restrictions the CISP holds, which are listed and never
+        acted on.
+      required: [active, expiry]
+      properties:
+        active:
+          type: integer
+          format: int64
+          minimum: 0
+        expiry:
+          type: object
+          required: [stale, stale_after_s]
+          properties:
+            last_run_at:
+              type: string
+              format: date-time
+              description: Absent before the first run.
+            last_instance:
+              type: string
+            last_count:
+              type: integer
+              minimum: 0
+            stale:
+              type: boolean
+            stale_after_s:
+              type: integer
+              minimum: 1
+        ansp_stale_since:
+          type: [string, "null"]
+          format: date-time
+          description: Present only while the ANSP is stale; null when never heard from.
+        heartbeat_ref_unknown:
+          type: array
+          maxItems: 100
+          description: Declared active by the ANSP, not held as active here.
+          items:
+            type: string
+        heartbeat_ref_missing:
+          type: array
+          maxItems: 100
+          description: Held as active here, not declared by the ANSP.
+          items:
+            type: string
