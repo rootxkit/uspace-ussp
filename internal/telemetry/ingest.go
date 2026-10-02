@@ -56,6 +56,8 @@ const (
 	CounterSpacingClamped    = "placement_spacing_clamped"
 	CounterPlacedByAnchor    = "placed_by_anchor"
 	CounterAnchorKept        = "anchor_kept"
+	CounterAnchorRelearnt    = "anchor_relearnt"
+	CounterSentAtDisagrees   = "sent_at_disagrees_with_receipt"
 	CounterBacklogByAge      = "backlog_by_age"
 	CounterBacklog           = "backlog_accepted"
 	CounterAltNoGeoid        = "alt_amsl_none_no_geoid"
@@ -313,17 +315,23 @@ func (in *Ingestor) takeAircraft(ctx context.Context, ac *aircraft, d Delivery, 
 	for k, i := range idxs {
 		frames[k] = d.Frames[i]
 	}
-	places, clamped, next, kept := place(d.RxTS, frames, d.SentAt, d.BatchRule, ac.anchor, placePolicy(pol))
+	places, next, ps := place(d.RxTS, frames, d.SentAt, d.BatchRule, ac.anchor, placePolicy(pol))
 	ac.anchor = next
-	in.cfg.Counters.Add(CounterSpacingClamped, uint64(clamped))
-	if kept {
+	in.cfg.Counters.Add(CounterSpacingClamped, uint64(ps.clamped))
+	if ps.kept {
 		in.count(CounterAnchorKept)
+	}
+	if ps.relearnt {
+		in.count(CounterAnchorRelearnt)
 	}
 	window := seconds(pol.TelemetryDedupeS)
 	for k, i := range idxs {
 		f, p := &d.Frames[i], places[k]
 		if p.aheadClamped {
 			in.count(CounterTSAheadClamped)
+		}
+		if p.sentAtDisagrees {
+			in.count(CounterSentAtDisagrees)
 		}
 		if p.note != "" {
 			in.count(CounterPlacedAtReceipt + string(p.note))

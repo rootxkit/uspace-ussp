@@ -125,14 +125,14 @@ func TestAnchorRelearntOnTimeKeptWhenLate(t *testing.T) {
 	// 70 s later the client's clock stepped 3 s: on time by the new
 	// relation, 3 s late by the old one (within backlog_after): relearnt.
 	rx := t0.Add(70 * time.Second)
-	out, _, next, kept := place(rx, []Frame{frame(snA, 1, rx.Add(-3*time.Second))}, nil, false, a, pol)
-	if kept || next == nil || !next.learnt.Equal(rx) || !out[0].capturedAt.Equal(rx.Add(-3*time.Second)) {
-		t.Fatalf("relearn: kept %v next %+v out %+v", kept, next, out[0])
+	out, next, ps := place(rx, []Frame{frame(snA, 1, rx.Add(-3*time.Second))}, nil, false, a, pol)
+	if ps.kept || next == nil || !next.learnt.Equal(rx) || !out[0].capturedAt.Equal(rx.Add(-3*time.Second)) {
+		t.Fatalf("relearn: kept %v next %+v out %+v", ps.kept, next, out[0])
 	}
 	// The same age with input 30 s late by the old relation: kept.
-	out, _, next, kept = place(rx, []Frame{frame(snA, 2, t0.Add(40*time.Second))}, nil, false, a, pol)
-	if !kept || next.learnt != a.learnt || !out[0].byAnchor || !out[0].backlog {
-		t.Fatalf("kept: kept %v next %+v out %+v", kept, next, out[0])
+	out, next, ps = place(rx, []Frame{frame(snA, 2, t0.Add(40*time.Second))}, nil, false, a, pol)
+	if !ps.kept || next.learnt != a.learnt || !out[0].byAnchor || !out[0].backlog {
+		t.Fatalf("kept: kept %v next %+v out %+v", ps.kept, next, out[0])
 	}
 }
 
@@ -152,5 +152,104 @@ func TestPlaceOneSources(t *testing.T) {
 	p, note, _ = PlaceOne(t0, &sent, t0, pol)
 	if p.Source != core.TimeReceiver || note != timeplace.NoteAheadOfResponse {
 		t.Fatalf("ahead of sent_at: %+v %s", p, note)
+	}
+}
+
+// The probe of the review: a live stream, then one batch whose sent_at
+// claims it was sent 300 s after its sample. Only receipt timing of the
+// live stream teaches the anchor, so the batch neither moves the later
+// live samples into the past nor blocks the anchor from following them;
+// the batch sample itself disagrees with that timing, so it is placed at
+// its receipt and the disagreement is counted. Twin: an honest sent_at
+// batch of 60 s old samples is still placed by its sent_at.
+func TestSentAtCannotPoisonTheAnchor(t *testing.T) {
+	r := newRig(t, rigOpts{})
+	r.pol.Values.TelemetryBacklogRateHz = 100
+	s := r.in.NewSession(clientA, t0)
+	live := func(seq int64, at time.Duration) {
+		t.Helper()
+		r.clk.set(t0.Add(at + 200*time.Millisecond))
+		one(t, r.take(clientA, s, frame(snA, seq, t0.Add(at))), OutcomeAccepted)
+	}
+	for i := range 3 {
+		live(int64(i), time.Duration(i)*time.Second)
+	}
+	// The poisoning batch: sample of t0+3 s, sent_at = ts + 300 s.
+	r.clk.set(t0.Add(3*time.Second + 200*time.Millisecond))
+	ts := t0.Add(3 * time.Second)
+	sent := ts.Add(300 * time.Second)
+	res := r.in.Take(t.Context(), Delivery{ClientID: clientA, RxTS: r.clk.now(), SentAt: &sent, Frames: []Frame{frame(snA, 3, ts)}})
+	one(t, res, OutcomeAccepted)
+	if r.counters.Get(CounterSentAtDisagrees) != 1 {
+		t.Fatalf("disagreement not counted: %v", r.counters.Snapshot())
+	}
+	// Later live samples, also after the anchor's age.
+	for i := 4; i < 8; i++ {
+		live(int64(i), time.Duration(i)*time.Second)
+	}
+	for i := 8; i < 12; i++ {
+		live(int64(i), 70*time.Second+time.Duration(i)*time.Second)
+	}
+	waitFor(t, func() bool { return len(r.pub.tracks(t)) == 12 })
+	for _, tr := range r.pub.tracks(t) {
+		if lag := tr.RxTS.Sub(tr.CapturedAt.Time); tr.Backlog || lag < 0 || lag > time.Second {
+			t.Fatalf("seq %d captured %v rx %v backlog %v", tr.Body.Seq, tr.CapturedAt.Time, tr.RxTS.Time, tr.Backlog)
+		}
+	}
+	if r.counters.Get(CounterAnchorKept) != 0 {
+		t.Fatalf("anchor kept: %v", r.counters.Snapshot())
+	}
+
+	// Twin: an honest sent_at agrees with receipt timing and is believed.
+	r.clk.set(t0.Add(100 * time.Second))
+	old := t0.Add(40 * time.Second)
+	sent = r.clk.now()
+	f := frame(snA, 100, old)
+	f.Backlog = true
+	one(t, r.in.Take(t.Context(), Delivery{ClientID: clientA, RxTS: r.clk.now(), SentAt: &sent, Frames: []Frame{f}}), OutcomeAccepted)
+	waitFor(t, func() bool { return len(r.pub.tracks(t)) == 13 })
+	if tr := r.pub.tracks(t)[12]; !tr.CapturedAt.Equal(old) || !tr.Backlog || r.counters.Get(CounterSentAtDisagrees) != 1 {
+		t.Fatalf("honest sent_at: captured %v backlog %v %v", tr.CapturedAt.Time, tr.Backlog, r.counters.Snapshot())
+	}
+}
+
+// A live stream whose clock stepped back further than backlog_after_s is
+// followed once it has been consistent for the anchor's age: the old
+// relation would place every later sample as history (anchor_kept) for
+// ever. Twin: a stalled reader (ever smaller delays at one read) never
+// relearns.
+func TestConsistentLiveStreamRelearnsTheAnchor(t *testing.T) {
+	pol := defaultPlace()
+	a := &anchor{ts: t0, placed: t0, learnt: t0}
+	// The client's clock steps back 120 s; samples arrive on time.
+	var out []placed
+	var ps placeStats
+	relearnt := false
+	for i := 1; i <= 80; i++ {
+		rx := t0.Add(time.Duration(i) * time.Second)
+		out, a, ps = place(rx, []Frame{frame(snA, int64(i), rx.Add(-120*time.Second))}, nil, false, a, pol)
+		if !out[0].backlog {
+			relearnt = true
+			if i < 60 {
+				t.Fatalf("relearnt after %d s, before the anchor's age", i)
+			}
+			if !out[0].capturedAt.Equal(rx.Add(-120*time.Second)) && !out[0].capturedAt.Equal(rx) {
+				t.Fatalf("captured %v at rx %v", out[0].capturedAt, rx)
+			}
+		} else if relearnt {
+			t.Fatalf("%d: back to history after the relearn (kept %v)", i, ps.kept)
+		}
+	}
+	if !relearnt {
+		t.Fatal("a consistent live stream never relearnt the anchor")
+	}
+	// Twin: a reader stalled for 90 s reads everything at one instant.
+	a = &anchor{ts: t0, placed: t0, learnt: t0}
+	rx := t0.Add(91 * time.Second)
+	for i := 1; i <= 90; i++ {
+		out, a, _ = place(rx, []Frame{frame(snA, int64(i), t0.Add(time.Duration(i)*time.Second))}, nil, false, a, pol)
+		if !out[0].capturedAt.Equal(t0.Add(time.Duration(i) * time.Second)) {
+			t.Fatalf("stall %d: captured %v", i, out[0].capturedAt)
+		}
 	}
 }
