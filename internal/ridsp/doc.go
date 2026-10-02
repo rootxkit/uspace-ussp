@@ -32,9 +32,12 @@
 //     intent's volumes as extents (or, without an intent, a circle of
 //     session_isa_radius_m around the flight's position reaching
 //     session_isa_horizon_s ahead, renewed while the flight goes on),
-//     DELETE with the version on the flight's end, and after every DSS
-//     answer POST {url}/uss/identification_service_areas/{id} to each
-//     subscriber the DSS listed. The DSS being down never stops
+//     DELETE with the version on the flight's end. With what the DSS
+//     answered it records and, in the same transaction, queues one
+//     dss_outbox isa_notify item per subscriber the DSS listed; a
+//     separate loop with a total time budget POSTs them to
+//     {url}/uss/identification_service_areas/{id}, so a subscriber that
+//     does not answer never holds an ISA write. The DSS being down never stops
 //     GET /uss/flights; /readyz says dss down since T and the outbox
 //     replays on recovery.
 //   - Push (rid-sp, optional, USSP_AUTHORITY_PUSH=on): WS

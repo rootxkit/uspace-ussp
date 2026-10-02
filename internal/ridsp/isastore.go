@@ -43,17 +43,21 @@ type PlanStore interface {
 
 // WorkStore is the relational database as the ISA worker sees it.
 type WorkStore interface {
-	// Claim leases up to n due isa_put and isa_delete items.
-	Claim(ctx context.Context, n int) ([]store.OutboxItem, error)
+	// Claim leases up to n due items of the given kinds (ISAKinds or
+	// NotifyKinds).
+	Claim(ctx context.Context, kinds []string, n int) ([]store.OutboxItem, error)
 	Done(ctx context.Context, id int64) error
 	Fail(ctx context.Context, id int64, cause error, backoff time.Duration) error
 	// ISA is one ISA with its flight's end; false when not recorded.
 	ISA(ctx context.Context, isaID string) (ISARecord, bool, error)
 	Now(ctx context.Context) (time.Time, error)
 	// Written records what the DSS holds (version, window, extents) on
-	// the ISA and its flight, in one transaction.
-	Written(ctx context.Context, r ISARecord) error
-	Deleted(ctx context.Context, isaID string) error
+	// the ISA and its flight and queues the subscribers' notifications
+	// (isa_notify, idempotent by ISANotify.Key), in one transaction.
+	Written(ctx context.Context, r ISARecord, notes []ISANotify) error
+	// Deleted records the ISA deleted and queues the notifications, in
+	// one transaction.
+	Deleted(ctx context.Context, isaID string, notes []ISANotify) error
 	// Failed records the last error of an ISA.
 	Failed(ctx context.Context, isaID, msg string) error
 	// Backlog is the number of undone ISA items and the oldest's age.

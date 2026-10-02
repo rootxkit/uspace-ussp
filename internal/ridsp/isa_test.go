@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -346,13 +347,24 @@ func (r *workerRig) once(t *testing.T) int {
 	return n
 }
 
+// notify runs one notification pass.
+func (r *workerRig) notify(t *testing.T) int {
+	t.Helper()
+	n, err := r.w.NotifyOnce(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
 func probe(w *ISAWorker) (obs.State, string) { return w.Probe()(context.Background()) }
 
 // Flight start puts the ISA in the DSS with our base URL, records its
-// version, and notifies the subscriber the DSS lists with aud = the
-// subscriber's host and scope rid.service_provider; flight end deletes
-// it with the version and notifies the deletion without service_area
-// (E-01 both ways). /readyz goes unknown -> up.
+// version and queues the notification of the subscriber the DSS lists,
+// which the notification pass posts with aud = the subscriber's host and
+// scope rid.service_provider; flight end deletes it with the version and
+// notifies the deletion without service_area (E-01 both ways). /readyz
+// goes unknown -> up.
 func TestWorkerPutAndDelete(t *testing.T) {
 	r := newWorkerRig(t)
 	sub := newSubscriber(t)
@@ -374,6 +386,14 @@ func TestWorkerPutAndDelete(t *testing.T) {
 	}
 	if st, d := probe(r.w); st != obs.StateUp {
 		t.Fatalf("after a write: %s %s", st, d)
+	}
+	sub.mu.Lock()
+	if len(sub.got) != 0 || len(r.m.notes()) != 1 {
+		t.Fatalf("notification not queued, or posted by the write: %d %d", len(sub.got), len(r.m.notes()))
+	}
+	sub.mu.Unlock()
+	if r.notify(t) != 1 || len(r.m.notes()) != 0 {
+		t.Fatal("notification not posted")
 	}
 	for _, c := range r.d.Calls() {
 		if strings.Contains(c.Path, "/subscriptions/") {
@@ -399,6 +419,7 @@ func TestWorkerPutAndDelete(t *testing.T) {
 	if _, ok := r.d.ISAs()[id]; ok || r.m.isas[id].DeletedAt == nil || r.w.Counters.Get(CounterISADeletes) != 1 {
 		t.Fatalf("ISA not deleted: %+v", r.d.ISAs())
 	}
+	r.notify(t)
 	sub.mu.Lock()
 	defer sub.mu.Unlock()
 	if len(sub.got) != 2 || sub.got[1].ServiceArea != nil || sub.got[1].Extents != nil || *sub.got[1].Subscriptions[0].NotificationIndex != 2 {
@@ -561,8 +582,10 @@ func TestWorkerRefusals(t *testing.T) {
 	}
 }
 
-// A subscriber that does not take the notification is counted, and the
-// ISA stays written; one that takes it is counted notified (E-01).
+// A subscriber that does not take the notification is tried again,
+// then dropped after MaxNotifyAttempts and counted, and the ISA stays
+// written; one that takes it is counted notified at once (E-01). An
+// unreadable item is dropped and counted.
 func TestWorkerNotifyFailure(t *testing.T) {
 	r := newWorkerRig(t)
 	bad, good := newSubscriber(t), newSubscriber(t)
@@ -571,8 +594,34 @@ func TestWorkerNotifyFailure(t *testing.T) {
 	subscribe(t, r.d, "22222222-2222-4222-8222-222222222222", good.srv.URL)
 	r.start(t, 1)
 	r.once(t)
-	if r.w.Counters.Get(CounterSubscriberNotifyErr) != 1 || r.w.Counters.Get(CounterSubscriberNotified) != 1 || len(r.d.ISAs()) != 1 {
-		t.Fatalf("%v", r.w.Counters.Snapshot())
+	r.notify(t)
+	if r.w.Counters.Get(CounterSubscriberNotifyErr) != 0 || r.w.Counters.Get(CounterSubscriberNotified) != 1 || len(r.m.notes()) != 1 {
+		t.Fatalf("first pass: %v %d", r.w.Counters.Snapshot(), len(r.m.notes()))
+	}
+	for range MaxNotifyAttempts - 1 {
+		if r.notify(t) != 0 {
+			t.Fatal("retried before its wait")
+		}
+		r.m.advance(notifyRetry)
+		r.notify(t)
+	}
+	if r.w.Counters.Get(CounterSubscriberNotifyErr) != 1 || len(r.m.notes()) != 0 || len(r.d.ISAs()) != 1 {
+		t.Fatalf("after %d attempts: %v %d", MaxNotifyAttempts, r.w.Counters.Snapshot(), len(r.m.notes()))
+	}
+	bad.mu.Lock()
+	if bad.got != nil {
+		t.Error("the failing subscriber recorded a notification")
+	}
+	bad.mu.Unlock()
+
+	_, _ = r.m.Enqueue(context.Background(), store.OutboxISANotify, "x", 0, "not a notification")
+	r.notify(t)
+	if r.w.Counters.Get(CounterSubscriberNotifyErr) != 2 || len(r.m.notes()) != 0 {
+		t.Fatalf("unreadable: %v", r.w.Counters.Snapshot())
+	}
+	r.m.errs["Claim"] = errors.New("db down")
+	if _, err := r.w.NotifyOnce(context.Background()); err == nil {
+		t.Fatal("a claim failure not returned")
 	}
 }
 
@@ -761,3 +810,63 @@ func TestPing(t *testing.T) {
 type tokenFunc func() (string, error)
 
 func (f tokenFunc) Token(context.Context, string, ...string) (string, error) { return f() }
+
+// hangingSubscriber takes a notification and never answers until the
+// test ends.
+func hangingSubscriber(t *testing.T) *httptest.Server {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) }) // runs first: the handlers return, then the server closes
+	return srv
+}
+
+// ISA writes never wait on subscribers: with subscribers that never
+// answer, the put and the delete of an ISA each take well under one call
+// timeout, and the ISA is created and deleted in the DSS.
+func TestNotificationsDoNotBlockISAWrites(t *testing.T) {
+	r := newWorkerRig(t)
+	for i := range 3 {
+		subscribe(t, r.d, fmt.Sprintf("%08d-1111-4111-8111-111111111111", i), hangingSubscriber(t).URL)
+	}
+	id := r.start(t, 1)
+	began := time.Now()
+	r.once(t)
+	if took := time.Since(began); took > 2*time.Second {
+		t.Fatalf("the ISA put waited %v on subscribers", took)
+	}
+	if _, ok := r.d.ISAs()[id]; !ok {
+		t.Fatal("ISA not written")
+	}
+	r.m.ended[flightN(1)] = true
+	if err := r.p.Plan(context.Background(), r.m, flights.Body{FlightID: flightN(1), Event: flights.EventEnded}); err != nil {
+		t.Fatal(err)
+	}
+	began = time.Now()
+	r.once(t)
+	if took := time.Since(began); took > 2*time.Second {
+		t.Fatalf("the ISA delete waited %v on subscribers", took)
+	}
+	if _, ok := r.d.ISAs()[id]; ok {
+		t.Fatal("ISA not deleted")
+	}
+	// The notification pass is bounded by its budget, not by the
+	// subscribers: six notifications to subscribers that never answer.
+	if len(r.m.notes()) != 6 {
+		t.Fatalf("notifications queued: %d", len(r.m.notes()))
+	}
+	r.w.NotifyBudget = 300 * time.Millisecond
+	began = time.Now()
+	r.notify(t)
+	if took := time.Since(began); took > 2*time.Second {
+		t.Fatalf("the notification pass took %v with a budget of %v", took, r.w.NotifyBudget)
+	}
+	if r.w.Counters.Get(CounterSubscriberNotified) != 0 {
+		t.Fatal("a hanging subscriber counted notified")
+	}
+}

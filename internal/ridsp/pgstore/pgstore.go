@@ -1,6 +1,6 @@
 // Package pgstore is internal/ridsp's PlanStore and WorkStore on the
 // relational database: dss_isas, the flights' ISA columns, the intents'
-// volumes and the dss_outbox items isa_put and isa_delete, through the
+// volumes and the dss_outbox items isa_put, isa_delete and isa_notify, through the
 // sqlc queries of internal/store/queries/relational/isas.sql, on the
 // database clock. Its tests are the integration tests (test/integration).
 package pgstore
@@ -96,10 +96,21 @@ type WorkStore struct{ S *store.Store }
 var _ ridsp.WorkStore = WorkStore{}
 
 // Claim implements ridsp.WorkStore.
-func (p WorkStore) Claim(ctx context.Context, n int) ([]store.OutboxItem, error) {
+func (p WorkStore) Claim(ctx context.Context, kinds []string, n int) ([]store.OutboxItem, error) {
 	return p.S.Queries().ClaimOutboxKinds(ctx, relational.ClaimOutboxKindsParams{
-		LeaseS: store.DefaultLease.Seconds(), Kinds: ridsp.ISAKinds, N: int32(max(0, min(n, store.MaxClaim))),
+		LeaseS: store.DefaultLease.Seconds(), Kinds: kinds, N: int32(max(0, min(n, store.MaxClaim))),
 	})
+}
+
+// enqueueNotes queues the notifications inside q's transaction.
+func enqueueNotes(ctx context.Context, q *relational.Queries, notes []ridsp.ISANotify) error {
+	for _, n := range notes {
+		id, v := n.Key()
+		if _, err := store.Enqueue(ctx, q, store.OutboxISANotify, id, v, n); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Done implements ridsp.WorkStore.
@@ -127,10 +138,13 @@ func (p WorkStore) ISA(ctx context.Context, isaID string) (ridsp.ISARecord, bool
 func (p WorkStore) Now(ctx context.Context) (time.Time, error) { return p.S.Queries().DBNow(ctx) }
 
 // Written implements ridsp.WorkStore.
-func (p WorkStore) Written(ctx context.Context, r ridsp.ISARecord) error {
+func (p WorkStore) Written(ctx context.Context, r ridsp.ISARecord, notes []ridsp.ISANotify) error {
 	return p.S.Tx(ctx, func(q *relational.Queries) error {
 		if err := q.SetISAWritten(ctx, relational.SetISAWrittenParams{Version: r.Version, TimeStart: r.TimeStart,
 			TimeEnd: r.TimeEnd, Extents: r.Extents, IsaID: r.ISAID}); err != nil {
+			return err
+		}
+		if err := enqueueNotes(ctx, q, notes); err != nil {
 			return err
 		}
 		if r.FlightID == "" {
@@ -146,8 +160,13 @@ func (p WorkStore) Written(ctx context.Context, r ridsp.ISARecord) error {
 }
 
 // Deleted implements ridsp.WorkStore.
-func (p WorkStore) Deleted(ctx context.Context, isaID string) error {
-	return p.S.Queries().SetISADeleted(ctx, isaID)
+func (p WorkStore) Deleted(ctx context.Context, isaID string, notes []ridsp.ISANotify) error {
+	return p.S.Tx(ctx, func(q *relational.Queries) error {
+		if err := q.SetISADeleted(ctx, isaID); err != nil {
+			return err
+		}
+		return enqueueNotes(ctx, q, notes)
+	})
 }
 
 // Failed implements ridsp.WorkStore.

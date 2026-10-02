@@ -119,7 +119,7 @@ func (m *memStore) enqueueLocked(kind, entityID string, version int64, payload a
 	return true, nil
 }
 
-func (m *memStore) Claim(_ context.Context, n int) ([]store.OutboxItem, error) {
+func (m *memStore) Claim(_ context.Context, kinds []string, n int) ([]store.OutboxItem, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.fail("Claim"); err != nil {
@@ -131,7 +131,7 @@ func (m *memStore) Claim(_ context.Context, n int) ([]store.OutboxItem, error) {
 		if len(out) >= n {
 			break
 		}
-		if it.DoneAt != nil || it.NextAt.After(now) || !slices.Contains(ISAKinds, it.Kind) {
+		if it.DoneAt != nil || it.NextAt.After(now) || !slices.Contains(kinds, it.Kind) {
 			continue
 		}
 		it.Attempts++
@@ -192,7 +192,17 @@ func (m *memStore) ISA(_ context.Context, isaID string) (ISARecord, bool, error)
 	return out, true, nil
 }
 
-func (m *memStore) Written(_ context.Context, r ISARecord) error {
+func (m *memStore) enqueueNotesLocked(notes []ISANotify) error {
+	for _, n := range notes {
+		id, v := n.Key()
+		if _, err := m.enqueueLocked(store.OutboxISANotify, id, v, n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *memStore) Written(_ context.Context, r ISARecord, notes []ISANotify) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.fail("Written"); err != nil {
@@ -204,17 +214,17 @@ func (m *memStore) Written(_ context.Context, r ISARecord) error {
 	}
 	cur.Version, cur.TimeStart, cur.TimeEnd, cur.Extents = r.Version, r.TimeStart, r.TimeEnd, r.Extents
 	delete(m.lastErr, r.ISAID)
-	return nil
+	return m.enqueueNotesLocked(notes)
 }
 
-func (m *memStore) Deleted(_ context.Context, isaID string) error {
+func (m *memStore) Deleted(_ context.Context, isaID string, notes []ISANotify) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if r := m.isas[isaID]; r != nil && r.DeletedAt == nil {
 		t := m.clock()
 		r.DeletedAt = &t
 	}
-	return nil
+	return m.enqueueNotesLocked(notes)
 }
 
 func (m *memStore) Failed(_ context.Context, isaID, msg string) error {
@@ -281,13 +291,18 @@ func (m *memStore) Renew(_ context.Context, beforeS float64, n int, queue func(I
 	return queued, nil
 }
 
-// pending are the undone items, oldest first.
-func (m *memStore) pending() []store.OutboxItem {
+// pending are the undone ISA writes, oldest first.
+func (m *memStore) pending() []store.OutboxItem { return m.undone(ISAKinds) }
+
+// notes are the undone notifications, oldest first.
+func (m *memStore) notes() []store.OutboxItem { return m.undone(NotifyKinds) }
+
+func (m *memStore) undone(kinds []string) []store.OutboxItem {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []store.OutboxItem
 	for _, it := range m.items {
-		if it.DoneAt == nil {
+		if it.DoneAt == nil && slices.Contains(kinds, it.Kind) {
 			out = append(out, *it)
 		}
 	}

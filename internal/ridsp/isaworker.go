@@ -39,12 +39,24 @@ const (
 	DefaultCallTimeout = 5 * time.Second
 	// DefaultMaxBackoff caps the wait before an item is retried.
 	DefaultMaxBackoff = 30 * time.Second
+	// DefaultNotifyBudget bounds one pass of the notification loop: it
+	// takes no further notification once the budget is spent, and the
+	// call under way ends with it.
+	DefaultNotifyBudget = 10 * time.Second
+	// MaxNotifyAttempts bounds the attempts of one notification; after
+	// the last it is dropped, counted and logged.
+	MaxNotifyAttempts = 3
+	// notifyRetry is the wait before a notification is tried again.
+	notifyRetry = time.Second
 	// renewBatch bounds the session ISAs renewed per tick.
 	renewBatch = 100
 )
 
-// ISAKinds are the outbox kinds the ISA worker takes.
+// ISAKinds are the outbox kinds the ISA worker's write loop takes.
 var ISAKinds = []string{store.OutboxISAPut, store.OutboxISADelete}
+
+// NotifyKinds are the outbox kinds its notification loop takes.
+var NotifyKinds = []string{store.OutboxISANotify}
 
 // errDSSDown marks a failure that says the DSS is unreachable (no
 // answer, a 5xx or a 429), as opposed to an answer refusing the call.
@@ -60,9 +72,12 @@ type DSSState struct {
 	Reason string
 }
 
-// ISAWorker writes the planned ISAs to the DSS (see the package
-// documentation). Safe for one Run per process; several processes may
-// run it at once (the outbox leases each item to one of them).
+// ISAWorker writes the planned ISAs to the DSS and notifies the
+// subscribers the DSS lists (see the package documentation). The ISA
+// writes and the notifications are separate outbox kinds worked by
+// separate loops, so a subscriber that does not answer never holds an
+// ISA write. Safe for one Run per process; several processes may run it
+// at once (the outbox leases each item to one of them).
 type ISAWorker struct {
 	// Store is the relational database (internal/ridsp/pgstore in api).
 	Store WorkStore
@@ -77,11 +92,13 @@ type ISAWorker struct {
 	Logger     *slog.Logger
 	Now        func() time.Time
 	// Batch (16) items per claim, a claim every Every (1 s), the session
-	// renewal every RenewEvery (60 s), retries no later than MaxBackoff.
-	Batch      int
-	Every      time.Duration
-	RenewEvery time.Duration
-	MaxBackoff time.Duration
+	// renewal every RenewEvery (60 s), retries no later than MaxBackoff;
+	// a notification pass spends at most NotifyBudget (10 s).
+	Batch        int
+	Every        time.Duration
+	RenewEvery   time.Duration
+	MaxBackoff   time.Duration
+	NotifyBudget time.Duration
 
 	once   sync.Once
 	dss    *stdf3411.StdClient
@@ -214,13 +231,13 @@ func (w *ISAWorker) Ping(ctx context.Context) error {
 
 // Run checks the DSS, then works through the ISA items until ctx ends;
 // every RenewEvery it queues the renewal of session ISAs and checks the
-// DSS again.
+// DSS again. The notifications run in their own loop beside it.
 func (w *ISAWorker) Run(ctx context.Context) {
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	wg.Go(func() { w.runNotify(ctx) })
 	_ = w.Ping(ctx)
-	every, renew := w.Every, w.RenewEvery
-	if every <= 0 {
-		every = time.Second
-	}
+	every, renew := w.every(), w.RenewEvery
 	if renew <= 0 {
 		renew = time.Minute
 	}
@@ -245,13 +262,37 @@ func (w *ISAWorker) Run(ctx context.Context) {
 	}
 }
 
-// Once claims and handles one batch; it returns how many items it took.
+func (w *ISAWorker) every() time.Duration {
+	if w.Every <= 0 {
+		return time.Second
+	}
+	return w.Every
+}
+
+// runNotify posts the queued notifications every Every until ctx ends.
+func (w *ISAWorker) runNotify(ctx context.Context) {
+	t := time.NewTicker(w.every())
+	defer t.Stop()
+	for {
+		if _, err := w.NotifyOnce(ctx); err != nil && ctx.Err() == nil {
+			w.logger().LogAttrs(ctx, slog.LevelWarn, "ISA notification outbox not read; retried", obs.Err(err))
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// Once claims and handles one batch of ISA writes; it returns how many
+// items it took.
 func (w *ISAWorker) Once(ctx context.Context) (int, error) {
 	n := w.Batch
 	if n <= 0 {
 		n = 16
 	}
-	items, err := w.Store.Claim(ctx, n)
+	items, err := w.Store.Claim(ctx, ISAKinds, n)
 	if err != nil {
 		return 0, err
 	}
@@ -437,14 +478,14 @@ func (w *ISAWorker) put(ctx context.Context, p ISAPut) error {
 		return err
 	}
 	v := ans.ServiceArea.Version
-	if err := w.Store.Written(ctx, ISARecord{ISAID: p.ISAID, FlightID: p.FlightID, Version: &v, TimeStart: start, TimeEnd: end, Extents: raw}); err != nil {
+	sa := ans.ServiceArea
+	notes := notifications(p.ISAID, subs, &sa, &ext)
+	if err := w.Store.Written(ctx, ISARecord{ISAID: p.ISAID, FlightID: p.FlightID, Version: &v, TimeStart: start, TimeEnd: end, Extents: raw}, notes); err != nil {
 		return err
 	}
 	w.count(CounterISAWrites)
 	w.logger().LogAttrs(ctx, slog.LevelInfo, "ISA written in the DSS", slog.String("isa_id", p.ISAID),
 		slog.String("flight_id", p.FlightID), slog.Int("subscribers", len(subs)))
-	sa := ans.ServiceArea
-	w.notify(ctx, p.ISAID, subs, &sa, &ext)
 	return nil
 }
 
@@ -479,7 +520,7 @@ func (w *ISAWorker) refreshVersion(ctx context.Context, isaID string, start, end
 		return fmt.Errorf("the DSS holds ISA %s for another Service Provider", isaID)
 	}
 	v := ans.ServiceArea.Version
-	if err := w.Store.Written(ctx, ISARecord{ISAID: isaID, Version: &v, TimeStart: start, TimeEnd: end, Extents: ext}); err != nil {
+	if err := w.Store.Written(ctx, ISARecord{ISAID: isaID, Version: &v, TimeStart: start, TimeEnd: end, Extents: ext}, nil); err != nil {
 		return err
 	}
 	return &retryNowError{cause: "the DSS answered 409; its version " + v + " is recorded and the write is retried"}
@@ -494,7 +535,7 @@ func (w *ISAWorker) delete(ctx context.Context, d ISADelete) error {
 		return err
 	}
 	if row.Version == nil {
-		return w.Store.Deleted(ctx, d.ISAID)
+		return w.Store.Deleted(ctx, d.ISAID, nil)
 	}
 	c, err := w.client()
 	if err != nil {
@@ -512,7 +553,7 @@ func (w *ISAWorker) delete(ctx context.Context, d ISADelete) error {
 	case http.StatusOK:
 	case http.StatusNotFound:
 		w.logger().LogAttrs(ctx, slog.LevelWarn, "the DSS no longer holds the ISA; recorded as deleted", slog.String("isa_id", d.ISAID))
-		return w.Store.Deleted(ctx, d.ISAID)
+		return w.Store.Deleted(ctx, d.ISAID, nil)
 	case http.StatusConflict:
 		return w.refreshVersion(ctx, d.ISAID, row.TimeStart, row.TimeEnd, row.Extents)
 	default:
@@ -526,15 +567,14 @@ func (w *ISAWorker) delete(ctx context.Context, d ISADelete) error {
 	if err != nil {
 		return err
 	}
-	if err := w.Store.Deleted(ctx, d.ISAID); err != nil {
+	// A deletion is notified without service_area and extents (the file:
+	// "If this field is not populated, the ISA was deleted").
+	if err := w.Store.Deleted(ctx, d.ISAID, notifications(d.ISAID, subs, nil, nil)); err != nil {
 		return err
 	}
 	w.count(CounterISADeletes)
 	w.logger().LogAttrs(ctx, slog.LevelInfo, "ISA deleted from the DSS", slog.String("isa_id", d.ISAID),
 		slog.String("flight_id", d.FlightID), slog.Int("subscribers", len(subs)))
-	// A deletion is notified without service_area and extents (the file:
-	// "If this field is not populated, the ISA was deleted").
-	w.notify(ctx, d.ISAID, subs, nil, nil)
 	return nil
 }
 
@@ -576,33 +616,98 @@ func checkSubscribers(subs *[]f3411.SubscriberToNotify) ([]f3411.SubscriberToNot
 	return *subs, nil
 }
 
-// notify posts the ISA notification to every subscriber: aud is the host
-// of the subscriber's url, scope rid.service_provider. A subscriber that
-// does not take it within DefaultCallTimeout, after one retry, is
-// counted and logged; the others are notified regardless.
-func (w *ISAWorker) notify(ctx context.Context, isaID string, subs []f3411.SubscriberToNotify, sa *f3411.IdentificationServiceArea, ext *f3411.Volume4D) {
+// ISANotify is the payload of a dss_outbox isa_notify item: the
+// notification of one ISA write to one subscriber the DSS listed.
+type ISANotify struct {
+	ISAID string                                                   `json:"isa_id"`
+	URL   string                                                   `json:"url"`
+	Body  f3411.PutIdentificationServiceAreaNotificationParameters `json:"body"`
+}
+
+// Key is the item's idempotency key (entity id and version): the ISA
+// and the subscriber's first subscription, at its notification index,
+// which the DSS raises with every change it notifies.
+func (n ISANotify) Key() (string, int64) {
+	id, idx := n.ISAID, int64(0)
+	if len(n.Body.Subscriptions) > 0 {
+		s := n.Body.Subscriptions[0]
+		id += "/" + s.SubscriptionId
+		if s.NotificationIndex != nil {
+			idx = int64(*s.NotificationIndex)
+		}
+	}
+	return id, idx
+}
+
+// notifications are the notifications of an ISA write, one a subscriber.
+func notifications(isaID string, subs []f3411.SubscriberToNotify, sa *f3411.IdentificationServiceArea, ext *f3411.Volume4D) []ISANotify {
+	out := make([]ISANotify, 0, len(subs))
 	for _, s := range subs {
-		body := f3411.PutIdentificationServiceAreaNotificationParameters{Subscriptions: s.Subscriptions, ServiceArea: sa, Extents: ext}
-		var last error
-		for attempt := range 2 {
-			if attempt > 0 {
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(500 * time.Millisecond):
-				}
-			}
-			if last = w.notifyOne(ctx, s.Url, isaID, body); last == nil {
-				break
-			}
+		out = append(out, ISANotify{ISAID: isaID, URL: s.Url,
+			Body: f3411.PutIdentificationServiceAreaNotificationParameters{Subscriptions: s.Subscriptions, ServiceArea: sa, Extents: ext}})
+	}
+	return out
+}
+
+func (w *ISAWorker) notifyBudget() time.Duration {
+	if w.NotifyBudget <= 0 {
+		return DefaultNotifyBudget
+	}
+	return w.NotifyBudget
+}
+
+// NotifyOnce posts queued notifications, one claimed at a time, until
+// none is due or NotifyBudget is spent; it returns how many it took.
+// The call under way ends with the budget at the latest. A notification
+// a subscriber does not take is tried again after notifyRetry, and after
+// MaxNotifyAttempts it is dropped, counted and logged; the others are
+// posted regardless.
+func (w *ISAWorker) NotifyOnce(ctx context.Context) (int, error) {
+	bctx, cancel := context.WithTimeout(ctx, w.notifyBudget())
+	defer cancel()
+	taken := 0
+	for bctx.Err() == nil {
+		items, err := w.Store.Claim(ctx, NotifyKinds, 1)
+		if err != nil {
+			return taken, err
 		}
-		if last != nil {
-			w.count(CounterSubscriberNotifyErr)
-			w.logger().LogAttrs(ctx, slog.LevelWarn, "ISA notification not taken by a subscriber",
-				slog.String("isa_id", isaID), slog.String("subscriber", s.Url), obs.Err(last))
-			continue
+		if len(items) == 0 {
+			return taken, nil
 		}
+		taken++
+		w.notifyItem(ctx, bctx, items[0])
+	}
+	return taken, nil
+}
+
+// notifyItem posts one notification within bctx and records the outcome
+// with ctx.
+func (w *ISAWorker) notifyItem(ctx, bctx context.Context, it store.OutboxItem) {
+	var n ISANotify
+	err := json.Unmarshal(it.Payload, &n)
+	if err == nil {
+		err = w.notifyOne(bctx, n.URL, n.ISAID, n.Body)
+	} else {
+		it.Attempts = MaxNotifyAttempts // unreadable: never tried again
+	}
+	if err == nil {
 		w.count(CounterSubscriberNotified)
+		if derr := w.Store.Done(ctx, it.ID); derr != nil {
+			w.logger().LogAttrs(ctx, slog.LevelWarn, "ISA notification sent but not marked; it may be sent again", obs.Err(derr))
+		}
+		return
+	}
+	if it.Attempts < MaxNotifyAttempts {
+		if ferr := w.Store.Fail(ctx, it.ID, err, notifyRetry); ferr != nil {
+			w.logger().LogAttrs(ctx, slog.LevelWarn, "ISA notification failure not recorded; it is taken again after its lease", obs.Err(ferr))
+		}
+		return
+	}
+	w.count(CounterSubscriberNotifyErr)
+	w.logger().LogAttrs(ctx, slog.LevelWarn, "ISA notification not taken by a subscriber; dropped",
+		slog.String("isa_id", n.ISAID), slog.String("subscriber", n.URL), slog.Int("attempts", int(it.Attempts)), obs.Err(err))
+	if derr := w.Store.Done(ctx, it.ID); derr != nil {
+		w.logger().LogAttrs(ctx, slog.LevelWarn, "ISA notification dropped but not marked; it is taken again", obs.Err(derr))
 	}
 }
 
