@@ -49,7 +49,7 @@ const isaID = "3e5572a0-f733-49af-bc14-8a18bd53ee39"
 
 func notification(version string) *f3411.PutIdentificationServiceAreaNotificationParameters {
 	idx := int32(3)
-	now := time.Now()
+	now := t0 // fixed: the same version twice must be the same entity
 	ext := f3411.Volume4D{Volume: boxVolume(geodeticBox(origin, 0.01)),
 		TimeStart: &f3411.Time{Format: f3411.RFC3339, Value: now}, TimeEnd: &f3411.Time{Format: f3411.RFC3339, Value: now.Add(time.Hour)}}
 	return &f3411.PutIdentificationServiceAreaNotificationParameters{
