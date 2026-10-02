@@ -2,3 +2,4 @@
 *.woff2 binary
 *.ico binary
 *.png binary
+api/standards/*.yaml -text

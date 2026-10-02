@@ -1,0 +1,28 @@
+# oapi-codegen configuration for internal/stdapi/f3411/server.gen.go
+# (docs/PLAN.md D3, brief WP-3): the USS-side strict server (net/http, Go 1.22
+# routing) of the operations this USSP serves,
+# from the pinned copy api/standards/f3411-v22a.yaml. No models: the types are
+# uspace-core's f3411 package (v1.2.0), which core generated from the same
+# file at the same commit (api/standards/SOURCE); they are dot-imported so
+# that the generated code names them unqualified. Formats uuid and
+# duration map to string as in core's configuration. Operation ids are
+# the file's. Run through scripts/generate.sh; never edit the output.
+package: f3411
+generate:
+  std-http-server: true
+  strict-server: true
+additional-imports:
+  - package: github.com/rootxkit/uspace-core/f3411
+    alias: .
+output-options:
+  type-mapping:
+    string:
+      formats:
+        uuid:
+          type: string
+        duration:
+          type: string
+  include-operation-ids:
+    - searchFlights
+    - getFlightDetails
+    - postIdentificationServiceArea

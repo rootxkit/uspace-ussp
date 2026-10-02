@@ -228,16 +228,25 @@ func (g *Guard) authenticate(r *http.Request, a httpx.Access) (Principal, *refus
 
 func (g *Guard) admitMachine(p Principal, a httpx.Access) (Principal, *refusal) {
 	c := p.Claims
-	for _, s := range a.Scopes {
-		// An operator scope is honoured only on a token of this USSP's
-		// issuer, an ecosystem scope only on a token of another.
-		if c.HasScope(s) && IsOperatorScope(s) == (c.Issuer == g.OwnIssuer) {
-			return p, nil
-		}
+	// An operator scope is honoured only on a token of this USSP's
+	// issuer, an ecosystem scope only on a token of another.
+	grants := func(s string) bool { return c.HasScope(s) && IsOperatorScope(s) == (c.Issuer == g.OwnIssuer) }
+	if slices.ContainsFunc(a.Scopes, grants) {
+		return p, nil
+	}
+	if len(a.AllScopes) > 0 && !slices.ContainsFunc(a.AllScopes, func(s string) bool { return !grants(s) }) {
+		return p, nil
+	}
+	var wants []string
+	if len(a.Scopes) > 0 {
+		wants = append(wants, "one of "+strings.Join(a.Scopes, ", "))
+	}
+	if len(a.AllScopes) > 0 {
+		wants = append(wants, "all of "+strings.Join(a.AllScopes, ", "))
 	}
 	want := "a session"
-	if len(a.Scopes) > 0 {
-		want = "one of " + strings.Join(a.Scopes, ", ")
+	if len(wants) > 0 {
+		want = strings.Join(wants, " or ")
 	}
 	return Principal{}, &refusal{status: http.StatusForbidden, slug: httpx.SlugForbidden, counter: CounterScopeRefused,
 		detail: "the token does not grant " + want, field: &core.FieldError{Field: "scope", Reason: "missing " + want},

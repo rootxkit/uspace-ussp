@@ -2,7 +2,8 @@
 // accounts, intents, the CIS cache and the KV projections; the only
 // writer of the relational database. WP-2 brings its routes: the token
 // issuer, the JWKS and the accounts, every operation behind the
-// fail-closed access table of internal/national.
+// fail-closed access table of internal/national; WP-3 mounts the F3548
+// USS endpoints (internal/stdapi), 501 until WP-13.
 package api
 
 import (
@@ -27,6 +28,7 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/national"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
+	"github.com/rootxkit/uspace-ussp/internal/stdapi"
 	"github.com/rootxkit/uspace-ussp/internal/store"
 )
 
@@ -89,56 +91,6 @@ func IssuerFromConfig(cfg config.Config) (*auth.Issuer, error) {
 	return auth.NewIssuer(url, cfg.Audiences[0], keys)
 }
 
-// refuseAll is the verifier of a process with no audience configured:
-// it can verify nothing, and says so.
-type refuseAll struct{}
-
-// Verify refuses every token as rejected_audience.
-func (refuseAll) Verify(context.Context, string) (coreauth.Claims, error) {
-	return coreauth.Claims{}, &coreauth.TokenError{Counter: coreauth.CounterRejectedAudience, Claim: "aud", Reason: "USSP_AUDIENCES is empty: no token is accepted"}
-}
-
-func publish(rt *proc.Runtime, name string, c *core.Counters) {
-	rt.Status.Add(name, c)
-	rt.Registry.MustRegister(obs.NewCountersCollector(name, c))
-}
-
-// VerifierFromConfig builds the verifier of every token the process
-// accepts and registers its readiness (jwks); without an audience the
-// verifier refuses every token and jwks says why.
-func VerifierFromConfig(ctx context.Context, rt *proc.Runtime, issuer *auth.Issuer) (auth.TokenVerifier, string, error) {
-	cfg := rt.Config
-	if len(cfg.Audiences) == 0 {
-		rt.Health.Register(auth.DepJWKS, false, func(context.Context) (obs.State, string) {
-			return obs.StateDown, "USSP_AUDIENCES is empty: no token is accepted"
-		})
-		return refuseAll{}, "", nil
-	}
-	eco := coreauth.Config{Audiences: cfg.Audiences, StrictSessionClaims: true}
-	if len(cfg.TokenIssuers) > 0 {
-		var err error
-		if eco, err = cfg.VerifierConfig(); err != nil {
-			return nil, "", err
-		}
-	}
-	v, err := auth.NewVerifier(ctx, auth.VerifierConfig{Ecosystem: eco, Own: issuer})
-	if err != nil {
-		return nil, "", err
-	}
-	for name, c := range v.CounterSets() {
-		publish(rt, name, c)
-	}
-	rt.Health.Register(auth.DepJWKS, false, v.Probe)
-	rt.Go(ctx, func(ctx context.Context) {
-		v.Run(ctx)
-		if eco := v.CounterSets()[auth.CounterSetEcosystem]; eco != nil {
-			publish(rt, auth.CounterSetEcosystem, eco)
-		}
-	})
-	own := v.OwnIssuer()
-	return v, own, nil
-}
-
 func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	cfg := rt.Config
 	issuer, err := IssuerFromConfig(cfg)
@@ -151,7 +103,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 		}
 		return obs.StateUp, ""
 	})
-	verifier, ownIss, err := VerifierFromConfig(ctx, rt, issuer)
+	verifier, ownIss, err := proc.TokenVerifier(ctx, rt, issuer)
 	if err != nil {
 		return err
 	}
@@ -177,7 +129,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	}
 
 	counters := &core.Counters{}
-	publish(rt, "accounts", counters)
+	proc.Publish(rt, "accounts", counters)
 	perMin := func(n int) float64 { return float64(n) / 60 }
 	burst := func(n int) int { return max(1, n/6) }
 	svc := &accounts.Service{
@@ -201,6 +153,13 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc, Logger: rt.Logger}
 	if err := national.Register(mux, srv, guard.Require); err != nil {
 		return fmt.Errorf("access table: %w", err)
+	}
+	// The F3548 USS endpoints (PLAN §6.2), 501 until WP-13, behind the
+	// standard's scopes.
+	std := &core.Counters{}
+	proc.Publish(rt, "stdapi", std)
+	if err := stdapi.MountF3548(mux, stdapi.NotImplementedF3548{}, stdapi.Options{Guard: guard.Require, Validate: auth.ValidateAccess, Counters: std}); err != nil {
+		return fmt.Errorf("F3548 access table: %w", err)
 	}
 	rt.Go(ctx, func(ctx context.Context) { svc.RunSweep(ctx, sweepInterval) })
 	return nil
