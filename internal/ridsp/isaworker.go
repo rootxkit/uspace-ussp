@@ -342,7 +342,14 @@ type retryNowError struct{ cause string }
 
 func (r *retryNowError) Error() string { return r.cause }
 
+// handle handles one item holding its ISA's lock, so a put and a delete
+// of one ISA taken by two workers (two api replicas) run one after the
+// other: each reads the ISA as the other left it.
 func (w *ISAWorker) handle(ctx context.Context, it store.OutboxItem) error {
+	return w.Store.Lock(ctx, it.EntityID, func() error { return w.handleLocked(ctx, it) })
+}
+
+func (w *ISAWorker) handleLocked(ctx context.Context, it store.OutboxItem) error {
 	switch it.Kind {
 	case store.OutboxISAPut:
 		var p ISAPut

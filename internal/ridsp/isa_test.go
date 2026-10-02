@@ -919,3 +919,68 @@ func TestWorkerBadSubscribersRecordsFirst(t *testing.T) {
 		t.Fatalf("%v notes %d", r.w.Counters.Snapshot(), len(r.m.notes()))
 	}
 }
+
+// gatedPuts holds every ISA PUT to the DSS until gate closes, and says
+// on entered when one arrives.
+type gatedPuts struct {
+	gate    chan struct{}
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (g *gatedPuts) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method == http.MethodPut && strings.Contains(req.URL.Path, "/dss/identification_service_areas/") {
+		g.once.Do(func() { close(g.entered) })
+		<-g.gate
+	}
+	return http.DefaultTransport.RoundTrip(req)
+}
+
+// Two workers (two api replicas) on one database: one is creating an
+// ISA in the DSS when the flight ends and the other takes the delete.
+// The delete waits for the put of the same ISA and then deletes what
+// the put wrote, so no ISA is left in the DSS for an ended flight.
+func TestWorkerPutAndDeleteSerialisedPerISA(t *testing.T) {
+	r := newWorkerRig(t)
+	g := &gatedPuts{gate: make(chan struct{}), entered: make(chan struct{})}
+	a := &ISAWorker{Store: r.m, DSSBaseURL: r.d.URL(), USSBaseURL: ourBase, Tokens: r.tok, Counters: &core.Counters{},
+		HTTP: &http.Client{Transport: g, Timeout: 10 * time.Second}, Batch: 1}
+	b := &ISAWorker{Store: r.m, DSSBaseURL: r.d.URL(), USSBaseURL: ourBase, Tokens: r.tok, Counters: &core.Counters{}, Batch: 1}
+	id := r.start(t, 1)
+	aDone := make(chan error, 1)
+	go func() { _, err := a.Once(context.Background()); aDone <- err }()
+	select {
+	case <-g.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the put never reached the DSS")
+	}
+	r.m.mu.Lock()
+	r.m.ended[flightN(1)] = true
+	r.m.mu.Unlock()
+	if err := r.p.Plan(context.Background(), r.m, flights.Body{FlightID: flightN(1), Event: flights.EventEnded}); err != nil {
+		t.Fatal(err)
+	}
+	bDone := make(chan error, 1)
+	go func() { _, err := b.Once(context.Background()); bDone <- err }()
+	select {
+	case err := <-bDone:
+		bDone <- err // the delete did not wait for the put
+	case <-time.After(300 * time.Millisecond):
+	}
+	close(g.gate)
+	for _, c := range []chan error{aDone, bDone} {
+		if err := <-c; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 3 { // whatever is still due
+		r.m.due()
+		r.once(t)
+	}
+	if _, ok := r.d.ISAs()[id]; ok {
+		t.Fatalf("the ISA of an ended flight is left in the DSS (row deleted_at %v)", r.m.isas[id].DeletedAt)
+	}
+	if r.m.isas[id].DeletedAt == nil || len(r.m.pending()) != 0 {
+		t.Fatalf("not recorded deleted: pending %d", len(r.m.pending()))
+	}
+}

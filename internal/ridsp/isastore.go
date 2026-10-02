@@ -43,6 +43,11 @@ type PlanStore interface {
 
 // WorkStore is the relational database as the ISA worker sees it.
 type WorkStore interface {
+	// Lock runs fn holding the ISA's lock, which every worker in every
+	// process takes before it handles a put or a delete of that ISA: a
+	// delete never reads the ISA while a put of it is under way, nor the
+	// other way round.
+	Lock(ctx context.Context, isaID string, fn func() error) error
 	// Claim leases up to n due items of the given kinds (ISAKinds or
 	// NotifyKinds).
 	Claim(ctx context.Context, kinds []string, n int) ([]store.OutboxItem, error)

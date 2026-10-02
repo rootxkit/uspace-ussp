@@ -113,6 +113,17 @@ func enqueueNotes(ctx context.Context, q *relational.Queries, notes []ridsp.ISAN
 	return nil
 }
 
+// Lock implements ridsp.WorkStore: fn runs inside a transaction holding
+// the ISA's advisory lock (store.LockClassISA), released when it ends.
+func (p WorkStore) Lock(ctx context.Context, isaID string, fn func() error) error {
+	return p.S.Tx(ctx, func(q *relational.Queries) error {
+		if err := store.LockEntity(ctx, q, store.LockClassISA, isaID); err != nil {
+			return err
+		}
+		return fn()
+	})
+}
+
 // Done implements ridsp.WorkStore.
 func (p WorkStore) Done(ctx context.Context, id int64) error { return p.S.Outbox().Done(ctx, id) }
 

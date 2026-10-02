@@ -25,6 +25,20 @@ type memStore struct {
 	nextID  int64
 	errs    map[string]error // a method name -> the error it returns
 	lastErr map[string]string
+	locks   sync.Map // ISA id -> *sync.Mutex
+}
+
+func (m *memStore) Lock(_ context.Context, isaID string, fn func() error) error {
+	m.mu.Lock()
+	err := m.fail("Lock")
+	m.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	l, _ := m.locks.LoadOrStore(isaID, &sync.Mutex{})
+	l.(*sync.Mutex).Lock()
+	defer l.(*sync.Mutex).Unlock()
+	return fn()
 }
 
 func newMemStore() *memStore {

@@ -41,6 +41,21 @@ const (
 	LockIntents int64 = 0x7573737003 // intent decisions: the active intents read and one written
 )
 
+// Advisory lock classes of the relational database: the first key of a
+// transaction-scoped lock on one entity (LockEntity).
+const (
+	LockClassISA int32 = 0x75737301 // one F3411 ISA: its put or delete in the DSS
+)
+
+// LockEntity takes the transaction-scoped advisory lock of entityID in
+// class inside q's transaction; it is released at commit or rollback.
+func LockEntity(ctx context.Context, q *relational.Queries, class int32, entityID string) error {
+	if err := q.AdvisoryXactLockEntity(ctx, relational.AdvisoryXactLockEntityParams{Class: class, EntityID: entityID}); err != nil {
+		return fmt.Errorf("advisory lock %#x/%s: %w", class, entityID, err)
+	}
+	return nil
+}
+
 // Lock takes the transaction-scoped advisory lock key inside q's
 // transaction; it is released at commit or rollback.
 func Lock(ctx context.Context, q *relational.Queries, key int64) error {
