@@ -160,7 +160,7 @@ flowchart LR
 |---|---|---|---|---|
 | `api` (control plane, stateless behind Caddy) | `/v1/intents/*`, `/v1/geo/*`, `/v1/alerts/{id}/ack`, `/v1/registry/validate`, `/v1/records/*`, `/v1/weather/*`, `/v1/accounts/*`, `/oauth/*`, `/.well-known/jwks.json`, the F3548 USS endpoints `/uss/v1/*`, the CIS change-notification receiver `/v1/cis/notifications`, `/v1/admin/*` (policy, sources), `/healthz`, `/metrics` | PostgreSQL; TimescaleDB read-only (records); CIS (F3); authority (F8, F7) | PostgreSQL (sole writer); KV projections; JetStream `intent.v1`, `cis.v1`, `ctl.*`; outbox to the DSS handed to `dss-sync` | NATS or TimescaleDB down: refuses what needs them with a 503 that names the dependency, keeps serving reads |
 | `telemetry-ingest` | `WS /v1/telemetry`, `POST /v1/telemetry/batch` | KV `client_bindings`, `source_control`, `policy`; geoid grid | `trk.v1.*` (core NATS + mirror), `ingest.v1.<cell3>` on backpressure, `src.v1.*` | `api` down (bindings from KV with age); DSS down; CIS down |
-| `rid-sp` | `GET /uss/flights`, `GET /uss/flights/{id}/details`, `POST /uss/identification_service_areas/{id}` (ISA notifications for our own peer views), optional `WS /v1/authority/flights` | `trk.v1.>` (own flights), KV `intent_active`, `registry_validity` | ISA create/update/delete in the DSS (F3411); `peers.isa_notify` to `dss-sync`'s view registry | DSS down (serves `/uss/flights` from its in-memory 60 s window; ISA upkeep retried) |
+| `rid-sp` | `GET /uss/flights`, `GET /uss/flights/{id}/details`, `POST /uss/identification_service_areas/{id}` (ISA notifications for our own peer views), optional `WS /v1/authority/flights` | `trk.v1.>` (own flights, replayed 60 s back from `TRK` at start), KV `intent_active`, `policy` | KV `rid_isa_notifications` (the peers' ISA notifications, for WP-14's view registry). As built (WP-9): the ISA create/update/delete in the DSS is planned by `api` in the transaction that records each flight fact (`dss_isas`, `dss_outbox` `isa_put`/`isa_delete`) and written by `internal/ridsp`'s ISA worker running in `api`, the only relational writer (D5, D6); `dss` is on `api`'s `/readyz` | DSS down (serves `/uss/flights` from its in-memory 60 s window; ISA upkeep retried from the outbox) |
 | `monitor` (partitioned per `cell3`; one instance for the demo) | nothing over HTTP but `/healthz`, `/metrics` | `trk.v1.<cell3>.>` plus ring-1 neighbours, `man.v1.<cell3>.>`, KV `intent_active`, `cis_current`, `policy`, `source_control`; terrain and geoid | `alrt.v1.*` (raise, refresh, clear), `conf.v1.*` (conformance states), `ident.v1.*` | `api` down (projections with age); CIS down (last zones with `cis_age_s`); terrain absent (height not evaluated, said so) |
 | `traffic-ws` | `WS /v1/traffic`, `GET /v1/traffic/snapshot`, `WS /v1/alerts` (stream) | `trk.v1`, `man.v1`, `alrt.v1`, KV `policy` | `traffic.product.v1` samples (0.1 Hz per client) for the record | everything but NATS |
 | `dss-sync` | nothing over HTTP | JetStream `intent.v1.*` outbox, `conf.v1.*`, peer notifications queued by `api` | DSS `/dss/v1/*` (operational intent references, subscriptions, constraint queries), peer USS `POST /uss/v1/operational_intents` notifications, `peer_intents` via `api`'s internal endpoint, `ctl.dss_state` | DSS down: queues with backoff, marks `pending_dss`, reports |
@@ -463,7 +463,10 @@ AMSL, thresholds, flight id, cell set, state). One bucket is not a
 projection: `telemetry_seen` (TTL 1 h) is telemetry-ingest's replay
 window, written by it once a sample is published, so a replay to another
 replica or after a restart is still acknowledged and not published twice
-(B-05). Every follower logs the
+(B-05). Another is `rid_isa_notifications` (TTL 24 h, F3411
+`NetDpMaxDataRetentionPeriodSeconds`): rid-sp's store of the ISA
+notifications peer Service Providers send us, by ISA id, read by WP-14
+(WP-9). Every follower logs the
 projection age in its status line and refuses nothing when the bucket is
 missing (everything enabled, identification `registry_unavailable`,
 zones "none loaded, said so": SC-22).

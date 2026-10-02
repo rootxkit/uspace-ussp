@@ -9,6 +9,15 @@ additively within `/v1`.
 
 ### Changed
 
+- WP-9: `flight/event/v1` carries an optional `position` (the flight's
+  newest live position, its first on `started`); `intent/state/v1`
+  carries the optional `category`, `class_label` and `ua_registration`
+  (Annex IV items 4 and 10). api records each flight fact and its F3411
+  ISA plan in one transaction and lists `dss` on `/readyz`; relational
+  migration 00013 adds `dss_isas.kind`. The KV bucket
+  `rid_isa_notifications` joins the topology (written by rid-sp). The
+  integration helper `withAuth` points api at a fake DSS.
+
 - WP-8: uspace-core v1.3.0. `httpx.Access.WebSocket` (an upgrade that
   authenticates itself, M22) and `auth.WSAuth.Admit` (a 503 with
   Retry-After before the upgrade, B-10); `bus.Mirror` (every key of a KV
@@ -37,6 +46,40 @@ additively within `/v1`.
   builder moves to `internal/app/proc` (rid-sp verifies tokens too).
 
 ### Added
+
+- WP-9: the ASTM F3411-22a network identification Service Provider.
+  rid-sp keeps our own flights (authenticated, operator_ws) for 60 s in
+  memory, replayed from `TRK` at start (`internal/ridsp.Window`, at most
+  `rid_recent_positions_max_count` samples a flight), and serves `GET
+  /uss/flights` (`rid.display_provider`; the standard's view, 413 with
+  the standard's ErrorResponse above 7 km, every flight with a position
+  of the last 60 s in the view, Table 1's special values through core's
+  constants, `recent_positions` up to 60 s, each flight checked by core
+  before it is sent) and `GET /uss/flights/{id}/details` (uas_id with
+  serial, UA registration and our flight id, the public part of the
+  operator registration, the remote pilot's position, the authorisation
+  number, the Annex IV EU classification). `POST
+  /uss/identification_service_areas/{id}` (`rid.service_provider`) keeps
+  a peer's ISA notification in `rid_isa_notifications` (400, 403 another
+  sender, 409 same version another entity). The ISA of every flight:
+  planned by api with the flight's facts (the intent's volumes as a
+  box with their W84 band and window plus 60 s, or a session ISA on a
+  fixed grid around the first position, renewed while it flies) and
+  written by `ridsp.ISAWorker` through `dss_outbox` with backoff (PUT,
+  409 recovered by reading the version, DELETE with the version), every
+  subscriber the DSS lists notified with `aud` = its host; DSS down:
+  `/uss/flights` serves, `dss: down since T` with the waiting writes.
+  The optional `WS /v1/authority/flights` (`USSP_AUTHORITY_PUSH=on`,
+  404 when off): 1 Hz `authority/flight/v1` frames (a new owned schema),
+  a ten-minute buffer of at most 120 000 frames whose shed frames are a
+  counted gap on the next status frame. `internal/dss/fakedss` (the
+  F3411 DSS for tests), policy values `rid_recent_positions_max_count`,
+  `session_isa_radius_m`, `session_isa_horizon_s`, the histogram
+  `ussp_rid_sp_flights_seconds`. Measured in the integration suite:
+  100 flights at 1 Hz, 10 views at 1 Hz for 60 s, p95 38 ms and p99
+  46 ms alone (186 ms and 339 ms inside the full suite), nothing older
+  than 60 s; an ISA in the DSS 2 s after a flight starts and 8 s after
+  a 30 s DSS outage ends.
 
 - WP-8: telemetry ingest and flights. `WS /v1/telemetry` (bearer
   `ussp.telemetry`, the console frame: `telemetry/v1` bodies in,
