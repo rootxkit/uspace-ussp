@@ -172,15 +172,29 @@ type KVNotifications struct {
 	JS jetstream.JetStream
 	// Timeout bounds one read or write (bus.DefaultKVTimeout).
 	Timeout time.Duration
+	// open replaces the bucket lookup in tests.
+	open func(ctx context.Context) (notificationKV, error)
 }
 
-func (k KVNotifications) bucket(ctx context.Context) (jetstream.KeyValue, context.Context, context.CancelFunc, error) {
+// notificationKV is the part of a jetstream.KeyValue the store uses.
+type notificationKV interface {
+	Get(ctx context.Context, key string) (jetstream.KeyValueEntry, error)
+	Put(ctx context.Context, key string, value []byte) (uint64, error)
+}
+
+func (k KVNotifications) bucket(ctx context.Context) (notificationKV, context.Context, context.CancelFunc, error) {
 	t := k.Timeout
 	if t <= 0 {
 		t = bus.DefaultKVTimeout
 	}
 	ctx, cancel := context.WithTimeout(ctx, t)
-	kv, err := k.JS.KeyValue(ctx, bus.BucketISANotifications)
+	var kv notificationKV
+	var err error
+	if k.open != nil {
+		kv, err = k.open(ctx)
+	} else {
+		kv, err = k.JS.KeyValue(ctx, bus.BucketISANotifications)
+	}
 	if err != nil {
 		cancel()
 		return nil, nil, nil, err
