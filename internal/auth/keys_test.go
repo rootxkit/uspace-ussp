@@ -242,13 +242,21 @@ func TestIssueSessionIsVerifiedByCore(t *testing.T) {
 	if _, _, err := iss.IssueSession("acc-1", "police", "s", []string{"x"}, time.Hour, c.Now()); err == nil {
 		t.Error("an unknown realm signed")
 	}
-	k := iss.Keys().Current
-	for name, sc := range map[string]SessionClaims{
-		"no sub":   {Issuer: ownIssuer, Audience: ownHost, JTI: "j", Realm: RealmPortal, Roles: []string{"r"}, IssuedAt: c.Now(), ExpiresAt: c.Now().Add(time.Hour)},
-		"no roles": {Issuer: ownIssuer, Audience: ownHost, Subject: "s", JTI: "j", Realm: RealmPortal, IssuedAt: c.Now(), ExpiresAt: c.Now().Add(time.Hour)},
-		"no life":  {Issuer: ownIssuer, Audience: ownHost, Subject: "s", JTI: "j", Realm: RealmPortal, Roles: []string{"r"}, IssuedAt: c.Now(), ExpiresAt: c.Now()},
+	for name, f := range map[string]func() (string, time.Time, error){
+		"no sub": func() (string, time.Time, error) {
+			return iss.IssueSession("", RealmPortal, "j", []string{RoleViewer}, time.Hour, c.Now())
+		},
+		"no jti": func() (string, time.Time, error) {
+			return iss.IssueSession("s", RealmPortal, "", []string{RoleViewer}, time.Hour, c.Now())
+		},
+		"no roles": func() (string, time.Time, error) {
+			return iss.IssueSession("s", RealmPortal, "j", nil, time.Hour, c.Now())
+		},
+		"no life": func() (string, time.Time, error) {
+			return iss.IssueSession("s", RealmPortal, "j", []string{RoleViewer}, 0, c.Now())
+		},
 	} {
-		if _, err := signSession(k, sc); err == nil {
+		if _, _, err := f(); err == nil {
 			t.Errorf("%s: signed", name)
 		}
 	}

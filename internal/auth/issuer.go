@@ -77,16 +77,18 @@ func (i *Issuer) IssueOperator(clientID string, scopes []string, ttl time.Durati
 	return Issued{Token: tok, JTI: peek(tok).JTI, KID: i.keys.Current.KID, Scopes: scopes, ExpiresAt: now.Add(ttl)}, nil
 }
 
-// IssueSession signs a session token (M20): sub is the account id, jti
-// the session id, exp at most MaxSessionTTL after now.
+// IssueSession signs a session token (M20) through core's
+// Issuer.IssueSession (cross-plan Appendix A claims, RS256, kid): sub is
+// the account id, jti the session id, exp at most MaxSessionTTL after
+// now. The realm must be one of this USSP's.
 func (i *Issuer) IssueSession(sub, realm, jti string, roles []string, ttl time.Duration, now time.Time) (string, time.Time, error) {
 	if _, ok := RealmRoles[realm]; !ok {
 		return "", time.Time{}, fmt.Errorf("realm %s does not exist", quote(realm))
 	}
 	now = now.Truncate(time.Second)
 	exp := now.Add(min(ttl, MaxSessionTTL))
-	tok, err := signSession(i.keys.Current, SessionClaims{
-		Issuer: i.URL, Audience: i.Audience, Subject: sub, Roles: roles, Realm: realm, JTI: jti, IssuedAt: now, ExpiresAt: exp,
+	tok, err := i.core.IssueSession(coreauth.SessionClaims{
+		Audience: i.Audience, Subject: sub, Roles: roles, Realm: realm, JTI: jti, IssuedAt: now, ExpiresAt: exp,
 	})
 	return tok, exp, err
 }
