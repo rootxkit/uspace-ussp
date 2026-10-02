@@ -144,7 +144,7 @@ linters:
         text: "os\\.Exit"
         linters: [forbidigo]
       # Generated code: exempt from style linters, never from vet.
-      - path: ^internal/national/(gen|client)/
+      - path: ^internal/(national/(gen|client)|cis/cispclient)/
         linters: [revive, gocritic, misspell, exhaustive, errorlint, gosec, staticcheck, unparam, prealloc]
       - path: ^internal/store/(relational|timeseries)/
         linters: [revive, gocritic, misspell, exhaustive, errorlint, gosec, staticcheck, unparam, prealloc]

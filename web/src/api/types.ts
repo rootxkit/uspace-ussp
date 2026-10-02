@@ -49,6 +49,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/cis/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive a CIS change notification (F3 push)
+         * @description The receiver of every subscriber in the ecosystem (M1): the CISP
+         *     POSTs here the callback it registered, and the ANSP posts here
+         *     on its degraded direct path while the CISP is down (M5). The body
+         *     is a compact JWS (application/jose) whose payload is {iss, aud,
+         *     sub, iat, jti, body}: iss one of USSP_CIS_NOTIFY_ISSUERS (each
+         *     verified against its JWKS), aud this host (M19), sub the
+         *     subscription (the restriction id from the ANSP), jti the
+         *     delivery id, iat at most 5 minutes old, and body the
+         *     cis/change/v1 record of the CISP's pinned schema. There is no
+         *     bearer: the signature authenticates the sender.
+         *
+         *     A delivery id seen before is acknowledged 204 and not acted on
+         *     (it is remembered in the database on every replica). The
+         *     reasons subscription_test and republished, and any reason this
+         *     USSP does not know, are acknowledged 204 without a pull (M16).
+         *     Every other reason is logged and triggers a pull of the dataset:
+         *     from pull_url when its host is the issuer's configured base host
+         *     (and the issuer is the CISP), otherwise from the configured CISP
+         *     base URL, the mismatch counted (the SSRF guard). The answer does
+         *     not wait for the pull.
+         */
+        post: operations["receiveCISNotification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/oauth/token": {
         parameters: {
             query?: never;
@@ -609,6 +648,34 @@ export interface operations {
                     "application/json": components["schemas"]["Readiness"];
                 };
             };
+            default: components["responses"]["Problem"];
+        };
+    };
+    receiveCISNotification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/jose": string;
+            };
+        };
+        responses: {
+            /** @description Accepted, acknowledged or a replay; nothing to return. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            413: components["responses"]["Problem"];
+            415: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
         };
     };

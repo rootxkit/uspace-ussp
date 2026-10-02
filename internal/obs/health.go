@@ -135,8 +135,9 @@ func (h *Health) Set(name string, state State, detail string) {
 func (h *Health) setLocked(name string, d *dependency, state State, detail string) {
 	now := h.now()
 	if state == StateUp {
+		// An up dependency may say what it is up with (the CIS cache:
+		// its versions and age); the probes that say nothing give "".
 		d.lastUp = now
-		detail = ""
 	}
 	if state != d.state {
 		h.logger.LogAttrs(context.Background(), levelOf(state), "dependency state changed",

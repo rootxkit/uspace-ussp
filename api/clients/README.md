@@ -18,5 +18,6 @@ copy is one commit that changes the file and its `SOURCE` line together.
 When the lab's aggregate of the national APIs is published, it replaces
 these copies.
 
-No copy is here yet: the first arrives with the work package that first
-calls a sibling (WP-5, the authority's registry).
+Copies: `cisp.yaml` (WP-4, the CIS cache), generated into
+`internal/cis/cispclient` with `api/oapi-codegen.cisp.yaml` (the
+`datasets` and `subscriptions` tags only).

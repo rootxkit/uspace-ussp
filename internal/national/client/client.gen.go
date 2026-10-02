@@ -858,6 +858,34 @@ type ClientInterface interface {
 	//
 	// Corresponds with DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial} (the `UnbindSerial` operationId).
 	UnbindSerial(ctx context.Context, operatorId OperatorID, clientId ClientID, serial string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReceiveCISNotificationWithBody Receive a CIS change notification (F3 push)
+	//
+	// The receiver of every subscriber in the ecosystem (M1): the CISP
+	// POSTs here the callback it registered, and the ANSP posts here
+	// on its degraded direct path while the CISP is down (M5). The body
+	// is a compact JWS (application/jose) whose payload is {iss, aud,
+	// sub, iat, jti, body}: iss one of USSP_CIS_NOTIFY_ISSUERS (each
+	// verified against its JWKS), aud this host (M19), sub the
+	// subscription (the restriction id from the ANSP), jti the
+	// delivery id, iat at most 5 minutes old, and body the
+	// cis/change/v1 record of the CISP's pinned schema. There is no
+	// bearer: the signature authenticates the sender.
+	//
+	// A delivery id seen before is acknowledged 204 and not acted on
+	// (it is remembered in the database on every replica). The
+	// reasons subscription_test and republished, and any reason this
+	// USSP does not know, are acknowledged 204 without a pull (M16).
+	// Every other reason is logged and triggers a pull of the dataset:
+	// from pull_url when its host is the issuer's configured base host
+	// (and the issuer is the CISP), otherwise from the configured CISP
+	// base URL, the mismatch counted (the SSRF guard). The answer does
+	// not wait for the pull.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/cis/notifications (the `ReceiveCISNotification` operationId).
+	ReceiveCISNotificationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // GetJWKS The issuer's public keys
@@ -1310,6 +1338,44 @@ func (c *Client) BindSerial(ctx context.Context, operatorId OperatorID, clientId
 // Corresponds with DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial} (the `UnbindSerial` operationId).
 func (c *Client) UnbindSerial(ctx context.Context, operatorId OperatorID, clientId ClientID, serial string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUnbindSerialRequest(c.Server, operatorId, clientId, serial)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ReceiveCISNotificationWithBody Receive a CIS change notification (F3 push)
+//
+// The receiver of every subscriber in the ecosystem (M1): the CISP
+// POSTs here the callback it registered, and the ANSP posts here
+// on its degraded direct path while the CISP is down (M5). The body
+// is a compact JWS (application/jose) whose payload is {iss, aud,
+// sub, iat, jti, body}: iss one of USSP_CIS_NOTIFY_ISSUERS (each
+// verified against its JWKS), aud this host (M19), sub the
+// subscription (the restriction id from the ANSP), jti the
+// delivery id, iat at most 5 minutes old, and body the
+// cis/change/v1 record of the CISP's pinned schema. There is no
+// bearer: the signature authenticates the sender.
+//
+// A delivery id seen before is acknowledged 204 and not acted on
+// (it is remembered in the database on every replica). The
+// reasons subscription_test and republished, and any reason this
+// USSP does not know, are acknowledged 204 without a pull (M16).
+// Every other reason is logged and triggers a pull of the dataset:
+// from pull_url when its host is the issuer's configured base host
+// (and the issuer is the CISP), otherwise from the configured CISP
+// base URL, the mismatch counted (the SSRF guard). The answer does
+// not wait for the pull.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/cis/notifications (the `ReceiveCISNotification` operationId).
+func (c *Client) ReceiveCISNotificationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReceiveCISNotificationRequestWithBody(c.Server, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1846,6 +1912,35 @@ func NewUnbindSerialRequest(server string, operatorId OperatorID, clientId Clien
 	return req, nil
 }
 
+// NewReceiveCISNotificationRequestWithBody constructs an http.Request for the ReceiveCISNotification method, with any body, and a specified content type
+func NewReceiveCISNotificationRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/cis/notifications")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -2165,6 +2260,34 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial} (the `UnbindSerial` operationId).
 	UnbindSerialWithResponse(ctx context.Context, operatorId OperatorID, clientId ClientID, serial string, reqEditors ...RequestEditorFn) (*UnbindSerialResponse, error)
+
+	// ReceiveCISNotificationWithBodyWithResponse Receive a CIS change notification (F3 push)
+	//
+	// The receiver of every subscriber in the ecosystem (M1): the CISP
+	// POSTs here the callback it registered, and the ANSP posts here
+	// on its degraded direct path while the CISP is down (M5). The body
+	// is a compact JWS (application/jose) whose payload is {iss, aud,
+	// sub, iat, jti, body}: iss one of USSP_CIS_NOTIFY_ISSUERS (each
+	// verified against its JWKS), aud this host (M19), sub the
+	// subscription (the restriction id from the ANSP), jti the
+	// delivery id, iat at most 5 minutes old, and body the
+	// cis/change/v1 record of the CISP's pinned schema. There is no
+	// bearer: the signature authenticates the sender.
+	//
+	// A delivery id seen before is acknowledged 204 and not acted on
+	// (it is remembered in the database on every replica). The
+	// reasons subscription_test and republished, and any reason this
+	// USSP does not know, are acknowledged 204 without a pull (M16).
+	// Every other reason is logged and triggers a pull of the dataset:
+	// from pull_url when its host is the issuer's configured base host
+	// (and the issuer is the CISP), otherwise from the configured CISP
+	// base URL, the mismatch counted (the SSRF guard). The answer does
+	// not wait for the pull.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/cis/notifications (the `ReceiveCISNotification` operationId).
+	ReceiveCISNotificationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReceiveCISNotificationResponse, error)
 }
 
 // GetJWKSResponse200Headers the declared response headers of an HTTP 200 response for GetJWKS
@@ -3147,6 +3270,82 @@ func (r UnbindSerialResponse) ContentType() string {
 	return ""
 }
 
+type ReceiveCISNotificationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON413 the response for an HTTP 413 `application/problem+json` response
+	ApplicationproblemJSON413 *Problem
+	// ApplicationproblemJSON415 the response for an HTTP 415 `application/problem+json` response
+	ApplicationproblemJSON415 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r ReceiveCISNotificationResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ReceiveCISNotificationResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON413 returns the response for an HTTP 413 `application/problem+json` response
+func (r ReceiveCISNotificationResponse) GetApplicationproblemJSON413() *Problem {
+	return r.ApplicationproblemJSON413
+}
+
+// GetApplicationproblemJSON415 returns the response for an HTTP 415 `application/problem+json` response
+func (r ReceiveCISNotificationResponse) GetApplicationproblemJSON415() *Problem {
+	return r.ApplicationproblemJSON415
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ReceiveCISNotificationResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ReceiveCISNotificationResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ReceiveCISNotificationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ReceiveCISNotificationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReceiveCISNotificationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ReceiveCISNotificationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetJWKSWithResponse The issuer's public keys
 //
 // The RS256 keys of this USSP's issuer (`use: sig`, `kid` = the RFC
@@ -3541,6 +3740,40 @@ func (c *ClientWithResponses) UnbindSerialWithResponse(ctx context.Context, oper
 		return nil, err
 	}
 	return ParseUnbindSerialResponse(rsp)
+}
+
+// ReceiveCISNotificationWithBodyWithResponse Receive a CIS change notification (F3 push)
+//
+// The receiver of every subscriber in the ecosystem (M1): the CISP
+// POSTs here the callback it registered, and the ANSP posts here
+// on its degraded direct path while the CISP is down (M5). The body
+// is a compact JWS (application/jose) whose payload is {iss, aud,
+// sub, iat, jti, body}: iss one of USSP_CIS_NOTIFY_ISSUERS (each
+// verified against its JWKS), aud this host (M19), sub the
+// subscription (the restriction id from the ANSP), jti the
+// delivery id, iat at most 5 minutes old, and body the
+// cis/change/v1 record of the CISP's pinned schema. There is no
+// bearer: the signature authenticates the sender.
+//
+// A delivery id seen before is acknowledged 204 and not acted on
+// (it is remembered in the database on every replica). The
+// reasons subscription_test and republished, and any reason this
+// USSP does not know, are acknowledged 204 without a pull (M16).
+// Every other reason is logged and triggers a pull of the dataset:
+// from pull_url when its host is the issuer's configured base host
+// (and the issuer is the CISP), otherwise from the configured CISP
+// base URL, the mismatch counted (the SSRF guard). The answer does
+// not wait for the pull.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/cis/notifications (the `ReceiveCISNotification` operationId).
+func (c *ClientWithResponses) ReceiveCISNotificationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReceiveCISNotificationResponse, error) {
+	rsp, err := c.ReceiveCISNotificationWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReceiveCISNotificationResponse(rsp)
 }
 
 // ParseGetJWKSResponse parses an HTTP response from a GetJWKSWithResponse call
@@ -4335,6 +4568,70 @@ func ParseUnbindSerialResponse(rsp *http.Response) (*UnbindSerialResponse, error
 			return nil, err
 		}
 		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReceiveCISNotificationResponse parses an HTTP response from a ReceiveCISNotificationWithResponse call
+func ParseReceiveCISNotificationResponse(rsp *http.Response) (*ReceiveCISNotificationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReceiveCISNotificationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON413 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 415:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON415 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Problem

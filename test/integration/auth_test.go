@@ -31,6 +31,7 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/national"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
+	"github.com/rootxkit/uspace-ussp/internal/testfakes/cisp"
 )
 
 const (
@@ -84,9 +85,16 @@ func newFakeAuthority(t *testing.T) *fakeAuthority {
 	if a.iss, err = coreauth.NewIssuer(a.url, eco, sk.KID); err != nil {
 		t.Fatal(err)
 	}
-	a.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	a.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if a.down.Load() {
 			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/oauth/token" {
+			// The token service for this USSP's outgoing calls: the fake
+			// CISP's bearer, whatever the audience.
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": cisp.Token, "token_type": "Bearer", "expires_in": 3600})
 			return
 		}
 		_ = json.NewEncoder(w).Encode(a.iss.JWKS())
@@ -96,8 +104,9 @@ func newFakeAuthority(t *testing.T) *fakeAuthority {
 	return a
 }
 
-// withAuth adds this USSP's issuer key, its audiences and the fake
-// authority as the allow-listed issuer to a process's variables.
+// withAuth adds this USSP's issuer key, its audiences, the fake
+// authority as the allow-listed issuer and token service, and a fake
+// CISP (withCIS) to a process's variables.
 func withAuth(t *testing.T, vars map[string]string, a *fakeAuthority) map[string]string {
 	t.Helper()
 	_, _, p := testKeys(t)
@@ -108,6 +117,7 @@ func withAuth(t *testing.T, vars map[string]string, a *fakeAuthority) map[string
 	vars["USSP_ISSUER_KEY_FILE"] = file
 	vars["USSP_AUDIENCES"] = testHost + "," + testAlias
 	vars["USSP_TOKEN_ISSUERS"] = a.url + "=" + a.jwks
+	withCIS(t, vars)
 	return vars
 }
 

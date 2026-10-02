@@ -58,14 +58,25 @@ type CisFeature struct {
 }
 
 type CisNotification struct {
-	ID         int64      `json:"id"`
-	ReceivedAt time.Time  `json:"received_at"`
-	Dataset    string     `json:"dataset"`
-	Version    *int64     `json:"version"`
-	FeatureIds []string   `json:"feature_ids"`
-	Reason     *string    `json:"reason"`
-	JwsOk      bool       `json:"jws_ok"`
-	PulledAt   *time.Time `json:"pulled_at"`
+	ID           int64      `json:"id"`
+	ReceivedAt   time.Time  `json:"received_at"`
+	Dataset      string     `json:"dataset"`
+	Version      *int64     `json:"version"`
+	FeatureIds   []string   `json:"feature_ids"`
+	Reason       *string    `json:"reason"`
+	JwsOk        bool       `json:"jws_ok"`
+	PulledAt     *time.Time `json:"pulled_at"`
+	Issuer       *string    `json:"issuer"`
+	Jti          *string    `json:"jti"`
+	Subscription *string    `json:"subscription"`
+	MsgID        *string    `json:"msg_id"`
+}
+
+type CisNotificationJti struct {
+	Issuer     string    `json:"issuer"`
+	Jti        string    `json:"jti"`
+	ReceivedAt time.Time `json:"received_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
 }
 
 type ClientSerialBinding struct {

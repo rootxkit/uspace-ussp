@@ -43,6 +43,10 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_USS_BASE_URL` | `api,rid-sp,dss-sync` |  |  |  | this USSP's published base URL (uss_base_url in the DSS) |
 | `USSP_DSS_BASE_URL` | `api,rid-sp,dss-sync` |  |  |  | InterUSS DSS base URL; its host is the outgoing aud |
 | `USSP_CISP_BASE_URL` | `api` |  |  |  | CISP base URL (F3 pull) |
+| `USSP_CIS_BBOX` | `api` |  |  |  | box of the CIS change subscription as min_lng,min_lat,max_lng,max_lat in WGS84 degrees; empty is everywhere |
+| `USSP_CIS_PUBLISHER_KEYS` | `api` |  |  |  | JWKS of the CIS publishers as authority=jwks_url,ansp=jwks_url: a dataset version is used only when its X-Publisher-Signature verifies with its publisher's key (the authority for zones, uspace_airspace and ussp_list, the ANSP for restrictions); otherwise it is held |
+| `USSP_CIS_PUBLISHER_SIG_MAX_AGE_S` | `api` |  | `31622400` | s | how old the iat of a publisher signature may be when this USSP first reads its version; the CISP forwards the signature made at publication, so it is as old as the version (default 366 days) |
+| `USSP_CIS_RECONCILE_S` | `api` |  | `60` | s | period of the conditional pull of every CIS dataset that bounds what a missed change notification costs (spec 02 F3: at most 60 s) |
 | `USSP_AUTHORITY_BASE_URL` | `api` |  |  |  | authority base URL (F8 registry, occurrences, status) |
 | `USSP_ANSP_BASE_URL` | `api` |  |  |  | ANSP base URL (Annex V coordination notices) |
 | `USSP_ANSP_STREAM_URL` | `monitor` |  |  |  | ANSP manned-traffic stream (F4) |

@@ -15,6 +15,37 @@ additively within `/v1`.
 
 ### Added
 
+- WP-4 CIS cache and geo-zone evaluation (`internal/cis`): the CISP's F3
+  pull API generated from the pinned copy `api/clients/cisp.yaml`
+  (conditional reads by ETag, versions, the change feed, an idempotent
+  subscription with the callback `USSP_USS_BASE_URL` +
+  `/v1/cis/notifications`); `POST /v1/cis/notifications` verifying the
+  compact JWS of the CISP or, on its degraded direct path, the ANSP
+  (core `CompactVerifier`, aud = this host, iat at most 5 min, delivery
+  ids remembered in `cis_notification_jtis` on the database clock;
+  `subscription_test`, `republished` and unknown reasons acknowledged
+  without a pull; `pull_url` followed only over https on the CISP's
+  scheme, host and port, a mismatch counted); the 60 s conditional reconciliation
+  (`USSP_CIS_RECONCILE_S`); versions accepted whole through
+  `ed318.Parse` and `ed318.ToZones` or refused whole with the previous
+  kept and `/readyz` degraded; `cis_datasets`/`cis_features` (current
+  and previous version) with a warm start; `cis.Evaluator`
+  (`JudgePoint`, `AirspacesAt`, `ZonesFor`, `JudgeHeightLimit`, `Age`
+  with the policy's `cis_stale_s`) over core's zones and `ed318.Applies`;
+  the per-cell `zone/applicable/v1` projection for KV `cis_current`
+  (in memory until WP-6); `/readyz` entries `cis` (versions and age, or
+  unknown, stale, refused, not pulled) and `cis_notify_keys`; fakes of
+  the CISP and the ANSP in `internal/testfakes`. An up dependency now
+  keeps the detail its probe gives.
+- WP-4 provenance: a CIS version is used only when its publisher's
+  `X-Publisher-Signature` (read from `GET /v1/{dataset}/versions/{v}`)
+  verifies with the authority's or the ANSP's keys
+  (`USSP_CIS_PUBLISHER_KEYS`, iat bound
+  `USSP_CIS_PUBLISHER_SIG_MAX_AGE_S`, default 366 days); otherwise it is
+  held (stored with `signature_ok` false, never used or warm-loaded),
+  `/readyz` `cis` degraded and `cis_publisher_untrusted` counted;
+  `/readyz` entry `cis_publisher_keys`.
+
 - WP-3 standards code generation: the F3411-22a and F3548-21 OpenAPI
   files pinned byte for byte in `api/standards/` with `SOURCE` (the
   commits and SHA-256 uspace-core v1.2.0 records; `check-standards.sh`

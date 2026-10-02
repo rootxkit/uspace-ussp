@@ -1,0 +1,2 @@
+# <system> <owner/repo> <commit> <path in that repo>
+cisp rootxkit/uspace-cisp fc842965cb1d57d59802c369aa258c59851f998c api/openapi.yaml

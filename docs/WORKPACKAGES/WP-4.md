@@ -134,3 +134,95 @@ alerts), WP-10/11 (`monitor` zones).
 `feat(cis): cache store and zone/applicable projection per cell [WP-4 S-M1]`,
 `feat(cis): evaluator over core zones with staleness [WP-4 S-M1]`,
 `test(cis): run the owned zone vectors through the evaluator [WP-4 S-M1]`.
+
+## As built (the PR)
+
+What the build decided where the brief, the contracts or core left a
+choice; each is in the PR body as well.
+
+- Applicability is `ed318.Applies` over the feature's
+  `limitedApplicability`, at the centre of each part's bounding box;
+  `ed318.ToZones` builds the shapes and limits from a copy without the
+  periods. ToZones refuses a daylight schedule without end dates, which
+  ED-318 allows and the CISP publishes with a warning ("judge it with
+  Applies"); building it from ToZones' windows would refuse such a
+  publication. An applicability that cannot be evaluated is `unknown`,
+  returned and counted, never "does not apply".
+- The done-when's `zones_changed` is not a `cis/change/v1` reason: by M16
+  it is acknowledged 204 without a pull (tested). The pulling reasons
+  are `publication` and the `restriction_*` ones (tested with
+  `publication` and `restriction_activated`).
+- An ANSP-signed notification is verified, logged and pulls the dataset
+  from the configured CISP. Its `pull_url` (the ANSP's
+  `GET /v1/restrictions/{id}`) is not followed: the ANSP's OpenAPI is not
+  pinned here yet (ANSP WP-8). Spec gap; while the CISP is down the
+  notified version stays on `/readyz` as "notified ... not pulled yet".
+- Provenance: a new version is used only when its publisher's signature
+  verifies. Once its bytes parse and build, `GET
+  /v1/{dataset}/versions/{v}` is read and its `X-Publisher-Signature`
+  (the detached JWS the authority or the ANSP sent with the
+  publication, forwarded by the CISP as received, with
+  `X-Publisher-Kid`) is verified over those bytes with core's
+  `DetachedVerifier` as the dataset's publisher: the authority for
+  `zones`, `uspace_airspace` and `ussp_list`, the ANSP for
+  `restrictions` (the CISP's `auth.PublisherOf`). The keys are
+  `USSP_CIS_PUBLISHER_KEYS` (`authority=jwks_url,ansp=jwks_url`): the
+  CISP does not serve the publishers' keys, its `/.well-known/jwks.json`
+  holds its own signing keys only. A missing signature, one that does
+  not verify, an `X-Publisher-Kid` that is not the signature's kid, or
+  no keys (not configured, not fetched yet) holds the version: stored
+  with `signature_ok` false, never used, never loaded by a warm start,
+  never pruning the trusted version in use; `/readyz` `cis` is degraded
+  with "... held, not used: <reason>" (so is the E-09 status line) and
+  `cis_publisher_untrusted` counts it. The next pull checks it again; a
+  version that cannot be read as published is a pull failure, not a
+  hold. `/readyz` `cis_publisher_keys` says whether the keys are
+  fetched.
+- The signature age. Core's `DetachedConfig.MaxAge` is configurable
+  (`DefaultDetachedMaxAge`, 5 min, applies only when it is zero). The
+  publisher's iat is the publication time, and the CISP forwards that
+  signature unchanged for the life of the version (what it caches per
+  version is its own `X-CIS-Signature`, made at the first serve), so a
+  signature is as old as its version. A USSP normally reads a version
+  seconds after its publication, but a new installation or a lost
+  database reads the current version however old it is.
+  `USSP_CIS_PUBLISHER_SIG_MAX_AGE_S` defaults to 366 days (31 622 400 s;
+  300 s to 10 years): a dataset left unpublished for a whole year (more
+  than 13 AIRAC cycles) still verifies; an older one is held, visibly,
+  and the bound can be raised. The iat bound is not the replay guard
+  here: versions only move forward (one at or below the version held is
+  never installed) and the CISP checks `body_sha256` before serving.
+- What the signature does not cover (spec gap, for the CISP): the
+  collection read from `GET /v1/{dataset}` is built by the CISP from its
+  stored rows and is not compared with the signed bytes (for
+  `restrictions` the signed bytes are the ANSP's request, not a
+  collection). A version the CISP makes itself (a restriction expiring:
+  publisher `system`) carries no publisher signature and is held until
+  the ANSP's next signed version. The CISP's `X-CIS-Signature` is not
+  verified: it is over the same version bytes. The pull is over TLS with
+  a `cis.read` token.
+- A `pull_url` is followed only when it is https with the scheme, host
+  and port of `USSP_CISP_BASE_URL` (a missing port is the scheme's
+  default) and carries no user information (`cis.Client.GetURL`).
+  Plain http is never followed, not even on an http base URL (a lab
+  CISP): the dataset is then read whole from the base URL.
+- An issuer of `USSP_CIS_NOTIFY_ISSUERS` is the CISP or the ANSP by the
+  host of its JWKS URL (the host of `USSP_CISP_BASE_URL` or
+  `USSP_ANSP_BASE_URL`); one on neither refuses the start.
+- `Age()`: the age is the time since the CISP last confirmed each ED-318
+  dataset (a 200, a 304, or a 404 `no_version`, which makes the dataset
+  a known empty one, `zones:0`); the oldest counts; nothing loaded is
+  `("", 0, true)`. The `ussp_list` is cached but not part of the age.
+- The token client of outgoing calls asks `POST /oauth/token` on the
+  origin of the first `USSP_TOKEN_ISSUERS` entry's JWKS URL.
+- The vector adapter maps the ED-269 zones of `zones_applicability.json`
+  and `zones_vertical.json` to ED-318 with core's `ed318.FromED269`; a
+  zone with no authority gets a placeholder (ED-318 requires one; no
+  judgement reads it). The height-limit cases run through
+  `Evaluator.JudgeHeightLimit` (a U-space airspace's
+  `max_height_agl_m`). The `to_ed269` and `from_ed269` cases of
+  `ed318_roundtrip.json` test a mapping the USSP never makes; for them
+  the ED-318 side is ingested whole. 103 cases owned by ussp run.
+- The KV value per cell (`CellEntry`) carries `zone/applicable/v1` bodies
+  evaluated when projected, with the dataset, the restriction state and
+  the feature, under `c5:` keys and `all` for a zone over 400 cells.

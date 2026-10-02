@@ -565,6 +565,9 @@ type ServerInterface interface {
 	// UnbindSerial Unbind a serial from a client
 	// (DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial})
 	UnbindSerial(w http.ResponseWriter, r *http.Request, operatorId OperatorID, clientId ClientID, serial string)
+	// ReceiveCISNotification Receive a CIS change notification (F3 push)
+	// (POST /v1/cis/notifications)
+	ReceiveCISNotification(w http.ResponseWriter, r *http.Request)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -880,6 +883,20 @@ func (siw *ServerInterfaceWrapper) UnbindSerial(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ReceiveCISNotification operation middleware
+func (siw *ServerInterfaceWrapper) ReceiveCISNotification(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReceiveCISNotification(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -1002,6 +1019,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/healthz", wrapper.GetHealthz)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/readyz", wrapper.GetReadyz)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/cis/notifications", wrapper.ReceiveCISNotification)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/oauth/token", wrapper.RequestToken)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/jwks.json", wrapper.GetJWKS)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/login", wrapper.Login)

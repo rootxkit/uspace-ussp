@@ -1,0 +1,17 @@
+# oapi-codegen configuration for internal/cis/cispclient: the Go client
+# of the CISP's national API (api/clients/cisp.yaml, the pinned copy
+# named in api/clients/SOURCE; reconciliation M11). Only the reads,
+# the change feed and the subscriptions this USSP calls (the datasets
+# and subscriptions tags) are generated, with every model of the file
+# (skip-prune: the U-space requirements block and the USSP list are
+# read from the datasets' bodies, not named by an operation). Run
+# through `make generate`; never edit the generated file.
+package: cispclient
+generate:
+  client: true
+  models: true
+output-options:
+  skip-prune: true
+  include-tags:
+    - datasets
+    - subscriptions

@@ -124,3 +124,79 @@ func TestVerifierConfigRefusesMalformedSessionClaims(t *testing.T) {
 		})
 	}
 }
+
+// The CIS notification receiver's configuration both ways: issuers and
+// audiences given, it carries them (E-01); either missing, or an issuer
+// without its JWKS URL, is refused naming the variable.
+func TestCompactConfig(t *testing.T) {
+	c, err := LoadFrom(env(map[string]string{
+		"USSP_AUDIENCES":          "ussp.example,ussp.lab",
+		"USSP_CIS_NOTIFY_ISSUERS": "https://cisp.example=https://cisp.example/.well-known/jwks.json,https://ansp.example=https://ansp.example/.well-known/jwks.json",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cc, err := c.CompactConfig()
+	if err != nil || len(cc.Issuers) != 2 || cc.Issuers["https://ansp.example"].JWKSURL != "https://ansp.example/.well-known/jwks.json" ||
+		!slices.Equal(cc.Audiences, []string{"ussp.example", "ussp.lab"}) {
+		t.Fatalf("got %+v %v", cc, err)
+	}
+	c, _ = LoadFrom(env(map[string]string{"USSP_AUDIENCES": "ussp.example"}))
+	if _, err := c.CompactConfig(); !slices.Equal(fieldNames(err), []string{"USSP_CIS_NOTIFY_ISSUERS"}) {
+		t.Fatalf("no issuers: %v", err)
+	}
+	c, _ = LoadFrom(env(map[string]string{"USSP_CIS_NOTIFY_ISSUERS": "https://cisp.example=https://cisp.example/jwks"}))
+	if _, err := c.CompactConfig(); !slices.Equal(fieldNames(err), []string{"USSP_AUDIENCES"}) {
+		t.Fatalf("no audience: %v", err)
+	}
+	c = Config{Audiences: []string{"ussp.example"}, CISNotifyIssuers: []string{"https://cisp.example"}}
+	if _, err := c.CompactConfig(); !slices.Equal(fieldNames(err), []string{"USSP_CIS_NOTIFY_ISSUERS"}) {
+		t.Fatalf("no JWKS URL: %v", err)
+	}
+}
+
+// The CIS publishers' configuration both ways: the authority and the
+// ANSP with their JWKS URLs and the configured max age are carried (the
+// default is 366 days, not core's 5 min); a missing list, a publisher
+// that is neither, one named twice or one without its JWKS URL is
+// refused naming the variable.
+func TestPublisherConfig(t *testing.T) {
+	c, err := LoadFrom(env(map[string]string{
+		"USSP_CIS_PUBLISHER_KEYS": "authority=https://auth.example/.well-known/jwks.json, ansp=https://ansp.example/.well-known/jwks.json",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc, err := c.PublisherConfig()
+	if err != nil || len(pc.Publishers) != 2 || pc.Publishers[PublisherANSP].JWKSURL != "https://ansp.example/.well-known/jwks.json" ||
+		pc.Publishers[PublisherAuthority].JWKSURL != "https://auth.example/.well-known/jwks.json" || pc.MaxAge != 366*24*time.Hour {
+		t.Fatalf("got %+v %v", pc, err)
+	}
+	c, err = LoadFrom(env(map[string]string{
+		"USSP_CIS_PUBLISHER_KEYS": "authority=https://auth.example/jwks", "USSP_CIS_PUBLISHER_SIG_MAX_AGE_S": "3600",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pc, err := c.PublisherConfig(); err != nil || pc.MaxAge != time.Hour || len(pc.Publishers) != 1 {
+		t.Fatalf("max age: %+v %v", pc, err)
+	}
+	if _, err := LoadFrom(env(map[string]string{"USSP_CIS_PUBLISHER_SIG_MAX_AGE_S": "60"})); !slices.Equal(fieldNames(err), []string{"USSP_CIS_PUBLISHER_SIG_MAX_AGE_S"}) {
+		t.Fatalf("below the minimum: %v", err)
+	}
+	for name, keys := range map[string][]string{
+		"none":         nil,
+		"not one":      {"cisp=https://cisp.example/jwks"},
+		"named twice":  {"ansp=https://a.example/jwks", "ansp=https://b.example/jwks"},
+		"without JWKS": {"authority"},
+	} {
+		c := Config{CISPublisherKeys: keys, CISPublisherSigMaxAgeS: 3600}
+		if _, err := c.PublisherConfig(); !slices.Equal(fieldNames(err), []string{"USSP_CIS_PUBLISHER_KEYS"}) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	c = Config{CISPublisherKeys: []string{"ansp=https://a.example/jwks"}}
+	if _, err := c.PublisherConfig(); !slices.Equal(fieldNames(err), []string{"USSP_CIS_PUBLISHER_SIG_MAX_AGE_S"}) {
+		t.Fatalf("no max age: %v", err)
+	}
+}

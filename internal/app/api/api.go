@@ -3,7 +3,8 @@
 // writer of the relational database. WP-2 brings its routes: the token
 // issuer, the JWKS and the accounts, every operation behind the
 // fail-closed access table of internal/national; WP-3 mounts the F3548
-// USS endpoints (internal/stdapi), 501 until WP-13.
+// USS endpoints (internal/stdapi), 501 until WP-13; WP-4 runs the CIS
+// cache (internal/cis) and its receiver POST /v1/cis/notifications.
 package api
 
 import (
@@ -128,6 +129,11 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 		return policy.Defaults()
 	}
 
+	cisState, err := startCIS(ctx, rt, current)
+	if err != nil {
+		return err
+	}
+
 	counters := &core.Counters{}
 	proc.Publish(rt, "accounts", counters)
 	perMin := func(n int) float64 { return float64(n) / 60 }
@@ -150,7 +156,8 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 		IPLimiter:     httpx.NewRateLimiter(perMin(cfg.TokenRatePerMin), burst(cfg.TokenRatePerMin), 100_000, counters),
 		Counters:      counters, Logger: rt.Logger,
 	}
-	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc, Logger: rt.Logger}
+	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc,
+		CIS: cisState.Receiver, Logger: rt.Logger}
 	if err := national.Register(mux, srv, guard.Require); err != nil {
 		return fmt.Errorf("access table: %w", err)
 	}

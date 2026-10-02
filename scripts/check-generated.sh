@@ -17,7 +17,8 @@ GO=${GO:-go} "$root/scripts/check-standards.sh"
 
 files=(internal/national/gen/server.gen.go internal/national/client/client.gen.go
   internal/stdapi/f3411/server.gen.go internal/stdapi/f3411/client.gen.go
-  internal/stdapi/f3548/server.gen.go internal/stdapi/f3548/client.gen.go)
+  internal/stdapi/f3548/server.gen.go internal/stdapi/f3548/client.gen.go
+  internal/cis/cispclient/client.gen.go)
 # The sqlc packages are compared file by file, both ways: a stale file
 # left behind is as wrong as a missing one.
 sqlc_dirs=(internal/store/relational internal/store/timeseries)

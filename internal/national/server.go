@@ -38,7 +38,10 @@ type Server struct {
 	// Issuer publishes the JWKS; nil answers 503.
 	Issuer   *auth.Issuer
 	Accounts *accounts.Service
-	Logger   *slog.Logger
+	// CIS is POST /v1/cis/notifications (internal/cis.Receiver); nil
+	// answers 503 cis_unavailable.
+	CIS    http.Handler
+	Logger *slog.Logger
 }
 
 var _ gen.ServerInterface = (*Server)(nil)
@@ -60,6 +63,7 @@ func AccessTable() map[string]httpx.Access {
 		"GET /.well-known/jwks.json":                        public,
 		"POST /v1/accounts/login":                           public, // limited per address and per username
 		"POST /v1/accounts/operators":                       public, // self-registration, limited per address
+		"POST /v1/cis/notifications":                        public, // no bearer: the compact JWS in the body is verified by internal/cis.Receiver (issuer allow-list, aud, iat, jti)
 		"POST /v1/accounts/logout":                          anySession,
 		"GET /v1/accounts/me":                               anySession,
 		"GET /v1/accounts/operators/{operator_id}":          portalAdmin,
@@ -165,6 +169,15 @@ func principal(r *http.Request) auth.Principal {
 
 // RequestToken is POST /oauth/token.
 func (s *Server) RequestToken(w http.ResponseWriter, r *http.Request) { s.Token.ServeHTTP(w, r) }
+
+// ReceiveCISNotification is POST /v1/cis/notifications.
+func (s *Server) ReceiveCISNotification(w http.ResponseWriter, r *http.Request) {
+	if s.CIS == nil {
+		httpx.NewProblem(http.StatusServiceUnavailable, "cis_unavailable", "", "no CIS notification issuer is configured (USSP_CIS_NOTIFY_ISSUERS)").Write(w, r)
+		return
+	}
+	s.CIS.ServeHTTP(w, r)
+}
 
 // GetJWKS is GET /.well-known/jwks.json.
 func (s *Server) GetJWKS(w http.ResponseWriter, r *http.Request) {
