@@ -16,9 +16,12 @@ import (
 // drones (spec 05 §7).
 const MaxAircraft = 10_000
 
-// maxDedupe bounds the (serial, epoch, seq) keys remembered per aircraft
-// (E-10): the live and backlog rates of the policy over its window fit
-// well inside; beyond it the oldest is forgotten and counted.
+// maxDedupe bounds the (serial, epoch, seq) keys this process remembers
+// per aircraft (E-10). The memory is a cache: the window itself, bounded
+// by time (telemetry_dedupe_s), is the telemetry_seen bucket
+// (Config.Seen), which every instance reads and which survives a
+// restart. Beyond the bound the oldest key is forgotten here (counted)
+// and still found in the bucket.
 const maxDedupe = 4096
 
 // aircraftKey identifies the samples of one aircraft of one client: the

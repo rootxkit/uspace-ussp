@@ -505,3 +505,40 @@ func TestIntegrationNeverDeliveredOnAWorkQueue(t *testing.T) {
 		t.Fatalf("aged out: %d..%d %v", from, to, err)
 	}
 }
+
+// SeenWindow on a real bucket: a key put through Run is read back by
+// another reader (another replica, or the process after a restart), a
+// key never put is not found, and a bucket that does not exist is an
+// error, never "not found" (the ingest counts it and takes the sample).
+func TestIntegrationSeenWindow(t *testing.T) {
+	c := connect(t)
+	js := c.JetStream()
+	bucket := unique("seen")
+	t.Cleanup(func() { _ = js.DeleteKeyValue(context.Background(), bucket) })
+	missing := &SeenWindow{JS: js, Bucket: bucket}
+	if _, _, err := missing.Get(ctx(t), "k.1"); err == nil {
+		t.Fatal("no bucket read as an answer")
+	}
+	cfg, _ := DefaultTopology().Bucket(BucketTelemetrySeen)
+	cfg.Bucket = bucket
+	if _, err := js.CreateKeyValue(ctx(t), cfg); err != nil {
+		t.Fatal(err)
+	}
+	w := &SeenWindow{JS: js, Bucket: bucket}
+	runCtx, stop := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); w.Run(runCtx) }()
+	t.Cleanup(func() { stop(); <-done })
+	w.Put("abc.1", []byte("0123456789abcdef"))
+	other := &SeenWindow{JS: js, Bucket: bucket}
+	waitFor(t, 5*time.Second, func() bool {
+		v, ok, err := other.Get(ctx(t), "abc.1")
+		return err == nil && ok && string(v) == "0123456789abcdef"
+	})
+	if _, ok, err := other.Get(ctx(t), "abc.2"); err != nil || ok {
+		t.Fatalf("a key never put: found %v err %v", ok, err)
+	}
+	if n := w.Counters.Get(CounterSeenPutFailed); n != 0 {
+		t.Fatalf("%d puts failed", n)
+	}
+}

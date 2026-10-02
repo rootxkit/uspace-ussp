@@ -313,6 +313,7 @@ type rigOpts struct {
 	queueFrames int
 	noRun       bool // the outbox is not running (tests drive it)
 	maxAircraft int
+	seen        SeenStore
 }
 
 func newRig(t *testing.T, o rigOpts) *rig {
@@ -328,7 +329,7 @@ func newRig(t *testing.T, o rigOpts) *rig {
 	cfg := Config{
 		Bindings: r.bind, Intents: r.intents, Registry: r.reg, Airspace: r.air, Sources: r.gate,
 		Policy: func() policy.Record { return r.pol }, Flights: r.flights, Outbox: r.outbox, Events: r.events,
-		Counters: r.counters, Now: r.clk.now, MaxAircraft: o.maxAircraft,
+		Counters: r.counters, Now: r.clk.now, MaxAircraft: o.maxAircraft, Seen: o.seen,
 	}
 	if o.geoid {
 		cfg.Geoid = undulation(15.9)

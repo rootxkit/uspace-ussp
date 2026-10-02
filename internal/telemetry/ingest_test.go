@@ -1,8 +1,11 @@
 package telemetry
 
 import (
+	"context"
+	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -506,5 +509,70 @@ func TestRestartedClientReusingSeqsIsTaken(t *testing.T) {
 	}
 	if r.counters.Get(CounterSeqReused) != 1 {
 		t.Fatalf("seq reuse not counted: %v", r.counters.Snapshot())
+	}
+}
+
+// seenStore is SeenStore in memory: the window as the KV bucket keeps
+// it for every instance; fail makes it unreachable.
+type seenStore struct {
+	mu   sync.Mutex
+	vals map[string][]byte
+	fail bool
+}
+
+func (s *seenStore) Get(_ context.Context, key string) ([]byte, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.fail {
+		return nil, false, errors.New("nats: timeout")
+	}
+	v, ok := s.vals[key]
+	return v, ok, nil
+}
+
+func (s *seenStore) Put(key string, val []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.vals[key] = val
+}
+
+// B-05 across a restart or another replica: the replay window lives in
+// the shared store, so an instance that never saw a sample (fresh
+// memory) still acknowledges its replay and publishes nothing twice; a
+// new seq is published, and past telemetry_dedupe_s the key is new
+// again. With the store unreachable the replay is taken (published
+// twice rather than lost) and counted.
+func TestReplayWindowSurvivesARestart(t *testing.T) {
+	store := &seenStore{vals: map[string][]byte{}}
+	r := newRig(t, rigOpts{seen: store})
+	f := frame(snA, 1, t0)
+	f.Epoch = "boot-1"
+	one(t, r.take(clientA, nil, f), OutcomeAccepted)
+	waitFor(t, func() bool { store.mu.Lock(); defer store.mu.Unlock(); return len(store.vals) == 1 })
+
+	// The process restarts: a new ingestor, the same store.
+	r2 := newRig(t, rigOpts{seen: store})
+	r2.clk.set(t0.Add(5 * time.Minute))
+	one(t, r2.take(clientA, nil, f), OutcomeDuplicate)
+	if n := len(r2.pub.tracks(t)); n != 0 {
+		t.Fatalf("a replay after the restart published %d tracks", n)
+	}
+	g := frame(snA, 2, t0.Add(time.Second))
+	g.Epoch = "boot-1"
+	g.Backlog = true
+	one(t, r2.take(clientA, nil, g), OutcomeAccepted)
+	// Past the window the key is new again.
+	r3 := newRig(t, rigOpts{seen: store})
+	r3.pol.Values.TelemetryDedupeS = 60
+	r3.clk.set(t0.Add(2 * time.Minute))
+	one(t, r3.take(clientA, nil, f), OutcomeAccepted)
+
+	// Unreachable: taken and counted.
+	store.fail = true
+	r4 := newRig(t, rigOpts{seen: store})
+	r4.clk.set(t0.Add(time.Minute))
+	one(t, r4.take(clientA, nil, g), OutcomeAccepted)
+	if r4.counters.Get(CounterSeenUnavailable) != 1 {
+		t.Fatalf("store failure not counted: %v", r4.counters.Snapshot())
 	}
 }

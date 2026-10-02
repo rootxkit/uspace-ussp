@@ -459,7 +459,11 @@ KV buckets (written by `api` only): `cis_current` (dataset → version +
 feature set as `zone/applicable/v1` per cell), `policy` (the row),
 `source_control` (B-09 state), `registry_validity` (key → status, TTL),
 `client_bindings` (client → serials), `intent_active` (intent id → volumes
-AMSL, thresholds, flight id, cell set, state). Every follower logs the
+AMSL, thresholds, flight id, cell set, state). One bucket is not a
+projection: `telemetry_seen` (TTL 1 h) is telemetry-ingest's replay
+window, written by it once a sample is published, so a replay to another
+replica or after a restart is still acknowledged and not published twice
+(B-05). Every follower logs the
 projection age in its status line and refuses nothing when the bucket is
 missing (everything enabled, identification `registry_unavailable`,
 zones "none loaded, said so": SC-22).

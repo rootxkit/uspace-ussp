@@ -216,10 +216,13 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	}
 	ingCounters := &core.Counters{}
 	proc.Publish(rt, "telemetry", ingCounters)
+	seenCounters := &core.Counters{}
+	proc.Publish(rt, "replay_window", seenCounters)
+	seen := &bus.SeenWindow{JS: js, Counters: seenCounters, Logger: logger}
 	ing := telemetry.New(telemetry.Config{
 		Bindings: telemetry.KVBindings{M: bindings}, Intents: telemetry.KVIntents{M: intents},
 		Registry: telemetry.KVRegistry{M: reg}, Airspace: telemetry.NewCISAirspace(cisM), Geoid: und, Sources: src,
-		Policy: current, Flights: binder, Outbox: outbox, Events: events, Counters: ingCounters, Logger: logger,
+		Policy: current, Flights: binder, Outbox: outbox, Events: events, Seen: seen, Counters: ingCounters, Logger: logger,
 	})
 	if o.Ingestor != nil {
 		o.Ingestor(ing)
@@ -253,7 +256,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 
 	for _, run := range []func(context.Context){
 		pol.Run, src.Run, bindings.Run, intents.Run, reg.Run, cisM.Run,
-		outbox.Run, outbox.RunSpill, events.Run, drain.Run,
+		outbox.Run, outbox.RunSpill, events.Run, drain.Run, seen.Run,
 		func(ctx context.Context) { status.Run(ctx, every) },
 		func(ctx context.Context) { tick(ctx, time.Second, func() { binder.Tick() }) },
 		func(ctx context.Context) {

@@ -115,7 +115,9 @@ type Values struct {
 	// TelemetryDedupeS is how long a (serial, seq) is remembered so that a
 	// replayed sample publishes nothing twice (B-05): as long as a client
 	// keeps what it has not seen acknowledged (its ten-minute queue, 02
-	// F5), since it sends that again after an outage.
+	// F5), since it sends that again after an outage. It is kept in the
+	// telemetry_seen bucket, shared by every instance and surviving a
+	// restart; the bucket's TTL (1 h) caps it.
 	TelemetryDedupeS float64 `json:"telemetry_dedupe_s"`
 	// TelemetryAheadToleranceS is how far ahead of its receipt a sample's
 	// own time may be before it is clamped and counted (T-13: 1 s).

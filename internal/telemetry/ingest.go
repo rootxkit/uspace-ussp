@@ -69,6 +69,7 @@ const (
 	CounterSessionReplaced   = "session_replaced"
 	CounterDedupeEvicted     = "dedupe_evicted"
 	CounterSeqReused         = "seq_reused"
+	CounterSeenUnavailable   = "replay_window_unavailable"
 	CounterIdentPublished    = "ident_changes"
 	CounterIdentUnavailable  = "ident_registry_unavailable"
 	CounterTeleport          = "anomaly_teleport"
@@ -81,6 +82,14 @@ const (
 type FlightBinder interface {
 	Bind(key, clientID, uasSerial string, intentID, authorisationNumber, operatorReg *string, capturedAt time.Time, live bool) string
 	End(key, reason string, at time.Time)
+}
+
+// SeenStore is the replay window kept outside the process (the
+// telemetry_seen KV bucket): Get reads a key, Put records one after its
+// sample was handed.
+type SeenStore interface {
+	Get(ctx context.Context, key string) ([]byte, bool, error)
+	Put(key string, value []byte)
 }
 
 // EventPublisher queues a durable message (Events).
@@ -99,6 +108,9 @@ type Config struct {
 	Airspace AirspaceJudge
 	// Geoid is the undulation; nil is no geoid: no AMSL (R-07, SC-22).
 	Geoid geoid.Undulator
+	// Seen is the replay window shared by every instance (nil: this
+	// process's memory alone).
+	Seen SeenStore
 	// Sources is the source-control follower; nil enables everything.
 	Sources SourceGate
 	Policy  func() policy.Record
@@ -341,7 +353,11 @@ func (in *Ingestor) takeAircraft(ctx context.Context, ac *aircraft, d Delivery, 
 			results[i].Reason, results[i].Detail = RejectedTooOld, "older than ingest_backlog_max_s"
 			continue
 		}
-		dup, pending, reused := ac.duplicate(replayKeyOf(f), f.TS, d.RxTS, window)
+		rk := replayKeyOf(f)
+		dup, pending, reused := ac.duplicate(rk, f.TS, d.RxTS, window)
+		if !dup && !reused {
+			dup, reused = in.sharedDuplicate(ctx, ac, rk, f.TS, d.RxTS, window)
+		}
 		if dup {
 			results[i].Reason = OutcomeDuplicate
 			if pending {
@@ -464,8 +480,12 @@ func (in *Ingestor) takeSample(ctx context.Context, ac *aircraft, d Delivery, i 
 	if d.Index != nil {
 		idx = d.Index[i]
 	}
+	seenAt, sampleTS := d.RxTS, f.TS
 	h := &handoff{subject: subject, cell3: c3, track: tr, done: func(handed bool) {
 		ac.landed(rk, handed)
+		if handed && in.cfg.Seen != nil {
+			in.cfg.Seen.Put(seenKey(ac.key, rk), encodeSeen(seenEntry{at: seenAt, ts: sampleTS}))
+		}
 		if d.Handed != nil {
 			d.Handed(idx, &frame, handed)
 		}
