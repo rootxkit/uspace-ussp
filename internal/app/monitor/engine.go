@@ -68,6 +68,13 @@ type IntentSource interface {
 	Intent(id string) (b intent.StateBody, found bool, ageS float64, loaded bool)
 }
 
+// IntentLister lists intent_active (bus.Mirror): an IntentSource that is
+// one lets a start take over the flights its intents say are
+// nonconforming or contingent before their first sample.
+type IntentLister interface {
+	Intents() (vals map[string]intent.StateBody, loaded bool)
+}
+
 // SourceGate is the source-control follower (internal/sources).
 type SourceGate interface {
 	Query(sourceType string, instanceID *string) coresources.Decision
@@ -80,11 +87,21 @@ type Sink interface {
 
 // Engine is the monitor's conformance path: it routes every track of
 // this USSP's flights to the worker of the flight's home cell3 (the
-// cell3 of its first sample, kept for the flight's life so one tracker
-// follows it), keeps the process's neighbour table, and publishes what
-// the workers decide through a bounded outbox. A worker owns its
-// trackers; nothing is shared between workers but the table, read under
-// its own lock and copied out small.
+// cell3 of its first sample, kept while the flight stays in this
+// instance's cells so one tracker follows it), keeps the process's
+// neighbour table, and publishes what the workers decide through a
+// bounded outbox. A worker owns its trackers; nothing is shared between
+// workers but the table, read under its own lock and copied out small.
+//
+// With a Store, every tracker's state machine is persisted
+// (conformance_state) on each change and at least every ConfHeartbeat:
+// a start restores the flights this instance owns before the track feed
+// opens (a silent flight still loses its link), and a flight that
+// crosses into another instance's cells is released by this one and
+// taken over by that one with its alerts. A tracker that starts without
+// a saved state takes its intent's nonconforming or contingent state,
+// and a restored one counts the hysteresis from the restore: neither a
+// restart nor a handover returns a flight to conforming early.
 type Engine struct {
 	Ownership  cell.Ownership
 	Intents    IntentSource
@@ -100,8 +117,14 @@ type Engine struct {
 	// OutboxLen bounds the outbox (DefaultOutboxLen).
 	OutboxLen int
 	// ConfHeartbeat is the period of an unchanged flight's state
-	// (DefaultConfHeartbeat).
+	// (DefaultConfHeartbeat), published and persisted.
 	ConfHeartbeat time.Duration
+	// Store persists each flight's state machine (KVStates); nil keeps
+	// it in memory only.
+	Store StateStore
+	// InstanceID names this instance as the owner of the flights it
+	// persists (the host name: stable across a restart in place).
+	InstanceID string
 
 	once    sync.Once
 	ctx     context.Context
@@ -110,6 +133,9 @@ type Engine struct {
 	home    map[string]string // flight id -> worker cell3
 	table   *table
 	out     *outbox
+	persist *persister
+	seeded  chan struct{}
+	seedEnd sync.Once
 }
 
 func (e *Engine) now() time.Time {
@@ -153,6 +179,13 @@ func (e *Engine) init() {
 		e.workers, e.home = map[string]*worker{}, map[string]string{}
 		e.table = &table{flights: map[string]tableEntry{}}
 		e.out = &outbox{sink: e.Sink, counters: e.Counters, logger: e.logger(), ch: make(chan outMsg, max(e.OutboxLen, DefaultOutboxLen))}
+		e.seeded = make(chan struct{})
+		if e.Store != nil {
+			if e.InstanceID == "" {
+				e.InstanceID = "monitor"
+			}
+			e.persist = newPersister(e.Store, e.InstanceID, e.Counters, e.logger(), e.yield)
+		}
 		e.mu.Lock()
 		if e.ctx == nil {
 			e.ctx = context.Background()
@@ -162,14 +195,137 @@ func (e *Engine) init() {
 }
 
 // Run starts the outbox and keeps the engine until ctx ends; workers
-// start with their first flight and stop with ctx.
+// start with their first flight and stop with ctx. With a Store it first
+// restores the flights this instance owns (Seeded closes then), and
+// takes over the nonconforming or contingent intents no instance
+// restored once intent_active is read.
 func (e *Engine) Run(ctx context.Context) {
 	e.init()
 	e.mu.Lock()
 	e.ctx = ctx
 	e.mu.Unlock()
 	go e.sweep(ctx)
+	if e.persist != nil {
+		go e.persist.run(ctx)
+		e.preload(ctx)
+		go e.seedIntents(ctx)
+	}
+	e.seedEnd.Do(func() { close(e.seeded) })
 	e.out.run(ctx)
+}
+
+// Seeded is closed once Run has restored the saved flights: the track
+// feed opens after it, so no sample starts a flight a saved state holds.
+func (e *Engine) Seeded() <-chan struct{} {
+	e.init()
+	return e.seeded
+}
+
+// preload restores every saved flight whose last cell this instance
+// owns and that no live instance owns.
+func (e *Engine) preload(ctx context.Context) {
+	states, err := e.Store.All(ctx)
+	if err != nil {
+		e.Counters.Inc(CounterStateLoadFailed)
+		e.logger().LogAttrs(ctx, slog.LevelError, "conformance states not read at the start: flights start again from their intents' states",
+			obs.Err(err))
+	}
+	for i := range states {
+		st := states[i]
+		id := st.Tracker.FlightID
+		if !bus.ValidKey(id) {
+			e.Counters.Inc(CounterStateUnreadable)
+			continue
+		}
+		if st.Owner != "" && st.Owner != e.InstanceID && time.Since(st.SavedAt) < liveOwnerS {
+			e.Counters.Inc(CounterStateNotOurs)
+			continue
+		}
+		c3, err := cell.Parent3(st.Tracker.LastCell5)
+		if err != nil || !e.Ownership.Owns(c3) {
+			continue
+		}
+		w := e.assign(id, c3)
+		if w == nil {
+			continue
+		}
+		select {
+		case w.ch <- item{restore: &st}:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// seedIntents waits for intent_active and starts, from its intent's
+// state, every flight whose intent is nonconforming or contingent that
+// no saved state started; the instance owning the smallest cell3 of the
+// intent's cell set does it.
+func (e *Engine) seedIntents(ctx context.Context) {
+	lister, ok := e.Intents.(IntentLister)
+	if !ok {
+		return
+	}
+	t := time.NewTicker(e.Tick)
+	defer t.Stop()
+	var vals map[string]intent.StateBody
+	for {
+		var loaded bool
+		if vals, loaded = lister.Intents(); loaded {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+	for _, id := range slices.Sorted(maps.Keys(vals)) {
+		b := vals[id]
+		if b.FlightID == nil || (b.LocalState != conformance.IntentNonconforming && b.LocalState != conformance.IntentContingent) {
+			continue
+		}
+		home := ""
+		for _, c5 := range b.CellSet {
+			if c3, err := cell.Parent3(c5); err == nil && (home == "" || c3 < home) {
+				home = c3
+			}
+		}
+		if home == "" || !e.Ownership.Owns(home) {
+			continue
+		}
+		e.mu.Lock()
+		_, tracked := e.home[*b.FlightID]
+		e.mu.Unlock()
+		if tracked {
+			continue
+		}
+		w := e.assign(*b.FlightID, home)
+		if w == nil {
+			continue
+		}
+		select {
+		case w.ch <- item{seed: &intentSeed{flightID: *b.FlightID, intentID: id, state: b.LocalState}}:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// yield is the persister's finding that another instance owns the
+// flight now: its worker lets it go without clearing anything.
+func (e *Engine) yield(flightID string) {
+	e.mu.Lock()
+	w := e.workers[e.home[flightID]]
+	e.mu.Unlock()
+	if w == nil {
+		return
+	}
+	select {
+	case w.ch <- item{yield: flightID}:
+	default:
+		e.Counters.Inc(CounterQueueFull)
+	}
 }
 
 // sweep drops from the neighbour table every flight silent for longer
@@ -229,12 +385,24 @@ func deref(s *string) string {
 
 // route is the worker of the flight's home cell3, started on first use;
 // nil when this instance does not own the flight or the bound is hit.
+// With a Store, a sample of a tracked flight in a cell this instance
+// does not own releases the flight to the instance that does.
 func (e *Engine) route(flightID, cell5 string) *worker {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	c3, err := cell.Parent3(cell5)
 	home, ok := e.home[flightID]
-	if !ok {
-		c3, err := cell.Parent3(cell5)
+	switch {
+	case ok && e.persist != nil && err == nil && !e.Ownership.Owns(c3):
+		if w := e.workers[home]; w != nil {
+			select {
+			case w.ch <- item{release: flightID}:
+			default:
+				e.Counters.Inc(CounterQueueFull)
+			}
+		}
+		return nil
+	case !ok:
 		if err != nil {
 			e.Counters.Inc(CounterDecodeFailed)
 			return nil
@@ -250,6 +418,28 @@ func (e *Engine) route(flightID, cell5 string) *worker {
 		home = c3
 		e.home[flightID] = home
 	}
+	return e.workerLocked(home)
+}
+
+// assign homes a flight in home (unless it has a home) and returns its
+// worker; nil at a bound.
+func (e *Engine) assign(flightID, home string) *worker {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if h, ok := e.home[flightID]; ok {
+		home = h
+	} else {
+		if len(e.home) >= MaxTableFlights {
+			e.Counters.Inc(CounterFlightsOverBound)
+			return nil
+		}
+		e.home[flightID] = home
+	}
+	return e.workerLocked(home)
+}
+
+// workerLocked is home's worker, started on first use (e.mu held).
+func (e *Engine) workerLocked(home string) *worker {
 	w := e.workers[home]
 	if w == nil {
 		if len(e.workers) >= MaxWorkers {
@@ -285,10 +475,14 @@ func (e *Engine) FlightEnded(flightID string) {
 
 // forget removes a flight's route once its worker dropped it.
 func (e *Engine) forget(flightID string) {
+	e.unhome(flightID)
+	e.table.remove(flightID)
+}
+
+func (e *Engine) unhome(flightID string) {
 	e.mu.Lock()
 	delete(e.home, flightID)
 	e.mu.Unlock()
-	e.table.remove(flightID)
 }
 
 // Summary is what the status line says of the conformance path.
@@ -323,11 +517,22 @@ func (e *Engine) Summary() Summary {
 	return s
 }
 
-// item is one unit of a worker's queue: a sample, or a flight's end.
+// item is one unit of a worker's queue: a sample, a flight's end, a
+// saved flight to restore, a flight to release to another instance or
+// to yield to one that took it, or an intent to start a flight from.
 type item struct {
-	tr    *telemetry.Track
-	in    conformance.Input
-	ended string
+	tr      *telemetry.Track
+	in      conformance.Input
+	ended   string
+	restore *StoredState
+	release string
+	yield   string
+	seed    *intentSeed
+}
+
+// intentSeed is a flight started from its intent's state.
+type intentSeed struct {
+	flightID, intentID, state string
 }
 
 // flight is one tracked flight.
@@ -338,6 +543,11 @@ type flight struct {
 	lastAt   time.Time
 	// lastConf is when the flight's state was last published.
 	lastConf time.Time
+	// lastSave is when it was last persisted; claimed once its first
+	// save (which claims the flight for this instance) is queued;
+	// lastCheck when another instance's ownership was last asked.
+	lastSave, lastCheck time.Time
+	claimed             bool
 }
 
 // worker is one home cell3's loop: samples and a tick every Engine.Tick.
@@ -399,28 +609,47 @@ func (w *worker) authorisation(in *conformance.Input, intentID string) {
 			return
 		}
 		in.Auth = &a
+		in.IntentState = b.LocalState
 	}
 }
 
 func (w *worker) take(ctx context.Context, it item) {
 	now := w.e.now()
-	if it.ended != "" {
+	switch {
+	case it.ended != "":
 		w.end(ctx, it.ended, now, conformance.ClearFlightEnded)
 		w.e.Counters.Inc(CounterFlightEnded)
+		return
+	case it.restore != nil:
+		if w.flights[it.restore.Tracker.FlightID] == nil && w.bounded(ctx, it.restore.Tracker.FlightID) {
+			f := w.restore(it.restore, now)
+			cfg, _ := w.config()
+			w.publishState(ctx, f, conformance.Events{}, systemTimes(now), cfg.PolicyVersion, now)
+			w.save(f, now, true)
+		}
+		return
+	case it.release != "":
+		w.letGo(it.release, true)
+		return
+	case it.yield != "":
+		w.letGo(it.yield, false)
+		return
+	case it.seed != nil:
+		w.seed(ctx, it.seed, now)
 		return
 	}
 	tr := it.tr
 	id := *tr.Body.FlightID
 	f := w.flights[id]
 	if f == nil {
-		if len(w.flights) >= w.e.MaxFlights {
-			w.e.Counters.Inc(CounterFlightsOverBound)
-			w.e.logger().LogAttrs(ctx, slog.LevelError, "monitor at its flight bound: flight not judged", obs.FlightID(id))
+		if !w.bounded(ctx, id) {
 			return
 		}
 		intentID := deref(tr.Body.IntentID)
-		f = &flight{tr: conformance.NewTracker(id, intentID, "", w.e.Counters), intentID: intentID}
-		w.flights[id] = f
+		if f = w.load(ctx, id, now); f == nil {
+			f = &flight{tr: conformance.NewTracker(id, intentID, "", w.e.Counters), intentID: intentID}
+			w.flights[id] = f
+		}
 		if intentID == "" {
 			w.e.Counters.Inc(CounterNoIntent)
 		}
@@ -436,10 +665,129 @@ func (w *worker) take(ctx context.Context, it item) {
 	ev := f.tr.Observe(in, cfg, now)
 	// A change is published at once; an admitted sample that changed
 	// nothing only as the heartbeat.
-	if len(ev.Transitions) > 0 || len(ev.Alerts) > 0 || (ev.Admitted && now.Sub(f.lastConf) >= w.e.ConfHeartbeat) {
+	changed := len(ev.Transitions) > 0 || len(ev.Alerts) > 0
+	if changed || (ev.Admitted && now.Sub(f.lastConf) >= w.e.ConfHeartbeat) {
 		w.publishState(ctx, f, ev, tr.Times(), cfg.PolicyVersion, now)
 	}
 	w.publishAlerts(ctx, ev.Alerts, now)
+	w.save(f, now, changed)
+}
+
+// bounded is false, counted and logged, when the worker tracks as many
+// flights as it may.
+func (w *worker) bounded(ctx context.Context, id string) bool {
+	if len(w.flights) < w.e.MaxFlights {
+		return true
+	}
+	w.e.Counters.Inc(CounterFlightsOverBound)
+	w.e.logger().LogAttrs(ctx, slog.LevelError, "monitor at its flight bound: flight not judged", obs.FlightID(id))
+	return false
+}
+
+// load restores a flight this worker takes over from its saved state
+// (a handover, or a flight that was not restored at the start); nil
+// when there is none or it cannot be read, and the flight starts from
+// its intent's state.
+func (w *worker) load(ctx context.Context, id string, now time.Time) *flight {
+	if w.e.Store == nil {
+		return nil
+	}
+	lctx, cancel := context.WithTimeout(ctx, loadTimeout)
+	st, found, err := w.e.Store.Load(lctx, id)
+	cancel()
+	switch {
+	case err != nil:
+		w.e.Counters.Inc(CounterStateLoadFailed)
+		w.e.logger().LogAttrs(ctx, slog.LevelWarn, "conformance state not read: the flight starts from its intent's state", obs.FlightID(id), obs.Err(err))
+		return nil
+	case !found || st.Tracker.FlightID != id:
+		return nil
+	}
+	return w.restore(&st, now)
+}
+
+// restore makes the worker track a saved flight, with the nearby alerts
+// it raised, from now (conformance.RestoreTracker).
+func (w *worker) restore(st *StoredState, now time.Time) *flight {
+	id := st.Tracker.FlightID
+	f := &flight{tr: conformance.RestoreTracker(st.Tracker, w.e.Counters, now), instance: st.Instance,
+		intentID: st.Tracker.IntentID, lastAt: st.LastAt}
+	if f.lastAt.IsZero() || f.lastAt.After(now) {
+		f.lastAt = now
+	}
+	w.nearby.Restore(st.Nearby)
+	w.flights[id] = f
+	if w.e.persist != nil {
+		w.e.persist.adopt(id, st.Rev)
+	}
+	w.e.Counters.Inc(CounterStateRestored)
+	return f
+}
+
+// seed starts a flight from its intent's nonconforming or contingent
+// state (its saved state when there is one).
+func (w *worker) seed(ctx context.Context, s *intentSeed, now time.Time) {
+	if w.flights[s.flightID] != nil || !w.bounded(ctx, s.flightID) {
+		return
+	}
+	f := w.load(ctx, s.flightID, now)
+	ev := conformance.Events{}
+	if f == nil {
+		f = &flight{tr: conformance.NewTracker(s.flightID, s.intentID, "", w.e.Counters), intentID: s.intentID, lastAt: now}
+		w.flights[s.flightID] = f
+		ev = f.tr.SeedFromIntent(s.state, now)
+		w.e.Counters.Inc(CounterStateSeeded)
+	}
+	cfg, _ := w.config()
+	w.publishState(ctx, f, ev, systemTimes(now), cfg.PolicyVersion, now)
+	w.save(f, now, true)
+}
+
+// letGo stops tracking a flight without clearing anything: released
+// (its state saved with no owner) when it left this instance's cells,
+// yielded when another instance took it over. Its nearby alerts go with
+// it.
+func (w *worker) letGo(id string, release bool) {
+	f := w.flights[id]
+	if f == nil {
+		return
+	}
+	if release && w.e.persist != nil {
+		w.e.persist.put(id, persistOp{kind: opRelease, s: w.saved(f)})
+		w.e.Counters.Inc(CounterReleased)
+	} else {
+		w.e.Counters.Inc(CounterYielded)
+	}
+	active := f.tr.Active()
+	for i := range active {
+		w.nearby.Forget(active[i].ID)
+	}
+	delete(w.flights, id)
+	w.e.unhome(id)
+}
+
+// saved is the flight's persisted state.
+func (w *worker) saved(f *flight) Saved {
+	s := Saved{Home: w.cell3, Instance: f.instance, LastAt: f.lastAt, Tracker: f.tr.State()}
+	active := f.tr.Active()
+	for i := range active {
+		s.Nearby = append(s.Nearby, conformance.SaveAlerts(w.nearby.Of(active[i].ID))...)
+	}
+	return s
+}
+
+// save persists the flight's state on a change (force) and otherwise at
+// most every heartbeat; the first save claims the flight.
+func (w *worker) save(f *flight, now time.Time, force bool) {
+	if w.e.persist == nil || (!force && f.claimed && now.Sub(f.lastSave) < w.e.ConfHeartbeat) {
+		return
+	}
+	f.lastSave = now
+	kind := opSave
+	if !f.claimed {
+		kind, f.claimed = opClaim, true
+	}
+	w.e.persist.put(f.tr.FlightID, persistOp{kind: kind, s: w.saved(f)})
 }
 
 // end drops a flight's tracker (its alerts clear with reason) and every
@@ -450,6 +798,9 @@ func (w *worker) end(ctx context.Context, id string, now time.Time, reason strin
 		w.publishAlerts(ctx, ev.Alerts, now)
 		delete(w.flights, id)
 		w.e.forget(id)
+		if w.e.persist != nil {
+			w.e.persist.put(id, persistOp{kind: opDelete})
+		}
 	}
 	w.publishAlerts(ctx, w.nearby.DropFlight(id, now), now)
 }
@@ -479,6 +830,7 @@ func (w *worker) tick(ctx context.Context) {
 				if ev := f.tr.Disable(now); len(ev.Transitions) > 0 || len(ev.Alerts) > 0 {
 					w.publishState(ctx, f, ev, systemTimes(now), cfg.PolicyVersion, now)
 					w.publishAlerts(ctx, ev.Alerts, now)
+					w.save(f, now, true)
 				}
 			}
 		}
@@ -489,6 +841,14 @@ func (w *worker) tick(ctx context.Context) {
 			w.publishState(ctx, f, ev, systemTimes(now), cfg.PolicyVersion, now)
 		}
 		w.publishAlerts(ctx, ev.Alerts, now)
+		w.save(f, now, len(ev.Transitions) > 0 || len(ev.Alerts) > 0)
+		// A flight silent here may have crossed into another instance's
+		// cells without a sample in this one's ring: ask whether that
+		// instance took it over.
+		if w.e.persist != nil && now.Sub(f.lastAt) > yieldCheckAfter && now.Sub(f.lastCheck) > yieldCheckAfter {
+			f.lastCheck = now
+			w.e.persist.put(id, persistOp{kind: opCheck})
+		}
 		// A flight silent past the flight end with nothing active and no
 		// lost link is forgotten (its flight ended at the ingest); one
 		// that holds an alert is kept until its intent ends.
@@ -496,6 +856,9 @@ func (w *worker) tick(ctx context.Context) {
 		if len(f.tr.Active()) == 0 && !snap.LinkLost && now.Sub(f.lastAt) > secs(vals.FlightEndAfterS) {
 			delete(w.flights, id)
 			w.e.forget(id)
+			if w.e.persist != nil {
+				w.e.persist.put(id, persistOp{kind: opDelete})
+			}
 			w.e.Counters.Inc(CounterFlightForgotten)
 			continue
 		}
@@ -510,7 +873,11 @@ func (w *worker) tick(ctx context.Context) {
 		active := f.tr.Active()
 		for i := range active {
 			nbs := w.e.table.near(snap.LastPosition, vals.NonconformanceNearbyRadiusM)
-			w.publishAlerts(ctx, w.nearby.Refresh(active[i], snap.LastPosition, nbs, vals.NonconformanceNearbyRadiusM, maxAge, now, cfg.PolicyVersion), now)
+			evs := w.nearby.Refresh(active[i], snap.LastPosition, nbs, vals.NonconformanceNearbyRadiusM, maxAge, now, cfg.PolicyVersion)
+			w.publishAlerts(ctx, evs, now)
+			if len(evs) > 0 {
+				w.save(f, now, true)
+			}
 		}
 	}
 	w.clearOrphanNearby(ctx, now)

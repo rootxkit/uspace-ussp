@@ -466,7 +466,14 @@ replica or after a restart is still acknowledged and not published twice
 (B-05). Another is `rid_isa_notifications` (TTL 24 h, F3411
 `NetDpMaxDataRetentionPeriodSeconds`): rid-sp's store of the ISA
 notifications peer Service Providers send us, by ISA id, read by WP-14
-(WP-9). Every follower logs the
+(WP-9). A third is `conformance_state` (TTL 24 h, rewritten at least
+every 10 s per tracked flight): each flight's conformance state machine
+and the nearby alerts it raised, by flight id, written by the monitor
+instance that owns the flight (compare-and-set on the revision) and
+read at its start and when a flight crosses into another instance's
+cells, so neither a restart nor a handover clears a nonconformance or
+returns a flight to conforming without the hysteresis (WP-10). Every
+follower logs the
 projection age in its status line and refuses nothing when the bucket is
 missing (everything enabled, identification `registry_unavailable`,
 zones "none loaded, said so": SC-22).

@@ -32,10 +32,10 @@ const (
 )
 
 // Bucket names (docs/PLAN.md D6, §7); written by api only, except
-// telemetry_seen, telemetry-ingest's own replay window (SeenWindow), and
+// telemetry_seen, telemetry-ingest's own replay window (SeenWindow),
 // rid_isa_notifications, the F3411 ISA notifications rid-sp receives
 // from peer Service Providers for the Display Provider views (WP-9,
-// read by WP-14).
+// read by WP-14), and conformance_state, the monitor's own state.
 const (
 	BucketCISCurrent       = "cis_current"
 	BucketPolicy           = "policy"
@@ -45,6 +45,10 @@ const (
 	BucketIntentActive     = "intent_active"
 	BucketTelemetrySeen    = "telemetry_seen"
 	BucketISANotifications = "rid_isa_notifications"
+	// BucketConformanceState holds each tracked flight's conformance
+	// state machine, written by the monitor instance that owns the
+	// flight, so a restart or a handover continues it (WP-10).
+	BucketConformanceState = "conformance_state"
 )
 
 // Bounds (E-10). The server's max_payload is 1 MiB by default, so no
@@ -71,6 +75,13 @@ const (
 	ISANotificationTTL = f3411.NetDpMaxDataRetentionPeriodSeconds * time.Second
 	// ISANotificationBytes bounds one stored ISA notification.
 	ISANotificationBytes = 64 << 10
+	// ConformanceStateTTL is conformance_state's TTL: the monitor
+	// rewrites a tracked flight's state at least every heartbeat, so a
+	// key a day old belongs to no flight any instance tracks.
+	ConformanceStateTTL = 24 * time.Hour
+	// ConformanceStateBytes bounds one flight's state: the tracker and
+	// at most conformance.MaxNearbyPerSource nearby alerts per source.
+	ConformanceStateBytes = 512 << 10
 )
 
 // CONF's bounds: the monitor publishes the transitions and a heartbeat
@@ -156,6 +167,7 @@ func TopologyWith(o TopologyOptions) Topology {
 			bucket(BucketIntentActive, "active intents: volumes AMSL, thresholds, flight, cells", 256<<10, 0),
 			bucket(BucketTelemetrySeen, "telemetry replay window: samples published, by client, serial, epoch and seq (telemetry-ingest)", SeenValueBytes, SeenTTL),
 			bucket(BucketISANotifications, "F3411 ISA notifications from peer Service Providers, by ISA id (rid-sp)", ISANotificationBytes, ISANotificationTTL),
+			bucket(BucketConformanceState, "each tracked flight's conformance state machine, by flight id (monitor)", ConformanceStateBytes, ConformanceStateTTL),
 		},
 	}
 }

@@ -211,6 +211,12 @@ func (t *table) near(p core.LatLon, radiusM float64) []conformance.Neighbour {
 // read).
 type MirrorIntents struct{ M *bus.Mirror[intentBody] }
 
+// Intents implements IntentLister.
+func (i MirrorIntents) Intents() (map[string]intent.StateBody, bool) {
+	vals, _, loaded := i.M.Snapshot()
+	return vals, loaded
+}
+
 // Intent implements IntentSource.
 func (i MirrorIntents) Intent(id string) (intent.StateBody, bool, float64, bool) {
 	if !bus.ValidKey(id) {

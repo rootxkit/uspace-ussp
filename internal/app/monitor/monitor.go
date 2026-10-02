@@ -14,6 +14,12 @@
 // on alrt.v1 (nonconformance, lost_link, nonconformance_nearby), every
 // active alert republished each tick with its current numbers (C-08).
 //
+// Each flight's state machine is persisted in the conformance_state
+// bucket and restored at a start before the feed opens, and a flight
+// that crosses into another instance's cells is handed over with it
+// (Engine): a restart or a handover never clears a nonconformance
+// silently nor returns a flight to conforming without the hysteresis.
+//
 // Missing inputs are visible, never conforming (SC-22): without
 // intent_active every flight is unknown (intent_active_unavailable), the
 // status line says so and /readyz reports it; a failed judgement for one
@@ -28,6 +34,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -168,9 +175,14 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	proc.Publish(rt, "conformance", engCounters)
 	pubCounters := &core.Counters{}
 	proc.Publish(rt, "monitor_bus", pubCounters)
+	instance, err := os.Hostname()
+	if err != nil || instance == "" {
+		instance = "monitor"
+	}
 	eng := &Engine{
 		Ownership: own, Intents: MirrorIntents{M: intents}, Sources: src, Policy: current,
 		Sink: bus.NewPublisher(rt.Bus, pubCounters), Counters: engCounters, Logger: logger, Tick: o.Tick,
+		Store: KVStates{KV: bus.KVStore{JS: js, Bucket: bus.BucketConformanceState}}, InstanceID: instance,
 	}
 	if o.Engine != nil {
 		o.Engine(eng)
@@ -183,13 +195,24 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 		From: func() time.Time { return time.Now().Add(-secs(current().Values.MonitorLiveMaxAgeS)) },
 	}
 	rt.Health.Register(DepTrk, true, fd.Probe)
-	logger.Info("monitor conformance path", slog.String("cell_ownership", own.String()), slog.Any("track_subjects", subjects))
+	logger.Info("monitor conformance path", slog.String("cell_ownership", own.String()), slog.Any("track_subjects", subjects),
+		slog.String("instance", instance))
 	every := o.SummaryEvery
 	if every <= 0 {
 		every = SummaryEvery
 	}
 	for _, run := range []func(context.Context){
-		pol.Run, intents.Run, src.Run, eng.Run, fd.Run,
+		pol.Run, intents.Run, src.Run, eng.Run,
+		// The feed opens once the saved flights are restored, so no
+		// sample starts a flight its saved state holds.
+		func(ctx context.Context) {
+			select {
+			case <-ctx.Done():
+				return
+			case <-eng.Seeded():
+			}
+			fd.Run(ctx)
+		},
 		func(ctx context.Context) { flightEnds(ctx, rt.Bus, eng, logger) },
 		func(ctx context.Context) {
 			t := time.NewTicker(every)

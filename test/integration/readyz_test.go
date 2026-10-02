@@ -59,6 +59,14 @@ func run(t *testing.T, spec proc.Spec, vars map[string]string) *client.ClientWit
 // runAt is run returning the process's listen address.
 func runAt(t *testing.T, spec proc.Spec, vars map[string]string) string {
 	t.Helper()
+	addr, _ := runStoppable(t, spec, vars)
+	return addr
+}
+
+// runStoppable is runAt with the stop of the process: it drains the
+// process and waits for it, once (the cleanup stops it otherwise).
+func runStoppable(t *testing.T, spec proc.Spec, vars map[string]string) (string, func()) {
+	t.Helper()
 	vars["USSP_STATUS_INTERVAL_S"] = "3600"
 	cfg, err := config.LoadFrom(func(n string) (string, bool) { v, ok := vars[n]; return v, ok })
 	if err != nil {
@@ -74,24 +82,30 @@ func runAt(t *testing.T, spec proc.Spec, vars map[string]string) string {
 	go func() {
 		done <- proc.Run(ctx, cfg, spec, proc.Options{Out: logs, Listening: func(a string) { addr <- a }})
 	}()
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			cancel()
+			if err := <-done; err != nil {
+				t.Errorf("drain: %v", err)
+			}
+		})
+	}
 	t.Cleanup(func() {
-		cancel()
-		if err := <-done; err != nil {
-			t.Errorf("drain: %v", err)
-		}
+		stop()
 		if t.Failed() {
 			t.Logf("process log:\n%s", logs.String())
 		}
 	})
 	select {
 	case a := <-addr:
-		return a
+		return a, stop
 	case err := <-done:
 		t.Fatalf("Run returned before listening: %v", err)
 	case <-time.After(15 * time.Second):
 		t.Fatal("no listener within 15 s")
 	}
-	return ""
+	return "", stop
 }
 
 // logBuffer collects the process log; it is printed when the test

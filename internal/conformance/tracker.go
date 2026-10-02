@@ -157,6 +157,10 @@ type Input struct {
 	AuthErr error
 	// Cell5 is the sample's cell (the alert subject).
 	Cell5 string
+	// IntentState is the intent's local state in intent_active; a
+	// tracker that has not judged yet takes a nonconforming or
+	// contingent one over before its first judgement (SeedFromIntent).
+	IntentState string
 }
 
 // Alert is one active alert.
@@ -513,6 +517,7 @@ func (t *Tracker) Observe(in Input, cfg Config, wall time.Time) Events {
 	if !v.VerticalKnown {
 		t.Counters.Inc(CounterVerticalNotEvaluated)
 	}
+	t.seedFromIntent(&ev, in.IntentState, placed)
 	t.authorised, t.authMissing = true, false
 	if in.Auth.AuthorisationNumber != "" {
 		t.AuthorisationNumber = in.Auth.AuthorisationNumber

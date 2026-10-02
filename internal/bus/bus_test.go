@@ -321,8 +321,9 @@ func TestTopologyShape(t *testing.T) {
 		if b.History != 1 || b.MaxValueSize <= 0 {
 			t.Errorf("%s: %+v", b.Bucket, b)
 		}
-		if (b.TTL != 0) != (b.Bucket == BucketRegistryValidity || b.Bucket == BucketTelemetrySeen || b.Bucket == BucketISANotifications) {
-			t.Errorf("%s TTL %v: only registry_validity, telemetry_seen and rid_isa_notifications have one", b.Bucket, b.TTL)
+		if (b.TTL != 0) != (b.Bucket == BucketRegistryValidity || b.Bucket == BucketTelemetrySeen || b.Bucket == BucketISANotifications ||
+			b.Bucket == BucketConformanceState) {
+			t.Errorf("%s TTL %v: only registry_validity, telemetry_seen, rid_isa_notifications and conformance_state have one", b.Bucket, b.TTL)
 		}
 	}
 	if _, ok := top.Bucket(BucketIntentActive); !ok {

@@ -575,3 +575,87 @@ func TestNoAltitudeEverStaysUnknown(t *testing.T) {
 		t.Fatalf("an undetermined sample moved a judged flight: %+v", ev)
 	}
 }
+
+// A restart or a handover: a tracker restored from its persisted state
+// keeps the flight nonconforming with the same alert, and returns it to
+// conforming, clearing that alert resolved, only after the full
+// hysteresis counted from the restore, whatever the saved state said of
+// the time already spent inside; a restored conforming flight stays
+// conforming (E-01 pair).
+func TestRestoreNeedsTheFullHysteresis(t *testing.T) {
+	cfg := testConfig()
+	a := circleAuth()
+	old := NewTracker(flightA, intentA, "", nil)
+	old.Observe(input(geodesy.Destination(origin, 90, 600), 0, &a), cfg, at(0))
+	old.Observe(input(origin, 1, &a), cfg, at(1))
+	old.Observe(input(origin, 2, &a), cfg, at(2))
+	raised := old.Active()[0].ID
+	saved := old.State()
+	raw, err := json.Marshal(saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back TrackerState
+	if err := json.Unmarshal(raw, &back); err != nil {
+		t.Fatal(err)
+	}
+	tr := RestoreTracker(back, nil, at(3.5))
+	if s := tr.Snapshot(); s.State != StateNonconforming || len(tr.Active()) != 1 || tr.Active()[0].ID != raised || tr.Active()[0].Cell5 == "" {
+		t.Fatalf("restored %+v %+v", s, tr.Active())
+	}
+	// 3.5 s since the last sample outside, but only 0.5 s since the
+	// restore: held.
+	if ev := tr.Observe(input(origin, 4, &a), cfg, at(4)); len(ev.Transitions) != 0 || len(ev.Alerts) != 0 {
+		t.Fatalf("returned before the hysteresis: %+v", ev)
+	}
+	ev := tr.Observe(input(origin, 3.5+cfg.ClearAfterS+0.1, &a), cfg, at(3.5+cfg.ClearAfterS+0.1))
+	if tr.Snapshot().State != StateConforming || len(ev.Alerts) != 1 || ev.Alerts[0].Alert.ID != raised || ev.Alerts[0].ClearReason != ClearResolved {
+		t.Fatalf("%+v", ev)
+	}
+	ok := RestoreTracker(tr.State(), nil, at(20))
+	if s := ok.Snapshot(); s.State != StateConforming || len(ok.Active()) != 0 {
+		t.Fatalf("%+v", s)
+	}
+	if ev := ok.Observe(input(origin, 21, &a), cfg, at(21)); len(ev.Transitions) != 0 {
+		t.Fatalf("%+v", ev)
+	}
+}
+
+// A fresh tracker (no persisted state) whose intent is nonconforming or
+// contingent takes that state before its first judgement: an inside
+// sample does not show conforming; nonconforming returns after the full
+// hysteresis, contingent never (F3548). An activated intent is judged
+// as before (E-01 pair).
+func TestFreshTrackerTakesTheIntentState(t *testing.T) {
+	cfg := testConfig()
+	a := circleAuth()
+	for _, tc := range []struct {
+		intent string
+		first  State
+		after  State
+	}{{IntentNonconforming, StateNonconforming, StateConforming}, {IntentContingent, StateContingent, StateContingent}, {"activated", StateConforming, StateConforming}} {
+		t.Run(tc.intent, func(t *testing.T) {
+			tr := NewTracker(flightA, intentA, "", nil)
+			in := input(origin, 0, &a)
+			in.IntentState = tc.intent
+			tr.Observe(in, cfg, at(0))
+			if s := tr.Snapshot(); s.State != tc.first {
+				t.Fatalf("first sample: %+v", s)
+			}
+			in = input(origin, cfg.ClearAfterS+0.5, &a)
+			in.IntentState = tc.intent
+			tr.Observe(in, cfg, at(cfg.ClearAfterS+0.5))
+			if s := tr.Snapshot(); s.State != tc.after {
+				t.Fatalf("after the hysteresis: %+v", s)
+			}
+		})
+	}
+	// Seeded before any sample: the same.
+	tr := NewTracker(flightA, intentA, "", nil)
+	if ev := tr.SeedFromIntent(IntentNonconforming, at(0)); len(ev.Transitions) != 1 || tr.Snapshot().Reason != ReasonRestored {
+		t.Fatalf("%+v", ev)
+	}
+	if ev := tr.Observe(input(origin, 1, &a), cfg, at(1)); len(ev.Transitions) != 0 {
+		t.Fatalf("%+v", ev)
+	}
+}

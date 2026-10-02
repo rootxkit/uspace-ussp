@@ -18,6 +18,14 @@ additively within `/v1`.
   `intent_conformance`). `bus.Conn.Listen` is a core subscription for
   the processes. The relational queries `InsertConformanceState` and
   `ConformanceTimeline`. The monitor process now has routes and workers.
+  The monitor persists each flight's conformance state machine in the
+  new KV bucket `conformance_state` (written by monitor) and restores it
+  at a start and on a cell handover between instances; a fresh tracker
+  takes its intent's nonconforming or contingent state, and api moves an
+  intent back to activated only on the tracker's own return transition.
+  CONF keeps 48 h and 4 GiB (`USSP_CONF_STREAM_MAX_AGE_S`,
+  `USSP_CONF_STREAM_MAX_BYTES`) and carries the transitions and a 0.1 Hz
+  heartbeat per flight; `bus.KVStore` gains revision writes.
 
 - WP-9: `flight/event/v1` carries an optional `position` (the flight's
   newest live position, its first on `started`); `intent/state/v1`

@@ -187,6 +187,19 @@ func (e flightNotRecordedError) Error() string {
 	return "flight " + e.flightID + " is not recorded yet"
 }
 
+// returnSeen is false for a conforming state that is not the tracker's
+// own transition out of nonconforming or a lost link: a fresh tracker's
+// first state, or a heartbeat this recorder reads after forgetting the
+// last state (an api restart), never moves an intent back to activated;
+// only a tracker that saw the flight nonconforming and then inside for
+// the whole hysteresis does (SC-22).
+func returnSeen(b StateBody) bool {
+	if b.BaseState != StateConforming {
+		return true
+	}
+	return b.Transition && b.PreviousState != nil && (*b.PreviousState == StateNonconforming || *b.PreviousState == StateLostLink)
+}
+
 // record moves the intent first (idempotent: a repeat moves nothing),
 // then appends the timeline row.
 func (r *Recorder) record(ctx context.Context, sm StateMessage) error {
@@ -195,7 +208,7 @@ func (r *Recorder) record(ctx context.Context, sm StateMessage) error {
 	if b.Reason != nil {
 		reason = *b.Reason
 	}
-	if b.IntentID != nil && r.Intents != nil && b.BaseState != StateUnknown {
+	if b.IntentID != nil && r.Intents != nil && b.BaseState != StateUnknown && returnSeen(b) {
 		moved, err := r.Intents.SetConformance(ctx, *b.IntentID, string(b.BaseState), reason)
 		if err != nil {
 			return err

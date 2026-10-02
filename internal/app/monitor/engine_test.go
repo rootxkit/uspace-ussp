@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -54,6 +55,12 @@ func (f *fakeIntents) Intent(id string) (intent.StateBody, bool, float64, bool) 
 	}
 	b, ok := f.vals[id]
 	return b, ok, 0, true
+}
+
+func (f *fakeIntents) Intents() (map[string]intent.StateBody, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return maps.Clone(f.vals), f.loaded
 }
 
 func (f *fakeIntents) set(id string, b *intent.StateBody, loaded bool) {

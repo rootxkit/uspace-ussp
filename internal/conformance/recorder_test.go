@@ -85,7 +85,9 @@ func TestRecorderRecordsChangesOnly(t *testing.T) {
 	if len(st.rows) != 3 || st.rows[1].State != StateNonconforming || st.rows[2].State != StateLostLink {
 		t.Fatalf("rows %+v", st.rows)
 	}
-	if len(mv.calls) != 3 || mv.calls[1] != "nonconforming/threshold_exceeded" || mv.calls[2] != "nonconforming/telemetry_lost" {
+	// The first conforming state is no return from nonconforming: it
+	// moves nothing (TestRecorderReturnsOnlyOnTheTransition).
+	if len(mv.calls) != 2 || mv.calls[0] != "nonconforming/threshold_exceeded" || mv.calls[1] != "nonconforming/telemetry_lost" {
 		t.Fatalf("moves %v", mv.calls)
 	}
 	for _, m := range []*recMsg{first, nc, same, bad, lost} {
@@ -93,7 +95,7 @@ func TestRecorderRecordsChangesOnly(t *testing.T) {
 			t.Fatalf("not acknowledged once: %+v", m)
 		}
 	}
-	if r.Counters.Get(CounterUnchanged) != 1 || r.Counters.Get(CounterRecordUnread) != 1 || r.Counters.Get(CounterIntentsMoved) != 3 {
+	if r.Counters.Get(CounterUnchanged) != 1 || r.Counters.Get(CounterRecordUnread) != 1 || r.Counters.Get(CounterIntentsMoved) != 2 {
 		t.Fatalf("counters %v", r.Counters.Snapshot())
 	}
 }
@@ -163,5 +165,47 @@ func TestRecorderRun(t *testing.T) {
 	r.Run(ctx)
 	if len(st.rows) != 1 {
 		t.Fatalf("rows %d", len(st.rows))
+	}
+}
+
+// A conforming state moves the intent back to activated only when it
+// is the tracker's own transition out of nonconforming (or a lost link)
+// after the hysteresis: a fresh tracker's first conforming state, or a
+// heartbeat read by a recorder that has forgotten the last state (an api
+// restart), never activates an intent that is nonconforming (E-01 pair).
+func TestRecorderReturnsOnlyOnTheTransition(t *testing.T) {
+	msg := func(prev *State, transition bool) *recMsg {
+		snap := Snapshot{FlightID: flightA, IntentID: intentA, State: StateConforming, BaseState: StateConforming}
+		ev := Events{}
+		if transition {
+			ev.Transitions = []Transition{{From: *prev, To: StateConforming}}
+		}
+		raw, err := json.Marshal(StateMessageOf(snap, ev, core.Times{RxTS: tt0, CapturedAt: tt0, Source: core.TimeSourceClock}, 2))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &recMsg{data: raw}
+	}
+	unknown, nc, lost := StateUnknown, StateNonconforming, StateLostLink
+	for _, tc := range []struct {
+		name  string
+		m     *recMsg
+		moved bool
+	}{
+		{"fresh tracker unknown to conforming", msg(&unknown, true), false},
+		{"heartbeat after an api restart", msg(nil, false), false},
+		{"back from nonconforming", msg(&nc, true), true},
+		{"back from a lost link", msg(&lost, true), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st, mv := &fakeStateStore{}, &fakeMover{}
+			r := &Recorder{Store: st, Intents: mv}
+			if !r.Take(context.Background(), []bus.Msg{tc.m}) || len(st.rows) != 1 {
+				t.Fatalf("not recorded: %+v", st.rows)
+			}
+			if moved := len(mv.calls) == 1; moved != tc.moved {
+				t.Fatalf("moved %v, want %v: %v", moved, tc.moved, mv.calls)
+			}
+		})
 	}
 }

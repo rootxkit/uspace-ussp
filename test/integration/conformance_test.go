@@ -37,9 +37,11 @@ type confRig struct {
 	nc      *bus.Conn
 	pub     *bus.Publisher
 	monitor string
-	mu      sync.Mutex
-	alerts  []recvAlert
-	states  []conformance.StateBody
+	// stopMonitor drains the monitor process (a restart).
+	stopMonitor func()
+	mu          sync.Mutex
+	alerts      []recvAlert
+	states      []conformance.StateBody
 }
 
 type recvAlert struct {
@@ -51,9 +53,7 @@ func newConfRig(t *testing.T) *confRig {
 	t.Helper()
 	g := &confRig{intentRig: newIntentRig(t), nc: busConn(t, mustEnv(t, "USSP_TEST_NATS_URL"), true)}
 	g.pub = bus.NewPublisher(g.nc, &core.Counters{})
-	g.monitor = "http://" + runAt(t, monitor.SpecWith(monitor.Options{}), map[string]string{
-		"USSP_MONITOR_ADDR": "127.0.0.1:0", "USSP_NATS_URL": mustEnv(t, "USSP_TEST_NATS_URL"),
-	})
+	g.startMonitor()
 	for subj, fn := range map[string]func(string, []byte){
 		"alrt.v1.>": func(_ string, data []byte) {
 			var a conformance.AlertMessage
@@ -78,6 +78,15 @@ func newConfRig(t *testing.T) *confRig {
 		t.Cleanup(stop)
 	}
 	return g
+}
+
+// startMonitor runs a monitor process against the rig's NATS.
+func (g *confRig) startMonitor() {
+	g.t.Helper()
+	addr, stop := runStoppable(g.t, monitor.SpecWith(monitor.Options{}), map[string]string{
+		"USSP_MONITOR_ADDR": "127.0.0.1:0", "USSP_NATS_URL": mustEnv(g.t, "USSP_TEST_NATS_URL"),
+	})
+	g.monitor, g.stopMonitor = "http://"+addr, stop
 }
 
 // recorder runs api's conformance recorder for one flight's subject.
@@ -385,3 +394,91 @@ func TestIntegrationConformanceMissingInputs(t *testing.T) {
 }
 
 func secs(s float64) time.Duration { return time.Duration(s * float64(time.Second)) }
+
+// The restart scenario on the real bus and databases (review item 1):
+// an activated intent's flight leaves its volume and is nonconforming,
+// the intent with it; the monitor stops and the aircraft returns inside
+// while it is down, for longer than the hysteresis; a new monitor
+// process restores the flight from conformance_state and keeps it
+// nonconforming, with the same alert, until it has itself seen the
+// flight inside for the full hysteresis; only then does it clear that
+// alert resolved and the intent return to activated.
+func TestIntegrationConformanceRestart(t *testing.T) {
+	g := newConfRig(t)
+	pv := g.policy()
+	g.publishAll(nil, nil, nil)
+	number, serial, token := g.operatorClient()
+	now := time.Now().UTC().Truncate(time.Second)
+	box := g.box(0, 0, 0.01)
+	req := g.request(number, serial, "conf-restart-"+unique(), box)
+	req["volumes"] = []any{g.volume(box, 120, 170, now.Add(-time.Minute), now.Add(30*time.Minute))}
+	d := g.file(token, req)
+	if d.status != 201 || d.str("decision") != "authorised" {
+		t.Fatalf("%d %s", d.status, d.raw)
+	}
+	intentID := d.str("intent_id")
+	if a := g.stack.call("PATCH", "/v1/intents/"+intentID, map[string]any{"action": "activate"}, bearer(token)); a.status != 200 {
+		t.Fatalf("activate: %d %s", a.status, a.raw)
+	}
+	band := d.body["volumes_amsl"].([]any)[0].(map[string]any)
+	midM := (band["lower_amsl_m"].(float64) + band["upper_amsl_m"].(float64)) / 2
+	centre := core.LatLon{LatDeg: box[0] + 0.005, LonDeg: box[1] + 0.005}
+	out := geodesy.Destination(core.LatLon{LatDeg: box[0] + 0.005, LonDeg: box[3]}, 90, 100)
+	flightA := newUUID()
+	if err := (flightstore.Store{S: appStore(t)}).Record(context.Background(), flights.Body{
+		FlightID: flightA, Event: flights.EventStarted, At: bus.Stamp{Time: now}, StartedAt: bus.Stamp{Time: now},
+		ClientID: "wp10-client", UASSerial: serial, IntentID: &intentID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	g.recorder(flightA)
+	localState := func() string {
+		r, err := g.svc.Store.Get(context.Background(), intentID)
+		if err != nil || r == nil {
+			return ""
+		}
+		return r.LocalState
+	}
+	fa := g.fly(flightA, &intentID, out, &midM, core.AltGeodetic)
+	within(t, 10*time.Second, func() bool { return len(g.alertsOf("nonconformance", "raised", flightA)) == 1 })
+	raised := g.alertsOf("nonconformance", "raised", flightA)[0].b.AlertID
+	within(t, 5*time.Second, func() bool { return localState() == "nonconforming" })
+	time.Sleep(time.Second) // a heartbeat's worth of samples outside
+
+	g.stopMonitor()
+	fa.move(centre)
+	time.Sleep(secs(pv.ConformanceClearAfterS) + 2*time.Second) // inside, unseen, beyond the hysteresis
+	g.mu.Lock()
+	g.states = nil
+	g.mu.Unlock()
+	restarted := time.Now()
+	g.startMonitor()
+
+	within(t, 10*time.Second, func() bool {
+		u := g.alertsOf("nonconformance", "updated", flightA)
+		return len(u) > 0 && u[len(u)-1].b.AlertID == raised && u[len(u)-1].at.After(restarted)
+	})
+	within(t, 15*time.Second, func() bool { return len(g.alertsOf("nonconformance", "cleared", flightA)) == 1 })
+	cl := g.alertsOf("nonconformance", "cleared", flightA)[0]
+	if cl.b.AlertID != raised || *cl.b.ClearReason != conformance.ClearResolved {
+		t.Fatalf("%+v", cl.b)
+	}
+	held := cl.at.Sub(restarted)
+	t.Logf("cleared resolved %v after the restart (hysteresis %v s), alert %s kept across it", held, pv.ConformanceClearAfterS, raised)
+	if held < secs(pv.ConformanceClearAfterS) {
+		t.Fatalf("cleared %v after the restart, inside the hysteresis", held)
+	}
+	// The first conforming state after the restart is the return itself.
+	g.mu.Lock()
+	for _, s := range g.states {
+		if s.FlightID == flightA && s.State == conformance.StateConforming {
+			if !s.Transition || s.PreviousState == nil || *s.PreviousState != conformance.StateNonconforming {
+				g.mu.Unlock()
+				t.Fatalf("conforming before the return: %+v", s)
+			}
+			break
+		}
+	}
+	g.mu.Unlock()
+	within(t, 5*time.Second, func() bool { return localState() == "activated" })
+}

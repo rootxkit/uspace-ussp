@@ -191,3 +191,48 @@ func (n *Nearby) Active() []Alert {
 	}
 	return out
 }
+
+// Of are the nearby alerts the source alert sourceID raised, for the
+// source flight's persisted state.
+func (n *Nearby) Of(sourceID string) []Alert {
+	set := n.bySource[sourceID]
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	out := make([]Alert, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, set[k].clone())
+	}
+	return out
+}
+
+// Restore takes over the nearby alerts of a source flight restored on
+// this worker (a restart or a handover): they keep their ids, so the
+// next refresh updates them and the source's clear clears them.
+func (n *Nearby) Restore(as []SavedAlert) {
+	if n.bySource == nil {
+		n.bySource = map[string]map[string]*Alert{}
+	}
+	for i := range as {
+		a := as[i].AlertOf()
+		src, _ := a.Detail["source_alert_id"].(string)
+		if src == "" || a.Kind != KindNonconformanceNearby {
+			continue
+		}
+		set := n.bySource[src]
+		if set == nil {
+			set = map[string]*Alert{}
+			n.bySource[src] = set
+		}
+		if len(set) < MaxNearbyPerSource {
+			set[a.FlightID] = a
+		}
+	}
+}
+
+// Forget removes the nearby alerts of the source alert sourceID without
+// clearing them: the source flight was handed over to another instance,
+// which continues them.
+func (n *Nearby) Forget(sourceID string) { delete(n.bySource, sourceID) }
