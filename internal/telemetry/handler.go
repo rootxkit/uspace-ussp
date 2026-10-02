@@ -148,22 +148,27 @@ func Register(mux *http.ServeMux, s *Server, guard httpx.Guard) error {
 // OpenTelemetryStream implements gen.ServerInterface: the WebSocket.
 func (s *Server) OpenTelemetryStream(w http.ResponseWriter, r *http.Request) {
 	ws := *s.WS
+	var sess *Session
 	ws.Admit = func(w http.ResponseWriter, r *http.Request, p auth.Principal) bool {
 		if why := s.disabled(p.Claims.Subject); why != "" {
 			s.count(CounterConnectRefusedDisabled)
 			s.refuseDisabled(w, r, why)
 			return false
 		}
+		// B-14 ranks sessions by the order they were opened in, so the
+		// order is taken here, before the upgrade is answered: a client
+		// that opens a second socket once the first is open always gets
+		// the later order. Taken after the upgrade, it followed whichever
+		// handler goroutine got there first.
+		sess = s.Ingest.NewSession(p.Claims.Subject, s.now())
 		return true
 	}
-	conn, p, err := ws.AcceptWS(w, r, StreamAccess)
+	conn, _, err := ws.AcceptWS(w, r, StreamAccess)
 	if err != nil {
 		return
 	}
 	s.count(CounterSessions)
 	conn.SetReadLimit(MaxMessageBytes)
-	clientID := p.Claims.Subject
-	sess := s.Ingest.NewSession(clientID, s.now())
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	if s.Ctx != nil {
