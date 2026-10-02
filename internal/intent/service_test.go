@@ -153,8 +153,8 @@ func TestFirstComeNeverGrantsOverAnAcceptedIntent(t *testing.T) {
 	if err != nil || third.Decision != DecisionRejected || third.Conflicts[0].Reason != ReasonIntentFirstCome {
 		t.Fatalf("third: %v %s %+v", err, third.Decision, third.Conflicts)
 	}
-	clear := wireVolumeJSON(squareWire(42.70, 44.80, 0.01), 500, 550, t0, t1)
-	if d, _, err := submit(t, s, with(baseRequest(), "client_ref", "clear", "volumes", []any{clear})); err != nil || d.Decision != DecisionAuthorised {
+	apart := wireVolumeJSON(squareWire(42.70, 44.80, 0.01), 500, 550, t0, t1)
+	if d, _, err := submit(t, s, with(baseRequest(), "client_ref", "clear", "volumes", []any{apart})); err != nil || d.Decision != DecisionAuthorised {
 		t.Fatalf("clear: %v %s", err, d.Decision)
 	}
 }
@@ -363,8 +363,8 @@ func TestActivationRefusedWhileUpdateRequired(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	clear := wireVolumeJSON(squareWire(42.70, 44.80, 0.01), 500, 550, t0, t1)
-	other, _, err := submit(t, s, with(baseRequest(), "client_ref", "other", "volumes", []any{clear}))
+	apart := wireVolumeJSON(squareWire(42.70, 44.80, 0.01), 500, 550, t0, t1)
+	other, _, err := submit(t, s, with(baseRequest(), "client_ref", "other", "volumes", []any{apart}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -572,8 +572,8 @@ func TestProjectionFailureIsRepublished(t *testing.T) {
 	if n, err := s.Republish(t.Context()); err != nil || n != 0 {
 		t.Fatalf("second republish: %d %v", n, err)
 	}
-	clear := wireVolumeJSON(squareWire(42.70, 44.80, 0.01), 500, 550, t0, t1)
-	d2, _, err := submit(t, s, with(baseRequest(), "client_ref", "twin", "volumes", []any{clear}))
+	apart := wireVolumeJSON(squareWire(42.70, 44.80, 0.01), 500, 550, t0, t1)
+	d2, _, err := submit(t, s, with(baseRequest(), "client_ref", "twin", "volumes", []any{apart}))
 	if err != nil || pr.kv[d2.IntentID].IntentID != d2.IntentID {
 		t.Fatalf("twin: %v %v", err, pr.kv)
 	}
