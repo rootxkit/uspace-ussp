@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -455,5 +456,18 @@ func TestPullConsumerRefusesUnbounded(t *testing.T) {
 	}
 	if _, _, err := PullConsumer(context.Background(), nil, DefaultTopology(), "NOPE", PullSpec{Durable: "x", MaxAckPending: 1}); err == nil {
 		t.Fatal("unknown stream accepted")
+	}
+}
+
+func TestHolesOf(t *testing.T) {
+	got := holesOf([]Jump{{After: 5, Before: 20}, {After: 30, Before: 40}, {After: 50, Before: 52}}, 15, []uint64{33, 35, 51, 60})
+	want := []Hole{{FromSeq: 6, ToSeq: 14, Count: 9}, {FromSeq: 33, ToSeq: 35, Count: 2}, {FromSeq: 51, ToSeq: 51, Count: 1}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("%+v", got)
+	}
+	// Nothing removed: a jump over messages still in the stream is no
+	// hole (the twin).
+	if got := holesOf([]Jump{{After: 5, Before: 9}}, 1, nil); got[0] != (Hole{}) {
+		t.Fatalf("%+v", got)
 	}
 }

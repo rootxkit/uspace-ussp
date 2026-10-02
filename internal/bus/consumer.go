@@ -52,3 +52,11 @@ func PullConsumer(ctx context.Context, js jetstream.JetStream, t Topology, strea
 	}
 	return s, c, nil
 }
+
+// PullOpener is a StreamSource's Open for the pull consumer spec on the
+// stream named in t.
+func PullOpener(js jetstream.JetStream, t Topology, stream string, spec PullSpec) func(context.Context) (jetstream.Stream, jetstream.Consumer, error) {
+	return func(ctx context.Context) (jetstream.Stream, jetstream.Consumer, error) {
+		return PullConsumer(ctx, js, t, stream, spec)
+	}
+}
