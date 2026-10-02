@@ -21,6 +21,7 @@ import (
 
 	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/cpa"
+	"github.com/rootxkit/uspace-core/rid"
 )
 
 // Values are the thresholds of one policy version. Every field carries
@@ -91,6 +92,51 @@ type Values struct {
 	// IntentOpenMaxCount bounds the intents one operator may hold that
 	// are not ended, rejected or withdrawn (every write is bounded).
 	IntentOpenMaxCount int `json:"intent_open_max_count"`
+
+	// Operator telemetry ingest (WP-8). BacklogAfterS: a sample placed
+	// further than this behind its receipt is history (backlog, T-04,
+	// T-11) even when the client did not say so. FlightEndAfterS: the
+	// silence after which a flight ends (telemetry_lost comes first, at
+	// TelemetryLostS). IngestQueueS: how long a placed sample may wait in
+	// the publisher's memory before it goes to the ingest.v1 work queue
+	// instead (spec 05 §5). IngestBacklogMaxS: how old a sample in the
+	// work queue may be before it is shed with a gap record (never the
+	// newest; the queue itself holds ten minutes).
+	BacklogAfterS     float64 `json:"backlog_after_s"`
+	FlightEndAfterS   float64 `json:"flight_end_after_s"`
+	IngestQueueS      float64 `json:"ingest_queue_s"`
+	IngestBacklogMaxS float64 `json:"ingest_backlog_max_s"`
+	// TelemetryRateHz is the live sample rate one aircraft of one client
+	// may send (spec 05 §5: 2 Hz; over-rate samples are dropped and
+	// counted); TelemetryBacklogRateHz the rate of its backlog samples, so
+	// a drain clearly exceeds intake (B-01) and is still bounded.
+	TelemetryRateHz        float64 `json:"telemetry_rate_hz"`
+	TelemetryBacklogRateHz float64 `json:"telemetry_backlog_rate_hz"`
+	// TelemetryDedupeS is how long a (serial, seq) is remembered so that a
+	// replayed sample publishes nothing twice (B-05): as long as a client
+	// keeps what it has not seen acknowledged (its ten-minute queue, 02
+	// F5), since it sends that again after an outage.
+	TelemetryDedupeS float64 `json:"telemetry_dedupe_s"`
+	// TelemetryAheadToleranceS is how far ahead of its receipt a sample's
+	// own time may be before it is clamped and counted (T-13: 1 s).
+	TelemetryAheadToleranceS float64 `json:"telemetry_ahead_tolerance_s"`
+	// TelemetryAnchorMaxAgeS is how long the clock relation learnt from an
+	// aircraft's live samples places its later samples by their own time
+	// (T-11) before it is learnt again.
+	TelemetryAnchorMaxAgeS float64 `json:"telemetry_anchor_max_age_s"`
+	// TelemetryBatchSpanS bounds the source-time span of one
+	// POST /v1/telemetry/batch (02 F5: at most 1 s of samples).
+	TelemetryBatchSpanS float64 `json:"telemetry_batch_span_s"`
+	// PressureFallbackAccuracyCode is the lowest vertical accuracy code
+	// (MAV_ODID_VER_ACC, as F3411's VerticalAccuracy orders it) at which a
+	// geodetic altitude is used; below it the pressure altitude stands in
+	// and is held for PressureHoldS (uspace-core rid.AltPolicy, R-08).
+	PressureFallbackAccuracyCode int     `json:"pressure_fallback_accuracy_code"`
+	PressureHoldS                float64 `json:"pressure_hold_s"`
+	// TeleportSpeedMS is the speed between two samples of one aircraft
+	// above which the later one is flagged anomaly teleport and counted,
+	// never dropped (spec 06 T3: 100 m/s).
+	TeleportSpeedMS float64 `json:"teleport_speed_ms"`
 }
 
 // MaxSpecialOperationPriority bounds SpecialOperationPriority (an
@@ -108,6 +154,10 @@ const (
 	MaxClientSecretOverlapS = 7 * 24 * 3600
 )
 
+// MaxPressureFallbackAccuracyCode is the highest vertical accuracy code
+// (MAV_ODID_VER_ACC 6: under 1 m).
+const MaxPressureFallbackAccuracyCode = 6
+
 // TelemetryRetentionFloorDays is the shortest telemetry retention a
 // policy may set (Art. 15(1)(g)); a lower value is refused.
 const TelemetryRetentionFloorDays = 30
@@ -124,8 +174,19 @@ const TelemetryRetentionFloorDays = 30
 // minutes before time_start, and 1000 open intents per operator. ProximityRadiusM has no figure in the plan; it takes
 // the CPA neighbour radius until GCAA answers Q6. They are shown with
 // their policy_version, never presented as the policy answer.
+//
+// The telemetry ingest defaults are spec 05 §5 and the WP-8 brief: backlog
+// after 10 s, flights end after 120 s of silence, 10 s in the publisher's
+// memory, shed from the work queue at 9 minutes (inside its 10), 2 Hz
+// live and 20 Hz backlog per aircraft, replays remembered 600 s (the
+// client queue; the brief's 30 s let a sample re-sent after a longer
+// outage be published twice), 1 s
+// ahead (T-13), the clock relation relearnt every 60 s, batches of 1 s,
+// uspace-core's altitude selection (rid.DefaultAltPolicy), and a teleport
+// above 100 m/s (spec 06 T3).
 func Defaults() Values {
 	c := cpa.DefaultPolicy
+	alt := rid.DefaultAltPolicy()
 	return Values{
 		DeviationHM:                 50,
 		DeviationVM:                 15,
@@ -153,7 +214,30 @@ func Defaults() Values {
 		DeconflictVerticalBufferM:   0,
 		ActivationLeadS:             600,
 		IntentOpenMaxCount:          1000,
+
+		BacklogAfterS:                10,
+		FlightEndAfterS:              120,
+		IngestQueueS:                 10,
+		IngestBacklogMaxS:            540,
+		TelemetryRateHz:              2,
+		TelemetryBacklogRateHz:       20,
+		TelemetryDedupeS:             600,
+		TelemetryAheadToleranceS:     1,
+		TelemetryAnchorMaxAgeS:       60,
+		TelemetryBatchSpanS:          1,
+		PressureFallbackAccuracyCode: int(alt.MinVerticalAccuracy),
+		PressureHoldS:                alt.PressureHoldS,
+		TeleportSpeedMS:              100,
 	}
+}
+
+// AltPolicy is the uspace-core altitude selection of v (the pressure
+// fallback and hold, R-08).
+func (v Values) AltPolicy() rid.AltPolicy {
+	p := rid.DefaultAltPolicy()
+	p.MinVerticalAccuracy = uint8(min(max(v.PressureFallbackAccuracyCode, 0), MaxPressureFallbackAccuracyCode))
+	p.PressureHoldS = v.PressureHoldS
+	return p
 }
 
 // CPA is the uspace-core CPA policy of v.
@@ -191,6 +275,12 @@ func (v Values) Validate() error {
 		{"cpa_neighbour_radius_m", v.CPANeighbourRadiusM},
 		{"registry_positive_ttl_s", v.RegistryPositiveTTLS}, {"registry_negative_ttl_s", v.RegistryNegativeTTLS},
 		{"activation_lead_s", v.ActivationLeadS},
+		{"backlog_after_s", v.BacklogAfterS}, {"flight_end_after_s", v.FlightEndAfterS},
+		{"ingest_queue_s", v.IngestQueueS}, {"ingest_backlog_max_s", v.IngestBacklogMaxS},
+		{"telemetry_rate_hz", v.TelemetryRateHz}, {"telemetry_backlog_rate_hz", v.TelemetryBacklogRateHz},
+		{"telemetry_dedupe_s", v.TelemetryDedupeS}, {"telemetry_ahead_tolerance_s", v.TelemetryAheadToleranceS},
+		{"telemetry_anchor_max_age_s", v.TelemetryAnchorMaxAgeS}, {"telemetry_batch_span_s", v.TelemetryBatchSpanS},
+		{"pressure_hold_s", v.PressureHoldS}, {"teleport_speed_ms", v.TeleportSpeedMS},
 	}
 	for _, f := range positive {
 		if !finite(f.v) || f.v <= 0 {
@@ -223,6 +313,12 @@ func (v Values) Validate() error {
 	}
 	if v.IntentOpenMaxCount < 1 || v.IntentOpenMaxCount > MaxIntentOpenMaxCount {
 		errs = append(errs, core.Fieldf("intent_open_max_count", "must be from 1 to %d, got %d", MaxIntentOpenMaxCount, v.IntentOpenMaxCount))
+	}
+	if v.PressureFallbackAccuracyCode < 1 || v.PressureFallbackAccuracyCode > MaxPressureFallbackAccuracyCode {
+		errs = append(errs, core.Fieldf("pressure_fallback_accuracy_code", "must be from 1 to %d, got %d", MaxPressureFallbackAccuracyCode, v.PressureFallbackAccuracyCode))
+	}
+	if finite(v.FlightEndAfterS) && finite(v.TelemetryLostS) && v.FlightEndAfterS <= v.TelemetryLostS {
+		errs = append(errs, core.Fieldf("flight_end_after_s", "must be longer than telemetry_lost_s (%v), got %v", v.TelemetryLostS, v.FlightEndAfterS))
 	}
 	if v.ClientSecretOverlapS < 0 || v.ClientSecretOverlapS > MaxClientSecretOverlapS {
 		errs = append(errs, core.Fieldf("client_secret_overlap_s", "must be from 0 to %d, got %d", MaxClientSecretOverlapS, v.ClientSecretOverlapS))

@@ -12,6 +12,7 @@ import (
 
 	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/cpa"
+	"github.com/rootxkit/uspace-core/rid"
 )
 
 // memStore is the Store contract in memory: a row is kept only when
@@ -76,10 +77,12 @@ func TestValuesJSONNamesCarryUnits(t *testing.T) {
 		t.Fatalf("%d JSON fields for %d struct fields", len(m), reflect.TypeFor[Values]().NumField())
 	}
 	for k := range m {
-		// _priority and _count are dimensionless (an ordinal, a number of
-		// things); every other name carries its unit.
+		// _priority, _count and _code are dimensionless (an ordinal, a
+		// number of things, an enumeration code); every other name carries
+		// its unit.
 		if !strings.HasSuffix(k, "_m") && !strings.HasSuffix(k, "_s") && !strings.HasSuffix(k, "_days") &&
-			!strings.HasSuffix(k, "_priority") && !strings.HasSuffix(k, "_count") {
+			!strings.HasSuffix(k, "_priority") && !strings.HasSuffix(k, "_count") && !strings.HasSuffix(k, "_hz") &&
+			!strings.HasSuffix(k, "_code") && !strings.HasSuffix(k, "_ms") {
 			t.Errorf("%s has no unit", k)
 		}
 	}
@@ -105,6 +108,8 @@ func TestValidateNamesEveryRefusedField(t *testing.T) {
 	v.DeconflictBufferM = -1
 	v.DeconflictVerticalBufferM = math.NaN()
 	v.ActivationLeadS = 0
+	v.TelemetryRateHz = 0
+	v.PressureFallbackAccuracyCode = 0
 	err := v.Validate()
 	var fields []string
 	var j interface{ Unwrap() []error }
@@ -118,8 +123,9 @@ func TestValidateNamesEveryRefusedField(t *testing.T) {
 		}
 		fields = append(fields, fe.Field)
 	}
-	want := "deviation_h_m,cpa_horizontal_min_m,cpa_vertical_min_m,activation_lead_s,cpa_tcpa_max_s,deconflict_buffer_m,deconflict_vertical_buffer_m," +
-		"telemetry_retention_days,record_retention_days,audit_retention_days,operator_token_ttl_s,special_operation_priority,intent_open_max_count,client_secret_overlap_s"
+	want := "deviation_h_m,cpa_horizontal_min_m,cpa_vertical_min_m,activation_lead_s,telemetry_rate_hz,cpa_tcpa_max_s,deconflict_buffer_m," +
+		"deconflict_vertical_buffer_m,telemetry_retention_days,record_retention_days,audit_retention_days,operator_token_ttl_s," +
+		"special_operation_priority,intent_open_max_count,pressure_fallback_accuracy_code,client_secret_overlap_s"
 	if strings.Join(fields, ",") != want {
 		t.Errorf("fields %v, want %s", fields, want)
 	}
@@ -129,8 +135,29 @@ func TestValidateNamesEveryRefusedField(t *testing.T) {
 	v.CPATCPAMaxS, v.CPANeighbourMaxAgeS, v.TelemetryRetentionDays = 0, 0, TelemetryRetentionFloorDays
 	v.OperatorTokenTTLS, v.ClientSecretOverlapS = MaxOperatorTokenTTLS, 0
 	v.DeconflictBufferM, v.DeconflictVerticalBufferM, v.SpecialOperationPriority = 0, 0, 1
+	v.PressureFallbackAccuracyCode = MaxPressureFallbackAccuracyCode
 	if err := v.Validate(); err != nil {
 		t.Errorf("boundary values refused: %v", err)
+	}
+}
+
+// The telemetry defaults are uspace-core's altitude selection, and a
+// flight never ends before it is telemetry_lost (E-01 pair).
+func TestTelemetryDefaultsAndFlightEndAfterTelemetryLost(t *testing.T) {
+	d := Defaults()
+	if d.AltPolicy() != rid.DefaultAltPolicy() {
+		t.Errorf("altitude policy %+v, core %+v", d.AltPolicy(), rid.DefaultAltPolicy())
+	}
+	if d.TelemetryRateHz != 2 || d.BacklogAfterS != 10 || d.FlightEndAfterS != 120 || d.IngestQueueS != 10 || d.TelemetryDedupeS != 600 {
+		t.Errorf("telemetry defaults differ from the WP-8 brief: %+v", d)
+	}
+	d.FlightEndAfterS = d.TelemetryLostS
+	if err := d.Validate(); err == nil || !strings.Contains(err.Error(), "flight_end_after_s") {
+		t.Errorf("a flight ending at telemetry_lost accepted: %v", err)
+	}
+	d.FlightEndAfterS = d.TelemetryLostS + 1
+	if err := d.Validate(); err != nil {
+		t.Errorf("a flight ending after telemetry_lost refused: %v", err)
 	}
 }
 
