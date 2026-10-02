@@ -180,6 +180,30 @@ func (p WorkStore) Deleted(ctx context.Context, isaID string, notes []ridsp.ISAN
 	})
 }
 
+// Refreshed implements ridsp.WorkStore.
+func (p WorkStore) Refreshed(ctx context.Context, isaID, version string) error {
+	return p.S.Queries().SetISAVersion(ctx, relational.SetISAVersionParams{Version: &version, IsaID: isaID})
+}
+
+// Refused implements ridsp.WorkStore.
+func (p WorkStore) Refused(ctx context.Context, isaID, msg string, maxRefusals int) (bool, error) {
+	givenUp, err := p.S.Queries().CountISARefusal(ctx, relational.CountISARefusalParams{LastError: &msg,
+		MaxRefusals: int32(max(1, min(maxRefusals, 1<<20))), IsaID: isaID})
+	if store.IsNoRows(err) {
+		return true, nil // no such ISA: nothing to retry
+	}
+	return givenUp, err
+}
+
+// RefusedISAs implements ridsp.WorkStore.
+func (p WorkStore) RefusedISAs(ctx context.Context) (int64, string, string, error) {
+	r, err := p.S.Queries().RefusedISAs(ctx)
+	if store.IsNoRows(err) {
+		return 0, "", "", nil
+	}
+	return r.N, r.IsaID, r.LastError, err
+}
+
 // Failed implements ridsp.WorkStore.
 func (p WorkStore) Failed(ctx context.Context, isaID, msg string) error {
 	return p.S.Queries().SetISAError(ctx, relational.SetISAErrorParams{IsaID: isaID, LastError: &msg})

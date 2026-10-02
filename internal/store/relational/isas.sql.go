@@ -65,6 +65,30 @@ func (q *Queries) ClaimOutboxKinds(ctx context.Context, arg ClaimOutboxKindsPara
 	return items, nil
 }
 
+const countISARefusal = `-- name: CountISARefusal :one
+UPDATE dss_isas
+SET refusals = refusals + 1, last_error = $1,
+    refused_at = CASE WHEN refusals + 1 >= $2::integer THEN now() ELSE refused_at END
+WHERE isa_id = $3
+RETURNING (refused_at IS NOT NULL)::boolean AS given_up
+`
+
+type CountISARefusalParams struct {
+	LastError   *string `json:"last_error"`
+	MaxRefusals int32   `json:"max_refusals"`
+	IsaID       string  `json:"isa_id"`
+}
+
+// One more DSS refusal of a write of the ISA, with its error; at
+// max_refusals the ISA is marked refused (given up). Returns whether it
+// is.
+func (q *Queries) CountISARefusal(ctx context.Context, arg CountISARefusalParams) (bool, error) {
+	row := q.db.QueryRow(ctx, countISARefusal, arg.LastError, arg.MaxRefusals, arg.IsaID)
+	var given_up bool
+	err := row.Scan(&given_up)
+	return given_up, err
+}
+
 const dBNow = `-- name: DBNow :one
 
 SELECT now()::timestamptz AS now
@@ -229,6 +253,29 @@ func (q *Queries) OutboxBacklog(ctx context.Context, kinds []string) (OutboxBack
 	return i, err
 }
 
+const refusedISAs = `-- name: RefusedISAs :one
+SELECT count(*) OVER ()::bigint AS n, isa_id, COALESCE(last_error, '')::text AS last_error
+FROM dss_isas
+WHERE refused_at IS NOT NULL AND deleted_at IS NULL AND refused_at > now() - interval '24 hours'
+ORDER BY refused_at DESC
+LIMIT 1
+`
+
+type RefusedISAsRow struct {
+	N         int64  `json:"n"`
+	IsaID     string `json:"isa_id"`
+	LastError string `json:"last_error"`
+}
+
+// The ISAs given up within the last 24 h that are neither written nor
+// deleted since, and the newest of them.
+func (q *Queries) RefusedISAs(ctx context.Context) (RefusedISAsRow, error) {
+	row := q.db.QueryRow(ctx, refusedISAs)
+	var i RefusedISAsRow
+	err := row.Scan(&i.N, &i.IsaID, &i.LastError)
+	return i, err
+}
+
 const sessionISAsDue = `-- name: SessionISAsDue :many
 SELECT i.isa_id, i.flight_id, i.version, i.time_end, i.extents
 FROM dss_isas i
@@ -303,7 +350,7 @@ func (q *Queries) SetFlightISA(ctx context.Context, arg SetFlightISAParams) erro
 }
 
 const setISADeleted = `-- name: SetISADeleted :exec
-UPDATE dss_isas SET deleted_at = now(), last_error = NULL
+UPDATE dss_isas SET deleted_at = now(), last_error = NULL, refusals = 0, refused_at = NULL
 WHERE isa_id = $1 AND deleted_at IS NULL
 `
 
@@ -342,10 +389,26 @@ func (q *Queries) SetISAKind(ctx context.Context, arg SetISAKindParams) error {
 	return err
 }
 
+const setISAVersion = `-- name: SetISAVersion :exec
+UPDATE dss_isas SET version = $1 WHERE isa_id = $2
+`
+
+type SetISAVersionParams struct {
+	Version *string `json:"version"`
+	IsaID   string  `json:"isa_id"`
+}
+
+// The version the DSS holds, read after a 409: only the version, so the
+// refusals in a row are kept.
+func (q *Queries) SetISAVersion(ctx context.Context, arg SetISAVersionParams) error {
+	_, err := q.db.Exec(ctx, setISAVersion, arg.Version, arg.IsaID)
+	return err
+}
+
 const setISAWritten = `-- name: SetISAWritten :exec
 UPDATE dss_isas
 SET version = $1, time_start = $2, time_end = $3,
-    extents = $4, last_error = NULL
+    extents = $4, last_error = NULL, refusals = 0, refused_at = NULL
 WHERE isa_id = $5
 `
 

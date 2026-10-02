@@ -60,6 +60,17 @@ type WorkStore interface {
 	// the ISA and its flight and queues the subscribers' notifications
 	// (isa_notify, idempotent by ISANotify.Key), in one transaction.
 	Written(ctx context.Context, r ISARecord, notes []ISANotify) error
+	// Refreshed records the version the DSS holds, read after a 409; the
+	// refusals in a row are kept.
+	Refreshed(ctx context.Context, isaID, version string) error
+	// Refused counts one more DSS refusal of a write of the ISA in a row
+	// and records msg; at maxRefusals it marks the ISA refused and says
+	// so. Written and Deleted clear both.
+	Refused(ctx context.Context, isaID, msg string, maxRefusals int) (givenUp bool, err error)
+	// RefusedISAs is the number of ISAs given up in the last 24 h and
+	// neither written nor deleted since, with the newest one's id and
+	// error.
+	RefusedISAs(ctx context.Context) (n int64, newestID, newestErr string, err error)
 	// Deleted records the ISA deleted and queues the notifications, in
 	// one transaction.
 	Deleted(ctx context.Context, isaID string, notes []ISANotify) error

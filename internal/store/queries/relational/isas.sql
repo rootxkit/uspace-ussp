@@ -34,12 +34,36 @@ WHERE i.isa_id = sqlc.arg(isa_id);
 -- name: SetISAWritten :exec
 UPDATE dss_isas
 SET version = sqlc.arg(version), time_start = sqlc.arg(time_start), time_end = sqlc.arg(time_end),
-    extents = sqlc.arg(extents), last_error = NULL
+    extents = sqlc.arg(extents), last_error = NULL, refusals = 0, refused_at = NULL
 WHERE isa_id = sqlc.arg(isa_id);
 
+-- The version the DSS holds, read after a 409: only the version, so the
+-- refusals in a row are kept.
+-- name: SetISAVersion :exec
+UPDATE dss_isas SET version = sqlc.arg(version) WHERE isa_id = sqlc.arg(isa_id);
+
 -- name: SetISADeleted :exec
-UPDATE dss_isas SET deleted_at = now(), last_error = NULL
+UPDATE dss_isas SET deleted_at = now(), last_error = NULL, refusals = 0, refused_at = NULL
 WHERE isa_id = sqlc.arg(isa_id) AND deleted_at IS NULL;
+
+-- One more DSS refusal of a write of the ISA, with its error; at
+-- max_refusals the ISA is marked refused (given up). Returns whether it
+-- is.
+-- name: CountISARefusal :one
+UPDATE dss_isas
+SET refusals = refusals + 1, last_error = sqlc.arg(last_error),
+    refused_at = CASE WHEN refusals + 1 >= sqlc.arg(max_refusals)::integer THEN now() ELSE refused_at END
+WHERE isa_id = sqlc.arg(isa_id)
+RETURNING (refused_at IS NOT NULL)::boolean AS given_up;
+
+-- The ISAs given up within the last 24 h that are neither written nor
+-- deleted since, and the newest of them.
+-- name: RefusedISAs :one
+SELECT count(*) OVER ()::bigint AS n, isa_id, COALESCE(last_error, '')::text AS last_error
+FROM dss_isas
+WHERE refused_at IS NOT NULL AND deleted_at IS NULL AND refused_at > now() - interval '24 hours'
+ORDER BY refused_at DESC
+LIMIT 1;
 
 -- name: SetISAError :exec
 UPDATE dss_isas SET last_error = sqlc.arg(last_error)

@@ -37,7 +37,12 @@
 //     dss_outbox isa_notify item per subscriber the DSS listed; a
 //     separate loop with a total time budget POSTs them to
 //     {url}/uss/identification_service_areas/{id}, so a subscriber that
-//     does not answer never holds an ISA write. The DSS being down never stops
+//     does not answer never holds an ISA write. A put and a delete of
+//     one ISA hold its advisory lock, so two api replicas never
+//     interleave them. A write the DSS keeps refusing (a 4xx, an answer
+//     that cannot be used, a version conflict) is given up after
+//     DefaultMaxRefusals in a row, counted and reported on /readyz; a
+//     DSS that does not answer is retried through any outage. The DSS being down never stops
 //     GET /uss/flights; /readyz says dss down since T and the outbox
 //     replays on recovery.
 //   - Push (rid-sp, optional, USSP_AUTHORITY_PUSH=on): WS

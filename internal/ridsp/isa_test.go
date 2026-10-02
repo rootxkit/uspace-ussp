@@ -984,3 +984,82 @@ func TestWorkerPutAndDeleteSerialisedPerISA(t *testing.T) {
 		t.Fatalf("not recorded deleted: pending %d", len(r.m.pending()))
 	}
 }
+
+// blankVersion answers every successful ISA put of the DSS without the
+// ISA's version.
+type blankVersion struct{}
+
+func (blankVersion) RoundTrip(req *http.Request) (*http.Response, error) {
+	res, err := http.DefaultTransport.RoundTrip(req)
+	if err != nil || res.StatusCode != http.StatusOK || req.Method != http.MethodPut ||
+		!strings.Contains(req.URL.Path, "/dss/identification_service_areas/") {
+		return res, err
+	}
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	var ans map[string]any
+	if err := json.Unmarshal(b, &ans); err != nil {
+		return nil, err
+	}
+	ans["service_area"].(map[string]any)["version"] = ""
+	b, _ = json.Marshal(ans)
+	res.Body, res.ContentLength = io.NopCloser(strings.NewReader(string(b))), int64(len(b))
+	res.Header.Del("Content-Length")
+	return res, nil
+}
+
+// E-10: a write the DSS keeps refusing (a 400, or an answer that cannot
+// be used, which also drove create -> 409 -> refresh -> update round
+// and round) is given up after a bounded number of refusals: the item is
+// done, the ISA is marked refused, counted, and /readyz says dss
+// degraded naming it. A DSS that is down is not a refusal: its item is
+// kept however long the outage lasts (E-01 pair).
+func TestWorkerRefusalsBounded(t *testing.T) {
+	rounds := 5 * DefaultMaxRefusals
+	for name, set := range map[string]func(r *workerRig){
+		"400":        func(r *workerRig) { r.w.USSBaseURL = "" }, // the fake refuses a create without uss_base_url
+		"no version": func(r *workerRig) { r.w.HTTP = &http.Client{Transport: blankVersion{}, Timeout: DefaultCallTimeout} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newWorkerRig(t)
+			set(r)
+			id := r.start(t, 1)
+			put := r.payload(t, id)
+			for range rounds {
+				r.m.due()
+				r.once(t)
+			}
+			if n := len(r.m.pending()); n != 0 {
+				t.Fatalf("still retried after %d rounds: %d items", rounds, n)
+			}
+			if r.w.Counters.Get(CounterISAGivenUp) != 1 {
+				t.Fatalf("%v", r.w.Counters.Snapshot())
+			}
+			st, d := probe(r.w)
+			if st != obs.StateDegraded || !strings.Contains(d, "1 ISA refused by the DSS") || !strings.Contains(d, id) {
+				t.Fatalf("not visible: %s %q", st, d)
+			}
+			// A later write the DSS takes clears it (E-01).
+			r.w = &ISAWorker{Store: r.m, DSSBaseURL: r.d.URL(), USSBaseURL: ourBase, Tokens: r.tok, Counters: r.w.Counters, MaxBackoff: time.Second}
+			_, _ = r.m.Enqueue(context.Background(), store.OutboxISAPut, id, 2, put)
+			r.m.due()
+			r.once(t)
+			r.m.due()
+			r.once(t) // a 409 first when the DSS holds it already
+			if st, d := probe(r.w); st != obs.StateUp || d != "" || len(r.m.pending()) != 0 {
+				t.Fatalf("after a write taken: %s %q", st, d)
+			}
+		})
+	}
+
+	r := newWorkerRig(t)
+	r.d.Down(true)
+	r.start(t, 1)
+	for range rounds {
+		r.m.due()
+		r.once(t)
+	}
+	if len(r.m.pending()) != 1 || r.w.Counters.Get(CounterISAGivenUp) != 0 {
+		t.Fatalf("an outage gave the ISA up: %d %v", len(r.m.pending()), r.w.Counters.Snapshot())
+	}
+}

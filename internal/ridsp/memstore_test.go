@@ -26,6 +26,61 @@ type memStore struct {
 	errs    map[string]error // a method name -> the error it returns
 	lastErr map[string]string
 	locks   sync.Map // ISA id -> *sync.Mutex
+	// refusals and refusedAt are dss_isas.refusals and refused_at.
+	refusals  map[string]int
+	refusedAt map[string]time.Time
+}
+
+func (m *memStore) Refreshed(_ context.Context, isaID, version string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if r := m.isas[isaID]; r != nil {
+		r.Version = &version
+	}
+	return nil
+}
+
+func (m *memStore) Refused(_ context.Context, isaID, msg string, maxRefusals int) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.fail("Refused"); err != nil {
+		return false, err
+	}
+	m.lastErr[isaID] = msg
+	m.refusals[isaID]++
+	if m.refusals[isaID] >= maxRefusals {
+		if _, ok := m.refusedAt[isaID]; !ok {
+			m.refusedAt[isaID] = m.clock()
+		}
+	}
+	_, gaveUp := m.refusedAt[isaID]
+	return gaveUp, nil
+}
+
+func (m *memStore) RefusedISAs(context.Context) (int64, string, string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.fail("RefusedISAs"); err != nil {
+		return 0, "", "", err
+	}
+	var n int64
+	var newest string
+	for id, at := range m.refusedAt {
+		if r := m.isas[id]; r != nil && r.DeletedAt != nil {
+			continue
+		}
+		n++
+		if newest == "" || at.After(m.refusedAt[newest]) {
+			newest = id
+		}
+	}
+	return n, newest, m.lastErr[newest], nil
+}
+
+// clearRefusedLocked is what Written and Deleted do to the refusals.
+func (m *memStore) clearRefusedLocked(isaID string) {
+	delete(m.refusals, isaID)
+	delete(m.refusedAt, isaID)
 }
 
 func (m *memStore) Lock(_ context.Context, isaID string, fn func() error) error {
@@ -43,7 +98,7 @@ func (m *memStore) Lock(_ context.Context, isaID string, fn func() error) error 
 
 func newMemStore() *memStore {
 	return &memStore{isas: map[string]*ISARecord{}, ended: map[string]bool{}, volumes: map[string][]byte{},
-		errs: map[string]error{}, lastErr: map[string]string{}}
+		errs: map[string]error{}, lastErr: map[string]string{}, refusals: map[string]int{}, refusedAt: map[string]time.Time{}}
 }
 
 func (m *memStore) fail(name string) error { return m.errs[name] }
@@ -228,6 +283,7 @@ func (m *memStore) Written(_ context.Context, r ISARecord, notes []ISANotify) er
 	}
 	cur.Version, cur.TimeStart, cur.TimeEnd, cur.Extents = r.Version, r.TimeStart, r.TimeEnd, r.Extents
 	delete(m.lastErr, r.ISAID)
+	m.clearRefusedLocked(r.ISAID)
 	return m.enqueueNotesLocked(notes)
 }
 
@@ -237,6 +293,7 @@ func (m *memStore) Deleted(_ context.Context, isaID string, notes []ISANotify) e
 	if r := m.isas[isaID]; r != nil && r.DeletedAt == nil {
 		t := m.clock()
 		r.DeletedAt = &t
+		m.clearRefusedLocked(isaID)
 	}
 	return m.enqueueNotesLocked(notes)
 }

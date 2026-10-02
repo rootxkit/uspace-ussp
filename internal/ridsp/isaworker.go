@@ -48,6 +48,12 @@ const (
 	MaxNotifyAttempts = 3
 	// notifyRetry is the wait before a notification is tried again.
 	notifyRetry = time.Second
+	// DefaultMaxRefusals bounds the DSS refusals in a row of the writes
+	// of one ISA (a 4xx, an answer that cannot be used, a version
+	// conflict): at the bound the ISA is given up, marked refused,
+	// counted, logged and reported on /readyz. A DSS that does not
+	// answer is not a refusal; its items are kept through any outage.
+	DefaultMaxRefusals = 8
 	// renewBatch bounds the session ISAs renewed per tick.
 	renewBatch = 100
 )
@@ -61,6 +67,15 @@ var NotifyKinds = []string{store.OutboxISANotify}
 // errDSSDown marks a failure that says the DSS is unreachable (no
 // answer, a 5xx or a 429), as opposed to an answer refusing the call.
 var errDSSDown = errors.New("DSS unreachable")
+
+// refusedError is a DSS answer that refused a write or could not be
+// used; the refusals of one ISA in a row are bounded (MaxRefusals).
+type refusedError struct{ error }
+
+func (r refusedError) Unwrap() error { return r.error }
+
+// refused marks err as a refusal.
+func refused(err error) error { return refusedError{err} }
 
 // DSSState is what the worker last learnt of the DSS.
 type DSSState struct {
@@ -99,6 +114,9 @@ type ISAWorker struct {
 	RenewEvery   time.Duration
 	MaxBackoff   time.Duration
 	NotifyBudget time.Duration
+	// MaxRefusals bounds the refusals in a row of one ISA's writes
+	// (DefaultMaxRefusals).
+	MaxRefusals int
 
 	once   sync.Once
 	dss    *stdf3411.StdClient
@@ -158,10 +176,12 @@ func (w *ISAWorker) set(up bool, reason string) {
 	w.state.Known, w.state.Up, w.state.Reason = true, up, reason
 }
 
-// Probe is the readiness entry dss: up once the DSS answered and no ISA
-// work waits; degraded while ISA work waits on a DSS that answers; down
+// Probe is the readiness entry dss: up once the DSS answered, no ISA
+// work waits and no ISA was given up; degraded while ISA work waits on a
+// DSS that answers or while an ISA the DSS refused is given up; down
 // since T while the DSS does not answer; unknown before the first call.
-// The outbox depth and the oldest item's age are in the detail.
+// The outbox depth, the oldest item's age and the ISAs given up (the
+// newest named with its error) are in the detail.
 func (w *ISAWorker) Probe() obs.Probe {
 	return func(ctx context.Context) (obs.State, string) {
 		s := w.State()
@@ -172,6 +192,12 @@ func (w *ISAWorker) Probe() obs.Probe {
 				backlog = "; ISA outbox depth unknown"
 			} else if n > 0 {
 				backlog = fmt.Sprintf("; %d ISA writes waiting, the oldest %.0f s", n, age)
+			}
+			n, id, msg, err := w.Store.RefusedISAs(ctx)
+			if err != nil {
+				backlog += "; ISAs given up unknown"
+			} else if n > 0 {
+				backlog += fmt.Sprintf("; %d ISA refused by the DSS and given up in 24 h, the newest %s: %s", n, id, msg)
 			}
 		}
 		switch {
@@ -312,15 +338,55 @@ func (w *ISAWorker) Once(ctx context.Context) (int, error) {
 		if errors.As(err, &r) {
 			backoff = 0
 		}
+		if w.givenUp(ctx, *it, err) {
+			continue
+		}
 		w.logger().LogAttrs(ctx, slog.LevelWarn, "ISA write failed; retried from the outbox",
 			slog.String("isa_id", it.EntityID), slog.String("kind", it.Kind), slog.Int("attempts", int(it.Attempts)),
 			slog.Duration("retry_in", backoff), obs.Err(err))
-		_ = w.Store.Failed(ctx, it.EntityID, clipErr(err))
+		if !isRefusal(err) {
+			_ = w.Store.Failed(ctx, it.EntityID, clipErr(err))
+		}
 		if ferr := ob.Fail(ctx, it.ID, err, backoff); ferr != nil {
 			w.logger().LogAttrs(ctx, slog.LevelWarn, "ISA item failure not recorded; it is taken again after its lease", obs.Err(ferr))
 		}
 	}
 	return len(items), nil
+}
+
+func isRefusal(err error) bool {
+	var r refusedError
+	var now *retryNowError
+	return errors.As(err, &r) || errors.As(err, &now)
+}
+
+// givenUp counts a refusal of the item's ISA; at MaxRefusals in a row it
+// gives the ISA up: the item is done, the refusal counted and logged,
+// and the ISA stays marked refused (on /readyz) until it is written or
+// deleted. Anything but a refusal is retried without bound.
+func (w *ISAWorker) givenUp(ctx context.Context, it store.OutboxItem, err error) bool {
+	if !isRefusal(err) {
+		return false
+	}
+	limit := w.MaxRefusals
+	if limit <= 0 {
+		limit = DefaultMaxRefusals
+	}
+	gave, rerr := w.Store.Refused(ctx, it.EntityID, clipErr(err), limit)
+	if rerr != nil {
+		w.logger().LogAttrs(ctx, slog.LevelWarn, "ISA refusal not recorded; the item is retried", slog.String("isa_id", it.EntityID), obs.Err(rerr))
+		return false
+	}
+	if !gave {
+		return false
+	}
+	w.count(CounterISAGivenUp)
+	w.logger().LogAttrs(ctx, slog.LevelError, "the DSS kept refusing the ISA write; given up",
+		slog.String("isa_id", it.EntityID), slog.String("kind", it.Kind), slog.Int("max_refusals", limit), obs.Err(err))
+	if derr := w.Store.Done(ctx, it.ID); derr != nil {
+		w.logger().LogAttrs(ctx, slog.LevelWarn, "ISA item given up but not marked; it will be taken again", obs.Err(derr))
+	}
+	return true
 }
 
 // backoff is 1 s doubled per earlier attempt, at most MaxBackoff.
@@ -464,17 +530,17 @@ func (w *ISAWorker) put(ctx context.Context, p ISAPut) error {
 		return err
 	}
 	if res.StatusCode == http.StatusConflict {
-		return w.refreshVersion(ctx, p.ISAID, row.TimeStart, row.TimeEnd, row.Extents)
+		return w.refreshVersion(ctx, p.ISAID)
 	}
 	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("DSS refused the ISA: %d %s", res.StatusCode, clip(body))
+		return refused(fmt.Errorf("DSS refused the ISA: %d %s", res.StatusCode, clip(body)))
 	}
 	var ans f3411.PutIdentificationServiceAreaResponse
 	if err := json.Unmarshal(body, &ans); err != nil {
-		return core.Fieldf("answer", "not a PutIdentificationServiceAreaResponse")
+		return refused(core.Fieldf("answer", "not a PutIdentificationServiceAreaResponse"))
 	}
 	if err := checkArea(ans.ServiceArea, p.ISAID); err != nil {
-		return err
+		return refused(err)
 	}
 	raw, err := json.Marshal(ext)
 	if err != nil {
@@ -511,9 +577,11 @@ func (w *ISAWorker) subscribersRefused(ctx context.Context, isaID string, err er
 
 // refreshVersion reads the ISA the DSS holds after a 409 and records its
 // version, so the next attempt updates it: our own ISA whose create
-// answer was lost, or one whose version moved. An ISA the DSS does not
-// hold under our base URL is an error that keeps the item retried.
-func (w *ISAWorker) refreshVersion(ctx context.Context, isaID string, start, end time.Time, ext []byte) error {
+// answer was lost, or one whose version moved. Every outcome but an
+// unreachable DSS or a database error is a refusal, so a DSS that
+// answers 409 again and again is given up at MaxRefusals; an ISA the
+// DSS does not hold under our base URL is a refusal too.
+func (w *ISAWorker) refreshVersion(ctx context.Context, isaID string) error {
 	c, err := w.client()
 	if err != nil {
 		return err
@@ -527,20 +595,20 @@ func (w *ISAWorker) refreshVersion(ctx context.Context, isaID string, start, end
 		return err
 	}
 	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("DSS answered 409, then %d to the read of the ISA", res.StatusCode)
+		return refused(fmt.Errorf("DSS answered 409, then %d to the read of the ISA", res.StatusCode))
 	}
 	var ans f3411.GetIdentificationServiceAreaResponse
 	if err := json.Unmarshal(body, &ans); err != nil {
-		return core.Fieldf("answer", "not a GetIdentificationServiceAreaResponse")
+		return refused(core.Fieldf("answer", "not a GetIdentificationServiceAreaResponse"))
 	}
 	if err := checkArea(ans.ServiceArea, isaID); err != nil {
-		return err
+		return refused(err)
 	}
 	if strings.TrimRight(ans.ServiceArea.UssBaseUrl, "/") != strings.TrimRight(w.USSBaseURL, "/") {
-		return fmt.Errorf("the DSS holds ISA %s for another Service Provider", isaID)
+		return refused(fmt.Errorf("the DSS holds ISA %s for another Service Provider", isaID))
 	}
 	v := ans.ServiceArea.Version
-	if err := w.Store.Written(ctx, ISARecord{ISAID: isaID, Version: &v, TimeStart: start, TimeEnd: end, Extents: ext}, nil); err != nil {
+	if err := w.Store.Refreshed(ctx, isaID, v); err != nil {
 		return err
 	}
 	return &retryNowError{cause: "the DSS answered 409; its version " + v + " is recorded and the write is retried"}
@@ -575,13 +643,13 @@ func (w *ISAWorker) delete(ctx context.Context, d ISADelete) error {
 		w.logger().LogAttrs(ctx, slog.LevelWarn, "the DSS no longer holds the ISA; recorded as deleted", slog.String("isa_id", d.ISAID))
 		return w.Store.Deleted(ctx, d.ISAID, nil)
 	case http.StatusConflict:
-		return w.refreshVersion(ctx, d.ISAID, row.TimeStart, row.TimeEnd, row.Extents)
+		return w.refreshVersion(ctx, d.ISAID)
 	default:
-		return fmt.Errorf("DSS refused the ISA delete: %d %s", res.StatusCode, clip(body))
+		return refused(fmt.Errorf("DSS refused the ISA delete: %d %s", res.StatusCode, clip(body)))
 	}
 	var ans f3411.DeleteIdentificationServiceAreaResponse
 	if err := json.Unmarshal(body, &ans); err != nil {
-		return core.Fieldf("answer", "not a DeleteIdentificationServiceAreaResponse")
+		return refused(core.Fieldf("answer", "not a DeleteIdentificationServiceAreaResponse"))
 	}
 	// The DSS no longer holds the ISA whatever it says of the
 	// subscribers: record that first.

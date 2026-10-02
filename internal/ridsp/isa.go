@@ -41,6 +41,7 @@ const (
 	CounterSubscriberNotified  = "rid_sp_subscriber_notified"
 	CounterSubscriberNotifyErr = "rid_sp_subscriber_notify_failed"
 	CounterSubscribersRefused  = "rid_sp_isa_subscribers_refused"
+	CounterISAGivenUp          = "rid_sp_isa_refused_given_up"
 )
 
 // ISAPut is the payload of a dss_outbox isa_put item: the ISA's outline

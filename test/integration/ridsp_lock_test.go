@@ -4,9 +4,12 @@ package integration
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/rootxkit/uspace-ussp/internal/ridsp"
 	ridsppg "github.com/rootxkit/uspace-ussp/internal/ridsp/pgstore"
 )
 
@@ -51,5 +54,42 @@ func TestIntegrationRIDSPISALockSerialises(t *testing.T) {
 	}
 	if at := <-entered; at.Before(released) {
 		t.Fatal("entered before the release")
+	}
+}
+
+// The refusals of an ISA's writes on PostgreSQL: below the bound the
+// ISA is kept, at the bound it is given up and RefusedISAs names it with
+// its error; a write the DSS takes clears it (E-01 both ways).
+func TestIntegrationRIDSPISARefusals(t *testing.T) {
+	ensureSchemas(t)
+	ctx := context.Background()
+	ws := ridsppg.WorkStore{S: appStore(t)}
+	isa := newUUID()
+	if _, err := relOwner(t).Exec(ctx, `INSERT INTO dss_isas (isa_id, kind, time_start, time_end, extents)
+		VALUES ($1, 'session', now(), now() + interval '1 hour', '{}')`, isa); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 3; i++ {
+		gave, err := ws.Refused(ctx, isa, fmt.Sprintf("DSS refused the ISA: 400 (%d)", i), 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gave != (i == 3) {
+			t.Fatalf("refusal %d: given up %v", i, gave)
+		}
+	}
+	n, id, msg, err := ws.RefusedISAs(ctx)
+	if err != nil || n < 1 || id != isa || !strings.Contains(msg, "(3)") {
+		t.Fatalf("refused ISAs: %d %s %q %v", n, id, msg, err)
+	}
+	v := "v1"
+	if err := ws.Written(ctx, ridsp.ISARecord{ISAID: isa, Version: &v, TimeStart: time.Now(), TimeEnd: time.Now().Add(time.Hour), Extents: []byte(`{}`)}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, id, _, err := ws.RefusedISAs(ctx); err != nil || id == isa {
+		t.Fatalf("still given up after a write: %s %v", id, err)
+	}
+	if c := count(t, relOwner(t), "SELECT count(*) FROM dss_isas WHERE isa_id = $1 AND refusals = 0 AND refused_at IS NULL", isa); c != 1 {
+		t.Fatalf("refusals not cleared: %d", c)
 	}
 }

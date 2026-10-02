@@ -127,6 +127,8 @@ type DssIsa struct {
 	DeletedAt *time.Time  `json:"deleted_at"`
 	LastError *string     `json:"last_error"`
 	Kind      string      `json:"kind"`
+	Refusals  int32       `json:"refusals"`
+	RefusedAt *time.Time  `json:"refused_at"`
 }
 
 type DssOutbox struct {
