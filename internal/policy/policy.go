@@ -139,6 +139,17 @@ type Values struct {
 	// above which the later one is flagged anomaly teleport and counted,
 	// never dropped (spec 06 T3: 100 m/s).
 	TeleportSpeedMS float64 `json:"teleport_speed_ms"`
+
+	// F3411 network identification Service Provider (WP-9).
+	// RIDRecentPositionsMaxCount bounds the samples rid-sp keeps per
+	// flight for the standard's 60 s window and recent_positions (E-10):
+	// beyond it the oldest go first. SessionISARadiusM is the radius of
+	// the Identification Service Area of a flight without an intent,
+	// around its first position; SessionISAHorizonS how far ahead that
+	// ISA reaches (renewed while the flight goes on).
+	RIDRecentPositionsMaxCount int     `json:"rid_recent_positions_max_count"`
+	SessionISARadiusM          float64 `json:"session_isa_radius_m"`
+	SessionISAHorizonS         float64 `json:"session_isa_horizon_s"`
 }
 
 // MaxSpecialOperationPriority bounds SpecialOperationPriority (an
@@ -159,6 +170,10 @@ const (
 // MaxPressureFallbackAccuracyCode is the highest vertical accuracy code
 // (MAV_ODID_VER_ACC 6: under 1 m).
 const MaxPressureFallbackAccuracyCode = 6
+
+// MaxRIDRecentPositionsMaxCount bounds RIDRecentPositionsMaxCount: a
+// flight at the ingest's 2 Hz cap holds 120 samples in 60 s.
+const MaxRIDRecentPositionsMaxCount = 10_000
 
 // TelemetryRetentionFloorDays is the shortest telemetry retention a
 // policy may set (Art. 15(1)(g)); a lower value is refused.
@@ -186,6 +201,10 @@ const TelemetryRetentionFloorDays = 30
 // ahead (T-13), the clock relation relearnt every 60 s, batches of 1 s,
 // uspace-core's altitude selection (rid.DefaultAltPolicy), and a teleport
 // above 100 m/s (spec 06 T3).
+//
+// The Service Provider defaults (WP-9, no figure in the plan): 120
+// samples per flight (60 s at the ingest's 2 Hz cap), a 2000 m session
+// ISA reaching one hour ahead.
 func Defaults() Values {
 	c := cpa.DefaultPolicy
 	alt := rid.DefaultAltPolicy()
@@ -230,6 +249,10 @@ func Defaults() Values {
 		PressureFallbackAccuracyCode: int(alt.MinVerticalAccuracy),
 		PressureHoldS:                alt.PressureHoldS,
 		TeleportSpeedMS:              100,
+
+		RIDRecentPositionsMaxCount: 120,
+		SessionISARadiusM:          2000,
+		SessionISAHorizonS:         3600,
 	}
 }
 
@@ -283,6 +306,7 @@ func (v Values) Validate() error {
 		{"telemetry_dedupe_s", v.TelemetryDedupeS}, {"telemetry_ahead_tolerance_s", v.TelemetryAheadToleranceS},
 		{"telemetry_anchor_max_age_s", v.TelemetryAnchorMaxAgeS}, {"telemetry_batch_span_s", v.TelemetryBatchSpanS},
 		{"pressure_hold_s", v.PressureHoldS}, {"teleport_speed_ms", v.TeleportSpeedMS},
+		{"session_isa_radius_m", v.SessionISARadiusM}, {"session_isa_horizon_s", v.SessionISAHorizonS},
 	}
 	for _, f := range positive {
 		if !finite(f.v) || f.v <= 0 {
@@ -318,6 +342,9 @@ func (v Values) Validate() error {
 	}
 	if v.PressureFallbackAccuracyCode < 1 || v.PressureFallbackAccuracyCode > MaxPressureFallbackAccuracyCode {
 		errs = append(errs, core.Fieldf("pressure_fallback_accuracy_code", "must be from 1 to %d, got %d", MaxPressureFallbackAccuracyCode, v.PressureFallbackAccuracyCode))
+	}
+	if v.RIDRecentPositionsMaxCount < 1 || v.RIDRecentPositionsMaxCount > MaxRIDRecentPositionsMaxCount {
+		errs = append(errs, core.Fieldf("rid_recent_positions_max_count", "must be from 1 to %d, got %d", MaxRIDRecentPositionsMaxCount, v.RIDRecentPositionsMaxCount))
 	}
 	if finite(v.FlightEndAfterS) && finite(v.TelemetryLostS) && v.FlightEndAfterS <= v.TelemetryLostS {
 		errs = append(errs, core.Fieldf("flight_end_after_s", "must be longer than telemetry_lost_s (%v), got %v", v.TelemetryLostS, v.FlightEndAfterS))
