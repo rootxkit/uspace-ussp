@@ -131,7 +131,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     services:
       timescaledb:
         image: timescale/timescaledb-ha:pg16
@@ -171,16 +171,6 @@ jobs:
             echo "USSP_TEST_TS_OWNER_URL=postgres://ussp_tsdb:${tsdb_pw}@127.0.0.1:5432/ussp_timeseries?sslmode=disable"
             echo "USSP_TEST_NATS_URL=nats://127.0.0.1:4222"
           } >> "$GITHUB_ENV"
-      - name: scratch loops
-        run: |
-          loop() {
-            go test -tags integration -count=30 -run "^$2\$" -v "$1" > loop.log 2>&1 || true
-            echo "$2: $(grep -c -- '^--- PASS' loop.log) passed, $(grep -c -- '^--- FAIL' loop.log) failed"
-            grep -m5 -- '_test.go:' loop.log || true
-          }
-          loop ./internal/telemetry/ TestWebSocketSecondSessionReplacesTheFirst
-          loop ./internal/bus/ TestIntegrationProbeReportsTopology
-          loop ./test/integration/ TestIntegrationConformanceRestart
       - name: make integration (fails when zero tests ran)
         run: make integration
       - uses: actions/upload-artifact@v4
