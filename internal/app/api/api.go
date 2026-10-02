@@ -33,6 +33,8 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/auth"
 	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/config"
+	"github.com/rootxkit/uspace-ussp/internal/conformance"
+	confstore "github.com/rootxkit/uspace-ussp/internal/conformance/pgstore"
 	"github.com/rootxkit/uspace-ussp/internal/flights"
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/national"
@@ -214,11 +216,26 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 		Store: isaRecorder{S: rt.Store, Planner: planner}, Counters: flightCounters, Logger: rt.Logger,
 	}
 	rt.Go(ctx, rec.Run)
+	// The conformance states of monitor (WP-10, PLAN §3.2): the
+	// timeline in conformance_states and the intent moved
+	// (nonconforming, contingent, back to activated), then acknowledged.
+	confCounters := &core.Counters{}
+	proc.Publish(rt, "conformance_records", confCounters)
+	crec := &conformance.Recorder{
+		Source: &bus.StreamSource{Open: bus.PullOpener(rt.Bus.JetStream(), bus.DefaultTopology(), bus.StreamCONF, bus.PullSpec{
+			Durable: ConformanceConsumer, FilterSubject: bus.SubjectConfAll, MaxAckPending: 1024,
+		})},
+		Store: confstore.Store{S: rt.Store}, Intents: intents, Counters: confCounters, Logger: rt.Logger,
+	}
+	rt.Go(ctx, crec.Run)
 	return nil
 }
 
 // FlightsConsumer is api's durable consumer of the FLIGHT stream.
 const FlightsConsumer = "api-flights"
+
+// ConformanceConsumer is api's durable consumer of the CONF stream.
+const ConformanceConsumer = "api-conformance"
 
 // staffAdd is `ussp-api staff-add <username> <role>`: it creates a
 // console account with the password read from the first line of

@@ -93,6 +93,31 @@ func Within(a, b Shape, bufferM float64) (bool, float64, error) {
 	return sep <= bufferM+Tolerance(sep), sep, nil
 }
 
+// PointDistanceM is the horizontal distance in metres from p to the
+// outline s, 0 when p is inside it or on it: a circle by the geodesic
+// distance from its centre less the radius, a polygon by the distance to
+// the nearest point of its nearest edge (found on p's tangent plane, as
+// Within finds it). It is the geometry conformance monitoring measures a
+// sample against (internal/conformance), so the two judgements read an
+// outline alike. An outline that fails its check or a p that is not a
+// valid WGS84 position is an error naming the field.
+func PointDistanceM(p core.LatLon, s Shape) (float64, error) {
+	if !p.Valid() {
+		return 0, core.Fieldf("position", "is not a valid WGS84 position")
+	}
+	if err := s.check("outline"); err != nil {
+		return 0, err
+	}
+	if s.Circle != nil {
+		d, err := geodesy.DistanceM(p, s.Circle.Center)
+		if err != nil {
+			return 0, err
+		}
+		return math.Max(0, d-s.Circle.RadiusM), nil
+	}
+	return pointPolygon(p, s.Polygon)
+}
+
 // separation is the horizontal distance between two checked outlines in
 // metres, 0 when they meet.
 func separation(a, b Shape) (float64, error) {

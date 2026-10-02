@@ -1,0 +1,3308 @@
+{
+ "description": "Conformance monitoring (2021/664 Art. 13(1); brief WP-10). judge cases: one sample against an intent_active value (intent/state/v1, the fixtures' authorisations, with optional thresholds and policy overrides), read through internal/conformance.AuthorisationOf and judged by conformance.Judge; expected is the verdict, or error naming the refused field. sequence cases: one fresh conformance.Tracker per case on the fixtures' sequence_config, flight and authorisation; each step is observe (a track sample at wall time t_s, read through conformance.InputOf; sample fields default to sample_defaults), tick (no sample) or drop (the flight ended). expected.per_step[i] is the reported state after step i and the alert kinds it raised and cleared (with the clear reason); active_after the alerts active at the end (detail fields listed are compared); counters the counts the case pins. Positions: lat_deg/lon_deg computed with uspace-core geodesy.Destination from the fixtures (the circle's centre, the square's east edge); the expected numbers are by construction, never computed by the judgement (internal/conformance/genvectors).",
+ "source": [
+  "Reg. (EU) 2021/664 Art. 10(2)(d), 13(1)",
+  "ASTM F3548-21 MaxRecoverableTimeInNonconformingStateSeconds",
+  "spec 02 F5, F6, F13; 03 §3 conformance_states; 04 §3.1, §3.3",
+  "docs/WORKPACKAGES/WP-10.md",
+  "uspace-core vectors/testdata/alert_lifecycle.json (hysteresis_rule)"
+ ],
+ "units": {
+  "alt_amsl_m": "metres AMSL (D-01)",
+  "distance_outside_m, height_over_m": "metres",
+  "lat_deg/lon_deg": "WGS84 degrees",
+  "t_s": "seconds after fixtures.now, the monitor's wall clock",
+  "time_outside_s": "seconds"
+ },
+ "tolerance": {
+  "horizontal": "0.01 m plus 1e-4 of the distance (the tangent-plane nearest point of an edge)",
+  "time": "exact (closed intervals)",
+  "vertical": "exact"
+ },
+ "owners": [
+  "ussp"
+ ],
+ "generated": "2026-10-02",
+ "utm_commit": "none (new in uspace-ussp WP-10)",
+ "hysteresis_rule": "nonconforming returns to conforming, and the nonconformance alert clears resolved, when (placement of an inside sample) - (placement of the last outside sample) \u003e clear_after_s; an undetermined sample neither refreshes nor shows inside",
+ "fixtures": {
+  "authorisations": {
+   "circle": {
+    "authorisation_number": "USSP-DEV-20261101-000001",
+    "cell_set": [],
+    "change_reason": null,
+    "class_label": null,
+    "deviation_thresholds": {
+     "h_m": 50,
+     "t_s": 60,
+     "v_m": 15
+    },
+    "dss_state": "Activated",
+    "exempt_art_1_3": false,
+    "flight_id": null,
+    "in_uspace_airspace": true,
+    "intent_id": "8d0e7b51-3c1e-4a5f-9a43-0b6f4c2a7e01",
+    "local_state": "activated",
+    "operator_reg": "GEO-TEST-0001",
+    "policy_version": 1,
+    "priority": 0,
+    "time_end": "2026-11-01T12:30:00Z",
+    "time_start": "2026-11-01T11:50:00Z",
+    "ua_registration": null,
+    "uas_serial": "TEST0001",
+    "updated_at": "2026-11-01T11:40:00Z",
+    "version": 2,
+    "volumes": [
+     {
+      "time_end": {
+       "format": "RFC3339",
+       "value": "2026-11-01T12:30:00Z"
+      },
+      "time_start": {
+       "format": "RFC3339",
+       "value": "2026-11-01T11:50:00Z"
+      },
+      "volume": {
+       "altitude_lower": {
+        "reference": "W84",
+        "units": "M",
+        "value": 520
+       },
+       "altitude_upper": {
+        "reference": "W84",
+        "units": "M",
+        "value": 620
+       },
+       "outline_circle": {
+        "center": {
+         "lat": 41.7151,
+         "lng": 44.8271
+        },
+        "radius": {
+         "units": "M",
+         "value": 500
+        }
+       }
+      }
+     }
+    ],
+    "volumes_amsl": [
+     {
+      "lower_amsl_m": 500,
+      "lower_w84_m": 520,
+      "undulation_m": 20,
+      "upper_amsl_m": 600,
+      "upper_w84_m": 620
+     }
+    ]
+   },
+   "corridor": {
+    "authorisation_number": "USSP-DEV-20261101-000001",
+    "cell_set": [],
+    "change_reason": null,
+    "class_label": null,
+    "deviation_thresholds": {
+     "h_m": 50,
+     "t_s": 60,
+     "v_m": 15
+    },
+    "dss_state": "Activated",
+    "exempt_art_1_3": false,
+    "flight_id": null,
+    "in_uspace_airspace": true,
+    "intent_id": "8d0e7b51-3c1e-4a5f-9a43-0b6f4c2a7e03",
+    "local_state": "activated",
+    "operator_reg": "GEO-TEST-0001",
+    "policy_version": 1,
+    "priority": 0,
+    "time_end": "2026-11-01T12:30:00Z",
+    "time_start": "2026-11-01T11:50:00Z",
+    "ua_registration": null,
+    "uas_serial": "TEST0001",
+    "updated_at": "2026-11-01T11:40:00Z",
+    "version": 2,
+    "volumes": [
+     {
+      "time_end": {
+       "format": "RFC3339",
+       "value": "2026-11-01T12:05:00Z"
+      },
+      "time_start": {
+       "format": "RFC3339",
+       "value": "2026-11-01T11:50:00Z"
+      },
+      "volume": {
+       "altitude_lower": {
+        "reference": "W84",
+        "units": "M",
+        "value": 520
+       },
+       "altitude_upper": {
+        "reference": "W84",
+        "units": "M",
+        "value": 620
+       },
+       "outline_circle": {
+        "center": {
+         "lat": 41.7151,
+         "lng": 44.8271
+        },
+        "radius": {
+         "units": "M",
+         "value": 500
+        }
+       }
+      }
+     },
+     {
+      "time_end": {
+       "format": "RFC3339",
+       "value": "2026-11-01T12:30:00Z"
+      },
+      "time_start": {
+       "format": "RFC3339",
+       "value": "2026-11-01T12:05:00Z"
+      },
+      "volume": {
+       "altitude_lower": {
+        "reference": "W84",
+        "units": "M",
+        "value": 520
+       },
+       "altitude_upper": {
+        "reference": "W84",
+        "units": "M",
+        "value": 620
+       },
+       "outline_circle": {
+        "center": {
+         "lat": 41.73310699818676,
+         "lng": 44.8271
+        },
+        "radius": {
+         "units": "M",
+         "value": 500
+        }
+       }
+      }
+     }
+    ],
+    "volumes_amsl": [
+     {
+      "lower_amsl_m": 500,
+      "lower_w84_m": 520,
+      "undulation_m": 20,
+      "upper_amsl_m": 600,
+      "upper_w84_m": 620
+     },
+     {
+      "lower_amsl_m": 500,
+      "lower_w84_m": 520,
+      "undulation_m": 20,
+      "upper_amsl_m": 600,
+      "upper_w84_m": 620
+     }
+    ]
+   },
+   "square": {
+    "authorisation_number": "USSP-DEV-20261101-000001",
+    "cell_set": [],
+    "change_reason": null,
+    "class_label": null,
+    "deviation_thresholds": {
+     "h_m": 50,
+     "t_s": 60,
+     "v_m": 15
+    },
+    "dss_state": "Activated",
+    "exempt_art_1_3": false,
+    "flight_id": null,
+    "in_uspace_airspace": true,
+    "intent_id": "8d0e7b51-3c1e-4a5f-9a43-0b6f4c2a7e02",
+    "local_state": "activated",
+    "operator_reg": "GEO-TEST-0001",
+    "policy_version": 1,
+    "priority": 0,
+    "time_end": "2026-11-01T12:30:00Z",
+    "time_start": "2026-11-01T11:50:00Z",
+    "ua_registration": null,
+    "uas_serial": "TEST0001",
+    "updated_at": "2026-11-01T11:40:00Z",
+    "version": 2,
+    "volumes": [
+     {
+      "time_end": {
+       "format": "RFC3339",
+       "value": "2026-11-01T12:30:00Z"
+      },
+      "time_start": {
+       "format": "RFC3339",
+       "value": "2026-11-01T11:50:00Z"
+      },
+      "volume": {
+       "altitude_lower": {
+        "reference": "W84",
+        "units": "M",
+        "value": 520
+       },
+       "altitude_upper": {
+        "reference": "W84",
+        "units": "M",
+        "value": 620
+       },
+       "outline_polygon": {
+        "vertices": [
+         {
+          "lat": 41.7100943457069,
+          "lng": 44.85814932995758
+         },
+         {
+          "lat": 41.7100943457069,
+          "lng": 44.86814932995758
+         },
+         {
+          "lat": 41.720094345706904,
+          "lng": 44.86814932995758
+         },
+         {
+          "lat": 41.720094345706904,
+          "lng": 44.85814932995758
+         }
+        ]
+       }
+      }
+     }
+    ],
+    "volumes_amsl": [
+     {
+      "lower_amsl_m": 500,
+      "lower_w84_m": 520,
+      "undulation_m": 20,
+      "upper_amsl_m": 600,
+      "upper_w84_m": 620
+     }
+    ]
+   }
+  },
+  "flight_id": "5b3f1d2e-7c4a-4e8b-9f10-2a3b4c5d6e7f",
+  "now": "2026-11-01T12:00:00Z",
+  "sample_defaults": {
+   "alt_amsl_m": 550,
+   "alt_source": "geodetic",
+   "backlog": false,
+   "captured_at_s": "t_s",
+   "rx_at_s": "captured_at_s",
+   "source_disabled": false,
+   "status": "Airborne"
+  },
+  "sequence_config": {
+   "ahead_tolerance_s": 1,
+   "clear_after_s": 3,
+   "live_max_age_s": 10,
+   "lost_link_s": 15,
+   "policy_version": 7,
+   "pressure_uncertainty_m": 250
+  }
+ },
+ "cases": [
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "inside",
+    "reason": "",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "circle-centre-inside",
+   "owner": [
+    "ussp"
+   ],
+   "why": "The centre of the circle inside the band and the window is inside."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "inside",
+    "reason": "",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.71509984294258,
+     "lon_deg": 44.83310810183646,
+     "t_s": 0
+    }
+   },
+   "name": "circle-just-inside-the-edge",
+   "owner": [
+    "ussp"
+   ],
+   "why": "1 cm inside the radius is inside: the circle is judged by geodesic distance from its centre (Z-11)."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 1,
+    "height_over_m": 0,
+    "outcome": "outside",
+    "reason": "outside_volume_h",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": true
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.71509984230741,
+     "lon_deg": 44.83312023844486,
+     "t_s": 0
+    }
+   },
+   "name": "circle-outside-by-1m",
+   "owner": [
+    "ussp"
+   ],
+   "why": "1 m outside the outline is outside, within the 50 m horizontal threshold; the vertical band still holds it (within_band)."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 49,
+    "height_over_m": 0,
+    "outcome": "outside",
+    "reason": "outside_volume_h",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": true
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.71509981064336,
+     "lon_deg": 44.83369702775479,
+     "t_s": 0
+    }
+   },
+   "name": "circle-outside-by-h-minus-1",
+   "owner": [
+    "ussp"
+   ],
+   "why": "49 m outside is within h_m 50: the Art. 10(2)(d) tolerance."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 49.99,
+    "height_over_m": 0,
+    "outcome": "outside",
+    "reason": "outside_volume_h",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": true
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.71509980995983,
+     "lon_deg": 44.8337089240343,
+     "t_s": 0
+    }
+   },
+   "name": "circle-outside-by-just-under-h",
+   "owner": [
+    "ussp"
+   ],
+   "why": "1 cm inside h_m is within the threshold. The closed bound itself is pinned on the vertical (above-upper-by-v), where the numbers are exact; a horizontal distance of exactly h_m is a floating-point coin toss."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 51,
+    "height_over_m": 0,
+    "outcome": "outside",
+    "reason": "outside_volume_h",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7150998092612,
+     "lon_deg": 44.83372106064269,
+     "t_s": 0
+    }
+   },
+   "name": "circle-outside-by-h-plus-1",
+   "owner": [
+    "ussp"
+   ],
+   "why": "51 m outside is beyond h_m 50: not within the threshold."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "inside",
+    "reason": "",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 600,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "at-the-upper-limit-inside",
+   "owner": [
+    "ussp"
+   ],
+   "why": "The upper limit itself is inside (closed band)."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "inside",
+    "reason": "",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 500,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "at-the-lower-limit-inside",
+   "owner": [
+    "ussp"
+   ],
+   "why": "The lower limit itself is inside (closed band)."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 10,
+    "outcome": "outside",
+    "reason": "above_upper",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": false,
+    "within_threshold": true
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 610,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "above-upper-within-v",
+   "owner": [
+    "ussp"
+   ],
+   "why": "10 m above the authorised upper AMSL limit is above_upper, within v_m 15 (height conformance is against the authorised upper, PLAN §1)."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 15,
+    "outcome": "outside",
+    "reason": "above_upper",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": false,
+    "within_threshold": true
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 615,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "above-upper-by-v",
+   "owner": [
+    "ussp"
+   ],
+   "why": "Exactly v_m above is within the threshold."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 20,
+    "outcome": "outside",
+    "reason": "above_upper",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": false,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 620,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "above-upper-beyond-v",
+   "owner": [
+    "ussp"
+   ],
+   "why": "20 m above is beyond v_m 15."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 10,
+    "outcome": "outside",
+    "reason": "below_lower",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": false,
+    "within_threshold": true
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 490,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "below-lower-within-v",
+   "owner": [
+    "ussp"
+   ],
+   "why": "10 m below the lower limit is below_lower, within v_m."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 20,
+    "outcome": "outside",
+    "reason": "below_lower",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": false,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 480,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "below-lower-beyond-v",
+   "owner": [
+    "ussp"
+   ],
+   "why": "20 m below is beyond v_m 15."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "outside",
+    "reason": "before_start",
+    "time_outside_s": 30,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": true
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": -630
+    }
+   },
+   "name": "before-start-within-t",
+   "owner": [
+    "ussp"
+   ],
+   "why": "30 s before the window opens is before_start, within t_s 60."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "outside",
+    "reason": "before_start",
+    "time_outside_s": 61,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": -661
+    }
+   },
+   "name": "before-start-beyond-t",
+   "owner": [
+    "ussp"
+   ],
+   "why": "61 s before the window is beyond t_s 60."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "outside",
+    "reason": "after_end",
+    "time_outside_s": 10,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": true
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 1810
+    }
+   },
+   "name": "after-end-within-t",
+   "owner": [
+    "ussp"
+   ],
+   "why": "10 s after the window closes is after_end, within t_s."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "outside",
+    "reason": "after_end",
+    "time_outside_s": 120,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 1920
+    }
+   },
+   "name": "after-end-beyond-t",
+   "owner": [
+    "ussp"
+   ],
+   "why": "Two minutes after the window is beyond t_s."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "inside",
+    "reason": "",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 1800
+    }
+   },
+   "name": "at-the-window-end-inside",
+   "owner": [
+    "ussp"
+   ],
+   "why": "The window is closed: its end is inside."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 60,
+    "height_over_m": 0,
+    "outcome": "outside",
+    "reason": "after_end",
+    "time_outside_s": 10,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.71509980297929,
+     "lon_deg": 44.83382920863823,
+     "t_s": 1810
+    }
+   },
+   "name": "after-end-and-outside-reports-the-time",
+   "owner": [
+    "ussp"
+   ],
+   "why": "Outside the window and the outline: the reason is the time, and the horizontal excess (60 m, beyond h_m) is reported and counted in the threshold."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 20,
+    "height_over_m": 40,
+    "outcome": "outside",
+    "reason": "outside_volume_h",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": false,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 640,
+     "alt_source": "geodetic",
+     "lat_deg": 41.71509983011989,
+     "lon_deg": 44.83334855088011,
+     "t_s": 0
+    }
+   },
+   "name": "outside-horizontally-and-above",
+   "owner": [
+    "ussp"
+   ],
+   "why": "Outside both ways: the reason is horizontal, both excesses are reported, and the vertical one (40 m) is beyond v_m."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "inside",
+    "reason": "",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": false,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 700,
+     "alt_source": "pressure",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "pressure-inside-only-with-the-margin",
+   "owner": [
+    "ussp"
+   ],
+   "why": "A pressure altitude 100 m above the upper is inside the band widened by 250 m (R-09), so it is inside but within_band is false (04 §3.1)."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "inside",
+    "reason": "",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "pressure",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "pressure-inside-the-band",
+   "owner": [
+    "ussp"
+   ],
+   "why": "A pressure altitude inside the band as given is within_band."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 20,
+    "outcome": "outside",
+    "reason": "above_upper",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": false,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 870,
+     "alt_source": "pressure",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "pressure-beyond-the-margin",
+   "owner": [
+    "ussp"
+   ],
+   "why": "870 m pressure is 20 m above the widened upper (850 m): above_upper, measured from the widened band."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 100,
+    "outcome": "outside",
+    "reason": "above_upper",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": false,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 700,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "geodetic-at-the-same-altitude-is-outside",
+   "owner": [
+    "ussp"
+   ],
+   "why": "The pair of the pressure case: a geodetic 700 m has no margin and is 100 m above the upper."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 10,
+    "outcome": "outside",
+    "reason": "above_upper",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": false,
+    "within_threshold": true
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 0
+    },
+    "sample": {
+     "alt_amsl_m": 610,
+     "alt_source": "pressure",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "pressure-margin-zero",
+   "owner": [
+    "ussp"
+   ],
+   "why": "With no pressure margin configured, a pressure altitude is judged against the band as given."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "inside",
+    "reason": "",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "network",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "network-altitude-inside",
+   "owner": [
+    "ussp"
+   ],
+   "why": "A network altitude is a vertical position like a geodetic one."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "undetermined",
+    "reason": "",
+    "time_outside_s": 0,
+    "vertical_known": false,
+    "within_band": false,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": null,
+     "alt_source": "none",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "unknown-vertical-alt-source-none",
+   "owner": [
+    "ussp"
+   ],
+   "why": "alt_source none: the vertical judgement is not evaluated and the verdict says so; it is never inside by default (E-15, SC-22)."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "undetermined",
+    "reason": "",
+    "time_outside_s": 0,
+    "vertical_known": false,
+    "within_band": false,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "none",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "unknown-vertical-value-with-none-source",
+   "owner": [
+    "ussp"
+   ],
+   "why": "An altitude with source none is not a vertical position: undetermined."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 100,
+    "height_over_m": 0,
+    "outcome": "outside",
+    "reason": "outside_volume_h",
+    "time_outside_s": 0,
+    "vertical_known": false,
+    "within_band": false,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": null,
+     "alt_source": "none",
+     "lat_deg": 41.715099773828264,
+     "lon_deg": 44.834309866395934,
+     "t_s": 0
+    }
+   },
+   "name": "unknown-vertical-outside-horizontally",
+   "owner": [
+    "ussp"
+   ],
+   "why": "Without the vertical, the horizontal judgement still runs: 100 m outside is outside and beyond h_m."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "inside",
+    "reason": "",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "square",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7150943457069,
+     "lon_deg": 44.86314932995758,
+     "t_s": 0
+    }
+   },
+   "name": "square-inside",
+   "owner": [
+    "ussp"
+   ],
+   "why": "Inside a polygon volume."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 30,
+    "height_over_m": 0,
+    "outcome": "outside",
+    "reason": "outside_volume_h",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": true
+   },
+   "input": {
+    "authorisation": "square",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.71509434514147,
+     "lon_deg": 44.868509823246626,
+     "t_s": 0
+    }
+   },
+   "name": "square-outside-east-by-30m",
+   "owner": [
+    "ussp"
+   ],
+   "why": "30 m east of the square's east edge: the distance is to the nearest edge."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 80,
+    "height_over_m": 0,
+    "outcome": "outside",
+    "reason": "outside_volume_h",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "square",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.715094341686076,
+     "lon_deg": 44.86911064539499,
+     "t_s": 0
+    }
+   },
+   "name": "square-outside-east-by-80m",
+   "owner": [
+    "ussp"
+   ],
+   "why": "80 m east of the edge is beyond h_m."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 25,
+    "outcome": "outside",
+    "reason": "above_upper",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": false,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "square",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 625,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7150943457069,
+     "lon_deg": 44.86314932995758,
+     "t_s": 0
+    }
+   },
+   "name": "square-above",
+   "owner": [
+    "ussp"
+   ],
+   "why": "The polygon's band is judged like the circle's."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "inside",
+    "reason": "",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "corridor",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "corridor-first-volume",
+   "owner": [
+    "ussp"
+   ],
+   "why": "Two volumes in sequence: at T0 the first is active and holds the aircraft."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "inside",
+    "reason": "",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "corridor",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.73310699818676,
+     "lon_deg": 44.8271,
+     "t_s": 600
+    }
+   },
+   "name": "corridor-second-volume",
+   "owner": [
+    "ussp"
+   ],
+   "why": "At T0 + 10 min the second volume is active and holds the aircraft."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 1500,
+    "height_over_m": 0,
+    "outcome": "outside",
+    "reason": "outside_volume_h",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "corridor",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.73310699818676,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "corridor-wrong-volume-for-the-time",
+   "owner": [
+    "ussp"
+   ],
+   "why": "At T0 the aircraft is where the second volume will be: only the first is active, 2000 - 500 = 1500 m away."
+  },
+  {
+   "expected": {
+    "distance_outside_m": 0,
+    "height_over_m": 0,
+    "outcome": "inside",
+    "reason": "",
+    "time_outside_s": 0,
+    "vertical_known": true,
+    "within_band": true,
+    "within_threshold": false
+   },
+   "input": {
+    "authorisation": "corridor",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.73310699818676,
+     "lon_deg": 44.8271,
+     "t_s": 300
+    }
+   },
+   "name": "corridor-handover-instant",
+   "owner": [
+    "ussp"
+   ],
+   "why": "At the handover instant both windows are closed sets, so the second volume already holds it."
+  },
+  {
+   "expected": {
+    "error": "deviation_thresholds.h_m"
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    },
+    "thresholds": {
+     "h_m": 0,
+     "t_s": 60,
+     "v_m": 15
+    }
+   },
+   "name": "threshold-h-zero-refuses",
+   "owner": [
+    "ussp"
+   ],
+   "why": "A zero horizontal threshold refuses the judgement; it never disarms it (E-15)."
+  },
+  {
+   "expected": {
+    "error": "deviation_thresholds.v_m"
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    },
+    "thresholds": {
+     "h_m": 50,
+     "t_s": 60,
+     "v_m": -1
+    }
+   },
+   "name": "threshold-v-negative-refuses",
+   "owner": [
+    "ussp"
+   ],
+   "why": "A negative vertical threshold refuses the judgement (E-15)."
+  },
+  {
+   "expected": {
+    "error": "deviation_thresholds.t_s"
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    },
+    "thresholds": {
+     "h_m": 50,
+     "t_s": 0,
+     "v_m": 15
+    }
+   },
+   "name": "threshold-t-zero-refuses",
+   "owner": [
+    "ussp"
+   ],
+   "why": "A zero time threshold refuses the judgement (E-15)."
+  },
+  {
+   "expected": {
+    "error": "deviation_thresholds"
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    },
+    "thresholds": null
+   },
+   "name": "thresholds-missing-refuses",
+   "owner": [
+    "ussp"
+   ],
+   "why": "An intent without deviation thresholds cannot be judged and is never judged as conforming."
+  },
+  {
+   "expected": {
+    "error": "pressure_uncertainty_m"
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": -1
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 41.7151,
+     "lon_deg": 44.8271,
+     "t_s": 0
+    }
+   },
+   "name": "pressure-margin-negative-refuses",
+   "owner": [
+    "ussp"
+   ],
+   "why": "A negative pressure margin refuses the judgement (E-15)."
+  },
+  {
+   "expected": {
+    "error": "position"
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "judge",
+    "policy": {
+     "pressure_uncertainty_m": 250
+    },
+    "sample": {
+     "alt_amsl_m": 550,
+     "alt_source": "geodetic",
+     "lat_deg": 91,
+     "lon_deg": 44,
+     "t_s": 0
+    }
+   },
+   "name": "invalid-position-refuses",
+   "owner": [
+    "ussp"
+   ],
+   "why": "A position that is not WGS84 is not judged (C-09)."
+  },
+  {
+   "expected": {
+    "active_after": [
+     {
+      "detail": {
+       "distance_outside_m": 10,
+       "reason": "outside_volume_h"
+      },
+      "kind": "nonconformance"
+     }
+    ],
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     },
+     {
+      "cleared": [],
+      "raised": [
+       "nonconformance"
+      ],
+      "state": "nonconforming"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.71509983659092,
+       "lon_deg": 44.83322838644052
+      },
+      "t_s": 0
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.71509983659092,
+       "lon_deg": 44.83322838644052
+      },
+      "t_s": 30
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.71509983659092,
+       "lon_deg": 44.83322838644052
+      },
+      "t_s": 60
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.71509983659092,
+       "lon_deg": 44.83322838644052
+      },
+      "t_s": 61
+     }
+    ]
+   },
+   "name": "t-persistence-then-raise",
+   "owner": [
+    "ussp"
+   ],
+   "why": "Outside within the thresholds is tolerated for t_s (60 s); it is nonconforming once it persists beyond t_s, with the verdict's reason."
+  },
+  {
+   "expected": {
+    "active_after": [
+     {
+      "detail": {
+       "distance_outside_m": 80,
+       "reason": "threshold_exceeded"
+      },
+      "kind": "nonconformance"
+     }
+    ],
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [
+       "nonconformance"
+      ],
+      "state": "nonconforming"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 0
+     }
+    ]
+   },
+   "name": "threshold-exceeded-raises-at-once",
+   "owner": [
+    "ussp"
+   ],
+   "why": "An excess beyond h_m is nonconforming at once (threshold_exceeded), raised by the first sample: the alert latency starts at its captured_at."
+  },
+  {
+   "expected": {
+    "active_after": [
+     {
+      "detail": {
+       "height_over_m": 20,
+       "reason": "threshold_exceeded",
+       "verdict_reason": "above_upper"
+      },
+      "kind": "nonconformance"
+     }
+    ],
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [
+       "nonconformance"
+      ],
+      "state": "nonconforming"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "alt_amsl_m": 620,
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 0
+     }
+    ]
+   },
+   "name": "height-above-upper-beyond-v-raises",
+   "owner": [
+    "ussp"
+   ],
+   "why": "Height above the authorised upper beyond v_m is a nonconformance (S-M2: including height above the authorised upper)."
+  },
+  {
+   "expected": {
+    "active_after": [
+     {
+      "kind": "nonconformance"
+     }
+    ],
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [
+       "nonconformance"
+      ],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 0
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 1
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 2
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 3
+     }
+    ]
+   },
+   "name": "return-within-hysteresis-does-not-clear",
+   "owner": [
+    "ussp"
+   ],
+   "why": "Shown inside for 3 s since last outside is not more than clear_after_s: the alert holds (C-06)."
+  },
+  {
+   "expected": {
+    "active_after": [],
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [
+       "nonconformance"
+      ],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [
+       {
+        "clearing_detail": {
+         "clearing_distance_outside_m": 0
+        },
+        "detail": {
+         "distance_outside_m": 80
+        },
+        "kind": "nonconformance",
+        "reason": "resolved"
+       }
+      ],
+      "raised": [],
+      "state": "conforming"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 0
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 1
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 2
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 3.5
+     }
+    ]
+   },
+   "name": "return-beyond-hysteresis-clears-resolved-with-numbers",
+   "owner": [
+    "ussp"
+   ],
+   "why": "Shown inside for more than 3 s since last outside: cleared resolved, carrying the last numbers that showed it outside and the numbers that cleared it (C-14)."
+  },
+  {
+   "expected": {
+    "active_after": [
+     {
+      "detail": {
+       "distance_outside_m": 90,
+       "reason": "threshold_exceeded"
+      },
+      "kind": "nonconformance"
+     }
+    ],
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [
+       "nonconformance"
+      ],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 0
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.71509978130449,
+       "lon_deg": 44.83418970195655
+      },
+      "t_s": 1
+     }
+    ]
+   },
+   "name": "refresh-carries-current-numbers",
+   "owner": [
+    "ussp"
+   ],
+   "why": "Raised once; a later sample refreshes silently with the current numbers (C-06, C-08)."
+  },
+  {
+   "expected": {
+    "active_after": [
+     {
+      "detail": {
+       "state": "contingent"
+      },
+      "kind": "nonconformance"
+     }
+    ],
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [
+       "nonconformance"
+      ],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "contingent"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 0
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 10
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 20
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 30
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 40
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 50
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 59
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 60
+     }
+    ]
+   },
+   "name": "contingent-after-60s-without-returning",
+   "owner": [
+    "ussp"
+   ],
+   "why": "Nonconforming for MaxRecoverableTimeInNonconformingStateSeconds (60 s) without returning goes contingent (F3548, 02 F6); the alert stays active."
+  },
+  {
+   "expected": {
+    "active_after": [],
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [
+       "nonconformance"
+      ],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [
+       {
+        "kind": "nonconformance",
+        "reason": "resolved"
+       }
+      ],
+      "raised": [],
+      "state": "conforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 0
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 10
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 20
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 30
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 39
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 40
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 42.5
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 52
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 61
+     }
+    ]
+   },
+   "name": "return-before-60s-is-not-contingent",
+   "owner": [
+    "ussp"
+   ],
+   "why": "A flight back inside before 60 s returns to conforming and never goes contingent."
+  },
+  {
+   "expected": {
+    "active_after": [],
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [
+       "nonconformance"
+      ],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "contingent"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "contingent"
+     },
+     {
+      "cleared": [
+       {
+        "kind": "nonconformance",
+        "reason": "resolved"
+       }
+      ],
+      "raised": [],
+      "state": "contingent"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 0
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 10
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 20
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 30
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 40
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 50
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 60
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 61
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 64.5
+     }
+    ]
+   },
+   "name": "contingent-stays-after-return",
+   "owner": [
+    "ussp"
+   ],
+   "why": "Contingent is kept until the flight ends (F3548 has no way back to Activated); the alert itself clears resolved when the aircraft is shown inside."
+  },
+  {
+   "expected": {
+    "active_after": [],
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     },
+     {
+      "cleared": [],
+      "raised": [
+       "lost_link"
+      ],
+      "state": "lost_link"
+     },
+     {
+      "cleared": [
+       {
+        "kind": "lost_link",
+        "reason": "resolved"
+       }
+      ],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 0
+     },
+     {
+      "op": "tick",
+      "t_s": 14
+     },
+     {
+      "op": "tick",
+      "t_s": 15
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 20
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 23.5
+     }
+    ]
+   },
+   "name": "lost-link-raised-and-cleared",
+   "owner": [
+    "ussp"
+   ],
+   "why": "15 s without a live sample raises lost_link (02 F5); lost telemetry is non-conformance (telemetry_lost), so the flight is nonconforming until shown inside for the hysteresis after the link is back."
+  },
+  {
+   "expected": {
+    "active_after": [
+     {
+      "detail": {
+       "silence_s": 75
+      },
+      "kind": "lost_link"
+     }
+    ],
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     },
+     {
+      "cleared": [],
+      "raised": [
+       "lost_link"
+      ],
+      "state": "lost_link"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "lost_link"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "contingent"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 0
+     },
+     {
+      "op": "tick",
+      "t_s": 15
+     },
+     {
+      "op": "tick",
+      "t_s": 74
+     },
+     {
+      "op": "tick",
+      "t_s": 75
+     }
+    ]
+   },
+   "name": "lost-link-then-contingent",
+   "owner": [
+    "ussp"
+   ],
+   "why": "Silence is not evidence of a return: 60 s after the link was lost the flight is contingent, and the lost_link alert carries the current silence (C-08)."
+  },
+  {
+   "expected": {
+    "active_after": [],
+    "counters": {
+     "conformance_not_flying": 1
+    },
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "unknown"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "unknown"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271,
+       "status": "Ground"
+      },
+      "t_s": 0
+     },
+     {
+      "op": "tick",
+      "t_s": 30
+     }
+    ]
+   },
+   "name": "lost-link-not-for-a-grounded-aircraft",
+   "owner": [
+    "ussp"
+   ],
+   "why": "An aircraft whose last sample said Ground is not lost when it goes quiet (C-05)."
+  },
+  {
+   "expected": {
+    "active_after": [],
+    "counters": {
+     "conformance_authorisation_missing": 1
+    },
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "unknown"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "unknown"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": null,
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 0
+     },
+     {
+      "op": "tick",
+      "t_s": 30
+     }
+    ]
+   },
+   "name": "lost-link-not-without-an-authorisation",
+   "owner": [
+    "ussp"
+   ],
+   "why": "A flight never judged against an authorisation has nothing to conform to: unknown, and no lost_link."
+  },
+  {
+   "expected": {
+    "active_after": [],
+    "counters": {
+     "conformance_judged": 1,
+     "conformance_rejected_backlog": 1
+    },
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "unknown"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "backlog": true,
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 0
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 1
+     }
+    ]
+   },
+   "name": "backlog-samples-ignored",
+   "owner": [
+    "ussp"
+   ],
+   "why": "History is never alerted (T-04): a backlog sample far outside raises nothing."
+  },
+  {
+   "expected": {
+    "active_after": [],
+    "counters": {
+     "conformance_rejected_late": 1
+    },
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "unknown"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "captured_at_s": 5,
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714,
+       "rx_at_s": 9
+      },
+      "t_s": 20
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 21
+     }
+    ]
+   },
+   "name": "late-samples-ignored",
+   "owner": [
+    "ussp"
+   ],
+   "why": "A sample received 11 s before the wall is late beyond live_max_age_s 10 (T-05) and judges nothing."
+  },
+  {
+   "expected": {
+    "active_after": [],
+    "counters": {
+     "conformance_rejected_out_of_order": 1
+    },
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 5
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "captured_at_s": 4,
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714,
+       "rx_at_s": 6
+      },
+      "t_s": 6
+     }
+    ]
+   },
+   "name": "out-of-order-sample-ignored",
+   "owner": [
+    "ussp"
+   ],
+   "why": "A sample placed before the one held never overwrites it (T-06)."
+  },
+  {
+   "expected": {
+    "active_after": [],
+    "counters": {
+     "conformance_rejected_placed_ahead": 1
+    },
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "unknown"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "captured_at_s": 2,
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714,
+       "rx_at_s": 0
+      },
+      "t_s": 0
+     }
+    ]
+   },
+   "name": "placed-ahead-refused",
+   "owner": [
+    "ussp"
+   ],
+   "why": "A sample placed 2 s ahead of its receipt (tolerance 1 s) is a clock ahead and is refused."
+  },
+  {
+   "expected": {
+    "active_after": [
+     {
+      "kind": "nonconformance"
+     }
+    ],
+    "counters": {
+     "conformance_rejected_source_disabled": 1
+    },
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [
+       "nonconformance"
+      ],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [
+       {
+        "kind": "nonconformance",
+        "reason": "source_disabled"
+       }
+      ],
+      "raised": [],
+      "state": "unknown"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "unknown"
+     },
+     {
+      "cleared": [],
+      "raised": [
+       "nonconformance"
+      ],
+      "state": "nonconforming"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 0
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714,
+       "source_disabled": true
+      },
+      "t_s": 1
+     },
+     {
+      "op": "tick",
+      "t_s": 30
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 31
+     }
+    ]
+   },
+   "name": "disabled-source-clears-source-disabled",
+   "owner": [
+    "ussp"
+   ],
+   "why": "A switched-off source clears its alerts as source_disabled (B-11), is held unknown without a lost_link, and the next sample from the enabled source raises again."
+  },
+  {
+   "expected": {
+    "active_after": [],
+    "counters": {
+     "conformance_flying_unknown": 1,
+     "conformance_not_flying": 1
+    },
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "unknown"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "unknown"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714,
+       "status": "Ground"
+      },
+      "t_s": 0
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714,
+       "status": "Undeclared"
+      },
+      "t_s": 1
+     }
+    ]
+   },
+   "name": "ground-sample-not-judged",
+   "owner": [
+    "ussp"
+   ],
+   "why": "Alert only on flying aircraft (C-05): Ground is not flying and Undeclared is not known to be."
+  },
+  {
+   "expected": {
+    "active_after": [],
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [
+       "nonconformance"
+      ],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [
+       {
+        "kind": "nonconformance",
+        "reason": "flight_ended"
+       }
+      ],
+      "raised": [],
+      "state": "nonconforming"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 0
+     },
+     {
+      "op": "drop",
+      "t_s": 5
+     }
+    ]
+   },
+   "name": "flight-end-clears-flight-ended",
+   "owner": [
+    "ussp"
+   ],
+   "why": "Ending the flight clears its alerts as flight_ended, never resolved."
+  },
+  {
+   "expected": {
+    "active_after": [
+     {
+      "kind": "nonconformance"
+     }
+    ],
+    "counters": {
+     "conformance_vertical_not_evaluated": 3
+    },
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [
+       "nonconformance"
+      ],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "nonconforming"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 0
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "alt_amsl_m": null,
+       "alt_source": "none",
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 1
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "alt_amsl_m": null,
+       "alt_source": "none",
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 2
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "alt_amsl_m": null,
+       "alt_source": "none",
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 6
+     }
+    ]
+   },
+   "name": "undetermined-never-clears",
+   "owner": [
+    "ussp"
+   ],
+   "why": "A sample whose vertical was not evaluated does not show the flight inside: nothing unjudged clears an alert (C-09)."
+  },
+  {
+   "expected": {
+    "active_after": [],
+    "counters": {
+     "conformance_vertical_not_evaluated": 2
+    },
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "unknown"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "unknown"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "alt_amsl_m": null,
+       "alt_source": "none",
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 0
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "alt_amsl_m": null,
+       "alt_source": "none",
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 1
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 2
+     }
+    ]
+   },
+   "name": "undetermined-first-judgement-stays-unknown",
+   "owner": [
+    "ussp"
+   ],
+   "why": "With no altitude ever the flight was never shown inside its band: unknown (vertical_not_evaluated), never conforming by default (SC-22); the first sample with an altitude judges it."
+  },
+  {
+   "expected": {
+    "active_after": [],
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "conforming"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.71509983659092,
+       "lon_deg": 44.83322838644052
+      },
+      "t_s": 0
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.71509983659092,
+       "lon_deg": 44.83322838644052
+      },
+      "t_s": 30
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 40
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 100
+     }
+    ]
+   },
+   "name": "within-threshold-return-before-t-stays-conforming",
+   "owner": [
+    "ussp"
+   ],
+   "why": "The E-01 twin of t-persistence-then-raise: back inside before t_s, nothing is raised."
+  },
+  {
+   "expected": {
+    "active_after": [],
+    "counters": {
+     "conformance_authorisation_missing": 1
+    },
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "unknown"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": null,
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 0
+     }
+    ]
+   },
+   "name": "authorisation-missing-is-unknown",
+   "owner": [
+    "ussp"
+   ],
+   "why": "No intent_active entry: the flight is unknown, never conforming, and counted (SC-22)."
+  },
+  {
+   "expected": {
+    "active_after": [],
+    "counters": {
+     "conformance_judgement_failed": 1
+    },
+    "per_step": [
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "unknown"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "unknown"
+     }
+    ]
+   },
+   "input": {
+    "authorisation": "circle",
+    "check": "sequence",
+    "steps": [
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.715099788655074,
+       "lon_deg": 44.83406953751714
+      },
+      "t_s": 0
+     },
+     {
+      "op": "tick",
+      "t_s": 30
+     }
+    ],
+    "thresholds": {
+     "h_m": 0,
+     "t_s": 60,
+     "v_m": 15
+    }
+   },
+   "name": "invalid-thresholds-judge-nothing",
+   "owner": [
+    "ussp"
+   ],
+   "why": "An authorisation whose thresholds refuse the judgement leaves the flight unknown: it is never read as conforming (E-15)."
+  }
+ ]
+}

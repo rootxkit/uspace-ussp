@@ -229,3 +229,36 @@ func BenchmarkDeconflictEnvelope(b *testing.B) {
 		}
 	}
 }
+
+// PointDistanceM: 0 inside and on the outline, the distance outside, for
+// a polygon and a circle; an invalid point or outline is an error, never
+// 0 (E-01 pair, E-15).
+func TestPointDistanceM(t *testing.T) {
+	c := core.LatLon{LatDeg: 41.7, LonDeg: 44.8}
+	sq := Shape{Polygon: []core.LatLon{
+		geodesy.Destination(geodesy.Destination(c, 0, 500), 270, 500),
+		geodesy.Destination(geodesy.Destination(c, 0, 500), 90, 500),
+		geodesy.Destination(geodesy.Destination(c, 180, 500), 90, 500),
+		geodesy.Destination(geodesy.Destination(c, 180, 500), 270, 500),
+	}}
+	circle := Shape{Circle: &geodesy.Circle{Center: c, RadiusM: 500}}
+	for _, s := range []Shape{sq, circle} {
+		if d, err := PointDistanceM(c, s); err != nil || d != 0 {
+			t.Errorf("centre: %v %v", d, err)
+		}
+		out := geodesy.Destination(c, 90, 620)
+		d, err := PointDistanceM(out, s)
+		if err != nil || math.Abs(d-120) > 0.5 {
+			t.Errorf("120 m outside: %v %v", d, err)
+		}
+	}
+	if _, err := PointDistanceM(core.LatLon{LatDeg: 91}, circle); err == nil {
+		t.Error("invalid point judged")
+	}
+	if _, err := PointDistanceM(c, Shape{}); err == nil {
+		t.Error("empty outline judged")
+	}
+	if _, err := PointDistanceM(c, Shape{Circle: &geodesy.Circle{Center: c, RadiusM: math.NaN()}}); err == nil {
+		t.Error("NaN radius judged")
+	}
+}

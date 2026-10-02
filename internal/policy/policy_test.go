@@ -264,3 +264,41 @@ func TestLoadRefusesAStoredPolicyThatDoesNotValidate(t *testing.T) {
 		t.Fatal("an invalid stored policy became current")
 	}
 }
+
+// The conformance defaults are core's lifecycle and pressure figures; a
+// hysteresis no longer than twice the ahead tolerance is refused naming
+// conformance_clear_after_s, and the first value above it is accepted
+// (E-01 pair, E-15).
+func TestConformanceDefaultsAndHysteresisBound(t *testing.T) {
+	d := Defaults()
+	if d.ConformanceClearAfterS != 3 || d.PressureUncertaintyM != 250 || d.MonitorLiveMaxAgeS != 10 {
+		t.Fatalf("conformance defaults %v %v %v", d.ConformanceClearAfterS, d.PressureUncertaintyM, d.MonitorLiveMaxAgeS)
+	}
+	v := Defaults()
+	v.ConformanceClearAfterS = 2 * v.TelemetryAheadToleranceS
+	err := v.Validate()
+	var fe *core.FieldError
+	if !errors.As(err, &fe) || fe.Field != "conformance_clear_after_s" {
+		t.Fatalf("hysteresis at twice the tolerance: %v", err)
+	}
+	v.ConformanceClearAfterS = 2*v.TelemetryAheadToleranceS + 0.001
+	if err := v.Validate(); err != nil {
+		t.Fatalf("hysteresis above twice the tolerance refused: %v", err)
+	}
+	for _, bad := range []func(*Values){
+		func(v *Values) { v.MonitorLiveMaxAgeS = 0 },
+		func(v *Values) { v.PressureUncertaintyM = -1 },
+		func(v *Values) { v.ConformanceClearAfterS = math.NaN() },
+	} {
+		v := Defaults()
+		bad(&v)
+		if v.Validate() == nil {
+			t.Errorf("%+v accepted", v)
+		}
+	}
+	v = Defaults()
+	v.PressureUncertaintyM = 0
+	if err := v.Validate(); err != nil {
+		t.Errorf("no pressure margin refused: %v", err)
+	}
+}

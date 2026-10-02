@@ -267,7 +267,7 @@ func openDependencies(rt *Runtime, spec Spec) ([]schemaPool, func(), error) {
 		}
 		closers = append(closers, nc.Close)
 		rt.Bus = nc
-		rt.topology = nc.Maintain(bus.DefaultTopology(), rt.Logger)
+		rt.topology = nc.Maintain(TopologyOf(rt.Config), rt.Logger)
 		rt.Health.Register(DepNATS, spec.NATS == Required, nc.Probe())
 	}
 	return pools, closeAll, nil
@@ -302,4 +302,12 @@ func waitForSchemas(ctx context.Context, rt *Runtime, pools []schemaPool) error 
 		}
 	}
 	return nil
+}
+
+// TopologyOf is the bus topology with the bounds cfg configures.
+func TopologyOf(cfg config.Config) bus.Topology {
+	return bus.TopologyWith(bus.TopologyOptions{
+		ConfMaxAge:   time.Duration(cfg.ConfStreamMaxAgeS) * time.Second,
+		ConfMaxBytes: int64(cfg.ConfStreamMaxBytes),
+	})
 }

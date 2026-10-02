@@ -5,6 +5,7 @@ package bus
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -540,5 +541,59 @@ func TestIntegrationSeenWindow(t *testing.T) {
 	}
 	if n := w.Counters.Get(CounterSeenPutFailed); n != 0 {
 		t.Fatalf("%d puts failed", n)
+	}
+}
+
+// The revision writes the monitor's conformance_state rests on, on a
+// real bucket: a create of a key that exists and an update on a stale
+// revision are conflicts (E-01 pair with the writes that succeed); a
+// deleted key can be created again; All reads every current value.
+func TestIntegrationKVStoreRevisions(t *testing.T) {
+	c := connect(t)
+	js := c.JetStream()
+	bucket := unique("rev")
+	t.Cleanup(func() { _ = js.DeleteKeyValue(context.Background(), bucket) })
+	if _, err := js.CreateKeyValue(ctx(t), jetstream.KeyValueConfig{Bucket: bucket, History: 1, Storage: jetstream.FileStorage}); err != nil {
+		t.Fatal(err)
+	}
+	s := KVStore{JS: js, Bucket: bucket}
+	if _, found, err := s.GetRev(ctx(t), "a"); err != nil || found {
+		t.Fatalf("%v %v", found, err)
+	}
+	r1, err := s.PutRev(ctx(t), "a", []byte("1"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PutRev(ctx(t), "a", []byte("x"), 0); !errors.Is(err, ErrRevisionConflict) {
+		t.Fatalf("create of an existing key: %v", err)
+	}
+	r2, err := s.PutRev(ctx(t), "a", []byte("2"), r1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PutRev(ctx(t), "a", []byte("x"), r1); !errors.Is(err, ErrRevisionConflict) {
+		t.Fatalf("update on a stale revision: %v", err)
+	}
+	if e, found, err := s.GetRev(ctx(t), "a"); err != nil || !found || string(e.Value) != "2" || e.Rev != r2 {
+		t.Fatalf("%+v %v %v", e, found, err)
+	}
+	if _, err := s.PutRev(ctx(t), "b", []byte("3"), 0); err != nil {
+		t.Fatal(err)
+	}
+	all, err := s.All(ctx(t), 10)
+	if err != nil || len(all) != 2 {
+		t.Fatalf("%+v %v", all, err)
+	}
+	if err := s.Delete(ctx(t), "a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(ctx(t), "nothing"); err != nil {
+		t.Fatalf("deleting a missing key: %v", err)
+	}
+	if _, err := s.PutRev(ctx(t), "a", []byte("4"), 0); err != nil {
+		t.Fatalf("create after a delete: %v", err)
+	}
+	if all, err := s.All(ctx(t), 1); err != nil || len(all) != 1 {
+		t.Fatalf("bound: %+v %v", all, err)
 	}
 }

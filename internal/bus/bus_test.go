@@ -321,8 +321,9 @@ func TestTopologyShape(t *testing.T) {
 		if b.History != 1 || b.MaxValueSize <= 0 {
 			t.Errorf("%s: %+v", b.Bucket, b)
 		}
-		if (b.TTL != 0) != (b.Bucket == BucketRegistryValidity || b.Bucket == BucketTelemetrySeen || b.Bucket == BucketISANotifications) {
-			t.Errorf("%s TTL %v: only registry_validity, telemetry_seen and rid_isa_notifications have one", b.Bucket, b.TTL)
+		if (b.TTL != 0) != (b.Bucket == BucketRegistryValidity || b.Bucket == BucketTelemetrySeen || b.Bucket == BucketISANotifications ||
+			b.Bucket == BucketConformanceState) {
+			t.Errorf("%s TTL %v: only registry_validity, telemetry_seen, rid_isa_notifications and conformance_state have one", b.Bucket, b.TTL)
 		}
 	}
 	if _, ok := top.Bucket(BucketIntentActive); !ok {
@@ -478,5 +479,27 @@ func TestHolesOf(t *testing.T) {
 	// hole (the twin).
 	if got := holesOf([]Jump{{After: 5, Before: 9}}, 1, nil); got[0] != (Hole{}) {
 		t.Fatalf("%+v", got)
+	}
+}
+
+// E-10: CONF is bounded in time and in bytes (the 30-day record of
+// conformance is TimescaleDB's conformance_samples, not the stream),
+// and both bounds are configurable; an option left zero keeps the
+// default.
+func TestConfStreamCapped(t *testing.T) {
+	conf, _ := DefaultTopology().Stream(StreamCONF)
+	if conf.MaxAge != DefaultConfMaxAge || conf.MaxBytes != DefaultConfMaxBytes || conf.Discard != jetstream.DiscardOld {
+		t.Fatalf("CONF %v %d %v", conf.MaxAge, conf.MaxBytes, conf.Discard)
+	}
+	if DefaultConfMaxAge != 48*time.Hour || DefaultConfMaxBytes != 4<<30 {
+		t.Fatalf("defaults %v %d", DefaultConfMaxAge, DefaultConfMaxBytes)
+	}
+	conf, _ = TopologyWith(TopologyOptions{ConfMaxAge: 6 * time.Hour, ConfMaxBytes: 1 << 30}).Stream(StreamCONF)
+	if conf.MaxAge != 6*time.Hour || conf.MaxBytes != 1<<30 {
+		t.Fatalf("CONF configured %v %d", conf.MaxAge, conf.MaxBytes)
+	}
+	conf, _ = TopologyWith(TopologyOptions{}).Stream(StreamCONF)
+	if conf.MaxAge != DefaultConfMaxAge || conf.MaxBytes != DefaultConfMaxBytes {
+		t.Fatalf("CONF zero options %v %d", conf.MaxAge, conf.MaxBytes)
 	}
 }

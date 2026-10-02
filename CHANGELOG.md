@@ -9,6 +9,24 @@ additively within `/v1`.
 
 ### Changed
 
+- WP-10: policy values `conformance_clear_after_s` (3 s),
+  `pressure_uncertainty_m` (250 m) and `monitor_live_max_age_s` (10 s),
+  core's alerting and zones defaults. `deconflict.PointDistanceM` and
+  `intent.WireVolume` are exported so conformance reads an outline as
+  deconfliction does; `intent.Service.SetConformance` moves an activated
+  intent to nonconforming, contingent and back (event
+  `intent_conformance`). `bus.Conn.Listen` is a core subscription for
+  the processes. The relational queries `InsertConformanceState` and
+  `ConformanceTimeline`. The monitor process now has routes and workers.
+  The monitor persists each flight's conformance state machine in the
+  new KV bucket `conformance_state` (written by monitor) and restores it
+  at a start and on a cell handover between instances; a fresh tracker
+  takes its intent's nonconforming or contingent state, and api moves an
+  intent back to activated only on the tracker's own return transition.
+  CONF keeps 48 h and 4 GiB (`USSP_CONF_STREAM_MAX_AGE_S`,
+  `USSP_CONF_STREAM_MAX_BYTES`) and carries the transitions and a 0.1 Hz
+  heartbeat per flight; `bus.KVStore` gains revision writes.
+
 - WP-9: `flight/event/v1` carries an optional `position` (the flight's
   newest live position, its first on `started`); `intent/state/v1`
   carries the optional `category`, `class_label` and `ua_registration`
@@ -46,6 +64,26 @@ additively within `/v1`.
   builder moves to `internal/app/proc` (rid-sp verifies tokens too).
 
 ### Added
+
+- WP-10: conformance monitoring (Art. 13(1)). `internal/conformance`:
+  `Judge` (a sample against its authorised volumes, AMSL bands, window
+  and deviation thresholds; undetermined without a vertical position,
+  pressure judged with its margin and `within_band`), `Tracker`
+  (admission as core's alerting; conforming, nonconforming after t_s or
+  at once beyond a threshold, back after the hysteresis, contingent
+  after F3548's 60 s, lost_link after `lost_link_s`, unknown with its
+  reason), the `nonconformance` and `lost_link` alerts (critical) and
+  the `nonconformance_nearby` fan-out (warning), `conformance/state/v1`
+  on `conf.v1.<flight_id>` and `alert/v1` on `alrt.v1`, and the
+  `Recorder` api runs on `CONF` (durable `api-conformance`) to append
+  `conformance_states` and move the intent. The monitor process (one
+  worker per home cell3, 1 s tick, republish of every active alert,
+  `/readyz` entries `trk`, `intent_active`, `policy`, `source_control`,
+  a conformance status line every 10 s). `testdata/vectors/conformance.json`
+  (68 cases) with its generator, fuzz targets for the track, state and
+  intent_active readers, `BenchmarkConformanceJudge`. Measured in the
+  integration suite: nonconformance 2.3 ms after the sample's
+  `captured_at`; the S-M2 lab SITL run is owed (`docs/RUNBOOKS/WP-10.md`).
 
 - WP-9: the ASTM F3411-22a network identification Service Provider.
   rid-sp keeps our own flights (authenticated, operator_ws) for 60 s in

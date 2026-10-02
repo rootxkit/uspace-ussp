@@ -565,6 +565,15 @@ func (s *Service) deconflictOfPeer(p PeerIntent) (deconflict.Intent, error) {
 	return out, nil
 }
 
+// WireVolume reads a stored Volume4D, with the geoid undulation at its
+// outline, into the outline, AMSL band and window the judgements use: the
+// one reading of a stored volume, shared by deconfliction here and by
+// conformance monitoring (internal/conformance), so the two never read an
+// outline differently.
+func WireVolume(v f3548.Volume4D, undulationM float64) (deconflict.Volume, error) {
+	return wireVolume(v, undulationM)
+}
+
 // wireVolume reads a stored or peer Volume4D with the undulation of its
 // outline into the deconfliction's volume.
 func wireVolume(v f3548.Volume4D, undulationM float64) (deconflict.Volume, error) {
