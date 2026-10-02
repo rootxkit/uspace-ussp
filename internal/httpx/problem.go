@@ -105,9 +105,22 @@ func Problem(w http.ResponseWriter, status int, slug, detail string, extra *Extr
 	p.Write(w, nil)
 }
 
-// WriteError maps err onto a problem and writes it: field errors are a
-// 400 validation problem listing every field, an oversized body is 413,
-// anything else is a 500 that never echoes the error text.
+// StatusError is an error that names its own problem: the status, the
+// type slug and a detail safe to send. A package below httpx in the
+// import order implements it without importing httpx (for example the
+// 503-shaped policy.ProjectionError of a write whose KV projection
+// failed, B-09).
+type StatusError interface {
+	error
+	HTTPStatus() int
+	ProblemSlug() string
+	ProblemDetail() string
+}
+
+// WriteError maps err onto a problem and writes it: a StatusError is
+// its own problem, field errors are a 400 validation problem listing
+// every field, an oversized body is 413, anything else is a 500 that
+// never echoes the error text.
 func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	ProblemFromError(err).Write(w, r)
 }
@@ -118,6 +131,10 @@ func ProblemFromError(err error) *ProblemBody {
 	if errors.As(err, &mbe) {
 		return NewProblem(http.StatusRequestEntityTooLarge, SlugBodyTooLarge, "", "request body exceeds the limit of this route",
 			core.Fieldf("body", "longer than %d bytes", mbe.Limit))
+	}
+	var se StatusError
+	if errors.As(err, &se) {
+		return NewProblem(se.HTTPStatus(), se.ProblemSlug(), "", se.ProblemDetail())
 	}
 	if fes := fieldErrors(err); len(fes) > 0 {
 		return NewProblem(http.StatusBadRequest, SlugValidation, "Invalid request", "", fes...)
