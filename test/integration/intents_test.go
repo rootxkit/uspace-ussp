@@ -783,6 +783,10 @@ func mustJSON(t *testing.T, v any) []byte {
 // It walks the milestone in order and logs one line per step with the
 // decision, the reasons and the time it took.
 func TestIntegrationScenarioSM1(t *testing.T) {
+	// The change feed's cursor is in the shared database: start it from
+	// zero, so this fake authority's sequence numbers are read whatever
+	// the tests before left there.
+	cleanRegistry(t)
 	g := newIntentRig(t)
 	ctx := context.Background()
 	zoneBox, uspaceBox, darBox := g.box(0, 0, 0.02), g.box(0.1, 0, 0.3), g.box(0.3, 0.1, 0.02)
