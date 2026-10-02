@@ -49,6 +49,16 @@ func closedAddr(t *testing.T) string {
 // a client of its national API.
 func run(t *testing.T, spec proc.Spec, vars map[string]string) *client.ClientWithResponses {
 	t.Helper()
+	c, err := client.NewClientWithResponses("http://" + runAt(t, spec, vars))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// runAt is run returning the process's listen address.
+func runAt(t *testing.T, spec proc.Spec, vars map[string]string) string {
+	t.Helper()
 	vars["USSP_STATUS_INTERVAL_S"] = "3600"
 	cfg, err := config.LoadFrom(func(n string) (string, bool) { v, ok := vars[n]; return v, ok })
 	if err != nil {
@@ -75,17 +85,13 @@ func run(t *testing.T, spec proc.Spec, vars map[string]string) *client.ClientWit
 	})
 	select {
 	case a := <-addr:
-		c, err := client.NewClientWithResponses("http://" + a)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return c
+		return a
 	case err := <-done:
 		t.Fatalf("Run returned before listening: %v", err)
 	case <-time.After(15 * time.Second):
 		t.Fatal("no listener within 15 s")
 	}
-	return nil
+	return ""
 }
 
 // logBuffer collects the process log; it is printed when the test
