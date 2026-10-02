@@ -34,13 +34,14 @@ type ConformanceSample struct {
 	State            string      `json:"state"`
 	DistanceOutsideM *float64    `json:"distance_outside_m"`
 	HeightOverM      *float64    `json:"height_over_m"`
+	MsgID            *string     `json:"msg_id"`
 }
 
 type EconspicuityTrack struct {
 	Icao24       string      `json:"icao24"`
 	Callsign     *string     `json:"callsign"`
 	CapturedAt   time.Time   `json:"captured_at"`
-	Ts           time.Time   `json:"ts"`
+	Ts           *time.Time  `json:"ts"`
 	RxTs         time.Time   `json:"rx_ts"`
 	Geom         interface{} `json:"geom"`
 	AltPressureM *float64    `json:"alt_pressure_m"`
@@ -55,13 +56,14 @@ type EconspicuityTrack struct {
 	Trust        string      `json:"trust"`
 	ReceiverID   string      `json:"receiver_id"`
 	Cell5        string      `json:"cell5"`
+	MsgID        *string     `json:"msg_id"`
 }
 
 type MannedTrack struct {
 	Icao24       string      `json:"icao24"`
 	Callsign     *string     `json:"callsign"`
 	CapturedAt   time.Time   `json:"captured_at"`
-	Ts           time.Time   `json:"ts"`
+	Ts           *time.Time  `json:"ts"`
 	RxTs         time.Time   `json:"rx_ts"`
 	Geom         interface{} `json:"geom"`
 	AltPressureM *float64    `json:"alt_pressure_m"`
@@ -75,6 +77,7 @@ type MannedTrack struct {
 	AdapterID    string      `json:"adapter_id"`
 	Trust        string      `json:"trust"`
 	Cell5        string      `json:"cell5"`
+	MsgID        *string     `json:"msg_id"`
 }
 
 type PeerFlight struct {
@@ -85,12 +88,13 @@ type PeerFlight struct {
 	Details     []byte    `json:"details"`
 	IsaID       *string   `json:"isa_id"`
 	Cell5       *string   `json:"cell5"`
+	MsgID       *string   `json:"msg_id"`
 }
 
 type Telemetry struct {
 	FlightID           pgtype.UUID `json:"flight_id"`
 	CapturedAt         time.Time   `json:"captured_at"`
-	Ts                 time.Time   `json:"ts"`
+	Ts                 *time.Time  `json:"ts"`
 	RxTs               time.Time   `json:"rx_ts"`
 	Backlog            bool        `json:"backlog"`
 	TimeSource         string      `json:"time_source"`
@@ -112,6 +116,9 @@ type Telemetry struct {
 	TimestampAccuracyS *float64    `json:"timestamp_accuracy_s"`
 	SourceClientID     *string     `json:"source_client_id"`
 	Cell5              string      `json:"cell5"`
+	MsgID              *string     `json:"msg_id"`
+	AccuracyHM         *float64    `json:"accuracy_h_m"`
+	AccuracyVM         *float64    `json:"accuracy_v_m"`
 }
 
 type TrafficProduct struct {
@@ -122,4 +129,26 @@ type TrafficProduct struct {
 	TracksShown   []byte      `json:"tracks_shown"`
 	Degraded      []string    `json:"degraded"`
 	PolicyVersion int64       `json:"policy_version"`
+	MsgID         *string     `json:"msg_id"`
+}
+
+type WriterGap struct {
+	DedupeKey string     `json:"dedupe_key"`
+	Stream    string     `json:"stream"`
+	Subject   string     `json:"subject"`
+	FromSeq   int64      `json:"from_seq"`
+	ToSeq     int64      `json:"to_seq"`
+	Cause     string     `json:"cause"`
+	Count     int64      `json:"count"`
+	CountUnit string     `json:"count_unit"`
+	AfterAt   *time.Time `json:"after_at"`
+	BeforeAt  *time.Time `json:"before_at"`
+	Detail    string     `json:"detail"`
+	At        time.Time  `json:"at"`
+}
+
+type WriterPosition struct {
+	Stream string    `json:"stream"`
+	Seq    int64     `json:"seq"`
+	At     time.Time `json:"at"`
 }

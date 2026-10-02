@@ -34,6 +34,8 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_PG_URL` | `api` | `api` |  |  | relational database (PostgreSQL + PostGIS); only api opens it |
 | `USSP_TS_URL` | `api,tsdb-writer` | `api,tsdb-writer` |  |  | time-series database (TimescaleDB); tsdb-writer writes, api reads |
 | `USSP_SCHEMA_WAIT_S` | `api,tsdb-writer` |  | `60` | s | how long a process waits at start for the migrate subcommand to bring its schema to the version it needs; then it refuses to start, naming both versions |
+| `USSP_WRITER_QUEUE_S` | `tsdb-writer` |  | `10` | s | how long rows may wait in tsdb-writer's memory while writes succeed; beyond it the writer stops pulling and the streams hold the rest |
+| `USSP_WRITER_HOLD_ROWS` | `tsdb-writer` |  | `50000` | rows | rows tsdb-writer holds in memory per stream, also while TimescaleDB is down (B-07); at the bound it stops pulling and the streams hold the rest |
 | `USSP_NATS_URL` | `all` | `all` |  |  | NATS JetStream; the process reconnects forever and starts degraded when it is down |
 | `USSP_NATS_CREDS` | `all` |  |  |  | path of the NATS credentials file of this process; empty uses the URL's userinfo |
 | `USSP_SYSTEM_ID` | `api,rid-sp,dss-sync` |  | `USSP-DEV` |  | the USSP code from the authority's certificate (M8); never an audience |

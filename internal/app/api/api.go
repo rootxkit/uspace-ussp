@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/accounts"
 	"github.com/rootxkit/uspace-ussp/internal/app/proc"
 	"github.com/rootxkit/uspace-ussp/internal/auth"
+	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/config"
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/national"
@@ -121,7 +123,13 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 			return err
 		}
 	}
-	pol := policy.New(rt.Store, nil, nil)
+	// Every KV projection of this process (D6): written inside the
+	// transaction that changes the rows, bounded, refused with 503 when
+	// the KV cannot take it (B-09).
+	kvCounters := &core.Counters{}
+	proc.Publish(rt, "kv_projection", kvCounters)
+	kv := bus.NewProjector(rt.Bus, kvCounters)
+	pol := policy.New(rt.Store, kv, nil)
 	if _, err := pol.Load(ctx); err != nil {
 		rt.Logger.Warn("policy not loaded; the defaults apply until it is", obs.Err(err))
 	}
@@ -143,11 +151,11 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 		proc.Publish(rt, "token_client", tokens.Counters())
 		registryTokens = tokens
 	}
-	cisState, err := startCIS(ctx, rt, current, tokens)
+	cisState, err := startCIS(ctx, rt, current, tokens, kv)
 	if err != nil {
 		return err
 	}
-	reg, err := startRegistry(ctx, rt, current, registryTokens)
+	reg, err := startRegistry(ctx, rt, current, registryTokens, kv)
 	if err != nil {
 		return err
 	}
@@ -158,7 +166,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	burst := func(n int) int { return max(1, n/6) }
 	svc := &accounts.Service{
 		Store: rt.Store, Hasher: hasher, Issuer: issuer, Registry: reg.Cache,
-		Bindings: auth.NewMemoryBindings(), Policy: current, MFA: sealer,
+		Bindings: bindingsProjector{kv}, Policy: current, MFA: sealer,
 		LoginLimiter: httpx.NewRateLimiter(perMin(cfg.LoginRatePerMin), burst(cfg.LoginRatePerMin), 100_000, counters),
 		Counters:     counters, Logger: rt.Logger,
 		Config: accounts.Config{
@@ -248,4 +256,20 @@ func osUser() string {
 		}
 	}
 	return "unknown"
+}
+
+// bindingsProjector writes one client's bindings to the KV bucket
+// client_bindings (auth.BindingsProjector): the sorted fold keys under
+// the client id as a bus.KeyToken, and a delete when none is left.
+type bindingsProjector struct{ kv *bus.Projector }
+
+// ProjectClientBindings implements auth.BindingsProjector.
+func (b bindingsProjector) ProjectClientBindings(ctx context.Context, clientID string, folds []string) error {
+	key := bus.KeyToken(clientID)
+	if len(folds) == 0 {
+		return b.kv.Delete(ctx, bus.BucketClientBindings, key)
+	}
+	f := slices.Clone(folds)
+	slices.Sort(f)
+	return b.kv.PutJSON(ctx, bus.BucketClientBindings, key, slices.Compact(f))
 }

@@ -1,11 +1,9 @@
-// Package bus is the NATS JetStream connection of every process. WP-0
-// holds the connection and its readiness probe; streams, subjects, KV
-// buckets and projections arrive with WP-6.
 package bus
 
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +22,9 @@ const ReconnectWait = 2 * time.Second
 // while it dials).
 type Conn struct {
 	*nats.Conn
+
+	js   jetstream.JetStream
+	topo *Maintainer
 
 	mu        sync.Mutex
 	connected bool
@@ -74,6 +75,10 @@ func Connect(url, credsFile, name string, logger *slog.Logger) (*Conn, error) {
 		return nil, err
 	}
 	c.Conn = nc
+	if c.js, err = jetstream.New(nc); err != nil {
+		nc.Close()
+		return nil, err
+	}
 	// ConnectHandler is not called for a connection that succeeded
 	// within Connect itself.
 	if nc.IsConnected() {
@@ -102,22 +107,45 @@ func (c *Conn) Link() (bool, time.Time, string) {
 	return c.connected, c.since, c.lastErr
 }
 
+// JetStream is the connection's JetStream context (no I/O).
+func (c *Conn) JetStream() jetstream.JetStream { return c.js }
+
+// Maintain makes c keep the topology t in place: m.Run in the
+// background, and the readiness probe reports what it found. It returns
+// the maintainer; call it once.
+func (c *Conn) Maintain(t Topology, logger *slog.Logger) *Maintainer {
+	c.topo = &Maintainer{JS: c.js, Topology: t, Logger: logger}
+	return c.topo
+}
+
+// topologyStale is how old the last topology check may be before the
+// probe repeats it inline.
+const topologyStale = time.Minute
+
 // Probe returns the readiness check of c: down while it is not
 // connected, with the last reason; degraded when it is connected but
 // JetStream does not answer (a server started without -js, or an
-// account without JetStream); up otherwise.
+// account without JetStream), and, with Maintain, when a stream or
+// bucket is missing or differs from this build's topology (each named);
+// up otherwise.
 func (c *Conn) Probe() obs.Probe {
 	return func(ctx context.Context) (obs.State, string) {
 		connected, since, reason := c.Link()
 		if !connected {
 			return obs.StateDown, "not connected since " + since.UTC().Format(time.RFC3339) + ": " + reason
 		}
-		js, err := jetstream.New(c.Conn)
-		if err != nil {
-			return obs.StateDegraded, "connected; JetStream: " + err.Error()
-		}
-		if _, err := js.AccountInfo(ctx); err != nil {
+		if _, err := c.js.AccountInfo(ctx); err != nil {
 			return obs.StateDegraded, "connected; JetStream does not answer: " + err.Error()
+		}
+		if c.topo == nil {
+			return obs.StateUp, ""
+		}
+		st, err := c.topo.Fresh(ctx, topologyStale)
+		if err != nil && !st.Checked {
+			return obs.StateDegraded, "connected; streams and buckets not checked: " + err.Error()
+		}
+		if len(st.Drift) > 0 {
+			return obs.StateDegraded, "connected; streams and buckets differ from this build: " + strings.Join(st.Drift, "; ")
 		}
 		return obs.StateUp, ""
 	}

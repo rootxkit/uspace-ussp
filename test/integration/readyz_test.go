@@ -201,7 +201,9 @@ func TestIntegrationAPIDegradedWithoutAuthConfiguration(t *testing.T) {
 }
 
 // NATS taken away (a closed port): the databases stay up, nats is down
-// with its reason, and /readyz answers 503 (E-02).
+// with its reason, cis is degraded because its zones cannot reach the
+// hot path (the cis_current projection fails within its bound), and
+// /readyz answers 503 (E-02).
 func TestIntegrationAPINotReadyWithoutNATS(t *testing.T) {
 	ensureSchemas(t)
 	c := run(t, api.Spec, withAuth(t, map[string]string{
@@ -213,19 +215,25 @@ func TestIntegrationAPINotReadyWithoutNATS(t *testing.T) {
 	code, body := readyz(t, c, client.ReadinessStatusNotReady)
 	// The CIS cache and the registry feed come up on their own (they
 	// need no NATS); wait for them.
-	for deadline := time.Now().Add(10 * time.Second); strings.Join(body.Degraded, ",") != "nats" && time.Now().Before(deadline); {
+	settled := func() bool {
+		return strings.Join(body.Degraded, ",") == "cis,nats" && body.Dependencies["cis"].State == client.DependencyStateDegraded
+	}
+	for deadline := time.Now().Add(15 * time.Second); !settled() && time.Now().Before(deadline); {
 		time.Sleep(250 * time.Millisecond)
 		code, body = readyz(t, c, client.ReadinessStatusNotReady)
 	}
-	if code != 503 || body.Status != client.ReadinessStatusNotReady || strings.Join(body.Degraded, ",") != "nats" {
+	if code != 503 || body.Status != client.ReadinessStatusNotReady || strings.Join(body.Degraded, ",") != "cis,nats" {
 		t.Fatalf("readyz %d %+v", code, body)
 	}
 	wantStates(t, body, map[string]client.DependencyState{
 		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateDown,
 		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
-		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
+		"cis": client.DependencyStateDegraded, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
 		"registry": client.DependencyStateUp,
 	})
+	if d := body.Dependencies["cis"].Detail; d == nil || !strings.Contains(*d, "projection: ") || !strings.Contains(*d, "cis_current") {
+		t.Fatalf("cis detail %v", d)
+	}
 }
 
 // tsdb-writer keeps running without TimescaleDB (it queues, then

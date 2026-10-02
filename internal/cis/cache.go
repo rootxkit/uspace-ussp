@@ -28,6 +28,7 @@ const (
 	CounterReconcileCatchups  = "cis_reconcile_catchups"
 	CounterStoreFailed        = "cis_store_failed"
 	CounterProjectionFailed   = "cis_projection_failed"
+	CounterProjectionRetried  = "cis_projection_retried"
 	CounterSubscribeFailed    = "cis_subscribe_failed"
 	CounterWebhooks           = "cis_webhooks"
 	CounterBadSignature       = "cis_webhook_bad_signature"
@@ -260,7 +261,22 @@ func (c *Cache) worker(ctx context.Context, d Dataset) {
 			_ = c.Pull(ctx, d, h, false)
 		case <-t.C:
 			_ = c.Pull(ctx, d, nil, true)
+			c.retryProjection(ctx)
 		}
+	}
+}
+
+// retryProjection writes the projection again when the last write
+// failed (the KV was unreachable): the hot path gets the zones back
+// within a reconciliation period of the KV's return, not at the next
+// CIS version.
+func (c *Cache) retryProjection(ctx context.Context) {
+	c.mu.Lock()
+	failed := c.projErr != ""
+	c.mu.Unlock()
+	if failed {
+		c.cfg.Counters.Inc(CounterProjectionRetried)
+		c.project(ctx)
 	}
 }
 

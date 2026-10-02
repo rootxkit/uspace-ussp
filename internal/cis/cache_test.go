@@ -389,6 +389,21 @@ func TestCacheProjectionFailure(t *testing.T) {
 	if _, detail := g.cache.Probe(t.Context()); !strings.Contains(detail, "projection: KV unreachable") {
 		t.Fatalf("probe: %q", detail)
 	}
+	// The KV is back: the next reconciliation tick writes the projection
+	// again and the probe no longer names it.
+	g.cache.cfg.Projector = g.proj
+	g.cache.retryProjection(t.Context())
+	if p, n := g.proj.Last(); p == nil || n != 1 || g.count(CounterProjectionRetried) != 1 {
+		t.Fatalf("not retried: %v %d", p, n)
+	}
+	if _, detail := g.cache.Probe(t.Context()); strings.Contains(detail, "projection") {
+		t.Fatalf("probe after the retry: %q", detail)
+	}
+	// Nothing failed: no retry.
+	g.cache.retryProjection(t.Context())
+	if _, n := g.proj.Last(); n != 1 || g.count(CounterProjectionRetried) != 1 {
+		t.Fatal("retried with nothing failed")
+	}
 }
 
 // Warm installs the stored versions with their database age: an old one

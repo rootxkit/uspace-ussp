@@ -88,7 +88,7 @@ func treeFS(t *testing.T, tree Tree) fs.FS {
 // against the wrong database.
 func TestNoTreeNamesTheOtherTreesTables(t *testing.T) {
 	rel, ts := tables(t, treeFS(t, TreeRelational)), tables(t, treeFS(t, TreeTimeseries))
-	if len(rel) < 25 || len(ts) != 7 {
+	if len(rel) < 25 || len(ts) != 9 {
 		t.Fatalf("tables: relational %d %v, timeseries %d %v", len(rel), rel, len(ts), ts)
 	}
 	for _, name := range rel {
