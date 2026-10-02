@@ -1,0 +1,78 @@
+{
+  "category": "specific",
+  "client_ref": "ref-1",
+  "connectivity_methods": [
+    "lte"
+  ],
+  "contingency": {
+    "landing_sites": [
+      {
+        "lat": 41.702,
+        "lng": 44.802
+      }
+    ],
+    "procedure": "return to the take-off point and land"
+  },
+  "emergency_contact_ref": "EC-TEST-1",
+  "endurance_s": 3600,
+  "flight_type": "normal",
+  "identification_technology": "network",
+  "landing": {
+    "lat": 41.701,
+    "lng": 44.801
+  },
+  "loss_of_c2_procedure": "return_to_home",
+  "mode": "BVLOS",
+  "operator_reg": "GEOTESTOP0001",
+  "pilot_ref": "PILOT-TEST-1",
+  "takeoff": {
+    "lat": 41.701,
+    "lng": 44.801
+  },
+  "uas_serial": "TEST0001",
+  "volumes": [
+    {
+      "time_end": {
+        "format": "RFC3339",
+        "value": "2026-11-02T10:30:00Z"
+      },
+      "time_start": {
+        "format": "RFC3339",
+        "value": "2026-11-02T10:00:00Z"
+      },
+      "volume": {
+        "altitude_lower": {
+          "reference": "W84",
+          "units": "M",
+          "value": 500
+        },
+        "altitude_upper": {
+          "reference": "W84",
+          "units": "M",
+          "value": 550
+        },
+        "outline_polygon": {
+          "vertices": [
+            {
+              "lat": 41.7,
+              "lng": 44.8
+            },
+            {
+              "lat": 41.7,
+              "lng": 44.809999999999995
+            },
+            {
+              "lat": 41.71,
+              "lng": 44.809999999999995
+            },
+            {
+              "lat": 41.71,
+              "lng": 44.8
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "colour": "red"
+}

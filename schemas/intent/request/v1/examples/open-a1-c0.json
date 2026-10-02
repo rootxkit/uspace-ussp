@@ -1,0 +1,54 @@
+{
+  "category": "open",
+  "class_label": "C0",
+  "client_ref": "ref-c0",
+  "connectivity_methods": [
+    "lte"
+  ],
+  "contingency": {
+    "procedure": "land at the nearest landing site"
+  },
+  "emergency_contact_ref": "EC-TEST-1",
+  "endurance_s": 3600,
+  "flight_type": "normal",
+  "identification_technology": "network",
+  "loss_of_c2_procedure": "return_to_home",
+  "mode": "VLOS",
+  "operator_reg": "GEOTESTOP0001",
+  "subcategory": "A1",
+  "uas_serial": "TEST0001",
+  "volumes": [
+    {
+      "time_end": {
+        "format": "RFC3339",
+        "value": "2026-11-02T10:30:00Z"
+      },
+      "time_start": {
+        "format": "RFC3339",
+        "value": "2026-11-02T10:00:00Z"
+      },
+      "volume": {
+        "altitude_lower": {
+          "reference": "W84",
+          "units": "M",
+          "value": 500
+        },
+        "altitude_upper": {
+          "reference": "W84",
+          "units": "M",
+          "value": 540
+        },
+        "outline_circle": {
+          "center": {
+            "lat": 41.7,
+            "lng": 44.8
+          },
+          "radius": {
+            "units": "M",
+            "value": 150
+          }
+        }
+      }
+    }
+  ]
+}

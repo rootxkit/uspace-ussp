@@ -1,0 +1,64 @@
+{
+  "authorisation_ref": "AUTH-TEST-SAR-1",
+  "category": "specific",
+  "client_ref": "ref-sar",
+  "connectivity_methods": [
+    "lte"
+  ],
+  "contingency": {
+    "procedure": "land at the nearest landing site"
+  },
+  "emergency_contact_ref": "EC-TEST-1",
+  "endurance_s": 3600,
+  "flight_type": "special_operation",
+  "identification_technology": "network",
+  "loss_of_c2_procedure": "return_to_home",
+  "mode": "VLOS",
+  "operator_reg": "GEOTESTOP0001",
+  "priority": 100,
+  "uas_serial": "TEST0001",
+  "volumes": [
+    {
+      "time_end": {
+        "format": "RFC3339",
+        "value": "2026-11-02T10:30:00Z"
+      },
+      "time_start": {
+        "format": "RFC3339",
+        "value": "2026-11-02T10:00:00Z"
+      },
+      "volume": {
+        "altitude_lower": {
+          "reference": "W84",
+          "units": "M",
+          "value": 500
+        },
+        "altitude_upper": {
+          "reference": "W84",
+          "units": "M",
+          "value": 550
+        },
+        "outline_polygon": {
+          "vertices": [
+            {
+              "lat": 41.7,
+              "lng": 44.8
+            },
+            {
+              "lat": 41.7,
+              "lng": 44.809999999999995
+            },
+            {
+              "lat": 41.71,
+              "lng": 44.809999999999995
+            },
+            {
+              "lat": 41.71,
+              "lng": 44.8
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

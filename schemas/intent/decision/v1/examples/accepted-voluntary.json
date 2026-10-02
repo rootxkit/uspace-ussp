@@ -1,0 +1,36 @@
+{
+  "intent_id": "acea46ba-c1f5-493c-ba5b-73ecccccfdf3",
+  "version": 1,
+  "client_ref": "ref-3",
+  "decision": "accepted_voluntary",
+  "state": "accepted",
+  "dss_state": null,
+  "authorisation_number": null,
+  "exempt_art_1_3": true,
+  "in_uspace_airspace": false,
+  "uspace_airspace_ids": [],
+  "priority": 0,
+  "deviation_thresholds": null,
+  "alternative": null,
+  "conflicts": [],
+  "conditions": [],
+  "volumes_amsl": [
+    {
+      "lower_amsl_m": 480,
+      "upper_amsl_m": 530,
+      "undulation_m": 20,
+      "lower_w84_m": 500,
+      "upper_w84_m": 550
+    }
+  ],
+  "valid_from": "2026-11-02T10:00:00Z",
+  "valid_to": "2026-11-02T10:30:00Z",
+  "cis_version_checked": "zones:1,uspace_airspace:1,restrictions:1",
+  "cis_age_s": 3,
+  "registry_checked_at": "2026-11-01T12:00:00Z",
+  "policy_version": 7,
+  "weather_checked_ref": null,
+  "change_reason": null,
+  "decided_at": "2026-11-01T12:00:00Z",
+  "updated_at": "2026-11-01T12:00:00Z"
+}
