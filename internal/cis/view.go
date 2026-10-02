@@ -148,6 +148,29 @@ func buildEntry(v *Version, f *ed318.Feature) (*Entry, error) {
 	return e, nil
 }
 
+// FeatureZones builds the judgement's zones of one ED-318 feature as the
+// projection lists it (ApplicableZone.Feature, ed318.Export's form):
+// ed318.Parse of the feature alone, then ed318.ToZones without its
+// limitedApplicability, exactly as buildEntry builds an Entry's Parts
+// (applicability is the projection's verdict, Applies). A feature Parse
+// or ToZones refuses is an error, never zones that judge nothing.
+func FeatureZones(raw json.RawMessage) ([]*zones.Zone, error) {
+	doc := make([]byte, 0, len(raw)+48)
+	doc = append(doc, `{"type":"FeatureCollection","features":[`...)
+	doc = append(doc, raw...)
+	doc = append(doc, "]}"...)
+	fc, problems := ed318.Parse(doc, ProblemLimits)
+	if problems != nil {
+		return nil, fmt.Errorf("the feature does not parse: %s", short(problems.Error()))
+	}
+	if len(fc.Features) != 1 {
+		return nil, fmt.Errorf("%d features, want 1", len(fc.Features))
+	}
+	shape := fc.Features[0]
+	shape.Properties.LimitedApplicability = nil
+	return ed318.ToZones(&ed318.FeatureCollection{Type: "FeatureCollection", Features: []ed318.Feature{shape}}, ed318.NOAADaylight{})
+}
+
 func readRequirements(raw json.RawMessage) (*Requirements, error) {
 	r := &Requirements{Raw: raw}
 	if err := json.Unmarshal(raw, &r.UspaceRequirements); err != nil {
