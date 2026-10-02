@@ -449,6 +449,13 @@ func TestIntegrationFlightFactsRecorded(t *testing.T) {
 	b := &flights.Binder{Emit: func(e *flights.Event) { events = append(events, e) }}
 	sn := "TEST-WP8-FLIGHT-" + unique()
 	id := b.Bind("c|"+sn, "wp8-unknown-client", sn, nil, nil, nil, time.Now(), true)
+	// The intent projection catches up: the same flight, bound to it.
+	// (no operational_intents row: the row keeps intent_id null and
+	// takes the authorisation and the operator)
+	auth, reg, unknownIntent := "GE-WP8-TEST", "GEO-WP8-TEST", "8c1f3f2e-7d0e-4a8b-9a51-0e4b7d6f2c99"
+	if b.Bind("c|"+sn, "wp8-unknown-client", sn, &unknownIntent, &auth, &reg, time.Now(), true) != id {
+		t.Fatal("the flight was not bound to the intent")
+	}
 	b.End("c|"+sn, flights.EndOperator, time.Now().Add(time.Second))
 	for _, e := range append(events, events[0]) { // the started fact again: a replay
 		subject, err := e.Subject()
@@ -478,7 +485,7 @@ func TestIntegrationFlightFactsRecorded(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	if n := count(t, rel, `SELECT count(*) FROM flights WHERE id = $1::uuid AND end_reason = 'operator_ended' AND last_state = 'ended'
-		AND client_id IS NULL AND uas_serial = $2`, id, sn); n != 1 {
+		AND client_id IS NULL AND uas_serial = $2 AND authorisation_number = 'GE-WP8-TEST' AND operator_reg = 'GEO-WP8-TEST'`, id, sn); n != 1 {
 		t.Fatalf("row %d", n)
 	}
 	if n := count(t, rel, `SELECT count(*) FROM events WHERE entity_type = 'flight' AND entity_id = $1`, id); n < 2 {

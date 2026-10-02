@@ -66,7 +66,10 @@ VALUES (
     $10
 )
 ON CONFLICT (id) DO UPDATE
-SET ended_at = COALESCE(flights.ended_at, EXCLUDED.ended_at),
+SET intent_id = COALESCE(flights.intent_id, EXCLUDED.intent_id),
+    authorisation_number = COALESCE(flights.authorisation_number, EXCLUDED.authorisation_number),
+    operator_reg = COALESCE(flights.operator_reg, EXCLUDED.operator_reg),
+    ended_at = COALESCE(flights.ended_at, EXCLUDED.ended_at),
     end_reason = COALESCE(flights.end_reason, EXCLUDED.end_reason),
     last_state = CASE WHEN flights.ended_at IS NULL THEN EXCLUDED.last_state ELSE flights.last_state END
 `

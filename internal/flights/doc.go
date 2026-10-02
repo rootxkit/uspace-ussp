@@ -6,8 +6,13 @@
 //     time. A sample that flies an activated intent binds to that
 //     intent's flight; a sample without one (outside U-space airspace,
 //     where internal/telemetry lets it through) to the aircraft's flight
-//     without an intent. A sample of another intent than the running
-//     flight's ends that flight (intent_ended) and starts the next. The
+//     without an intent. A flight without an intent whose samples then
+//     fly an intent (the intent_active projection caught up, or the
+//     intent was activated in flight) becomes that intent's flight: the
+//     same flight id, its later facts carry the intent, and the row's
+//     intent is filled by the next fact (it is never ended for this). A
+//     sample of another intent than the running flight's ends that
+//     flight (intent_ended) and starts the next. The
 //     flight id is a version 4 UUID, which is also the track id
 //     (track_id = flight_id). Tick, once a second: policy
 //     telemetry_lost_s since the newest live sample's captured_at

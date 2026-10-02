@@ -67,6 +67,9 @@ const (
 	CounterResumed   = "flights_telemetry_resumed"
 	CounterEnded     = "flights_ended"
 	CounterOverBound = "flights_over_bound"
+	// CounterIntentBound counts flights without an intent that a sample
+	// bound to one.
+	CounterIntentBound = "flights_intent_bound"
 )
 
 // MaxFlights bounds the flights a binder holds (E-10); it is the
@@ -165,12 +168,16 @@ func (b *Binder) Bind(key, clientID, uasSerial string, intentID, authorisationNu
 		b.flights = map[string]*flight{}
 	}
 	f := b.flights[key]
-	if f != nil && !same(f.intentID, intentID) {
-		reason := EndIntentEnded
-		if f.intentID == nil {
-			reason = EndOperator // a flight without an intent, now flown under one
-		}
-		events = append(events, b.endLocked(f, reason, now))
+	switch {
+	case f != nil && f.intentID == nil && intentID != nil:
+		// A flight without an intent, now flown under one (the
+		// intent_active projection caught up, or the intent was
+		// activated in flight): the same flight, bound to the intent.
+		// Its later facts carry the intent; the recorder fills the row.
+		f.intentID, f.authNo, f.opReg = clone(intentID), clone(authorisationNumber), clone(operatorReg)
+		b.counters().Inc(CounterIntentBound)
+	case f != nil && !same(f.intentID, intentID):
+		events = append(events, b.endLocked(f, EndIntentEnded, now))
 		f = nil
 	}
 	if f == nil {

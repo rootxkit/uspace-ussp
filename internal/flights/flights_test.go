@@ -95,23 +95,38 @@ func TestBindStartsOneFlightPerAircraft(t *testing.T) {
 	}
 }
 
-// A sample of another intent ends the running flight and starts the
-// next: a session flight flown on as an intent ends operator_ended, an
-// intent flight followed by another intent ends intent_ended.
+// A flight without an intent whose samples then fly an intent (the
+// intent_active projection caught up, or the operator activated it in
+// flight) is that intent's flight: the same flight, bound to the intent,
+// never ended operator_ended; its later facts carry the intent. An
+// intent flight followed by another intent ends intent_ended and starts
+// the next (the twin: a real change of intent does end the flight).
 func TestIntentChangeStartsTheNextFlight(t *testing.T) {
 	r := newBinderRig()
+	r.active["i-1"], r.active["i-2"] = true, true
 	session := r.b.Bind("c|A", "c", "A", nil, nil, nil, t0, true)
 	i1 := r.b.Bind("c|A", "c", "A", str("i-1"), str("GE-1"), str("GEO-TEST-1"), t0.Add(time.Second), true)
-	i2 := r.b.Bind("c|A", "c", "A", str("i-2"), nil, nil, t0.Add(2*time.Second), true)
-	if session == i1 || i1 == i2 {
-		t.Fatal("no new flight")
+	if session != i1 {
+		t.Fatalf("a flight without an intent was not bound to the intent: %v", r.kinds())
 	}
-	want := []string{EventStarted, "ended:" + EndOperator, EventStarted, "ended:" + EndIntentEnded, EventStarted}
+	r.clk.add(7 * time.Second)
+	r.b.Tick() // telemetry_lost: a fact of the bound flight
+	i2 := r.b.Bind("c|A", "c", "A", str("i-2"), nil, nil, t0.Add(8*time.Second), true)
+	if i1 == i2 {
+		t.Fatal("no new flight for another intent")
+	}
+	want := []string{EventStarted, EventTelemetryLost, "ended:" + EndIntentEnded, EventStarted}
 	if !equal(r.kinds(), want) {
 		t.Fatalf("events %v", r.kinds())
 	}
-	if r.events[2].Body.AuthorisationNumber == nil || *r.events[2].Body.IntentID != "i-1" {
-		t.Fatalf("intent flight %+v", r.events[2].Body)
+	for _, e := range r.events[1:3] {
+		if e.Body.FlightID != i1 || e.Body.IntentID == nil || *e.Body.IntentID != "i-1" ||
+			e.Body.AuthorisationNumber == nil || e.Body.OperatorReg == nil || !e.Body.StartedAt.Equal(t0) {
+			t.Fatalf("bound flight %+v", e.Body)
+		}
+	}
+	if r.b.Counters.Get(CounterIntentBound) != 1 {
+		t.Fatalf("binding not counted: %v", r.b.Counters.Snapshot())
 	}
 }
 

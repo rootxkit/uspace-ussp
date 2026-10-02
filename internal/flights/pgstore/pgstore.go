@@ -28,7 +28,9 @@ var lastState = map[string]string{
 }
 
 // Record implements flights.Store: the row is created by the first fact
-// to arrive, an ended flight is never reopened, and the fact is audited
+// to arrive, an ended flight is never reopened, a flight recorded
+// without an intent takes the intent of a later fact (the binder bound
+// it to one), and the fact is audited
 // with telemetry-ingest as the system actor.
 func (p Store) Record(ctx context.Context, b flights.Body) error {
 	id, err := store.UUID("flight_id", b.FlightID)
