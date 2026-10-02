@@ -504,6 +504,20 @@ func (q *Queries) IntentList(ctx context.Context, arg IntentListParams) ([]Inten
 	return items, nil
 }
 
+const intentLockedNow = `-- name: IntentLockedNow :one
+SELECT clock_timestamp()::timestamptz AS now
+`
+
+// The database clock as it reads now, not when the transaction began:
+// inside the intents lock it ranks first come, first served (a request
+// that began first but locked second is second in line).
+func (q *Queries) IntentLockedNow(ctx context.Context) (time.Time, error) {
+	row := q.db.QueryRow(ctx, intentLockedNow)
+	var now time.Time
+	err := row.Scan(&now)
+	return now, err
+}
+
 const intentNow = `-- name: IntentNow :one
 
 SELECT now()::timestamptz AS now

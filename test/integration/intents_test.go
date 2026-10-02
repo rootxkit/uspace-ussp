@@ -15,6 +15,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -487,6 +488,70 @@ func TestIntegrationIntentEitherOrder(t *testing.T) {
 			!slices.Equal(reasonsOf(second), []string{"intent_filed_first"}) || !strings.Contains(second.raw, first.str("intent_id")) {
 			t.Fatalf("%s then %s: %s / %s", order[0], order[1], first.raw, second.raw)
 		}
+	}
+}
+
+// clientOf is the client a serial is bound to.
+func clientOf(t *testing.T, serial string) string {
+	t.Helper()
+	id := ""
+	if err := relOwner(t).QueryRow(context.Background(), "SELECT client_id FROM client_serial_bindings WHERE serial = $1", serial).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// First come, first served is ranked when the intents lock is held, not
+// when the transaction began. Two overlapping requests race: the first
+// begins its transaction first but waits (the hook holds it between
+// BEGIN and the advisory lock) while the second begins later, takes the
+// lock, decides and commits. The first then locks and decides: it is
+// second in line, so it is refused naming the other; exactly one of the
+// two is authorised, and nothing is flagged.
+func TestIntegrationIntentFirstComeRanksAfterTheLock(t *testing.T) {
+	g := newIntentRig(t)
+	g.publishAll(nil, nil, nil)
+	number, serial, _ := g.operatorClient()
+	clientID := clientOf(t, serial)
+	ctx := context.Background()
+	b := g.box(0, 0, 0.01)
+	early, late := mustJSON(t, g.request(number, serial, "race-early", b)), mustJSON(t, g.request(number, serial, "race-late", b))
+
+	began, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	slow := *g.svc
+	slow.Store = intentstore.Store{S: appStore(t), BeforeLock: func(context.Context) {
+		once.Do(func() { close(began) })
+		<-release
+	}}
+	type result struct {
+		d   intent.Decision
+		err error
+	}
+	first := make(chan result, 1)
+	go func() {
+		d, _, err := slow.Submit(ctx, clientID, early)
+		first <- result{d, err}
+	}()
+	<-began
+	// The first transaction has begun; let the database clock move on so
+	// the two cannot share a timestamp.
+	time.Sleep(20 * time.Millisecond)
+	second, _, err := g.svc.Submit(ctx, clientID, late)
+	close(release)
+	f := <-first
+	if err != nil || f.err != nil {
+		t.Fatalf("errors: %v / %v", err, f.err)
+	}
+	if second.Decision != intent.DecisionAuthorised || f.d.Decision != intent.DecisionRejected ||
+		len(f.d.Conflicts) != 1 || f.d.Conflicts[0].Reason != intent.ReasonIntentFirstCome || f.d.Conflicts[0].Ref != second.IntentID {
+		t.Fatalf("locked first %s %+v / began first %s %+v", second.Decision, second.Conflicts, f.d.Decision, f.d.Conflicts)
+	}
+	authorised := count(t, relOwner(t), "SELECT count(*) FROM operational_intents WHERE id = ANY($1::uuid[]) AND decision = 'authorised'",
+		[]string{second.IntentID, f.d.IntentID})
+	flagged := count(t, relOwner(t), "SELECT count(*) FROM operational_intents WHERE id = $1 AND update_required IS NOT NULL", second.IntentID)
+	if authorised != 1 || flagged != 0 {
+		t.Fatalf("%d authorised, %d flagged", authorised, flagged)
 	}
 }
 

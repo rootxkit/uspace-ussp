@@ -216,10 +216,17 @@ and where it is stricter than the brief; each is in the PR body as well.
   separation of the buffer is a conflict.
 - First come, first served ranks on `filed_at`, when the volumes judged
   were filed: a modification re-ranks (an operator cannot file early and
-  then move into others' space). Equal instants fall back to the id.
-  Peers' intents rank as filed when fetched (so they precede ours at
-  equal priority); a peer intent that cannot be judged refuses the
-  decision with 503.
+  then move into others' space). `filed_at` is `clock_timestamp()` read
+  after the intents lock is held, never the transaction's `now()`: a
+  request that began first but locked second is second in line (review
+  fix; `TestIntegrationIntentFirstComeRanksAfterTheLock` races the two).
+  At equal priority a new request never takes space an accepted intent
+  holds, whatever the ranks say (a clock stepped back, an id tie): it is
+  refused with `intent_filed_first` and counted as
+  `intent_first_come_rank_inverted`; only priority flags another
+  authorisation. Peers' intents rank as filed when fetched (so they
+  precede ours at equal priority); a peer intent that cannot be judged
+  refuses the decision with 503.
 - `special_operation` is self-declared by the operator (spec gap: the
   regulation's special operations should be verified by the authority);
   the priority follows the flight type and a stated priority must equal

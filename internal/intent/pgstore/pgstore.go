@@ -27,7 +27,13 @@ import (
 )
 
 // Store is intent.Store on PostgreSQL.
-type Store struct{ S *store.Store }
+type Store struct {
+	S *store.Store
+	// BeforeLock, when set, runs inside each InTx transaction after it
+	// began and before it asks for the intents lock (the integration
+	// tests hold a transaction there to race two decisions).
+	BeforeLock func(ctx context.Context)
+}
 
 var _ intent.Store = Store{}
 
@@ -112,6 +118,9 @@ func (p Store) List(ctx context.Context, operatorID string, f intent.ListFilter)
 // InTx runs fn in one transaction holding store.LockIntents.
 func (p Store) InTx(ctx context.Context, fn func(ctx context.Context, tx intent.Tx) error) error {
 	return p.S.Tx(ctx, func(q *relational.Queries) error {
+		if p.BeforeLock != nil {
+			p.BeforeLock(ctx)
+		}
 		if err := store.Lock(ctx, q, store.LockIntents); err != nil {
 			return err
 		}
@@ -152,8 +161,10 @@ func recordOf(r row) (*intent.Record, error) {
 
 type tx struct{ q *relational.Queries }
 
-// Now is the database clock inside the transaction.
-func (t tx) Now(ctx context.Context) (time.Time, error) { return t.q.IntentNow(ctx) }
+// Now is the database clock when it is read (clock_timestamp), not when
+// the transaction began: InTx asks for it after the intents lock, so the
+// rank it gives follows the order in which decisions hold the lock.
+func (t tx) Now(ctx context.Context) (time.Time, error) { return t.q.IntentLockedNow(ctx) }
 
 // Overlapping reads the active, non-exempt intents near the boxes.
 func (t tx) Overlapping(ctx context.Context, boxes []geodesy.BBox, distM float64, from, to time.Time, excludeID string, limit int) ([]intent.Record, error) {

@@ -618,7 +618,12 @@ func (d *Decider) deconflict(a *Assessment, id string, rankAt time.Time, others 
 	var flagged []string
 	for _, c := range cs {
 		ov := overlapOf(c.Overlap)
-		if c.MineWins {
+		// Only priority lets a request take space another intent already
+		// holds (Art. 10(8), (10)). At equal priority the others were
+		// accepted before this decision, so they came first whatever the
+		// ranks say (a clock stepped back, a tie broken on the id): the
+		// request is refused, never granted over them.
+		if c.MineWins && c.Rule == deconflict.RulePriority {
 			flagged = append(flagged, c.OtherID)
 			d.count(ReasonIntentFlagged)
 			a.conflict(Conflict{Kind: KindIntent, Reason: ReasonIntentFlagged, Effect: EffectFlagsOther, Ref: c.OtherID, Volume: ptr(c.MineVolume), Overlap: ov,
@@ -628,6 +633,9 @@ func (d *Decider) deconflict(a *Assessment, id string, rankAt time.Time, others 
 		reason := ReasonIntentFirstCome
 		if c.Rule == deconflict.RulePriority {
 			reason = ReasonIntentPriority
+		}
+		if c.MineWins {
+			d.count("first_come_rank_inverted")
 		}
 		d.count(reason)
 		a.conflict(Conflict{Kind: KindIntent, Reason: reason, Effect: EffectRejects, Ref: c.OtherID, Item: ptr(5), Volume: ptr(c.MineVolume), Overlap: ov,

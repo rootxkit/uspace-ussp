@@ -4,6 +4,12 @@
 -- name: IntentNow :one
 SELECT now()::timestamptz AS now;
 
+-- name: IntentLockedNow :one
+-- The database clock as it reads now, not when the transaction began:
+-- inside the intents lock it ranks first come, first served (a request
+-- that began first but locked second is second in line).
+SELECT clock_timestamp()::timestamptz AS now;
+
 -- name: IntentOwner :one
 SELECT c.client_id, c.operator_id, c.status AS client_status, o.status AS operator_status,
        o.authority_registration_number

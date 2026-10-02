@@ -184,6 +184,9 @@ type Store interface {
 
 // Tx is the store inside InTx.
 type Tx interface {
+	// Now is the database clock as read now, inside the intents lock
+	// (never the transaction's start): first come, first served ranks on
+	// it, so a request that began first but locked second ranks second.
 	Now(ctx context.Context) (time.Time, error)
 	// Overlapping are the active, non-exempt local intents whose
 	// envelope is within distM of boxes and whose window overlaps

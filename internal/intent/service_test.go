@@ -126,6 +126,38 @@ func TestTwoOverlappingIntentsEitherOrder(t *testing.T) {
 	}
 }
 
+// First come, first served never lets a new request take the space of
+// an intent already accepted at its priority, whatever the two ranks
+// say: a clock that steps back (or ties, broken on the id) must not grant
+// the later request and flag the earlier one. Twin: the same pair one
+// second apart in the usual order refuses the later one too, and a
+// request that does not overlap is authorised.
+func TestFirstComeNeverGrantsOverAnAcceptedIntent(t *testing.T) {
+	s, st, _ := newService(newRig())
+	first, _, err := submit(t, s, with(baseRequest(), "client_ref", "first"))
+	if err != nil || first.Decision != DecisionAuthorised {
+		t.Fatalf("first: %v %s", err, first.Decision)
+	}
+	st.now = st.now.Add(-time.Second) // the database clock stepped back
+	second, _, err := submit(t, s, with(baseRequest(), "client_ref", "second"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Decision != DecisionRejected || len(second.Conflicts) != 1 || second.Conflicts[0].Reason != ReasonIntentFirstCome ||
+		second.Conflicts[0].Ref != first.IntentID || len(st.flags) != 0 {
+		t.Fatalf("second: %s %+v flags %v", second.Decision, second.Conflicts, st.flags)
+	}
+	st.now = st.now.Add(2 * time.Second)
+	third, _, err := submit(t, s, with(baseRequest(), "client_ref", "third"))
+	if err != nil || third.Decision != DecisionRejected || third.Conflicts[0].Reason != ReasonIntentFirstCome {
+		t.Fatalf("third: %v %s %+v", err, third.Decision, third.Conflicts)
+	}
+	clear := wireVolumeJSON(squareWire(42.70, 44.80, 0.01), 500, 550, t0, t1)
+	if d, _, err := submit(t, s, with(baseRequest(), "client_ref", "clear", "volumes", []any{clear})); err != nil || d.Decision != DecisionAuthorised {
+		t.Fatalf("clear: %v %s", err, d.Decision)
+	}
+}
+
 // S-M1: a special operation wins priority over an authorised normal
 // flight, which is flagged for an update; the normal flight filed after
 // a special operation is refused.
