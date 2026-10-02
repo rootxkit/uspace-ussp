@@ -76,7 +76,10 @@ func TestValuesJSONNamesCarryUnits(t *testing.T) {
 		t.Fatalf("%d JSON fields for %d struct fields", len(m), reflect.TypeFor[Values]().NumField())
 	}
 	for k := range m {
-		if !strings.HasSuffix(k, "_m") && !strings.HasSuffix(k, "_s") && !strings.HasSuffix(k, "_days") {
+		// _priority and _count are dimensionless (an ordinal, a number of
+		// things); every other name carries its unit.
+		if !strings.HasSuffix(k, "_m") && !strings.HasSuffix(k, "_s") && !strings.HasSuffix(k, "_days") &&
+			!strings.HasSuffix(k, "_priority") && !strings.HasSuffix(k, "_count") {
 			t.Errorf("%s has no unit", k)
 		}
 	}
@@ -97,6 +100,11 @@ func TestValidateNamesEveryRefusedField(t *testing.T) {
 	v.RecordRetentionDays = 0
 	v.OperatorTokenTTLS = MaxOperatorTokenTTLS + 1
 	v.ClientSecretOverlapS = -1
+	v.SpecialOperationPriority = 0
+	v.IntentOpenMaxCount = 0
+	v.DeconflictBufferM = -1
+	v.DeconflictVerticalBufferM = math.NaN()
+	v.ActivationLeadS = 0
 	err := v.Validate()
 	var fields []string
 	var j interface{ Unwrap() []error }
@@ -110,7 +118,8 @@ func TestValidateNamesEveryRefusedField(t *testing.T) {
 		}
 		fields = append(fields, fe.Field)
 	}
-	want := "deviation_h_m,cpa_horizontal_min_m,cpa_vertical_min_m,cpa_tcpa_max_s,telemetry_retention_days,record_retention_days,audit_retention_days,operator_token_ttl_s,client_secret_overlap_s"
+	want := "deviation_h_m,cpa_horizontal_min_m,cpa_vertical_min_m,activation_lead_s,cpa_tcpa_max_s,deconflict_buffer_m,deconflict_vertical_buffer_m," +
+		"telemetry_retention_days,record_retention_days,audit_retention_days,operator_token_ttl_s,special_operation_priority,intent_open_max_count,client_secret_overlap_s"
 	if strings.Join(fields, ",") != want {
 		t.Errorf("fields %v, want %s", fields, want)
 	}
@@ -119,6 +128,7 @@ func TestValidateNamesEveryRefusedField(t *testing.T) {
 	v = Defaults()
 	v.CPATCPAMaxS, v.CPANeighbourMaxAgeS, v.TelemetryRetentionDays = 0, 0, TelemetryRetentionFloorDays
 	v.OperatorTokenTTLS, v.ClientSecretOverlapS = MaxOperatorTokenTTLS, 0
+	v.DeconflictBufferM, v.DeconflictVerticalBufferM, v.SpecialOperationPriority = 0, 0, 1
 	if err := v.Validate(); err != nil {
 		t.Errorf("boundary values refused: %v", err)
 	}
