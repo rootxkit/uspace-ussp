@@ -9,6 +9,15 @@ additively within `/v1`.
 
 ### Changed
 
+- WP-8: uspace-core v1.3.0. `httpx.Access.WebSocket` (an upgrade that
+  authenticates itself, M22) and `auth.WSAuth.Admit` (a 503 with
+  Retry-After before the upgrade, B-10); `bus.Mirror` (every key of a KV
+  bucket with its age), `bus.StreamSource.NeverDelivered`, the FLIGHT
+  stream and `flight.v1.<event>.<flight_id>`; `registry.Keys`;
+  `cis.FeatureZones`; telemetry-ingest reads `USSP_ISSUER_URL`. The api
+  server is generated without the telemetry tag, which telemetry-ingest
+  serves from its own generated interface (`internal/telemetry/gen`).
+
 - WP-6: api projects policy, source_control, cis_current,
   registry_validity and client_bindings to NATS KV through the bounded
   `bus.Projector` instead of in-process stand-ins, so a write the KV
@@ -28,6 +37,47 @@ additively within `/v1`.
   builder moves to `internal/app/proc` (rid-sp verifies tokens too).
 
 ### Added
+
+- WP-8: telemetry ingest and flights. `WS /v1/telemetry` (bearer
+  `ussp.telemetry`, the console frame: `telemetry/v1` bodies in,
+  `console/status/v1` frames out and nothing else, `acked_seq` per
+  serial) and `POST /v1/telemetry/batch` (at most 1 s of samples per
+  serial, placed against `sent_at`, 202 only for what reached the bus).
+  Bound serials only (`refused_unbound`), one socket per aircraft
+  (`refused_replaced`, B-14), 2 Hz live and 20 Hz backlog per aircraft,
+  replays acknowledged and published once, a disabled source refused
+  with 503 and Retry-After and closed with 1013 (B-10), a teleport above
+  100 m/s flagged `anomaly: teleport` (T3). Time placement through
+  uspace-core (`timeplace.PlaceNetwork` for a sample against its
+  `sent_at` or our clock, `PlaceBatch` for a batch without one) with the
+  aircraft's anchor so input read late is placed by its own time (T-11,
+  SC-15), `backlog` from the client or from the placement (T-04), order
+  per live and backlog stream (T-03, T-13); AMSL through the geoid and
+  `rid.AltitudeSelector` (R-07, R-08; `geoid: down, missing` on
+  `/readyz`); identification by `identify.ResolveBound` over the
+  registry projection, changes on `ident.v1`; inside U-space airspace an
+  activated intent of the aircraft or `refused_no_authorisation` /
+  `refused_intent_state`. Tracks on `trk.v1` (`track/telemetry/v1`,
+  trust authenticated, source operator_ws); the publisher's bounded
+  memory spills to the `ingest.v1.<cell3>` work queue, whose drain
+  replays as backlog and sheds the oldest with a gap record on `src.v1`
+  (also what the queue removed unread); every client's
+  `source/status/v1` on `src.v1.operator_ws.<client>` every 2 s.
+  `internal/flights`: the flight binder (`started`, `telemetry_lost`,
+  `telemetry_resumed`, `ended` on `flight.v1`) and api's recorder of the
+  flights table. Schemas `telemetry/v1`, `ident/change/v1`,
+  `flight/event/v1` (owned) and pinned copies of the lab's `envelope/v1`,
+  `track/telemetry/v1`, `source/status/v1`, `console/status/v1`
+  (`schemas/CONSUMED`); policy values `backlog_after_s`,
+  `flight_end_after_s`, `ingest_queue_s`, `ingest_backlog_max_s`,
+  `telemetry_rate_hz`, `telemetry_backlog_rate_hz`,
+  `telemetry_dedupe_s`, `telemetry_ahead_tolerance_s`,
+  `telemetry_anchor_max_age_s`, `telemetry_batch_span_s`,
+  `pressure_fallback_accuracy_code`, `pressure_hold_s`,
+  `teleport_speed_ms`; the simulated operator client
+  `internal/testfakes/operator`. Measured in the integration suite: 100
+  samples/s for 60 s, 6000 of 6000 rows; after a 60 s outage of 20
+  aircraft the drain ran at 599 samples/s, 29.9x the intake.
 
 - WP-7: flight authorisation. `POST`, `GET`, list and `PATCH
   /v1/intents` (scope `ussp.intents`, the operator's own intents only):

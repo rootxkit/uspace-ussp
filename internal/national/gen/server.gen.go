@@ -265,6 +265,144 @@ func (e SerialBindingRequestClassLabel) Valid() bool {
 	}
 }
 
+// Defines values for TelemetryFrameAccuracyH.
+const (
+	HA005NM    TelemetryFrameAccuracyH = "HA005NM"
+	HA01NM     TelemetryFrameAccuracyH = "HA01NM"
+	HA03NM     TelemetryFrameAccuracyH = "HA03NM"
+	HA05NM     TelemetryFrameAccuracyH = "HA05NM"
+	HA10NM     TelemetryFrameAccuracyH = "HA10NM"
+	HA10NMPlus TelemetryFrameAccuracyH = "HA10NMPlus"
+	HA10m      TelemetryFrameAccuracyH = "HA10m"
+	HA1NM      TelemetryFrameAccuracyH = "HA1NM"
+	HA1m       TelemetryFrameAccuracyH = "HA1m"
+	HA2NM      TelemetryFrameAccuracyH = "HA2NM"
+	HA30m      TelemetryFrameAccuracyH = "HA30m"
+	HA3m       TelemetryFrameAccuracyH = "HA3m"
+	HA4NM      TelemetryFrameAccuracyH = "HA4NM"
+	HAUnknown  TelemetryFrameAccuracyH = "HAUnknown"
+)
+
+// Valid indicates whether the value is a known member of the TelemetryFrameAccuracyH enum.
+func (e TelemetryFrameAccuracyH) Valid() bool {
+	switch e {
+	case HA005NM:
+		return true
+	case HA01NM:
+		return true
+	case HA03NM:
+		return true
+	case HA05NM:
+		return true
+	case HA10NM:
+		return true
+	case HA10NMPlus:
+		return true
+	case HA10m:
+		return true
+	case HA1NM:
+		return true
+	case HA1m:
+		return true
+	case HA2NM:
+		return true
+	case HA30m:
+		return true
+	case HA3m:
+		return true
+	case HA4NM:
+		return true
+	case HAUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TelemetryFrameAccuracyV.
+const (
+	VA10m      TelemetryFrameAccuracyV = "VA10m"
+	VA150m     TelemetryFrameAccuracyV = "VA150m"
+	VA150mPlus TelemetryFrameAccuracyV = "VA150mPlus"
+	VA1m       TelemetryFrameAccuracyV = "VA1m"
+	VA25m      TelemetryFrameAccuracyV = "VA25m"
+	VA3m       TelemetryFrameAccuracyV = "VA3m"
+	VA45m      TelemetryFrameAccuracyV = "VA45m"
+	VAUnknown  TelemetryFrameAccuracyV = "VAUnknown"
+)
+
+// Valid indicates whether the value is a known member of the TelemetryFrameAccuracyV enum.
+func (e TelemetryFrameAccuracyV) Valid() bool {
+	switch e {
+	case VA10m:
+		return true
+	case VA150m:
+		return true
+	case VA150mPlus:
+		return true
+	case VA1m:
+		return true
+	case VA25m:
+		return true
+	case VA3m:
+		return true
+	case VA45m:
+		return true
+	case VAUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TelemetryFrameHeightRef.
+const (
+	GroundLevel     TelemetryFrameHeightRef = "GroundLevel"
+	LessThannil     TelemetryFrameHeightRef = "<nil>"
+	TakeoffLocation TelemetryFrameHeightRef = "TakeoffLocation"
+)
+
+// Valid indicates whether the value is a known member of the TelemetryFrameHeightRef enum.
+func (e TelemetryFrameHeightRef) Valid() bool {
+	switch e {
+	case GroundLevel:
+		return true
+	case LessThannil:
+		return true
+	case TakeoffLocation:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TelemetryFrameStatus.
+const (
+	Airborne              TelemetryFrameStatus = "Airborne"
+	Emergency             TelemetryFrameStatus = "Emergency"
+	Ground                TelemetryFrameStatus = "Ground"
+	RemoteIDSystemFailure TelemetryFrameStatus = "RemoteIDSystemFailure"
+	Undeclared            TelemetryFrameStatus = "Undeclared"
+)
+
+// Valid indicates whether the value is a known member of the TelemetryFrameStatus enum.
+func (e TelemetryFrameStatus) Valid() bool {
+	switch e {
+	case Airborne:
+		return true
+	case Emergency:
+		return true
+	case Ground:
+		return true
+	case RemoteIDSystemFailure:
+		return true
+	case Undeclared:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TokenRequestGrantType.
 const (
 	ClientCredentials TokenRequestGrantType = "client_credentials"
@@ -787,6 +925,100 @@ type Session struct {
 
 	// Token The session JWT, also set as the uspace_session cookie; the BFF carries it as a bearer.
 	Token string `json:"token"`
+}
+
+// TelemetryBatch defines model for TelemetryBatch.
+type TelemetryBatch struct {
+	Frames []TelemetryFrame `json:"frames"`
+
+	// SentAt The client's clock when it sent the batch (RFC 3339 in UTC with
+	// Z). With it every sample is placed at receipt - (sent_at - ts),
+	// so the client's clock error cancels and a drained backlog keeps
+	// its own times (T-02); without it the batch rule places the
+	// samples against the newest one.
+	SentAt *time.Time `json:"sent_at,omitempty"`
+}
+
+// TelemetryBatchResult defines model for TelemetryBatchResult.
+type TelemetryBatchResult struct {
+	// Accepted Published or durably queued (B-05).
+	Accepted        int                `json:"accepted"`
+	Dropped         int                `json:"dropped"`
+	Duplicate       int                `json:"duplicate"`
+	NotAcknowledged int                `json:"not_acknowledged"`
+	Outcomes        []TelemetryOutcome `json:"outcomes"`
+	Refused         int                `json:"refused"`
+}
+
+// TelemetryFrame telemetry/v1 (schemas/telemetry/v1/schema.json, the source of truth).
+type TelemetryFrame struct {
+	AccuracyH    TelemetryFrameAccuracyH `json:"accuracy_h"`
+	AccuracyV    TelemetryFrameAccuracyV `json:"accuracy_v"`
+	AltPressureM *float64                `json:"alt_pressure_m,omitempty"`
+	AltWgs84M    *float64                `json:"alt_wgs84_m"`
+	Backlog      *bool                   `json:"backlog,omitempty"`
+	Emergency    bool                    `json:"emergency"`
+	End          *bool                   `json:"end,omitempty"`
+
+	// Epoch The client's run of its seq counter: a new one whenever seq starts again.
+	Epoch              *string                    `json:"epoch,omitempty"`
+	HeightM            *float64                   `json:"height_m"`
+	HeightRef          *TelemetryFrameHeightRef   `json:"height_ref"`
+	IntentId           *openapi_types.UUID        `json:"intent_id,omitempty"`
+	OperatorPosition   *TelemetryOperatorPosition `json:"operator_position,omitempty"`
+	Position           TelemetryPosition          `json:"position"`
+	Seq                int64                      `json:"seq"`
+	Serial             string                     `json:"serial"`
+	SpeedMs            *float64                   `json:"speed_ms"`
+	Status             TelemetryFrameStatus       `json:"status"`
+	TimestampAccuracyS *float64                   `json:"timestamp_accuracy_s"`
+	TrackDeg           *float64                   `json:"track_deg"`
+
+	// Ts The client's clock, RFC 3339 in UTC with Z.
+	Ts       time.Time `json:"ts"`
+	VspeedMs *float64  `json:"vspeed_ms"`
+}
+
+// TelemetryFrameAccuracyH defines model for TelemetryFrame.AccuracyH.
+type TelemetryFrameAccuracyH string
+
+// TelemetryFrameAccuracyV defines model for TelemetryFrame.AccuracyV.
+type TelemetryFrameAccuracyV string
+
+// TelemetryFrameHeightRef defines model for TelemetryFrame.HeightRef.
+type TelemetryFrameHeightRef string
+
+// TelemetryFrameStatus defines model for TelemetryFrame.Status.
+type TelemetryFrameStatus string
+
+// TelemetryOperatorPosition defines model for TelemetryOperatorPosition.
+type TelemetryOperatorPosition struct {
+	AltWgs84M *float64 `json:"alt_wgs84_m,omitempty"`
+	Lat       float64  `json:"lat"`
+	Lng       float64  `json:"lng"`
+}
+
+// TelemetryOutcome One sample that was not accepted, by its index in the request.
+type TelemetryOutcome struct {
+	Detail *string `json:"detail,omitempty"`
+	Index  int     `json:"index"`
+
+	// Outcome duplicate (taken before: acknowledged), duplicate_pending (taken
+	// before and still on its way: send it again later),
+	// refused_invalid, refused_unbound, refused_bindings_unavailable,
+	// refused_source_disabled, refused_capacity,
+	// rejected_out_of_order, rejected_too_old, refused_intent_state,
+	// refused_no_authorisation, refused_batch_span, dropped_rate,
+	// dropped_queue_full or not_acknowledged (send again).
+	Outcome string  `json:"outcome"`
+	Seq     *int64  `json:"seq,omitempty"`
+	Serial  *string `json:"serial,omitempty"`
+}
+
+// TelemetryPosition defines model for TelemetryPosition.
+type TelemetryPosition struct {
+	Lat float64 `json:"lat"`
+	Lng float64 `json:"lng"`
 }
 
 // TokenRequest defines model for TokenRequest.

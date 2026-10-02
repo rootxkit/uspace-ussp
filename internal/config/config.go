@@ -84,7 +84,7 @@ type Config struct {
 	MTLSCAFile              string   `env:"USSP_MTLS_CA_FILE" by:"monitor" help:"CA bundle (PEM) the ANSP's certificate is checked against"`
 	IssuerKeyFile           string   `env:"USSP_ISSUER_KEY_FILE" by:"api" help:"RSA key (PEM, at least 2048 bits) of this USSP's own token issuer (scripts/gen-issuer-key.sh); unset, api issues no token and starts no session, and says so on /readyz"`
 	IssuerPreviousKeyFile   string   `env:"USSP_ISSUER_PREVIOUS_KEY_FILE" by:"api" help:"the previous issuer key (PEM) during a rotation: published in the JWKS and accepted, never used to sign"`
-	IssuerURL               string   `env:"USSP_ISSUER_URL" by:"api" kind:"url" help:"iss of this USSP's own tokens; default https:// followed by the first USSP_AUDIENCES entry"`
+	IssuerURL               string   `env:"USSP_ISSUER_URL" by:"api,telemetry-ingest" kind:"url" help:"iss of this USSP's own tokens; default https:// followed by the first USSP_AUDIENCES entry; telemetry-ingest honours operator scopes only on tokens of this iss (list it in USSP_TOKEN_ISSUERS with api's JWKS)"`
 	MFAKeyFile              string   `env:"USSP_MFA_KEY_FILE" by:"api" help:"file holding the base64 of a 32-byte AES-256-GCM key that seals staff TOTP secrets; unset, a staff admin cannot sign in"`
 	SessionTTLS             int      `env:"USSP_SESSION_TTL_S" default:"43200" by:"api" min:"300" max:"43200" unit:"s" help:"lifetime of a portal or console session (exp; at most 12 h, M20)"`
 	SessionIdleS            int      `env:"USSP_SESSION_IDLE_S" default:"1800" by:"api" min:"60" max:"43200" unit:"s" help:"a session unused this long ends"`

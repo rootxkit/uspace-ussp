@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/source/status/v1.json",
+  "title": "source/status/v1",
+  "description": "An adapter's status, every 2 s (spec 04 §3.6), in the common envelope. Produced by every system (decision record M14). A disabled source says who disabled it and how; it is never merely silent (02 F9, LESSONS B-11). The body is also the item of `console/status/v1` `sources[]`.",
+  "allOf": [{ "$ref": "https://schemas.uspace.ge/envelope/v1.json" }],
+  "properties": {
+    "schema": { "const": "source/status/v1" },
+    "body": { "$ref": "#/$defs/body" }
+  },
+  "$defs": {
+    "body": {
+      "type": "object",
+      "required": ["source", "source_instance", "state", "since", "age_s", "disabled_by", "counters"],
+      "properties": {
+        "source": { "$ref": "https://schemas.uspace.ge/envelope/v1.json#/$defs/source" },
+        "source_instance": {
+          "description": "The instance (client id, receiver id, provider id); null for the status of the adapter type as a whole.",
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "state": {
+          "description": "`unknown` is the state a follower holds before it has read any control state; it is treated as enabled and logged (04 §3.6, LESSONS B-09).",
+          "enum": ["live", "stale", "disabled", "down", "unknown"]
+        },
+        "since": {
+          "description": "When the source entered `state`.",
+          "$ref": "https://schemas.uspace.ge/envelope/v1.json#/$defs/timestamp"
+        },
+        "age_s": {
+          "description": "Seconds since the newest record from this source, on this system's clock; null when it has never been heard.",
+          "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+        },
+        "disabled_by": {
+          "description": "How the source is disabled: by type, by instance or by a default-deny state (knowledge/vectors/source_control.json `why_disabled`). Non-null exactly when `state` is `disabled`.",
+          "enum": ["type", "instance", "default_deny", null]
+        },
+        "disabled_by_who": {
+          "description": "The person who disabled it, as the audit log names them (02 F9 \"disabled by <who>\").",
+          "type": ["string", "null"]
+        },
+        "counters": {
+          "description": "Monotonic counters since the adapter started: at least accepted and refused (04 §3.6); further non-negative integer counters (`dropped_*`, `gap`, ...) may be added.",
+          "type": "object",
+          "required": ["accepted", "refused"],
+          "properties": {
+            "accepted": { "type": "integer", "minimum": 0 },
+            "refused": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "if": {
+        "properties": { "state": { "const": "disabled" } },
+        "required": ["state"]
+      },
+      "then": {
+        "properties": { "disabled_by": { "enum": ["type", "instance", "default_deny"] } }
+      },
+      "else": {
+        "properties": { "disabled_by": { "const": null } }
+      }
+    }
+  }
+}

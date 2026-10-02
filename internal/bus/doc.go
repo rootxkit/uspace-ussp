@@ -5,8 +5,8 @@
 //     given up on (B-08): the process starts while NATS is down, says
 //     "nats: down" on /readyz and reconnects in the background;
 //   - Topology, Ensure, Verify, Maintainer: the streams TRK, MAN, PEER,
-//     ALRT, CONF, IDENT, INTENT, CIS, TRAFFIC, INGEST and the KV buckets
-//     cis_current, policy, source_control, registry_validity,
+//     ALRT, CONF, IDENT, INTENT, CIS, TRAFFIC, INGEST, FLIGHT and the KV
+//     buckets cis_current, policy, source_control, registry_validity,
 //     client_bindings, intent_active, created when missing by whichever
 //     process gets there first and never changed in place; what differs
 //     from this build is drift on /readyz;
@@ -22,9 +22,14 @@
 //     KV cannot take it (B-09);
 //   - Follower: a bucket key followed by watch, push and a re-read every
 //     300 s, read with its age; a missing bucket is "no value", never a
-//     refusal (SC-22).
+//     refusal (SC-22);
+//   - Mirror: every key of a bucket (client_bindings, intent_active,
+//     registry_validity, cis_current) followed by one watch and read with
+//     its age, for the hot path.
 //
 // TRK, MAN and PEER capture the core subjects the hot path publishes so
 // tsdb-writer can read them durably; MAN and PEER are this package's
 // addition to PLAN §7's table, which lists those subjects as core only.
+// FLIGHT (flight.v1.<event>.<flight_id>) is WP-8's: the flight facts
+// PLAN §3.2 sends from the hot path to the control plane on JetStream.
 package bus

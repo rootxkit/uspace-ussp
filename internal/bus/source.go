@@ -183,4 +183,36 @@ func holesOf(jumps []Jump, first uint64, deleted []uint64) []Hole {
 	return out
 }
 
+// NeverDelivered is the range of stream sequences the stream removed
+// before the consumer was delivered them: above the highest sequence the
+// consumer was ever delivered and below the stream's first sequence. On a
+// work queue (INGEST) that is every message aged out or purged unread,
+// whichever replica reads the shared consumer, so a loss nobody saw is
+// still counted (05 §5, B-13). from > to means none.
+func (s *StreamSource) NeverDelivered(ctx context.Context) (from, to uint64, err error) {
+	st, c, err := s.get(ctx)
+	if err != nil {
+		return 1, 0, err
+	}
+	ci, err := c.Info(ctx)
+	if err != nil {
+		s.reset()
+		return 1, 0, err
+	}
+	si, err := st.Info(ctx)
+	if err != nil {
+		s.reset()
+		return 1, 0, err
+	}
+	return neverDelivered(ci.Delivered.Stream, si.State.FirstSeq)
+}
+
+// neverDelivered is the range (delivered, first) exclusive at both ends.
+func neverDelivered(delivered, first uint64) (from, to uint64, err error) {
+	if first <= delivered+1 {
+		return 1, 0, nil
+	}
+	return delivered + 1, first - 1, nil
+}
+
 var _ Source = (*StreamSource)(nil)

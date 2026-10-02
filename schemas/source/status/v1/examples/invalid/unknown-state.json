@@ -1,0 +1,23 @@
+{
+  "schema": "source/status/v1",
+  "msg_id": "01K6NPZX45HY43KWJRP1XPA7Z3",
+  "producer": "authority/rid-ingest",
+  "ts": "2026-10-02T09:15:06.000Z",
+  "rx_ts": "2026-10-02T09:15:06.000Z",
+  "captured_at": "2026-10-02T09:15:06.000Z",
+  "time_source": "system",
+  "backlog": false,
+  "body": {
+    "source": "direct_rid",
+    "source_instance": "rx-tbs-01",
+    "state": "lagging",
+    "since": "2026-10-02T06:00:12.000Z",
+    "age_s": 0.4,
+    "disabled_by": null,
+    "counters": {
+      "accepted": 182344,
+      "refused": 12,
+      "dropped_backlog": 0
+    }
+  }
+}

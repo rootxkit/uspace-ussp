@@ -1,8 +1,10 @@
 # oapi-codegen configuration for internal/national/gen: the net/http
 # server interface (Go 1.22 routing) and the models, from
 # api/openapi.yaml. No strict server: handlers write their own bodies
-# (cookies, RFC 6749 errors) through internal/httpx. Run through
-# `make generate`; never edit the generated file.
+# (cookies, RFC 6749 errors) through internal/httpx. The telemetry tag
+# is served by telemetry-ingest, from its own generated interface
+# (api/oapi-codegen.telemetry.yaml). Run through `make generate`; never
+# edit the generated file.
 package: gen
 generate:
   std-http-server: true
@@ -11,3 +13,4 @@ generate:
   embedded-spec: false
 output-options:
   skip-prune: true
+  exclude-tags: [telemetry]

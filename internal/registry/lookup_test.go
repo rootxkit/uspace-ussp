@@ -185,3 +185,19 @@ func TestFleetInputMapping(t *testing.T) {
 		t.Fatal("a stranger is ours")
 	}
 }
+
+// Keys names exactly the entries the Lookup reads: with fresh answers
+// under them the bound aircraft resolves registered; without the
+// aircraft's it is registry_unavailable (E-01 pair).
+func TestKeysAreWhatTheLookupReads(t *testing.T) {
+	keys := Keys(fleet1)
+	if len(keys) != 2 || keys[0].Entity != EntityOperator || keys[1].Entity != EntityUAS {
+		t.Fatalf("keys %+v", keys)
+	}
+	cs := make([]Cached, 0, len(keys))
+	for _, k := range keys {
+		cs = append(cs, fresh(k.Entity, k.Key, StatusValid, 1))
+	}
+	want(t, NewLookup(fleet1, cs, true, defaultTTL).ResolveBound("d-1"), core.IdentRegistered, core.ReasonSessionBinding)
+	want(t, NewLookup(fleet1, cs[:1], true, defaultTTL).ResolveBound("d-1"), core.IdentUnknownOperator, core.ReasonRegistryUnavailable)
+}

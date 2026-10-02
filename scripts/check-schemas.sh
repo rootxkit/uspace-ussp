@@ -18,4 +18,6 @@ if [ -z "$summary" ]; then
   exit 1
 fi
 "$GO" test -count=1 -run 'SchemaExamplesRoundTrip' ./internal/intent/ >/dev/null
-echo "check-schemas:${summary#*schemas_test.go:*:}; the intent examples round-trip through the Go types"
+"$GO" test -count=1 -run 'DecoderAgreesWithTheSchemaExamples|MessagesValidateAgainstTheirSchemas' ./internal/telemetry/ >/dev/null
+"$GO" test -count=1 -run 'EventsValidateAndDecode' ./internal/flights/ >/dev/null
+echo "check-schemas:${summary#*schemas_test.go:*:}; the intent, telemetry and flight examples and messages round-trip through the Go types"

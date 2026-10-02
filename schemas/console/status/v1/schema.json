@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/console/status/v1.json",
+  "title": "console/status/v1",
+  "description": "The status frame of every browser-facing and machine-facing WebSocket, on connect and every 2 s (decision record M29, Appendix C; M12: it replaces `feed/status/v1`). It carries the display thresholds: consumers never default them (uspace-ui Q6). The optional extras are named in Appendix C and M29; a consumer renders them when present and ignores them when absent.",
+  "allOf": [{ "$ref": "https://schemas.uspace.ge/envelope/v1.json" }],
+  "properties": {
+    "schema": { "const": "console/status/v1" },
+    "body": { "$ref": "#/$defs/body" }
+  },
+  "$defs": {
+    "positive_seconds": { "type": "number", "exclusiveMinimum": 0 },
+    "nonnegative_seconds": { "type": "number", "minimum": 0 },
+    "slug": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "body": {
+      "type": "object",
+      "required": [
+        "connection_id", "server_ts", "policy_version", "stale_after_s",
+        "live_max_age_s", "dropped_frames", "degraded", "sources"
+      ],
+      "properties": {
+        "connection_id": { "type": "string", "minLength": 1 },
+        "server_ts": {
+          "description": "The server's clock when the frame was sent; consumers derive their clock offset from it.",
+          "$ref": "https://schemas.uspace.ge/envelope/v1.json#/$defs/timestamp"
+        },
+        "policy_version": { "type": "string", "minLength": 1 },
+        "stale_after_s": {
+          "description": "A track older than this is shown stale. Policy; zero or negative is refused (LESSONS E-15).",
+          "$ref": "#/$defs/positive_seconds"
+        },
+        "live_max_age_s": {
+          "description": "A track younger than this is shown live. Policy; zero or negative is refused (LESSONS E-15).",
+          "$ref": "#/$defs/positive_seconds"
+        },
+        "dropped_frames": {
+          "description": "Frames dropped for this connection since it opened.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "degraded": {
+          "description": "What is degraded right now, as snake_case slugs; empty when nothing is.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/slug" },
+          "uniqueItems": true
+        },
+        "sources": {
+          "description": "One `source/status/v1` body per source the connection's data comes from.",
+          "type": "array",
+          "items": { "$ref": "https://schemas.uspace.ge/source/status/v1.json#/$defs/body" }
+        },
+        "datasets": {
+          "description": "CISP extra: per CIS dataset, its current version and age.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["version", "age_s"],
+            "properties": {
+              "version": { "type": "string", "minLength": 1 },
+              "age_s": { "$ref": "#/$defs/nonnegative_seconds" }
+            }
+          }
+        },
+        "projection_age_s": {
+          "description": "Authority extra: age of the registry projection.",
+          "$ref": "#/$defs/nonnegative_seconds"
+        },
+        "cis_version": {
+          "description": "CISP extra: the CIS version being served.",
+          "type": "string",
+          "minLength": 1
+        },
+        "cis_age_s": {
+          "description": "Any CIS consumer: age of its CIS cache (05: new U-space authorisations refused after 300 s).",
+          "$ref": "#/$defs/nonnegative_seconds"
+        },
+        "nats": {
+          "description": "Bus state as a snake_case slug; the owning system defines the values.",
+          "$ref": "#/$defs/slug"
+        },
+        "resync_since": {
+          "description": "CISP resync: re-fetch everything changed since this instant (decision record M29).",
+          "$ref": "https://schemas.uspace.ge/envelope/v1.json#/$defs/timestamp"
+        },
+        "dp_state": {
+          "description": "Authority extra: F3411 Display Provider state as a snake_case slug; the authority defines the values.",
+          "$ref": "#/$defs/slug"
+        }
+      }
+    }
+  }
+}

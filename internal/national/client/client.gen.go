@@ -267,6 +267,144 @@ func (e SerialBindingRequestClassLabel) Valid() bool {
 	}
 }
 
+// Defines values for TelemetryFrameAccuracyH.
+const (
+	HA005NM    TelemetryFrameAccuracyH = "HA005NM"
+	HA01NM     TelemetryFrameAccuracyH = "HA01NM"
+	HA03NM     TelemetryFrameAccuracyH = "HA03NM"
+	HA05NM     TelemetryFrameAccuracyH = "HA05NM"
+	HA10NM     TelemetryFrameAccuracyH = "HA10NM"
+	HA10NMPlus TelemetryFrameAccuracyH = "HA10NMPlus"
+	HA10m      TelemetryFrameAccuracyH = "HA10m"
+	HA1NM      TelemetryFrameAccuracyH = "HA1NM"
+	HA1m       TelemetryFrameAccuracyH = "HA1m"
+	HA2NM      TelemetryFrameAccuracyH = "HA2NM"
+	HA30m      TelemetryFrameAccuracyH = "HA30m"
+	HA3m       TelemetryFrameAccuracyH = "HA3m"
+	HA4NM      TelemetryFrameAccuracyH = "HA4NM"
+	HAUnknown  TelemetryFrameAccuracyH = "HAUnknown"
+)
+
+// Valid indicates whether the value is a known member of the TelemetryFrameAccuracyH enum.
+func (e TelemetryFrameAccuracyH) Valid() bool {
+	switch e {
+	case HA005NM:
+		return true
+	case HA01NM:
+		return true
+	case HA03NM:
+		return true
+	case HA05NM:
+		return true
+	case HA10NM:
+		return true
+	case HA10NMPlus:
+		return true
+	case HA10m:
+		return true
+	case HA1NM:
+		return true
+	case HA1m:
+		return true
+	case HA2NM:
+		return true
+	case HA30m:
+		return true
+	case HA3m:
+		return true
+	case HA4NM:
+		return true
+	case HAUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TelemetryFrameAccuracyV.
+const (
+	VA10m      TelemetryFrameAccuracyV = "VA10m"
+	VA150m     TelemetryFrameAccuracyV = "VA150m"
+	VA150mPlus TelemetryFrameAccuracyV = "VA150mPlus"
+	VA1m       TelemetryFrameAccuracyV = "VA1m"
+	VA25m      TelemetryFrameAccuracyV = "VA25m"
+	VA3m       TelemetryFrameAccuracyV = "VA3m"
+	VA45m      TelemetryFrameAccuracyV = "VA45m"
+	VAUnknown  TelemetryFrameAccuracyV = "VAUnknown"
+)
+
+// Valid indicates whether the value is a known member of the TelemetryFrameAccuracyV enum.
+func (e TelemetryFrameAccuracyV) Valid() bool {
+	switch e {
+	case VA10m:
+		return true
+	case VA150m:
+		return true
+	case VA150mPlus:
+		return true
+	case VA1m:
+		return true
+	case VA25m:
+		return true
+	case VA3m:
+		return true
+	case VA45m:
+		return true
+	case VAUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TelemetryFrameHeightRef.
+const (
+	GroundLevel     TelemetryFrameHeightRef = "GroundLevel"
+	LessThannil     TelemetryFrameHeightRef = "<nil>"
+	TakeoffLocation TelemetryFrameHeightRef = "TakeoffLocation"
+)
+
+// Valid indicates whether the value is a known member of the TelemetryFrameHeightRef enum.
+func (e TelemetryFrameHeightRef) Valid() bool {
+	switch e {
+	case GroundLevel:
+		return true
+	case LessThannil:
+		return true
+	case TakeoffLocation:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TelemetryFrameStatus.
+const (
+	Airborne              TelemetryFrameStatus = "Airborne"
+	Emergency             TelemetryFrameStatus = "Emergency"
+	Ground                TelemetryFrameStatus = "Ground"
+	RemoteIDSystemFailure TelemetryFrameStatus = "RemoteIDSystemFailure"
+	Undeclared            TelemetryFrameStatus = "Undeclared"
+)
+
+// Valid indicates whether the value is a known member of the TelemetryFrameStatus enum.
+func (e TelemetryFrameStatus) Valid() bool {
+	switch e {
+	case Airborne:
+		return true
+	case Emergency:
+		return true
+	case Ground:
+		return true
+	case RemoteIDSystemFailure:
+		return true
+	case Undeclared:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TokenRequestGrantType.
 const (
 	ClientCredentials TokenRequestGrantType = "client_credentials"
@@ -791,6 +929,100 @@ type Session struct {
 	Token string `json:"token"`
 }
 
+// TelemetryBatch defines model for TelemetryBatch.
+type TelemetryBatch struct {
+	Frames []TelemetryFrame `json:"frames"`
+
+	// SentAt The client's clock when it sent the batch (RFC 3339 in UTC with
+	// Z). With it every sample is placed at receipt - (sent_at - ts),
+	// so the client's clock error cancels and a drained backlog keeps
+	// its own times (T-02); without it the batch rule places the
+	// samples against the newest one.
+	SentAt *time.Time `json:"sent_at,omitempty"`
+}
+
+// TelemetryBatchResult defines model for TelemetryBatchResult.
+type TelemetryBatchResult struct {
+	// Accepted Published or durably queued (B-05).
+	Accepted        int                `json:"accepted"`
+	Dropped         int                `json:"dropped"`
+	Duplicate       int                `json:"duplicate"`
+	NotAcknowledged int                `json:"not_acknowledged"`
+	Outcomes        []TelemetryOutcome `json:"outcomes"`
+	Refused         int                `json:"refused"`
+}
+
+// TelemetryFrame telemetry/v1 (schemas/telemetry/v1/schema.json, the source of truth).
+type TelemetryFrame struct {
+	AccuracyH    TelemetryFrameAccuracyH `json:"accuracy_h"`
+	AccuracyV    TelemetryFrameAccuracyV `json:"accuracy_v"`
+	AltPressureM *float64                `json:"alt_pressure_m,omitempty"`
+	AltWgs84M    *float64                `json:"alt_wgs84_m"`
+	Backlog      *bool                   `json:"backlog,omitempty"`
+	Emergency    bool                    `json:"emergency"`
+	End          *bool                   `json:"end,omitempty"`
+
+	// Epoch The client's run of its seq counter: a new one whenever seq starts again.
+	Epoch              *string                    `json:"epoch,omitempty"`
+	HeightM            *float64                   `json:"height_m"`
+	HeightRef          *TelemetryFrameHeightRef   `json:"height_ref"`
+	IntentId           *openapi_types.UUID        `json:"intent_id,omitempty"`
+	OperatorPosition   *TelemetryOperatorPosition `json:"operator_position,omitempty"`
+	Position           TelemetryPosition          `json:"position"`
+	Seq                int64                      `json:"seq"`
+	Serial             string                     `json:"serial"`
+	SpeedMs            *float64                   `json:"speed_ms"`
+	Status             TelemetryFrameStatus       `json:"status"`
+	TimestampAccuracyS *float64                   `json:"timestamp_accuracy_s"`
+	TrackDeg           *float64                   `json:"track_deg"`
+
+	// Ts The client's clock, RFC 3339 in UTC with Z.
+	Ts       time.Time `json:"ts"`
+	VspeedMs *float64  `json:"vspeed_ms"`
+}
+
+// TelemetryFrameAccuracyH defines model for TelemetryFrame.AccuracyH.
+type TelemetryFrameAccuracyH string
+
+// TelemetryFrameAccuracyV defines model for TelemetryFrame.AccuracyV.
+type TelemetryFrameAccuracyV string
+
+// TelemetryFrameHeightRef defines model for TelemetryFrame.HeightRef.
+type TelemetryFrameHeightRef string
+
+// TelemetryFrameStatus defines model for TelemetryFrame.Status.
+type TelemetryFrameStatus string
+
+// TelemetryOperatorPosition defines model for TelemetryOperatorPosition.
+type TelemetryOperatorPosition struct {
+	AltWgs84M *float64 `json:"alt_wgs84_m,omitempty"`
+	Lat       float64  `json:"lat"`
+	Lng       float64  `json:"lng"`
+}
+
+// TelemetryOutcome One sample that was not accepted, by its index in the request.
+type TelemetryOutcome struct {
+	Detail *string `json:"detail,omitempty"`
+	Index  int     `json:"index"`
+
+	// Outcome duplicate (taken before: acknowledged), duplicate_pending (taken
+	// before and still on its way: send it again later),
+	// refused_invalid, refused_unbound, refused_bindings_unavailable,
+	// refused_source_disabled, refused_capacity,
+	// rejected_out_of_order, rejected_too_old, refused_intent_state,
+	// refused_no_authorisation, refused_batch_span, dropped_rate,
+	// dropped_queue_full or not_acknowledged (send again).
+	Outcome string  `json:"outcome"`
+	Seq     *int64  `json:"seq,omitempty"`
+	Serial  *string `json:"serial,omitempty"`
+}
+
+// TelemetryPosition defines model for TelemetryPosition.
+type TelemetryPosition struct {
+	Lat float64 `json:"lat"`
+	Lng float64 `json:"lng"`
+}
+
 // TokenRequest defines model for TokenRequest.
 type TokenRequest struct {
 	// Audience When given, this USSP's host (M18).
@@ -872,6 +1104,9 @@ type CreateIntentJSONRequestBody = IntentRequest
 
 // ChangeIntentJSONRequestBody defines body for ChangeIntent for application/json ContentType.
 type ChangeIntentJSONRequestBody = IntentPatch
+
+// PostTelemetryBatchJSONRequestBody defines body for PostTelemetryBatch for application/json ContentType.
+type PostTelemetryBatchJSONRequestBody = TelemetryBatch
 
 // AsIntentVolume4DVolume0 returns the union data inside the IntentVolume4D_Volume as a IntentVolume4DVolume0
 func (t IntentVolume4D_Volume) AsIntentVolume4DVolume0() (IntentVolume4DVolume0, error) {
@@ -1438,6 +1673,87 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /v1/registry/validate (the `ValidateRegistry` operationId).
 	ValidateRegistry(ctx context.Context, params *ValidateRegistryParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// OpenTelemetryStream Stream operator telemetry (WebSocket)
+	//
+	// A WebSocket upgrade (served by telemetry-ingest). The client is an
+	// operator machine client with a bearer token granting
+	// ussp.telemetry (issued by this USSP); the client id is the token's
+	// sub. A browser upgrade must come from an Origin on
+	// USSP_WS_ALLOWED_ORIGINS with the uspace_session cookie, and a
+	// refused upgrade is accepted and closed with 4401 (M22); no session
+	// realm streams telemetry. A client whose operator_ws source is
+	// switched off is refused before the upgrade with 503 and
+	// Retry-After (B-10), and an open socket is closed with 1013 when
+	// the switch goes off.
+	//
+	// Client to server: one message per sample, {"schema":
+	// "telemetry/v1", "body": TelemetryFrame} (the console frame, M29;
+	// other envelope members are ignored), at most 8 KiB, for a serial
+	// bound to the client (06 T3). A sample for an unbound serial is
+	// refused_unbound and the socket stays up. One aircraft is streamed
+	// by one socket: a later socket that sends for it replaces the
+	// earlier one, whose next sample for it is refused_replaced (B-14).
+	// Live samples above 2 Hz per aircraft are dropped and counted; a
+	// (serial, epoch, seq) with the same ts seen in the last
+	// telemetry_dedupe_s (600 s, the client's queue) is acknowledged and
+	// not published twice; the same key with another ts is a new
+	// sample. Inside U-space airspace a sample needs an
+	// activated intent of this aircraft (intent_id), else it is refused
+	// (refused_no_authorisation, refused_intent_state).
+	//
+	// Server to client: only console/status/v1 frames, on connect,
+	// every 2 s and after a refusal, with these extras in the body:
+	// accepted, refused, dropped, outcomes (count per outcome name),
+	// rate (accepted samples per second), backlog (history samples
+	// accepted) and acked_seq (per serial, the highest seq such that
+	// every sample of that serial sent on this socket up to it is
+	// published or durably queued, or refused for good: the client may
+	// let those go, B-05). Nothing else is ever sent: the socket has no
+	// message that could command an aircraft (CLAUDE.md rule 1).
+	//
+	// Corresponds with GET /v1/telemetry (the `OpenTelemetryStream` operationId).
+	OpenTelemetryStream(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostTelemetryBatchWithBody Send telemetry samples in one request
+	//
+	// The same pipeline as the WebSocket (served by telemetry-ingest)
+	// for at most 2000 samples whose own times span at most 1 s per
+	// serial (telemetry_batch_span_s), placed against the batch's
+	// sent_at when it has one (T-02); backlog samples (a client
+	// draining its queue after an outage) carry backlog true and are
+	// recorded, never alerted (T-04). The answer comes once every
+	// accepted sample is published or durably queued (B-05): accepted
+	// counts only those; a sample that could not be handed is
+	// not_acknowledged and is sent again. A sample that does not read
+	// as telemetry/v1 is refused_invalid with its field errors and the
+	// others are taken. 503 with Retry-After when the client's
+	// operator_ws source is switched off (B-10).
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/telemetry/batch (the `PostTelemetryBatch` operationId).
+	PostTelemetryBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostTelemetryBatch Send telemetry samples in one request
+	//
+	// The same pipeline as the WebSocket (served by telemetry-ingest)
+	// for at most 2000 samples whose own times span at most 1 s per
+	// serial (telemetry_batch_span_s), placed against the batch's
+	// sent_at when it has one (T-02); backlog samples (a client
+	// draining its queue after an outage) carry backlog true and are
+	// recorded, never alerted (T-04). The answer comes once every
+	// accepted sample is published or durably queued (B-05): accepted
+	// counts only those; a sample that could not be handed is
+	// not_acknowledged and is sent again. A sample that does not read
+	// as telemetry/v1 is refused_invalid with its field errors and the
+	// others are taken. 503 with Retry-After when the client's
+	// operator_ws source is switched off (B-10).
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/telemetry/batch (the `PostTelemetryBatch` operationId).
+	PostTelemetryBatch(ctx context.Context, body PostTelemetryBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // GetJWKS The issuer's public keys
@@ -2068,6 +2384,117 @@ func (c *Client) ChangeIntent(ctx context.Context, intentId IntentID, body Chang
 // Corresponds with GET /v1/registry/validate (the `ValidateRegistry` operationId).
 func (c *Client) ValidateRegistry(ctx context.Context, params *ValidateRegistryParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewValidateRegistryRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// OpenTelemetryStream Stream operator telemetry (WebSocket)
+//
+// A WebSocket upgrade (served by telemetry-ingest). The client is an
+// operator machine client with a bearer token granting
+// ussp.telemetry (issued by this USSP); the client id is the token's
+// sub. A browser upgrade must come from an Origin on
+// USSP_WS_ALLOWED_ORIGINS with the uspace_session cookie, and a
+// refused upgrade is accepted and closed with 4401 (M22); no session
+// realm streams telemetry. A client whose operator_ws source is
+// switched off is refused before the upgrade with 503 and
+// Retry-After (B-10), and an open socket is closed with 1013 when
+// the switch goes off.
+//
+// Client to server: one message per sample, {"schema":
+// "telemetry/v1", "body": TelemetryFrame} (the console frame, M29;
+// other envelope members are ignored), at most 8 KiB, for a serial
+// bound to the client (06 T3). A sample for an unbound serial is
+// refused_unbound and the socket stays up. One aircraft is streamed
+// by one socket: a later socket that sends for it replaces the
+// earlier one, whose next sample for it is refused_replaced (B-14).
+// Live samples above 2 Hz per aircraft are dropped and counted; a
+// (serial, epoch, seq) with the same ts seen in the last
+// telemetry_dedupe_s (600 s, the client's queue) is acknowledged and
+// not published twice; the same key with another ts is a new
+// sample. Inside U-space airspace a sample needs an
+// activated intent of this aircraft (intent_id), else it is refused
+// (refused_no_authorisation, refused_intent_state).
+//
+// Server to client: only console/status/v1 frames, on connect,
+// every 2 s and after a refusal, with these extras in the body:
+// accepted, refused, dropped, outcomes (count per outcome name),
+// rate (accepted samples per second), backlog (history samples
+// accepted) and acked_seq (per serial, the highest seq such that
+// every sample of that serial sent on this socket up to it is
+// published or durably queued, or refused for good: the client may
+// let those go, B-05). Nothing else is ever sent: the socket has no
+// message that could command an aircraft (CLAUDE.md rule 1).
+//
+// Corresponds with GET /v1/telemetry (the `OpenTelemetryStream` operationId).
+func (c *Client) OpenTelemetryStream(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOpenTelemetryStreamRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostTelemetryBatchWithBody Send telemetry samples in one request
+//
+// The same pipeline as the WebSocket (served by telemetry-ingest)
+// for at most 2000 samples whose own times span at most 1 s per
+// serial (telemetry_batch_span_s), placed against the batch's
+// sent_at when it has one (T-02); backlog samples (a client
+// draining its queue after an outage) carry backlog true and are
+// recorded, never alerted (T-04). The answer comes once every
+// accepted sample is published or durably queued (B-05): accepted
+// counts only those; a sample that could not be handed is
+// not_acknowledged and is sent again. A sample that does not read
+// as telemetry/v1 is refused_invalid with its field errors and the
+// others are taken. 503 with Retry-After when the client's
+// operator_ws source is switched off (B-10).
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/telemetry/batch (the `PostTelemetryBatch` operationId).
+func (c *Client) PostTelemetryBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostTelemetryBatchRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostTelemetryBatch Send telemetry samples in one request
+//
+// The same pipeline as the WebSocket (served by telemetry-ingest)
+// for at most 2000 samples whose own times span at most 1 s per
+// serial (telemetry_batch_span_s), placed against the batch's
+// sent_at when it has one (T-02); backlog samples (a client
+// draining its queue after an outage) carry backlog true and are
+// recorded, never alerted (T-04). The answer comes once every
+// accepted sample is published or durably queued (B-05): accepted
+// counts only those; a sample that could not be handed is
+// not_acknowledged and is sent again. A sample that does not read
+// as telemetry/v1 is refused_invalid with its field errors and the
+// others are taken. 503 with Retry-After when the client's
+// operator_ws source is switched off (B-10).
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/telemetry/batch (the `PostTelemetryBatch` operationId).
+func (c *Client) PostTelemetryBatch(ctx context.Context, body PostTelemetryBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostTelemetryBatchRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2930,6 +3357,73 @@ func NewValidateRegistryRequest(server string, params *ValidateRegistryParams) (
 	return req, nil
 }
 
+// NewOpenTelemetryStreamRequest constructs an http.Request for the OpenTelemetryStream method
+func NewOpenTelemetryStreamRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/telemetry")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostTelemetryBatchRequest calls the generic PostTelemetryBatch builder with application/json body
+func NewPostTelemetryBatchRequest(server string, body PostTelemetryBatchJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostTelemetryBatchRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostTelemetryBatchRequestWithBody constructs an http.Request for the PostTelemetryBatch method, with any body, and a specified content type
+func NewPostTelemetryBatchRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/telemetry/batch")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -3353,6 +3847,89 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /v1/registry/validate (the `ValidateRegistry` operationId).
 	ValidateRegistryWithResponse(ctx context.Context, params *ValidateRegistryParams, reqEditors ...RequestEditorFn) (*ValidateRegistryResponse, error)
+
+	// OpenTelemetryStreamWithResponse Stream operator telemetry (WebSocket)
+	//
+	// A WebSocket upgrade (served by telemetry-ingest). The client is an
+	// operator machine client with a bearer token granting
+	// ussp.telemetry (issued by this USSP); the client id is the token's
+	// sub. A browser upgrade must come from an Origin on
+	// USSP_WS_ALLOWED_ORIGINS with the uspace_session cookie, and a
+	// refused upgrade is accepted and closed with 4401 (M22); no session
+	// realm streams telemetry. A client whose operator_ws source is
+	// switched off is refused before the upgrade with 503 and
+	// Retry-After (B-10), and an open socket is closed with 1013 when
+	// the switch goes off.
+	//
+	// Client to server: one message per sample, {"schema":
+	// "telemetry/v1", "body": TelemetryFrame} (the console frame, M29;
+	// other envelope members are ignored), at most 8 KiB, for a serial
+	// bound to the client (06 T3). A sample for an unbound serial is
+	// refused_unbound and the socket stays up. One aircraft is streamed
+	// by one socket: a later socket that sends for it replaces the
+	// earlier one, whose next sample for it is refused_replaced (B-14).
+	// Live samples above 2 Hz per aircraft are dropped and counted; a
+	// (serial, epoch, seq) with the same ts seen in the last
+	// telemetry_dedupe_s (600 s, the client's queue) is acknowledged and
+	// not published twice; the same key with another ts is a new
+	// sample. Inside U-space airspace a sample needs an
+	// activated intent of this aircraft (intent_id), else it is refused
+	// (refused_no_authorisation, refused_intent_state).
+	//
+	// Server to client: only console/status/v1 frames, on connect,
+	// every 2 s and after a refusal, with these extras in the body:
+	// accepted, refused, dropped, outcomes (count per outcome name),
+	// rate (accepted samples per second), backlog (history samples
+	// accepted) and acked_seq (per serial, the highest seq such that
+	// every sample of that serial sent on this socket up to it is
+	// published or durably queued, or refused for good: the client may
+	// let those go, B-05). Nothing else is ever sent: the socket has no
+	// message that could command an aircraft (CLAUDE.md rule 1).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/telemetry (the `OpenTelemetryStream` operationId).
+	OpenTelemetryStreamWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OpenTelemetryStreamResponse, error)
+
+	// PostTelemetryBatchWithBodyWithResponse Send telemetry samples in one request
+	//
+	// The same pipeline as the WebSocket (served by telemetry-ingest)
+	// for at most 2000 samples whose own times span at most 1 s per
+	// serial (telemetry_batch_span_s), placed against the batch's
+	// sent_at when it has one (T-02); backlog samples (a client
+	// draining its queue after an outage) carry backlog true and are
+	// recorded, never alerted (T-04). The answer comes once every
+	// accepted sample is published or durably queued (B-05): accepted
+	// counts only those; a sample that could not be handed is
+	// not_acknowledged and is sent again. A sample that does not read
+	// as telemetry/v1 is refused_invalid with its field errors and the
+	// others are taken. 503 with Retry-After when the client's
+	// operator_ws source is switched off (B-10).
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/telemetry/batch (the `PostTelemetryBatch` operationId).
+	PostTelemetryBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostTelemetryBatchResponse, error)
+
+	// PostTelemetryBatchWithResponse Send telemetry samples in one request
+	//
+	// The same pipeline as the WebSocket (served by telemetry-ingest)
+	// for at most 2000 samples whose own times span at most 1 s per
+	// serial (telemetry_batch_span_s), placed against the batch's
+	// sent_at when it has one (T-02); backlog samples (a client
+	// draining its queue after an outage) carry backlog true and are
+	// recorded, never alerted (T-04). The answer comes once every
+	// accepted sample is published or durably queued (B-05): accepted
+	// counts only those; a sample that could not be handed is
+	// not_acknowledged and is sent again. A sample that does not read
+	// as telemetry/v1 is refused_invalid with its field errors and the
+	// others are taken. 503 with Retry-After when the client's
+	// operator_ws source is switched off (B-10).
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/telemetry/batch (the `PostTelemetryBatch` operationId).
+	PostTelemetryBatchWithResponse(ctx context.Context, body PostTelemetryBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*PostTelemetryBatchResponse, error)
 }
 
 // GetJWKSResponse200Headers the declared response headers of an HTTP 200 response for GetJWKS
@@ -4840,6 +5417,151 @@ func (r ValidateRegistryResponse) ContentType() string {
 	return ""
 }
 
+// OpenTelemetryStreamResponse503Headers the declared response headers of an HTTP 503 response for OpenTelemetryStream
+type OpenTelemetryStreamResponse503Headers struct {
+	RetryAfter *int
+}
+
+type OpenTelemetryStreamResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+	// Headers503 the parsed response headers for an HTTP 503 response
+	Headers503 *OpenTelemetryStreamResponse503Headers
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r OpenTelemetryStreamResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r OpenTelemetryStreamResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r OpenTelemetryStreamResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r OpenTelemetryStreamResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r OpenTelemetryStreamResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r OpenTelemetryStreamResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r OpenTelemetryStreamResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PostTelemetryBatchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON202 the response for an HTTP 202 `application/json` response
+	JSON202 *TelemetryBatchResult
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON413 the response for an HTTP 413 `application/problem+json` response
+	ApplicationproblemJSON413 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON202 returns the response for an HTTP 202 `application/json` response
+func (r PostTelemetryBatchResponse) GetJSON202() *TelemetryBatchResult {
+	return r.JSON202
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r PostTelemetryBatchResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r PostTelemetryBatchResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r PostTelemetryBatchResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON413 returns the response for an HTTP 413 `application/problem+json` response
+func (r PostTelemetryBatchResponse) GetApplicationproblemJSON413() *Problem {
+	return r.ApplicationproblemJSON413
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r PostTelemetryBatchResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r PostTelemetryBatchResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostTelemetryBatchResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostTelemetryBatchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostTelemetryBatchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostTelemetryBatchResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetJWKSWithResponse The issuer's public keys
 //
 // The RS256 keys of this USSP's issuer (`use: sig`, `kid` = the RFC
@@ -5386,6 +6108,107 @@ func (c *ClientWithResponses) ValidateRegistryWithResponse(ctx context.Context, 
 		return nil, err
 	}
 	return ParseValidateRegistryResponse(rsp)
+}
+
+// OpenTelemetryStreamWithResponse Stream operator telemetry (WebSocket)
+//
+// A WebSocket upgrade (served by telemetry-ingest). The client is an
+// operator machine client with a bearer token granting
+// ussp.telemetry (issued by this USSP); the client id is the token's
+// sub. A browser upgrade must come from an Origin on
+// USSP_WS_ALLOWED_ORIGINS with the uspace_session cookie, and a
+// refused upgrade is accepted and closed with 4401 (M22); no session
+// realm streams telemetry. A client whose operator_ws source is
+// switched off is refused before the upgrade with 503 and
+// Retry-After (B-10), and an open socket is closed with 1013 when
+// the switch goes off.
+//
+// Client to server: one message per sample, {"schema":
+// "telemetry/v1", "body": TelemetryFrame} (the console frame, M29;
+// other envelope members are ignored), at most 8 KiB, for a serial
+// bound to the client (06 T3). A sample for an unbound serial is
+// refused_unbound and the socket stays up. One aircraft is streamed
+// by one socket: a later socket that sends for it replaces the
+// earlier one, whose next sample for it is refused_replaced (B-14).
+// Live samples above 2 Hz per aircraft are dropped and counted; a
+// (serial, epoch, seq) with the same ts seen in the last
+// telemetry_dedupe_s (600 s, the client's queue) is acknowledged and
+// not published twice; the same key with another ts is a new
+// sample. Inside U-space airspace a sample needs an
+// activated intent of this aircraft (intent_id), else it is refused
+// (refused_no_authorisation, refused_intent_state).
+//
+// Server to client: only console/status/v1 frames, on connect,
+// every 2 s and after a refusal, with these extras in the body:
+// accepted, refused, dropped, outcomes (count per outcome name),
+// rate (accepted samples per second), backlog (history samples
+// accepted) and acked_seq (per serial, the highest seq such that
+// every sample of that serial sent on this socket up to it is
+// published or durably queued, or refused for good: the client may
+// let those go, B-05). Nothing else is ever sent: the socket has no
+// message that could command an aircraft (CLAUDE.md rule 1).
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/telemetry (the `OpenTelemetryStream` operationId).
+func (c *ClientWithResponses) OpenTelemetryStreamWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OpenTelemetryStreamResponse, error) {
+	rsp, err := c.OpenTelemetryStream(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOpenTelemetryStreamResponse(rsp)
+}
+
+// PostTelemetryBatchWithBodyWithResponse Send telemetry samples in one request
+//
+// The same pipeline as the WebSocket (served by telemetry-ingest)
+// for at most 2000 samples whose own times span at most 1 s per
+// serial (telemetry_batch_span_s), placed against the batch's
+// sent_at when it has one (T-02); backlog samples (a client
+// draining its queue after an outage) carry backlog true and are
+// recorded, never alerted (T-04). The answer comes once every
+// accepted sample is published or durably queued (B-05): accepted
+// counts only those; a sample that could not be handed is
+// not_acknowledged and is sent again. A sample that does not read
+// as telemetry/v1 is refused_invalid with its field errors and the
+// others are taken. 503 with Retry-After when the client's
+// operator_ws source is switched off (B-10).
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/telemetry/batch (the `PostTelemetryBatch` operationId).
+func (c *ClientWithResponses) PostTelemetryBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostTelemetryBatchResponse, error) {
+	rsp, err := c.PostTelemetryBatchWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostTelemetryBatchResponse(rsp)
+}
+
+// PostTelemetryBatchWithResponse Send telemetry samples in one request
+//
+// The same pipeline as the WebSocket (served by telemetry-ingest)
+// for at most 2000 samples whose own times span at most 1 s per
+// serial (telemetry_batch_span_s), placed against the batch's
+// sent_at when it has one (T-02); backlog samples (a client
+// draining its queue after an outage) carry backlog true and are
+// recorded, never alerted (T-04). The answer comes once every
+// accepted sample is published or durably queued (B-05): accepted
+// counts only those; a sample that could not be handed is
+// not_acknowledged and is sent again. A sample that does not read
+// as telemetry/v1 is refused_invalid with its field errors and the
+// others are taken. 503 with Retry-After when the client's
+// operator_ws source is switched off (B-10).
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/telemetry/batch (the `PostTelemetryBatch` operationId).
+func (c *ClientWithResponses) PostTelemetryBatchWithResponse(ctx context.Context, body PostTelemetryBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*PostTelemetryBatchResponse, error) {
+	rsp, err := c.PostTelemetryBatch(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostTelemetryBatchResponse(rsp)
 }
 
 // ParseGetJWKSResponse parses an HTTP response from a GetJWKSWithResponse call
@@ -6598,6 +7421,130 @@ func ParseValidateRegistryResponse(rsp *http.Response) (*ValidateRegistryRespons
 			return nil, err
 		}
 		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseOpenTelemetryStreamResponse parses an HTTP response from a OpenTelemetryStreamWithResponse call
+func ParseOpenTelemetryStreamResponse(rsp *http.Response) (*OpenTelemetryStreamResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &OpenTelemetryStreamResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 101:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 503:
+		var headers OpenTelemetryStreamResponse503Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers503 = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostTelemetryBatchResponse parses an HTTP response from a PostTelemetryBatchWithResponse call
+func ParsePostTelemetryBatchResponse(rsp *http.Response) (*PostTelemetryBatchResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostTelemetryBatchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest TelemetryBatchResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON413 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Problem

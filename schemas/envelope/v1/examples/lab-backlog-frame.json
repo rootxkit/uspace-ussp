@@ -1,0 +1,11 @@
+{
+  "schema": "coordination/annex_v/v1",
+  "msg_id": "01K6CD1GDJFMGT83PXT891WB09",
+  "producer": "lab/sim-ussp",
+  "ts": "2026-10-02T09:15:05.500Z",
+  "rx_ts": "2026-10-02T09:15:05.612Z",
+  "captured_at": "2026-10-02T09:15:05.580Z",
+  "time_source": "provider",
+  "backlog": true,
+  "body": {}
+}

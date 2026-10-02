@@ -1,0 +1,14 @@
+{
+  "schema": "cis/change/v1",
+  "msg_id": "8c1f3f2e-7d0e-4a8b-9a51-0e4b7d6f2c11",
+  "producer": "cisp/api",
+  "ts": "2026-10-02T09:15:03.120Z",
+  "rx_ts": "2026-10-02T09:15:03.245Z",
+  "captured_at": "2026-10-02T09:15:03.214Z",
+  "time_source": "source_clock",
+  "backlog": false,
+  "body": {
+    "dataset": "zones",
+    "version": "zones-2026-10-02-0007"
+  }
+}

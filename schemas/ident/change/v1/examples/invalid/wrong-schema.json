@@ -1,0 +1,28 @@
+{
+  "schema": "track/telemetry/v1",
+  "msg_id": "01K6M9S346Q3D25VT4F5V37E3T",
+  "producer": "ussp/telemetry-ingest",
+  "ts": "2026-10-02T09:15:03.120Z",
+  "rx_ts": "2026-10-02T09:15:03.245Z",
+  "captured_at": "2026-10-02T09:15:03.245Z",
+  "time_source": "source_clock",
+  "backlog": false,
+  "body": {
+    "track_id": "5b0f7c1e-2a4d-4c8e-9f3a-6d2b1e0c9a87",
+    "flight_id": "5b0f7c1e-2a4d-4c8e-9f3a-6d2b1e0c9a87",
+    "trust": "authenticated",
+    "source": "operator_ws",
+    "source_instance": "op-client-0042",
+    "identification": {
+      "status": "registered",
+      "reason": "session_binding",
+      "serial": "TEST1596A7B2C3D4E5F6",
+      "operator_reg": "GEO-TEST-0001",
+      "registered_operator_reg": null,
+      "mismatch": false,
+      "registry_uas_id": "TEST1596A7B2C3D4E5F6",
+      "basis": "authenticated"
+    },
+    "previous": null
+  }
+}

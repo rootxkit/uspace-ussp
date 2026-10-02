@@ -41,7 +41,17 @@ type WSAuth struct {
 	// AllowedOrigins are full origins ("https://ussp.example"), compared
 	// exactly, case-insensitively.
 	AllowedOrigins []string
+	// Admit, when set, is asked about an authenticated caller before the
+	// upgrade. It returns false after answering the request itself, and
+	// then nothing is upgraded: a source switched off is refused with 503
+	// and Retry-After, which a client retries (B-10), never with a close
+	// it may treat as final.
+	Admit func(w http.ResponseWriter, r *http.Request, p Principal) bool
 }
+
+// ErrWSNotAdmitted is returned by AcceptWS when Admit answered the
+// request instead of the upgrade.
+var ErrWSNotAdmitted = errors.New("websocket upgrade not admitted: answered without an upgrade")
 
 func (a *WSAuth) originAllowed(origin string) bool {
 	return origin != "" && slices.ContainsFunc(a.AllowedOrigins, func(o string) bool { return strings.EqualFold(o, origin) })
@@ -50,7 +60,9 @@ func (a *WSAuth) originAllowed(origin string) bool {
 // AcceptWS authenticates the upgrade against access and accepts it.
 // On success the connection and the caller are returned. On refusal the
 // socket is closed with CloseRelogin, the refusal counted and audited
-// as by the guard, and ErrWSRefused returned with a nil connection.
+// as by the guard, and ErrWSRefused returned with a nil connection. An
+// authenticated caller Admit turns away gets Admit's answer and no
+// socket (ErrWSNotAdmitted).
 func (a *WSAuth) AcceptWS(w http.ResponseWriter, r *http.Request, access httpx.Access) (*websocket.Conn, Principal, error) {
 	g := a.Guard
 	origin := r.Header.Get("Origin")
@@ -67,6 +79,9 @@ func (a *WSAuth) AcceptWS(w http.ResponseWriter, r *http.Request, access httpx.A
 	default:
 		// A WebSocket upgrade is a GET, so the guard asks no CSRF token.
 		p, ref = g.authenticate(r, access)
+	}
+	if ref == nil && a.Admit != nil && !a.Admit(w, r, p) {
+		return nil, Principal{}, ErrWSNotAdmitted
 	}
 	// The origin was judged above; Accept must not judge it again.
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})

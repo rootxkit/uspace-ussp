@@ -27,9 +27,11 @@ const (
 	StreamCIS     = "CIS"
 	StreamTRAFFIC = "TRAFFIC"
 	StreamINGEST  = "INGEST"
+	StreamFLIGHT  = "FLIGHT"
 )
 
-// Bucket names (docs/PLAN.md D6, §7); written by api only.
+// Bucket names (docs/PLAN.md D6, §7); written by api only, except
+// telemetry_seen, telemetry-ingest's own replay window (SeenWindow).
 const (
 	BucketCISCurrent       = "cis_current"
 	BucketPolicy           = "policy"
@@ -37,6 +39,7 @@ const (
 	BucketRegistryValidity = "registry_validity"
 	BucketClientBindings   = "client_bindings"
 	BucketIntentActive     = "intent_active"
+	BucketTelemetrySeen    = "telemetry_seen"
 )
 
 // Bounds (E-10). The server's max_payload is 1 MiB by default, so no
@@ -53,6 +56,11 @@ const (
 	// RegistryTTL is registry_validity's TTL: the longest an F8 answer
 	// lives (24 h, spec 02 F8); readers check their own shorter TTLs.
 	RegistryTTL = 24 * time.Hour
+	// SeenTTL is telemetry_seen's TTL: the longest replay window kept
+	// (telemetry_dedupe_s is 600 s; a longer policy value is cut to it).
+	SeenTTL = time.Hour
+	// SeenValueBytes bounds a telemetry_seen value (16 bytes are used).
+	SeenValueBytes = 64
 )
 
 // DuplicateWindow is every stream's dedupe window: a durable publish
@@ -98,6 +106,7 @@ func DefaultTopology() Topology {
 			stream(StreamCIS, SubjectCISAll, "CIS changes (30 d)", 30*24*time.Hour, 256<<10),
 			stream(StreamTRAFFIC, SubjectTrafficAll, "traffic products sampled for the record (1 d)", 24*time.Hour, 512<<10),
 			ingest,
+			stream(StreamFLIGHT, SubjectFlightAll, "flight starts, telemetry losses and ends from telemetry-ingest to api (30 d)", 30*24*time.Hour, 64<<10),
 		},
 		Buckets: []jetstream.KeyValueConfig{
 			bucket(BucketCISCurrent, "CIS zones per cell5 and the large-zone entry", MaxPayloadBytes, 0),
@@ -106,6 +115,7 @@ func DefaultTopology() Topology {
 			bucket(BucketRegistryValidity, "F8 answers by entity and key, statuses only", 16<<10, RegistryTTL),
 			bucket(BucketClientBindings, "client id -> bound serial fold keys", 64<<10, 0),
 			bucket(BucketIntentActive, "active intents: volumes AMSL, thresholds, flight, cells", 256<<10, 0),
+			bucket(BucketTelemetrySeen, "telemetry replay window: samples published, by client, serial, epoch and seq (telemetry-ingest)", SeenValueBytes, SeenTTL),
 		},
 	}
 }

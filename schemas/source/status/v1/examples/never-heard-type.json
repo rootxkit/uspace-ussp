@@ -1,0 +1,22 @@
+{
+  "schema": "source/status/v1",
+  "msg_id": "01K69EE0ZBGJ09TQM83XSSSS6Y",
+  "producer": "ussp/traffic-ws",
+  "ts": "2026-10-02T09:15:06.010Z",
+  "rx_ts": "2026-10-02T09:15:06.010Z",
+  "captured_at": "2026-10-02T09:15:06.010Z",
+  "time_source": "system",
+  "backlog": false,
+  "body": {
+    "source": "adsb_rx",
+    "source_instance": null,
+    "state": "unknown",
+    "since": "2026-10-02T09:14:58.000Z",
+    "age_s": null,
+    "disabled_by": null,
+    "counters": {
+      "accepted": 0,
+      "refused": 0
+    }
+  }
+}

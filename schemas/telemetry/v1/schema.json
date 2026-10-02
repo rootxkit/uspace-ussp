@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/telemetry/v1.json",
+  "title": "telemetry/v1",
+  "description": "One telemetry sample an operator client sends for one of its bound aircraft (spec 02 F5, Art. 8(2)): the body of a WS /v1/telemetry frame ({\"schema\": \"telemetry/v1\", \"body\": ...}) and an item of POST /v1/telemetry/batch. ts is the client's own clock; the ingest places the sample on its clock (T-01, T-02). The positions are WGS84 decimal degrees, alt_wgs84_m is height above the WGS84 ellipsoid and alt_pressure_m the pressure altitude (ISA 1013.25 hPa, not AMSL); the ingest derives AMSL through the geoid. status, accuracy_h and accuracy_v are the F3411 v22a enumerations (RIDOperationalStatus, HorizontalAccuracy, VerticalAccuracy). seq increases by one per sample of a serial; epoch names the client's run of that counter and changes when the counter restarts. (serial, epoch, seq) with the same ts is a replay; the same key with another ts is a new sample (a restart that named no new epoch). backlog says the sample was queued before this delivery (T-04). end says the operator ends the flight with this sample. The trust class and the source are the ingest's, never the client's: a sample that carries either (trust simulated, source sitl, or any other) is refused (spec 06 T11).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ts", "serial", "seq", "position", "alt_wgs84_m", "height_m", "height_ref", "speed_ms", "track_deg", "vspeed_ms",
+    "status", "emergency", "accuracy_h", "accuracy_v", "timestamp_accuracy_s"],
+  "properties": {
+    "ts": {
+      "description": "When the sample was taken, on the client's clock: RFC 3339 in UTC with Z.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$",
+      "maxLength": 40
+    },
+    "serial": {
+      "description": "The aircraft's serial, bound to the client (06 T3).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[\\x21-\\x7e]+$"
+    },
+    "seq": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "epoch": {
+      "description": "The client's run of its seq counter, for example an id drawn at start: a new one whenever seq starts again.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[\\x21-\\x7e]+$"
+    },
+    "backlog": { "type": "boolean" },
+    "end": { "type": "boolean" },
+    "intent_id": {
+      "description": "The activated intent this sample flies, when it flies one.",
+      "oneOf": [
+        { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+        { "type": "null" }
+      ]
+    },
+    "position": { "$ref": "#/$defs/position" },
+    "alt_wgs84_m": { "oneOf": [{ "type": "number", "minimum": -1000, "maximum": 20000 }, { "type": "null" }] },
+    "alt_pressure_m": { "oneOf": [{ "type": "number", "minimum": -1000, "maximum": 20000 }, { "type": "null" }] },
+    "height_m": { "oneOf": [{ "type": "number", "minimum": -1000, "maximum": 20000 }, { "type": "null" }] },
+    "height_ref": { "enum": ["TakeoffLocation", "GroundLevel", null] },
+    "speed_ms": { "oneOf": [{ "type": "number", "minimum": 0, "maximum": 300 }, { "type": "null" }] },
+    "track_deg": { "oneOf": [{ "type": "number", "minimum": 0, "exclusiveMaximum": 360 }, { "type": "null" }] },
+    "vspeed_ms": { "oneOf": [{ "type": "number", "minimum": -100, "maximum": 100 }, { "type": "null" }] },
+    "status": { "enum": ["Undeclared", "Ground", "Airborne", "Emergency", "RemoteIDSystemFailure"] },
+    "emergency": { "type": "boolean" },
+    "operator_position": {
+      "description": "The remote pilot's or the take-off position for this flight (Art. 8(2)(e)).",
+      "oneOf": [{ "$ref": "#/$defs/operator_position" }, { "type": "null" }]
+    },
+    "accuracy_h": {
+      "enum": ["HAUnknown", "HA10NMPlus", "HA10NM", "HA4NM", "HA2NM", "HA1NM", "HA05NM", "HA03NM", "HA01NM", "HA005NM", "HA30m", "HA10m", "HA3m", "HA1m"]
+    },
+    "accuracy_v": { "enum": ["VAUnknown", "VA150mPlus", "VA150m", "VA45m", "VA25m", "VA10m", "VA3m", "VA1m"] },
+    "timestamp_accuracy_s": { "oneOf": [{ "type": "number", "minimum": 0, "maximum": 60 }, { "type": "null" }] }
+  },
+  "if": {
+    "properties": { "height_m": { "type": "number" } },
+    "required": ["height_m"]
+  },
+  "then": {
+    "properties": { "height_ref": { "enum": ["TakeoffLocation", "GroundLevel"] } }
+  },
+  "else": {
+    "properties": { "height_ref": { "const": null } }
+  },
+  "$defs": {
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lat", "lng"],
+      "properties": {
+        "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+        "lng": { "type": "number", "minimum": -180, "maximum": 180 }
+      }
+    },
+    "operator_position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lat", "lng"],
+      "properties": {
+        "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+        "lng": { "type": "number", "minimum": -180, "maximum": 180 },
+        "alt_wgs84_m": { "oneOf": [{ "type": "number", "minimum": -1000, "maximum": 20000 }, { "type": "null" }] }
+      }
+    }
+  }
+}

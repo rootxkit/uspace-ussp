@@ -16,6 +16,7 @@ info:
     tags. Every later work package adds its paths under its tag. WP-4:
     the CIS change-notification receiver. WP-5: the cached registry
     validity lookup. WP-7: operational intents and flight authorisation.
+    WP-8: operator telemetry (served by telemetry-ingest).
   license:
     name: Apache-2.0
 servers:
@@ -343,6 +344,111 @@ paths:
         '413': *id002
         '503': *id002
         default: *id002
+
+  /v1/telemetry:
+    get:
+      operationId: openTelemetryStream
+      tags: [telemetry]
+      summary: Stream operator telemetry (WebSocket)
+      description: |
+        A WebSocket upgrade (served by telemetry-ingest). The client is an
+        operator machine client with a bearer token granting
+        ussp.telemetry (issued by this USSP); the client id is the token's
+        sub. A browser upgrade must come from an Origin on
+        USSP_WS_ALLOWED_ORIGINS with the uspace_session cookie, and a
+        refused upgrade is accepted and closed with 4401 (M22); no session
+        realm streams telemetry. A client whose operator_ws source is
+        switched off is refused before the upgrade with 503 and
+        Retry-After (B-10), and an open socket is closed with 1013 when
+        the switch goes off.
+
+        Client to server: one message per sample, {"schema":
+        "telemetry/v1", "body": TelemetryFrame} (the console frame, M29;
+        other envelope members are ignored), at most 8 KiB, for a serial
+        bound to the client (06 T3). A sample for an unbound serial is
+        refused_unbound and the socket stays up. One aircraft is streamed
+        by one socket: a later socket that sends for it replaces the
+        earlier one, whose next sample for it is refused_replaced (B-14).
+        Live samples above 2 Hz per aircraft are dropped and counted; a
+        (serial, epoch, seq) with the same ts seen in the last
+        telemetry_dedupe_s (600 s, the client's queue) is acknowledged and
+        not published twice; the same key with another ts is a new
+        sample. Inside U-space airspace a sample needs an
+        activated intent of this aircraft (intent_id), else it is refused
+        (refused_no_authorisation, refused_intent_state).
+
+        Server to client: only console/status/v1 frames, on connect,
+        every 2 s and after a refusal, with these extras in the body:
+        accepted, refused, dropped, outcomes (count per outcome name),
+        rate (accepted samples per second), backlog (history samples
+        accepted) and acked_seq (per serial, the highest seq such that
+        every sample of that serial sent on this socket up to it is
+        published or durably queued, or refused for good: the client may
+        let those go, B-05). Nothing else is ever sent: the socket has no
+        message that could command an aircraft (CLAUDE.md rule 1).
+      security:
+      - operatorToken: []
+      responses:
+        "101":
+          description: Switching protocols; the stream described above follows.
+        "400":
+          $ref: "#/components/responses/Problem"
+        "503":
+          description: The client's operator_ws source is switched off; retry after the Retry-After seconds.
+          headers:
+            Retry-After:
+              schema: {type: integer, minimum: 1}
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/telemetry/batch:
+    post:
+      operationId: postTelemetryBatch
+      tags: [telemetry]
+      summary: Send telemetry samples in one request
+      description: |
+        The same pipeline as the WebSocket (served by telemetry-ingest)
+        for at most 2000 samples whose own times span at most 1 s per
+        serial (telemetry_batch_span_s), placed against the batch's
+        sent_at when it has one (T-02); backlog samples (a client
+        draining its queue after an outage) carry backlog true and are
+        recorded, never alerted (T-04). The answer comes once every
+        accepted sample is published or durably queued (B-05): accepted
+        counts only those; a sample that could not be handed is
+        not_acknowledged and is sent again. A sample that does not read
+        as telemetry/v1 is refused_invalid with its field errors and the
+        others are taken. 503 with Retry-After when the client's
+        operator_ws source is switched off (B-10).
+      security:
+      - operatorToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TelemetryBatch"
+      responses:
+        "202":
+          description: Taken; the counts and every sample that was not accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TelemetryBatchResult"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
 
   /oauth/token:
     post:
@@ -1749,3 +1855,104 @@ components:
           maxItems: 500
           items:
             $ref: '#/components/schemas/IntentDecision'
+    TelemetryFrame:
+      description: telemetry/v1 (schemas/telemetry/v1/schema.json, the source of truth).
+      type: object
+      additionalProperties: false
+      required: [ts, serial, seq, position, alt_wgs84_m, height_m, height_ref, speed_ms, track_deg, vspeed_ms, status, emergency,
+        accuracy_h, accuracy_v, timestamp_accuracy_s]
+      properties:
+        ts: {type: string, format: date-time, description: "The client's clock, RFC 3339 in UTC with Z."}
+        serial: {type: string, minLength: 1, maxLength: 64}
+        seq: {type: integer, format: int64, minimum: 0}
+        epoch: {type: string, minLength: 1, maxLength: 64, description: "The client's run of its seq counter: a new one whenever seq starts again."}
+        backlog: {type: boolean}
+        end: {type: boolean}
+        intent_id: {type: [string, "null"], format: uuid}
+        position:
+          $ref: "#/components/schemas/TelemetryPosition"
+        alt_wgs84_m: {type: [number, "null"], format: double}
+        alt_pressure_m: {type: [number, "null"], format: double}
+        height_m: {type: [number, "null"], format: double}
+        height_ref: {type: [string, "null"], enum: [TakeoffLocation, GroundLevel, null]}
+        speed_ms: {type: [number, "null"], format: double, minimum: 0}
+        track_deg: {type: [number, "null"], format: double, minimum: 0, exclusiveMaximum: 360}
+        vspeed_ms: {type: [number, "null"], format: double}
+        status: {type: string, enum: [Undeclared, Ground, Airborne, Emergency, RemoteIDSystemFailure]}
+        emergency: {type: boolean}
+        operator_position:
+          oneOf:
+          - $ref: "#/components/schemas/TelemetryOperatorPosition"
+          - type: "null"
+        accuracy_h: {type: string, enum: [HAUnknown, HA10NMPlus, HA10NM, HA4NM, HA2NM, HA1NM, HA05NM, HA03NM, HA01NM, HA005NM, HA30m,
+            HA10m, HA3m, HA1m]}
+        accuracy_v: {type: string, enum: [VAUnknown, VA150mPlus, VA150m, VA45m, VA25m, VA10m, VA3m, VA1m]}
+        timestamp_accuracy_s: {type: [number, "null"], format: double, minimum: 0}
+    TelemetryPosition:
+      type: object
+      additionalProperties: false
+      required: [lat, lng]
+      properties:
+        lat: {type: number, format: double, minimum: -90, maximum: 90}
+        lng: {type: number, format: double, minimum: -180, maximum: 180}
+    TelemetryOperatorPosition:
+      type: object
+      additionalProperties: false
+      required: [lat, lng]
+      properties:
+        lat: {type: number, format: double, minimum: -90, maximum: 90}
+        lng: {type: number, format: double, minimum: -180, maximum: 180}
+        alt_wgs84_m: {type: [number, "null"], format: double}
+    TelemetryBatch:
+      type: object
+      additionalProperties: false
+      required: [frames]
+      properties:
+        sent_at:
+          type: string
+          format: date-time
+          description: |
+            The client's clock when it sent the batch (RFC 3339 in UTC with
+            Z). With it every sample is placed at receipt - (sent_at - ts),
+            so the client's clock error cancels and a drained backlog keeps
+            its own times (T-02); without it the batch rule places the
+            samples against the newest one.
+        frames:
+          type: array
+          minItems: 1
+          maxItems: 2000
+          items:
+            $ref: "#/components/schemas/TelemetryFrame"
+    TelemetryOutcome:
+      description: One sample that was not accepted, by its index in the request.
+      type: object
+      required: [index, outcome]
+      properties:
+        index: {type: integer, minimum: 0}
+        serial: {type: string}
+        seq: {type: integer, format: int64}
+        outcome:
+          type: string
+          description: |
+            duplicate (taken before: acknowledged), duplicate_pending (taken
+            before and still on its way: send it again later),
+            refused_invalid, refused_unbound, refused_bindings_unavailable,
+            refused_source_disabled, refused_capacity,
+            rejected_out_of_order, rejected_too_old, refused_intent_state,
+            refused_no_authorisation, refused_batch_span, dropped_rate,
+            dropped_queue_full or not_acknowledged (send again).
+        detail: {type: string}
+    TelemetryBatchResult:
+      type: object
+      additionalProperties: false
+      required: [accepted, refused, dropped, duplicate, not_acknowledged, outcomes]
+      properties:
+        accepted: {type: integer, minimum: 0, description: "Published or durably queued (B-05)."}
+        refused: {type: integer, minimum: 0}
+        dropped: {type: integer, minimum: 0}
+        duplicate: {type: integer, minimum: 0}
+        not_acknowledged: {type: integer, minimum: 0}
+        outcomes:
+          type: array
+          items:
+            $ref: "#/components/schemas/TelemetryOutcome"
