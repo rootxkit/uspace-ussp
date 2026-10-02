@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Regenerates every generated Go file into a scratch directory and fails
-# on any difference from the committed copy. Offline: the generator
-# comes from the module cache (go.mod tool directive), nothing is
-# compared against another repository.
+# on any difference from the committed copy, after checking that the
+# pinned standard files are the ones api/standards/SOURCE records
+# (scripts/check-standards.sh). Offline: the generator comes from the
+# module cache (go.mod tool directive) and the standard files are the
+# vendored copies.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -11,7 +13,11 @@ trap 'rm -rf "$scratch"' EXIT
 # Git Bash on Windows: hand the Windows go binary a path it can open.
 if command -v cygpath >/dev/null 2>&1; then scratch=$(cygpath -m "$scratch"); fi
 
-files=(internal/national/gen/server.gen.go internal/national/client/client.gen.go)
+GO=${GO:-go} "$root/scripts/check-standards.sh"
+
+files=(internal/national/gen/server.gen.go internal/national/client/client.gen.go
+  internal/stdapi/f3411/server.gen.go internal/stdapi/f3411/client.gen.go
+  internal/stdapi/f3548/server.gen.go internal/stdapi/f3548/client.gen.go)
 # The sqlc packages are compared file by file, both ways: a stale file
 # left behind is as wrong as a missing one.
 sqlc_dirs=(internal/store/relational internal/store/timeseries)

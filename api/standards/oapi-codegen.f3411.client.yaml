@@ -1,0 +1,46 @@
+# oapi-codegen configuration for internal/stdapi/f3411/client.gen.go
+# (docs/PLAN.md D3, brief WP-3): the client of the DSS operations and of the peer USS
+# operations this USSP calls (docs/PLAN.md §6.2),
+# from the pinned copy api/standards/f3411-v22a.yaml. No models: the types are
+# uspace-core's f3411 package (v1.2.0), which core generated from the same
+# file at the same commit (api/standards/SOURCE); they are dot-imported so
+# that the generated code names them unqualified. Formats uuid and
+# duration map to string as in core's configuration. Operation ids are
+# the file's. Run through scripts/generate.sh; never edit the output.
+package: f3411
+generate:
+  client: true
+additional-imports:
+  - package: github.com/rootxkit/uspace-core/f3411
+    alias: .
+output-options:
+  type-mapping:
+    string:
+      formats:
+        uuid:
+          type: string
+        duration:
+          type: string
+  # ClientWithResponses names its parsed responses <operationId><suffix>;
+  # "Response" would collide with core's schema types of the same name
+  # (SearchIdentificationServiceAreasResponse, GetSubscriptionResponse).
+  response-type-suffix: Reply
+  # Core's f3548 has a constant named Client (the role of an
+  # availability report); the client type is StdClient in both packages.
+  client-type-name: StdClient
+  include-operation-ids:
+    # DSS (PLAN Â§6.2)
+    - searchIdentificationServiceAreas
+    - getIdentificationServiceArea
+    - createIdentificationServiceArea
+    - updateIdentificationServiceArea
+    - deleteIdentificationServiceArea
+    - searchSubscriptions
+    - getSubscription
+    - createSubscription
+    - updateSubscription
+    - deleteSubscription
+    # Peer USS (PLAN Â§6.2): flights from a peer SP, ISA notifications to subscribers
+    - searchFlights
+    - getFlightDetails
+    - postIdentificationServiceArea
