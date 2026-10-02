@@ -1,6 +1,7 @@
 package accounts
 
 import (
+	"context"
 	"encoding/base32"
 	"errors"
 	"net/url"
@@ -12,7 +13,9 @@ import (
 
 	"github.com/rootxkit/uspace-core/core"
 
+	"github.com/rootxkit/uspace-ussp/internal/auth"
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
+	"github.com/rootxkit/uspace-ussp/internal/store"
 )
 
 // RFC 4226 Appendix D: the HOTP values of the secret "12345678901234567890"
@@ -213,5 +216,32 @@ func TestErrorIsAStatusError(t *testing.T) {
 	p := httpx.ProblemFromError(se)
 	if p.Status != 409 || p.Slug() != "operator_exists" || p.Detail != "d" || se.Error() == "" {
 		t.Fatalf("%+v", p)
+	}
+}
+
+// Review fix: a username no account can have is refused before the
+// lookup and the lockout. The Store has no pool, so reaching either
+// would fail the test; the refusal's audit row cannot be written and is
+// counted. A valid username gets past the check (here to the missing
+// issuer's 503), the presence half of the pair.
+func TestLoginRefusesAnInvalidUsernameBeforeTheLockout(t *testing.T) {
+	counters := &core.Counters{}
+	s := &Service{Store: &store.Store{}, Counters: counters}
+	for _, u := range []string{"", "   ", "a b c", "ab", "unknown\x00"} {
+		_, err := s.Login(context.Background(), LoginInput{Realm: auth.RealmPortal, Username: u, Password: "whatever-password"}, "192.0.2.1")
+		if err == nil || fieldOf(t, err) != "username" {
+			t.Fatalf("%q: %v", u, err)
+		}
+	}
+	if counters.Get(CounterLoginRefused) != 5 || counters.Get(CounterRefusalNotSaved) != 5 {
+		t.Fatalf("counters %v", counters.Snapshot())
+	}
+	_, err := s.Login(context.Background(), LoginInput{Realm: auth.RealmPortal, Username: "unknown", Password: "whatever-password"}, "192.0.2.1")
+	var ae *Error
+	if !errors.As(err, &ae) || ae.Slug != SlugSessionUnavailable {
+		t.Fatalf("a valid username: %v", err)
+	}
+	if auditName(" Ops ") != "ops" || auditName("") != invalidUsername {
+		t.Fatal("audit names")
 	}
 }

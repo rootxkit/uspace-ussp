@@ -88,7 +88,7 @@ func invalidCredentials() *Error {
 func (s *Service) Login(ctx context.Context, in LoginInput, ip string) (SessionResult, error) {
 	if s.LoginLimiter != nil {
 		if ok, wait := s.LoginLimiter.Allow("ip:" + ip); !ok {
-			s.loginRefused(ctx, in.Realm, NormalizeUsername(in.Username), "", "rate_limited_address", ip)
+			s.loginRefused(ctx, in.Realm, auditName(in.Username), "", "rate_limited_address", ip)
 			return SessionResult{}, &Error{Status: http.StatusTooManyRequests, Slug: httpx.SlugRateLimited,
 				Detail: "too many sign-in attempts from this address; wait and try again", RetryAfter: wait}
 		}
@@ -99,10 +99,18 @@ func (s *Service) Login(ctx context.Context, in LoginInput, ip string) (SessionR
 	if len(in.Username) > 128 || len(in.Password) > auth.MaxSecretBytes || len(in.TOTPCode) > 16 {
 		return SessionResult{}, core.Fieldf("body", "a field is too long")
 	}
+	// A username no account can have (empty, or outside the stored
+	// form) is refused here, before the lookup and the lockout: it must
+	// not be counted against, or lock, an account under another key
+	// (clip would have turned "" into the username "unknown").
+	user, err := username("username", in.Username)
+	if err != nil {
+		s.loginRefused(ctx, in.Realm, invalidUsername, "", "invalid_username", ip)
+		return SessionResult{}, err
+	}
 	if s.Issuer == nil {
 		return SessionResult{}, refuse(http.StatusServiceUnavailable, SlugSessionUnavailable, "this USSP has no issuer key: no session can start")
 	}
-	user := clip(NormalizeUsername(in.Username))
 	now := s.now()
 	q := s.Store.Queries()
 	if lock, err := q.LockoutByUsername(ctx, relational.LockoutByUsernameParams{Realm: in.Realm, Username: user}); err == nil &&
@@ -213,6 +221,19 @@ func loginEvent(realm, user, accountID, eventType string, payload map[string]any
 
 // loginRefused audits a refusal that is not a failure of the username
 // (a limit, a missing second factor).
+// invalidUsername labels, in the audit log only, a sign-in whose
+// username no account can have; the parentheses keep it apart from
+// every real username.
+const invalidUsername = "(invalid)"
+
+// auditName is the username as the audit log names it.
+func auditName(raw string) string {
+	if u, err := username("username", raw); err == nil {
+		return u
+	}
+	return invalidUsername
+}
+
 func (s *Service) loginRefused(ctx context.Context, realm, user, accountID, reason, ip string) {
 	s.count(CounterLoginRefused)
 	_ = s.auditOwnTx(ctx, loginEvent(realm, clip(user), accountID, EventLoginRefused, map[string]any{"reason": reason, "remote_ip": ip}))

@@ -233,6 +233,18 @@ func TestIntegrationLoginLockout(t *testing.T) {
 	if r := s.login(auth.RealmPortal, ghost, "x-password-x", ""); r.status != 429 {
 		t.Fatalf("unknown username after 10: %d", r.status)
 	}
+	// An empty username is refused before the lockout: eleven of them
+	// neither create nor move a lockout row (in particular not that of
+	// a user called "unknown").
+	before := count(t, relOwner(t), "SELECT count(*) FROM login_lockouts WHERE username IN ('', 'unknown', '(invalid)')")
+	for range 11 {
+		if r := s.login(auth.RealmPortal, "", "x-password-x", ""); r.status != 400 {
+			t.Fatalf("empty username: %d %s", r.status, r.raw)
+		}
+	}
+	if after := count(t, relOwner(t), "SELECT count(*) FROM login_lockouts WHERE username IN ('', 'unknown', '(invalid)')"); after != before {
+		t.Fatalf("lockout rows for an empty username: %d -> %d", before, after)
+	}
 }
 
 func totpNow(t *testing.T, secret string, at time.Time) string {
