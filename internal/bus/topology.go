@@ -27,6 +27,7 @@ const (
 	StreamCIS     = "CIS"
 	StreamTRAFFIC = "TRAFFIC"
 	StreamINGEST  = "INGEST"
+	StreamFLIGHT  = "FLIGHT"
 )
 
 // Bucket names (docs/PLAN.md D6, §7); written by api only.
@@ -98,6 +99,7 @@ func DefaultTopology() Topology {
 			stream(StreamCIS, SubjectCISAll, "CIS changes (30 d)", 30*24*time.Hour, 256<<10),
 			stream(StreamTRAFFIC, SubjectTrafficAll, "traffic products sampled for the record (1 d)", 24*time.Hour, 512<<10),
 			ingest,
+			stream(StreamFLIGHT, SubjectFlightAll, "flight starts, telemetry losses and ends from telemetry-ingest to api (30 d)", 30*24*time.Hour, 64<<10),
 		},
 		Buckets: []jetstream.KeyValueConfig{
 			bucket(BucketCISCurrent, "CIS zones per cell5 and the large-zone entry", MaxPayloadBytes, 0),

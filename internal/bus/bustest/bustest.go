@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/rootxkit/uspace-ussp/internal/bus"
@@ -32,4 +33,15 @@ func TrackStream(t testing.TB, c *bus.Conn, name, subject string, maxMsgs int64)
 	}
 	t.Cleanup(func() { _ = c.JetStream().DeleteStream(context.Background(), name) })
 	return bus.Topology{Streams: []jetstream.StreamConfig{cfg}}
+}
+
+// Subscribe calls fn with the body of every core NATS message on
+// subject until the test ends.
+func Subscribe(t testing.TB, c *bus.Conn, subject string, fn func(data []byte)) {
+	t.Helper()
+	sub, err := c.Subscribe(subject, func(m *nats.Msg) { fn(m.Data) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sub.Unsubscribe() })
 }

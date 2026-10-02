@@ -100,6 +100,15 @@ func TestParse(t *testing.T) {
 	if s, err = Parse("src.v1.adsb_rx.r1"); err != nil || s.Sub != "adsb_rx" || s.Instance != "r1" {
 		t.Fatalf("%+v %v", s, err)
 	}
+	if s, err = Parse("flight.v1.started.f-1"); err != nil || s.Kind != KindFlight || s.Sub != "started" || s.ID != "f-1" {
+		t.Fatalf("%+v %v", s, err)
+	}
+	if f, err := Flight("ended", "f-1"); err != nil || f != "flight.v1.ended.f-1" {
+		t.Fatalf("%q %v", f, err)
+	}
+	if f, err := Flight("ended", "a.b"); err == nil {
+		t.Fatalf("flight id with a dot: %q", f)
+	}
 	if s, err = Parse("ingest.v1.c3:131:224"); err != nil || s.Cell3 != "c3:131:224" {
 		t.Fatalf("%+v %v", s, err)
 	}
@@ -114,7 +123,7 @@ func TestParse(t *testing.T) {
 		"", "trk", "trk.v1", "trk.v1.c3:131:224.c5:1317:2248", "trk.v1.c3:131:224.c5:1317:2248.a.b",
 		"trk.v2.c3:131:224.c5:1317:2248.a", "trk.v1.c3:131:225.c5:1317:2248.a", "trk.v1.c3:131:224.c5:x.a",
 		"alrt.v1.k.c5:x.a", "ingest.v1.c5:1317:2248", "nope.v1.a", "conf.v1..", "conf.v1.a.b", "conf.v1.*",
-		"traffic.product.v1", "traffic.product.v1.a.b", "traffic.product.v1.*", "ctl.other", "x.v1.a",
+		"flight.v1.started", "traffic.product.v1", "traffic.product.v1.a.b", "traffic.product.v1.*", "ctl.other", "x.v1.a",
 		strings.Repeat("a.", MaxSubjectBytes),
 	} {
 		if s, err := Parse(bad); err == nil {
@@ -129,7 +138,7 @@ func TestDurable(t *testing.T) {
 			t.Errorf("%s durable", k)
 		}
 	}
-	for _, k := range []string{KindAlrt, KindConf, KindIdent, KindIntent, KindCIS, KindTraffic, KindIngest} {
+	for _, k := range []string{KindAlrt, KindConf, KindIdent, KindIntent, KindCIS, KindTraffic, KindIngest, KindFlight} {
 		if !Durable(k) {
 			t.Errorf("%s not durable", k)
 		}
@@ -295,7 +304,7 @@ func TestTopologyShape(t *testing.T) {
 			t.Errorf("%s: unbounded or without dedupe window: %+v", s.Name, s)
 		}
 	}
-	for _, n := range []string{StreamTRK, StreamMAN, StreamPEER, StreamALRT, StreamCONF, StreamIDENT, StreamINTENT, StreamCIS, StreamTRAFFIC, StreamINGEST} {
+	for _, n := range []string{StreamTRK, StreamMAN, StreamPEER, StreamALRT, StreamCONF, StreamIDENT, StreamINTENT, StreamCIS, StreamTRAFFIC, StreamINGEST, StreamFLIGHT} {
 		if !names[n] {
 			t.Errorf("stream %s missing", n)
 		}

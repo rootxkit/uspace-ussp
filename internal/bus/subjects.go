@@ -22,6 +22,7 @@ const (
 	KindPeer    = "peer"
 	KindTraffic = "traffic.product"
 	KindIngest  = "ingest"
+	KindFlight  = "flight"
 	KindSrc     = "src"
 	KindCtl     = "ctl"
 )
@@ -46,6 +47,7 @@ const (
 	SubjectTrafficAll = "traffic.product.v1.>"
 	SubjectIngestAll  = "ingest.v1.>"
 	SubjectSrcAll     = "src.v1.>"
+	SubjectFlightAll  = "flight.v1.>"
 )
 
 // MaxTokenBytes bounds one variable token of a subject (an id, a kind, a
@@ -175,6 +177,13 @@ func Ingest(cell3 string) (string, error) {
 	return "ingest.v1." + cell3, nil
 }
 
+// Flight is flight.v1.<event>.<flight_id>: a flight's lifecycle fact
+// from telemetry-ingest to api (docs/PLAN.md §3.2: flight start and end
+// cross from the hot path to the control plane on JetStream).
+func Flight(event, flightID string) (string, error) {
+	return two("flight.v1.", "event", event, "flight_id", flightID)
+}
+
 // Src is src.v1.<type>.<instance>.
 func Src(sourceType, instance string) (string, error) {
 	return two("src.v1.", "source_type", sourceType, "instance", instance)
@@ -221,7 +230,7 @@ func Parse(s string) (Subject, error) {
 	}
 	want := map[string]int{
 		KindTrk: 5, KindMan: 5, KindPeer: 5, KindAlrt: 5, KindConf: 3, KindIdent: 3,
-		KindIntent: 4, KindCIS: 3, KindIngest: 3, KindSrc: 4,
+		KindIntent: 4, KindCIS: 3, KindIngest: 3, KindSrc: 4, KindFlight: 4,
 	}
 	n, ok := want[t[0]]
 	if !ok {
@@ -257,7 +266,7 @@ func Parse(s string) (Subject, error) {
 		} else {
 			out.ID = t[2]
 		}
-	case KindIntent:
+	case KindIntent, KindFlight:
 		out.Sub, out.ID = t[2], t[3]
 	case KindIngest:
 		if _, err := cell.Parse3(t[2]); err != nil {

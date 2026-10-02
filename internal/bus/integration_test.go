@@ -435,3 +435,73 @@ func TestIntegrationPublisherDedupe(t *testing.T) {
 		t.Fatal(p.Counters.Snapshot())
 	}
 }
+
+// The mirror against the real bucket: never read (no bucket) is not
+// loaded; created, it reads what is there, follows puts and deletes, and
+// a key written before it started is in its first read (SC-22, D6).
+func TestIntegrationMirror(t *testing.T) {
+	c := connect(t)
+	js := c.JetStream()
+	bucket := unique("mirror")
+	t.Cleanup(func() { _ = js.DeleteKeyValue(context.Background(), bucket) })
+	m := &Mirror[string]{JS: js, Bucket: bucket, Retry: 50 * time.Millisecond}
+	runCtx, stop := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); m.Run(runCtx) }()
+	t.Cleanup(func() { stop(); <-done })
+	time.Sleep(200 * time.Millisecond)
+	if _, _, loaded := m.Snapshot(); loaded {
+		t.Fatal("loaded without a bucket")
+	}
+	kv, err := js.CreateKeyValue(ctx(t), jetstream.KeyValueConfig{Bucket: bucket, History: 1, Storage: jetstream.FileStorage})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kv.Put(ctx(t), "a", []byte(`"1"`)); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 5*time.Second, func() bool { v, ok, _, loaded := m.Get("a"); return loaded && ok && v == "1" })
+	if _, err := kv.Put(ctx(t), "b", []byte(`"2"`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := kv.Delete(ctx(t), "a"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 5*time.Second, func() bool {
+		vals, _, _ := m.Snapshot()
+		_, hasA := vals["a"]
+		return !hasA && vals["b"] == "2"
+	})
+}
+
+// NeverDelivered observed on a real work queue (05 §5, B-13): messages
+// the stream ages out before its consumer was delivered them are the
+// range it reports; with nothing removed it reports none (E-01 pair).
+func TestIntegrationNeverDeliveredOnAWorkQueue(t *testing.T) {
+	c := connect(t)
+	js := c.JetStream()
+	name := strings.ToUpper(unique("WQ"))
+	subject := strings.ToLower(name) + ".x"
+	cfg := jetstream.StreamConfig{Name: name, Subjects: []string{strings.ToLower(name) + ".>"}, Retention: jetstream.WorkQueuePolicy,
+		MaxAge: time.Second, Storage: jetstream.FileStorage, Duplicates: 500 * time.Millisecond}
+	top := Topology{Streams: []jetstream.StreamConfig{cfg}}
+	t.Cleanup(func() { _ = js.DeleteStream(context.Background(), name) })
+	src := &StreamSource{Open: PullOpener(js, top, name, PullSpec{Durable: "wq", FilterSubject: strings.ToLower(name) + ".>", MaxAckPending: 10})}
+	from, to, err := src.NeverDelivered(ctx(t))
+	if err != nil || from <= to {
+		t.Fatalf("empty queue: %d..%d %v", from, to, err)
+	}
+	for i := range 3 {
+		if _, err := js.Publish(ctx(t), subject, []byte(fmt.Sprint(i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if from, to, _ := src.NeverDelivered(ctx(t)); from <= to {
+		t.Fatalf("held messages reported lost: %d..%d", from, to)
+	}
+	time.Sleep(2500 * time.Millisecond) // the stream's MaxAge removes them unread
+	from, to, err = src.NeverDelivered(ctx(t))
+	if err != nil || from != 1 || to != 3 {
+		t.Fatalf("aged out: %d..%d %v", from, to, err)
+	}
+}
