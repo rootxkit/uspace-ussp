@@ -15,7 +15,9 @@ info:
     change feed, status) and the public subset. WP-5: the dynamic
     restrictions of the ANSP (F2), their expiry and the publisher
     staleness. WP-6: subscriptions and the signed webhook delivery
-    (F3 push). WP-7: the WebSocket change stream.
+    (F3 push). WP-7: the WebSocket change stream. WP-8: the console (accounts,
+    sessions, read models and audited actions; no write path to
+    content).
 servers:
   - url: /
 tags:
@@ -148,6 +150,24 @@ paths:
         the current version is 200 with unchanged true and no new
         version; otherwise 201 with the new version and what changed.
         The bytes stored are the bytes received.
+
+        Zones may also be published as a EUROCAE ED-269 document,
+        Content-Type application/vnd.ed269+json (415 on the other
+        datasets; WP-12). The signature covers the ED-269 bytes and is
+        verified before anything parses them. The document is read
+        strictly by uspace-core/ed269 (a refusal names every problem by
+        its ED-269 path), mapped onto ED-318 by
+        uspace-core/ed318.FromED269 with metadata.issued the time of
+        receipt, metadata.provider the publisher's client id and the
+        single-string texts in lang (a document that parses but does not
+        map is refused with core's reason), and the mapped collection is
+        held to the zones rules above. The version's body is the mapped
+        ED-318, which is what every consumer reads; the ED-269 bytes are
+        kept beside it and served by GET
+        /v1/zones/versions/{version}?format=ed269&source=true with the
+        publisher's signature. The result says mapped_from ed269 and
+        warns of every ED-269 member carried under
+        extendedProperties.ed269.
       parameters:
         - name: dataset
           in: path
@@ -155,6 +175,19 @@ paths:
           schema:
             type: string
             enum: [zones, uspace_airspace, ussp_list]
+        - name: lang
+          in: query
+          required: false
+          description: |
+            The language of an ED-269 document's single-string texts
+            (name, message, otherReasonInfo, the authority texts), as an
+            ED-318 language tag of 1 to 5 characters; ka when absent.
+            Only read for application/vnd.ed269+json.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 5
+            examples: [ka, en-GB]
         - name: If-Match
           in: header
           required: false
@@ -181,6 +214,9 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/PublicationBody"
+          application/vnd.ed269+json:
+            schema:
+              $ref: "#/components/schemas/ED269Document"
       responses:
         "200":
           description: Equal to the current version; nothing was written.
@@ -919,6 +955,798 @@ paths:
           $ref: "#/components/responses/Problem"
         default:
           $ref: "#/components/responses/Problem"
+  /v1/console/session:
+    post:
+      operationId: createConsoleSession
+      tags: [console]
+      summary: Log in to the console (the password step)
+      description: |
+        Role: none (the login). Exchanges a username and a password for a
+        console session token, returned once (201); the web BFF stores it
+        in the uspace_session cookie and forwards it as a bearer to
+        /v1/console/*. For an account with mfa_required (every admin) the
+        sign-in has two steps (the uspace-authority's contract, which the
+        kit's BFF follows): without totp the right password answers 200
+        with an MFA challenge {mfa_token, expires_at} and no session, and
+        POST /v1/console/session/mfa exchanges the challenge and a TOTP
+        code for the session. The challenge is single use, bound to the
+        account, expires after 5 minutes and takes 5 wrong codes; only
+        its SHA-256 is stored. The password step resets no failure
+        count. Sending totp (30 s step, one step of skew, never the same
+        code twice) in this request still signs in in one step. An
+        account with mfa_required and no authenticator enrolled is 401
+        mfa_required (an admin resets its MFA). The token is the
+        ecosystem's session shape (M20):
+        RS256 by the CISP's session key, iss CISP_CONSOLE_ISSUER, aud the
+        CISP's own host, sub the account id, scope "session", roles [the
+        account's role], realm console, jti the session id, at most 12 h.
+        Five failed attempts (a wrong password, a wrong or reused TOTP
+        code) lock the account for 15 minutes (423 locked, whatever the
+        password); an address may try 20 times per 15 minutes (429).
+        Every issued session is an audit row (session_issued). Nothing
+        under /v1/console/* writes content: no publication, feature,
+        snapshot or restriction.
+      x-role: none
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsoleLogin"
+      responses:
+        "200":
+          description: The password is right and the account needs a TOTP code; no session yet. Send the challenge and the code to POST /v1/console/session/mfa before expires_at.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleMFAChallenge"
+        "201":
+          description: The session; the token is shown once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleSession"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "423":
+          $ref: "#/components/responses/Locked"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteConsoleSession
+      tags: [console]
+      summary: Log out
+      description: |
+        Role: viewer and above (any console session). Revokes the
+        caller's session (its jti): every replica refuses it within 10
+        s, this one at once. Audited (session_revoked).
+      x-role: viewer
+      security:
+        - consoleSession: []
+      responses:
+        "204":
+          description: Revoked.
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/console/session/mfa:
+    post:
+      operationId: createConsoleSessionMfa
+      tags: [console]
+      summary: Log in to the console (the code step)
+      description: |
+        Role: none (the login's second step). Exchanges the MFA challenge
+        of POST /v1/console/session and a TOTP code (30 s step, one step
+        of skew, never the same code twice) for a console session token,
+        returned once, as the one-step login returns it. The challenge
+        and the account are judged under their row locks on the
+        database's clock. An unknown, used, expired or exhausted
+        challenge (5 wrong codes), or one whose account was disabled
+        since, is 401 challenge_invalid: sign in again from the password.
+        A wrong or reused code is 401 invalid_totp or totp_reused and
+        counts towards the account's lockout as in the one-step login:
+        five failures lock the account for 15 minutes (423 locked). The
+        address limit of the login (20 per 15 minutes, 429) counts both
+        steps. Every issued session is an audit row (session_issued);
+        every refusal with a known account a login_failed row.
+      x-role: none
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsoleMFA"
+      responses:
+        "201":
+          description: The session; the token is shown once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleSession"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "423":
+          $ref: "#/components/responses/Locked"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/console/me:
+    get:
+      operationId: getConsoleMe
+      tags: [console]
+      summary: The caller's account and session
+      description: Role viewer and above. The account, its role and MFA state, and the session's times.
+      x-role: viewer
+      security:
+        - consoleSession: []
+      responses:
+        "200":
+          description: The caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleMe"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/console/accounts:
+    get:
+      operationId: listConsoleAccounts
+      tags: [console]
+      summary: The console accounts
+      description: Role admin. Every account by username; never a password hash or a TOTP secret.
+      x-role: admin
+      security:
+        - consoleSession: []
+      responses:
+        "200":
+          description: The accounts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleAccountList"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createConsoleAccount
+      tags: [console]
+      summary: Create a console account
+      description: |
+        Role admin. A username (lower case, 3-64 of a-z 0-9 . _ -) and a
+        role; the response carries a generated one-time initial password
+        and, when MFA is required (always for admin), the otpauth URL of
+        a new TOTP secret, both shown once. Audited (account_created).
+      x-role: admin
+      security:
+        - consoleSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsoleAccountCreate"
+      responses:
+        "201":
+          description: Created; the secrets are shown once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleAccountCreated"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/console/accounts/{id}:
+    patch:
+      operationId: patchConsoleAccount
+      tags: [console]
+      summary: Change a console account
+      description: |
+        Role admin. Role, status (active, disabled) and reset_mfa (a new
+        TOTP secret, its otpauth URL shown once). The last active admin
+        can be neither demoted nor disabled (409 last_admin). A changed
+        role or status revokes the account's open sessions. Audited
+        (account_changed).
+      x-role: admin
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/ConsoleAccountID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsoleAccountPatch"
+      responses:
+        "200":
+          description: The account as written.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleAccountPatched"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/console/publications:
+    get:
+      operationId: listConsolePublications
+      tags: [console]
+      summary: A dataset's versions
+      description: Role viewer and above. The version history of one dataset, newest first; read only.
+      x-role: viewer
+      security:
+        - consoleSession: []
+      parameters:
+        - name: dataset
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [zones, uspace_airspace, ussp_list, restrictions]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: before
+          in: query
+          required: false
+          description: Only versions below this one.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The versions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsolePublicationList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/console/publications/{id}/diff:
+    get:
+      operationId: getConsolePublicationDiff
+      tags: [console]
+      summary: What a version added, changed and removed
+      description: |
+        Role viewer and above. The features the version added, changed
+        and removed against the version it superseded, by identifier;
+        each changed one with the flat list of the JSON Pointer paths at
+        which it differs (computed from the two canonical features, at
+        most 200 per feature, paths_truncated past it). The USSP list
+        has no features: its body's paths are listed instead.
+      x-role: viewer
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/ConsolePublicationID"
+        - name: limit
+          in: query
+          required: false
+          description: The features listed at most.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5000
+            default: 1000
+      responses:
+        "200":
+          description: The diff.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsolePublicationDiff"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/console/publications/{id}/republish:
+    post:
+      operationId: republishConsolePublication
+      tags: [console]
+      summary: Announce the current version again
+      description: |
+        Role publisher_admin and above. A new change record with reason
+        republished for this version, which must be its dataset's
+        current one (409 not_current): subscribers are notified again
+        and re-pull. No content changes: no publication, feature,
+        snapshot or restriction is written (docs/PLAN.md section 15 Q13).
+        The audit row (console_republish, with the reason) is written
+        before the change, in the same transaction.
+      x-role: publisher_admin
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/ConsolePublicationID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsoleActionReason"
+      responses:
+        "202":
+          description: The change record written.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Change"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/console/restrictions:
+    get:
+      operationId: listConsoleRestrictions
+      tags: [console]
+      summary: The restriction heads with their events
+      description: Role viewer and above. The heads with their events and the ANSP's staleness; read only.
+      x-role: viewer
+      security:
+        - consoleSession: []
+      parameters:
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [planned, active, ended, cancelled]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: The heads.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestrictionList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/console/subscriptions:
+    get:
+      operationId: listConsoleSubscriptions
+      tags: [console]
+      summary: Every client's subscriptions
+      description: Role viewer and above. Every client's subscriptions (deleted ones with status=deleted), by id, each with its deliveries per state.
+      x-role: viewer
+      security:
+        - consoleSession: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending_verification, active, suspended, deleted]
+        - name: after
+          in: query
+          required: false
+          description: Only subscriptions whose id sorts after this one (the next page).
+          schema:
+            type: string
+            maxLength: 64
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: The subscriptions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleSubscriptionList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/console/subscriptions/{id}/deliveries:
+    get:
+      operationId: listConsoleDeliveries
+      tags: [console]
+      summary: A subscription's deliveries with their attempts
+      description: Role viewer and above. As GET /v1/subscriptions/{id}/deliveries, for any client's subscription.
+      x-role: viewer
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/SubscriptionID"
+        - name: since
+          in: query
+          required: false
+          description: RFC 3339 instant with an offset (default 24 h ago).
+          schema:
+            type: string
+            examples: ["2026-10-02T12:00:00Z"]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: The deliveries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeliveryList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/console/subscriptions/{id}/suspend:
+    post:
+      operationId: suspendConsoleSubscription
+      tags: [console]
+      summary: Suspend a subscription
+      description: |
+        Role publisher_admin and above. An active or pending subscription
+        stops receiving (409 subscription_state when it is suspended
+        already). Audited with the reason before it happens, in the same
+        transaction (console_subscription_suspended).
+      x-role: publisher_admin
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/SubscriptionID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsoleActionReason"
+      responses:
+        "200":
+          description: The subscription as written.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/console/subscriptions/{id}/resume:
+    post:
+      operationId: resumeConsoleSubscription
+      tags: [console]
+      summary: Resume a suspended subscription
+      description: |
+        Role publisher_admin and above. A suspended subscription returns
+        to pending_verification with a new verification ping (WP-6: it
+        is verified again before it receives); 409 subscription_state
+        when it is not suspended. Audited with the reason before it
+        happens (console_subscription_resumed).
+      x-role: publisher_admin
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/SubscriptionID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsoleActionReason"
+      responses:
+        "200":
+          description: The subscription as written.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/console/subscriptions/{id}/deliveries/{delivery_id}/retry:
+    post:
+      operationId: retryConsoleDelivery
+      tags: [console]
+      summary: Re-queue a delivery now
+      description: |
+        Role publisher_admin and above. As WP-6's retry (the delivery is
+        queued and due now; 409 delivering while an attempt is in
+        flight), for any client's subscription, audited with the reason
+        (console_delivery_retried).
+      x-role: publisher_admin
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/SubscriptionID"
+        - name: delivery_id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsoleActionReason"
+      responses:
+        "202":
+          description: Re-queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Delivery"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/console/audit:
+    get:
+      operationId: listConsoleAudit
+      tags: [console]
+      summary: The audit log
+      description: |
+        Role admin. The events table (every publication, restriction
+        change, subscription change, account change, session and console
+        action, with its actor), newest first, with the chain hashes;
+        filtered by since, actor (actor_id) and type (event_type), paged
+        with before_id.
+      x-role: admin
+      security:
+        - consoleSession: []
+      parameters:
+        - name: since
+          in: query
+          required: false
+          description: RFC 3339 instant with an offset (default 30 days ago).
+          schema:
+            type: string
+            examples: ["2026-10-02T12:00:00Z"]
+        - name: actor
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 64
+        - name: before_id
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: The rows.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleAuditList"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/console/status:
+    get:
+      operationId: getConsoleStatus
+      tags: [console]
+      summary: Service status with the process counters
+      description: Role viewer and above. GET /v1/status's document plus this instance's counters (totals since start, by component.name).
+      x-role: viewer
+      security:
+        - consoleSession: []
+      responses:
+        "200":
+          description: The status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleStatus"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
   /v1/{dataset}:
     get:
       operationId: getDataset
@@ -1093,6 +1921,27 @@ paths:
         kept per version. The stored body_sha256 is checked before
         serving: a mismatch is 500 integrity and an error log line,
         never the bytes. Token scope cis.read.
+
+        A version published as ED-269 (WP-12) is stored as the ED-318
+        uspace-core mapped it to: these bytes are served with
+        X-CIS-Mapped-From ed269 and without X-Publisher-Signature, which
+        covers the ED-269 bytes (source=true below).
+
+        format=ed269 (zones and restrictions) exports the version as an
+        ED-269 document through uspace-core (ed318.ToED269 with the
+        texts in lang, ed269.Export), Content-Type
+        application/vnd.ed269+json, X-CIS-Mapped-From ed318 and
+        X-CIS-Signature over the exported bytes (for restrictions, whose
+        version bytes are the ANSP's request, the dataset collection at
+        that version is exported); 406 not_representable
+        names the field when the version holds what ED-269 cannot
+        (USPACE, DAR, daylight events, two-layer zones), so a
+        restrictions version with a restriction in it is always 406, and
+        uspace_airspace and ussp_list are 406 by dataset. With
+        source=true the answer is instead the ED-269 bytes the publisher
+        sent, verbatim, with X-Publisher-Signature (404 when the version
+        was not published as ED-269). The ETag of an export or a source
+        names its representation ("zones:4;ed269;ka", "zones:4;source").
       parameters:
         - $ref: "#/components/parameters/DatasetPath"
         - name: version
@@ -1103,9 +1952,36 @@ paths:
             format: int64
             minimum: 1
         - $ref: "#/components/parameters/IfNoneMatch"
+        - name: format
+          in: query
+          required: false
+          description: ed269 exports the version as an ED-269 document.
+          schema:
+            type: string
+            enum: [ed269]
+        - name: source
+          in: query
+          required: false
+          description: |
+            With format=ed269: the ED-269 bytes the publisher sent,
+            verbatim (400 without format=ed269).
+          schema:
+            type: boolean
+        - name: lang
+          in: query
+          required: false
+          description: |
+            With format=ed269: the language whose text an ED-269
+            single-string field takes (else English, else the first; the
+            whole list is carried in extendedProperties.ed269.texts); ka
+            when absent.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 5
       responses:
         "200":
-          description: The version's bytes as published.
+          description: The version's bytes as published, or as exported to ED-269.
           headers:
             ETag:
               schema:
@@ -1132,6 +2008,15 @@ paths:
             X-Publisher-Kid:
               schema:
                 type: string
+            X-CIS-Mapped-From:
+              description: |
+                The format the served bytes were mapped from by
+                uspace-core: ed269 for the stored ED-318 of a version
+                published as ED-269, ed318 for an export (format=ed269).
+                Absent when the bytes are the publisher's.
+              schema:
+                type: string
+                enum: [ed269, ed318]
           content:
             application/geo+json:
               schema:
@@ -1139,6 +2024,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PublicationBody"
+            application/vnd.ed269+json:
+              schema:
+                $ref: "#/components/schemas/ED269Document"
         "304":
           $ref: "#/components/responses/NotModified"
         "400":
@@ -1148,6 +2036,8 @@ paths:
         "403":
           $ref: "#/components/responses/Problem"
         "404":
+          $ref: "#/components/responses/Problem"
+        "406":
           $ref: "#/components/responses/Problem"
         "500":
           $ref: "#/components/responses/Problem"
@@ -1495,6 +2385,23 @@ components:
         type: string
         minLength: 1
         maxLength: 64
+    ConsoleAccountID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+    ConsolePublicationID:
+      name: id
+      in: path
+      required: true
+      description: The publication's id (a ULID).
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
   responses:
     Problem:
       description: An error, as RFC 9457 problem details.
@@ -1659,6 +2566,16 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
+    Locked:
+      description: The account is locked after repeated failures; retry after Retry-After seconds.
+      headers:
+        Retry-After:
+          schema:
+            type: string
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
     RateLimited:
       description: Over the per-client rate; retry after Retry-After seconds.
       headers:
@@ -1754,6 +2671,14 @@ components:
           type: string
           description: The exponent, base64url without padding.
 
+    ED269Document:
+      type: object
+      description: |
+        A EUROCAE ED-269 geo-zone document (a features list, optionally
+        in a UASZoneList wrapper), as uspace-core/ed269 reads and writes
+        it. The server validates it with uspace-core; this schema does
+        not.
+      x-go-type: json.RawMessage
     PublicationBody:
       type: object
       description: |
@@ -1845,6 +2770,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Warning"
+        mapped_from:
+          type: string
+          description: |
+            ed269 when the publication was an ED-269 document that
+            uspace-core mapped onto ED-318 (WP-12); absent otherwise.
+          enum: [ed269]
     PublicationVersion:
       type: object
       required: [dataset, version, etag, publisher, received_at, feature_count, added, changed, removed, reason, warnings, body_sha256, bytes, content_type]
@@ -2456,8 +3387,10 @@ components:
       description: |
         One ED-318 UASZone feature as published. The CISP adds only
         extendedProperties.cis_applicability (at and applies_at reads)
-        to its copy, never to the stored feature, and to a restriction
-        extendedProperties.cis_restriction (CisRestriction).
+        and extendedProperties.cis_display_geometry (filtered reads, a
+        feature with a circle) to its copy, never to the stored feature,
+        and to a restriction extendedProperties.cis_restriction
+        (CisRestriction).
       required: [type, geometry, properties]
       properties:
         type:
@@ -2479,6 +3412,43 @@ components:
                   enum: [applies, not_applicable, unknown]
                 cis_restriction:
                   $ref: "#/components/schemas/CisRestriction"
+                cis_display_geometry:
+                  $ref: "#/components/schemas/DisplayGeometry"
+    DisplayGeometry:
+      type: object
+      description: |
+        The drawable outline of a feature that holds an ED-318 circle (a
+        Point with extent.radius), written into its copy on filtered
+        reads (bbox, at, applies_at; docs/PLAN.md section 15 Q43). A
+        circle becomes a GeoJSON Polygon of 64 vertices on the geodesic
+        circle (WGS84, uspace-core geodesy; each vertex at the radius
+        within 5 mm), counterclockwise from due north and closed; in a
+        GeometryCollection the other parts are copied as published.
+        Positions are [longitude, latitude]; there is no layer. It is a
+        drawing for maps, never a judgement: a consumer judges the
+        circle as published. Absent for a feature without a circle, and
+        on unfiltered reads, which serve the published bytes.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [Polygon, GeometryCollection]
+        coordinates:
+          type: array
+          description: Polygon only. Rings of [longitude, latitude] positions, exterior first.
+          items:
+            type: array
+            items:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items:
+                type: number
+        geometries:
+          type: array
+          description: GeometryCollection only. One Polygon per published part.
+          items:
+            $ref: "#/components/schemas/DisplayGeometry"
     ZoneFeatureCollection:
       type: object
       description: A plain FeatureCollection of features as published (the parts of a delta).
@@ -2719,7 +3689,11 @@ components:
         bbox is [min lng, min lat, max lng, max lat] of what changed,
         absent for the whole dataset. producer is uspace-cisp on the bus,
         the change feed and the stream, and cisp/deliver-<instance> in a
-        webhook (the deliver instance that sent it).
+        webhook (the deliver instance that sent it). A record the ANSP
+        delivers directly to /v1/cis/notifications while the CISP is
+        unreachable (cross-plan M1, M5) names the ANSP process,
+        ansp/<process> or ansp-<n>/<process>-<n> as in the common
+        envelope (ansp/api today); receivers allow-list its issuer.
 
         reason is an open enumeration (spec 04 section 4: values are
         added within v1). A receiver pulls pull_url only for publication
@@ -2744,7 +3718,7 @@ components:
           pattern: "^([0-9]+|[0-9A-HJKMNP-TV-Z]{26})$"
         producer:
           type: string
-          pattern: "^(uspace-cisp|cisp/deliver-[A-Za-z0-9._-]{1,64})$"
+          pattern: "^(uspace-cisp|cisp/deliver-[A-Za-z0-9._-]{1,64}|ansp(/[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*|-[0-9]+/[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*-[0-9]+))$"
         dataset:
           type: string
           enum: [zones, uspace_airspace, ussp_list, restrictions]
@@ -3107,3 +4081,373 @@ components:
           description: Held as active here, not declared by the ANSP.
           items:
             type: string
+
+    ConsoleLogin:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 64
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        totp:
+          type: string
+          description: The six-digit TOTP code of an account with mfa_required, to sign in in one step; without it such an account gets an MFA challenge.
+          pattern: "^[0-9]{6}$"
+    ConsoleMFAChallenge:
+      type: object
+      description: The password step's answer for an account with mfa_required; the token is shown once and only its SHA-256 is stored.
+      required: [mfa_token, expires_at]
+      properties:
+        mfa_token:
+          type: string
+          minLength: 1
+          maxLength: 256
+        expires_at:
+          type: string
+          format: date-time
+    ConsoleMFA:
+      type: object
+      required: [mfa_token, code]
+      properties:
+        mfa_token:
+          type: string
+          description: The challenge of POST /v1/console/session.
+          minLength: 1
+          maxLength: 256
+        code:
+          type: string
+          description: The six-digit TOTP code.
+          pattern: "^[0-9]{6}$"
+    ConsoleRole:
+      type: string
+      enum: [viewer, publisher_admin, admin]
+    ConsoleAccount:
+      type: object
+      description: A console account; never its password hash or TOTP secret.
+      required: [id, username, role, status, mfa_required, mfa_enrolled, created_at, failed_logins]
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        role:
+          $ref: "#/components/schemas/ConsoleRole"
+        status:
+          type: string
+          enum: [active, disabled]
+        mfa_required:
+          type: boolean
+        mfa_enrolled:
+          type: boolean
+          description: A TOTP secret is set.
+        created_at:
+          type: string
+          format: date-time
+        last_login_at:
+          type: string
+          format: date-time
+        failed_logins:
+          type: integer
+          minimum: 0
+        locked_until:
+          type: string
+          format: date-time
+    ConsoleSession:
+      type: object
+      required: [token, expires_at, account]
+      properties:
+        token:
+          type: string
+          description: The session JWT (shown once); the BFF keeps it in the uspace_session cookie.
+        expires_at:
+          type: string
+          format: date-time
+        account:
+          $ref: "#/components/schemas/ConsoleAccount"
+    ConsoleMe:
+      type: object
+      required: [account, session]
+      properties:
+        account:
+          $ref: "#/components/schemas/ConsoleAccount"
+        session:
+          type: object
+          required: [jti, issued_at, expires_at]
+          properties:
+            jti:
+              type: string
+            issued_at:
+              type: string
+              format: date-time
+            expires_at:
+              type: string
+              format: date-time
+    ConsoleAccountList:
+      type: object
+      required: [accounts]
+      properties:
+        accounts:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/ConsoleAccount"
+    ConsoleAccountCreate:
+      type: object
+      required: [username, role]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 64
+        role:
+          $ref: "#/components/schemas/ConsoleRole"
+        mfa_required:
+          type: boolean
+          description: Forced true for admin.
+    ConsoleAccountCreated:
+      type: object
+      required: [account, initial_password]
+      properties:
+        account:
+          $ref: "#/components/schemas/ConsoleAccount"
+        initial_password:
+          type: string
+          description: The one-time initial password, shown once.
+        totp_uri:
+          type: string
+          description: The otpauth URL of the new TOTP secret, shown once; present when MFA is required.
+    ConsoleAccountPatch:
+      type: object
+      properties:
+        role:
+          $ref: "#/components/schemas/ConsoleRole"
+        status:
+          type: string
+          enum: [active, disabled]
+        reset_mfa:
+          type: boolean
+    ConsoleAccountPatched:
+      type: object
+      required: [account, sessions_revoked]
+      properties:
+        account:
+          $ref: "#/components/schemas/ConsoleAccount"
+        totp_uri:
+          type: string
+          description: The otpauth URL of a new TOTP secret, shown once.
+        sessions_revoked:
+          type: integer
+          minimum: 0
+    ConsoleActionReason:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Why; kept in the audit row.
+    ConsolePublicationList:
+      type: object
+      required: [dataset, versions]
+      properties:
+        dataset:
+          type: string
+        versions:
+          type: array
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/ConsolePublicationVersion"
+        next_before:
+          type: integer
+          format: int64
+          description: Pass as before for the next page; absent on the last page.
+    ConsolePublicationVersion:
+      type: object
+      required: [id, dataset, version, publisher, received_at, feature_count, added, changed, removed, reason]
+      properties:
+        id:
+          type: string
+        dataset:
+          type: string
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        publisher:
+          type: string
+        received_at:
+          type: string
+          format: date-time
+        feature_count:
+          type: integer
+          minimum: 0
+        added:
+          type: integer
+          minimum: 0
+        changed:
+          type: integer
+          minimum: 0
+        removed:
+          type: integer
+          minimum: 0
+        supersedes_version:
+          type: integer
+          format: int64
+          minimum: 0
+        reason:
+          type: string
+    ConsolePathChange:
+      type: object
+      required: [path, op]
+      properties:
+        path:
+          type: string
+          description: A JSON Pointer (RFC 6901) into the feature (or the USSP list).
+        op:
+          type: string
+          enum: [added, removed, changed]
+    ConsolePublicationDiff:
+      type: object
+      required: [publication, features, truncated]
+      properties:
+        publication:
+          $ref: "#/components/schemas/ConsolePublicationVersion"
+        previous_version:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The version diffed against; absent for a first version.
+        features:
+          type: array
+          items:
+            type: object
+            required: [feature_id, op]
+            properties:
+              feature_id:
+                type: string
+              op:
+                type: string
+                enum: [added, changed, removed]
+              paths:
+                type: array
+                maxItems: 200
+                items:
+                  $ref: "#/components/schemas/ConsolePathChange"
+              paths_truncated:
+                type: boolean
+        truncated:
+          type: boolean
+          description: More features changed than limit.
+        body_paths:
+          type: array
+          maxItems: 200
+          description: For the USSP list, the paths of its body that changed.
+          items:
+            $ref: "#/components/schemas/ConsolePathChange"
+        body_paths_truncated:
+          type: boolean
+    ConsoleSubscription:
+      type: object
+      required: [subscription, deliveries]
+      properties:
+        subscription:
+          $ref: "#/components/schemas/Subscription"
+        deliveries:
+          type: object
+          description: The subscription's deliveries per state.
+          required: [queued, delivering, delivered, failed, expired]
+          properties:
+            queued:
+              type: integer
+              format: int64
+              minimum: 0
+            delivering:
+              type: integer
+              format: int64
+              minimum: 0
+            delivered:
+              type: integer
+              format: int64
+              minimum: 0
+            failed:
+              type: integer
+              format: int64
+              minimum: 0
+            expired:
+              type: integer
+              format: int64
+              minimum: 0
+    ConsoleSubscriptionList:
+      type: object
+      required: [subscriptions]
+      properties:
+        subscriptions:
+          type: array
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/ConsoleSubscription"
+        next_after:
+          type: string
+          description: Pass as after for the next page; absent on the last page.
+    ConsoleAuditEvent:
+      type: object
+      required: [id, ts, actor_type, actor_id, event_type, entity_type, entity_id, payload, hash]
+      properties:
+        id:
+          type: integer
+          format: int64
+        ts:
+          type: string
+          format: date-time
+        actor_type:
+          type: string
+          enum: [client, account, system]
+        actor_id:
+          type: string
+        event_type:
+          type: string
+        entity_type:
+          type: string
+        entity_id:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        prev_hash:
+          type: string
+          description: Lower-case hex; absent for the chain's first row.
+        hash:
+          type: string
+          description: Lower-case hex SHA-256 over prev_hash and the row's canonical fields.
+    ConsoleAuditList:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/ConsoleAuditEvent"
+        next_before_id:
+          type: integer
+          format: int64
+          description: Pass as before_id for the next page; absent on the last page.
+    ConsoleStatus:
+      type: object
+      required: [status, counters]
+      properties:
+        status:
+          $ref: "#/components/schemas/Status"
+        counters:
+          type: object
+          description: This instance's counters since start, by component.name.
+          additionalProperties:
+            type: integer
+            format: int64
+            minimum: 0

@@ -3,7 +3,11 @@
 #   make test GO=/c/Users/<you>/AppData/Local/anaconda3/bin/go
 #
 # bash, not /bin/sh: the recipes use pipefail, which ubuntu's dash lacks.
-SHELL := bash
+# -e and pipefail on every recipe line: a command that fails anywhere in
+# a line, also on the left of a pipe into tee or tail, fails the target.
+# Without them only the last command of a line decides.
+SHELL       := bash
+.SHELLFLAGS := -eo pipefail -c
 GO    ?= go
 PKGS  ?= ./...
 
@@ -87,10 +91,12 @@ integration:
 	export USSP_TEST_PG_URL="$${USSP_TEST_PG_URL:-postgres://ussp_api:$${USSP_PG_API_PASSWORD}@127.0.0.1:57432/ussp_relational?sslmode=disable}"; \
 	export USSP_TEST_TS_URL="$${USSP_TEST_TS_URL:-postgres://ussp_api:$${USSP_PG_API_PASSWORD}@127.0.0.1:57432/ussp_timeseries?sslmode=disable}"; 	export USSP_TEST_TS_OWNER_URL="$${USSP_TEST_TS_OWNER_URL:-postgres://ussp_tsdb:$${USSP_PG_TSDB_PASSWORD}@127.0.0.1:57432/ussp_timeseries?sslmode=disable}"; \
 	export USSP_TEST_NATS_URL="$${USSP_TEST_NATS_URL:-nats://api:$${USSP_NATS_API_PASSWORD}@127.0.0.1:57422}"; \
-	set -o pipefail; \
-	$(GO) test -tags integration -count=1 -p 1 -v ./test/integration/... ./internal/bus/... ./internal/app/tsdbwriter/... 2>&1 | tee integration.log; \
+	rc=0; \
+	$(GO) test -tags integration -count=1 -p 1 -v ./test/integration/... ./internal/bus/... ./internal/app/tsdbwriter/... 2>&1 | tee integration.log || rc=$$?; \
 	n=$$(grep -c '^--- PASS' integration.log || true); \
-	echo "integration: $$n top-level tests passed"; \
+	f=$$(grep -c '^--- FAIL' integration.log || true); \
+	echo "integration: $$n top-level tests passed, $$f failed"; \
+	if [ "$$rc" -ne 0 ]; then echo "integration: go test exited $$rc"; exit "$$rc"; fi; \
 	if [ "$$n" -eq 0 ]; then echo "integration: zero tests ran"; exit 1; fi
 
 # oapi-codegen (scripts/generate.sh) and openapi-typescript (web/).

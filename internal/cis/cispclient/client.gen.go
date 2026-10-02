@@ -140,6 +140,126 @@ func (e CisRestrictionState) Valid() bool {
 	}
 }
 
+// Defines values for ConsoleAccountStatus.
+const (
+	ConsoleAccountStatusActive   ConsoleAccountStatus = "active"
+	ConsoleAccountStatusDisabled ConsoleAccountStatus = "disabled"
+)
+
+// Valid indicates whether the value is a known member of the ConsoleAccountStatus enum.
+func (e ConsoleAccountStatus) Valid() bool {
+	switch e {
+	case ConsoleAccountStatusActive:
+		return true
+	case ConsoleAccountStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConsoleAccountPatchStatus.
+const (
+	ConsoleAccountPatchStatusActive   ConsoleAccountPatchStatus = "active"
+	ConsoleAccountPatchStatusDisabled ConsoleAccountPatchStatus = "disabled"
+)
+
+// Valid indicates whether the value is a known member of the ConsoleAccountPatchStatus enum.
+func (e ConsoleAccountPatchStatus) Valid() bool {
+	switch e {
+	case ConsoleAccountPatchStatusActive:
+		return true
+	case ConsoleAccountPatchStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConsoleAuditEventActorType.
+const (
+	ConsoleAuditEventActorTypeAccount ConsoleAuditEventActorType = "account"
+	ConsoleAuditEventActorTypeClient  ConsoleAuditEventActorType = "client"
+	ConsoleAuditEventActorTypeSystem  ConsoleAuditEventActorType = "system"
+)
+
+// Valid indicates whether the value is a known member of the ConsoleAuditEventActorType enum.
+func (e ConsoleAuditEventActorType) Valid() bool {
+	switch e {
+	case ConsoleAuditEventActorTypeAccount:
+		return true
+	case ConsoleAuditEventActorTypeClient:
+		return true
+	case ConsoleAuditEventActorTypeSystem:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConsolePathChangeOp.
+const (
+	ConsolePathChangeOpAdded   ConsolePathChangeOp = "added"
+	ConsolePathChangeOpChanged ConsolePathChangeOp = "changed"
+	ConsolePathChangeOpRemoved ConsolePathChangeOp = "removed"
+)
+
+// Valid indicates whether the value is a known member of the ConsolePathChangeOp enum.
+func (e ConsolePathChangeOp) Valid() bool {
+	switch e {
+	case ConsolePathChangeOpAdded:
+		return true
+	case ConsolePathChangeOpChanged:
+		return true
+	case ConsolePathChangeOpRemoved:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConsolePublicationDiffFeaturesOp.
+const (
+	ConsolePublicationDiffFeaturesOpAdded   ConsolePublicationDiffFeaturesOp = "added"
+	ConsolePublicationDiffFeaturesOpChanged ConsolePublicationDiffFeaturesOp = "changed"
+	ConsolePublicationDiffFeaturesOpRemoved ConsolePublicationDiffFeaturesOp = "removed"
+)
+
+// Valid indicates whether the value is a known member of the ConsolePublicationDiffFeaturesOp enum.
+func (e ConsolePublicationDiffFeaturesOp) Valid() bool {
+	switch e {
+	case ConsolePublicationDiffFeaturesOpAdded:
+		return true
+	case ConsolePublicationDiffFeaturesOpChanged:
+		return true
+	case ConsolePublicationDiffFeaturesOpRemoved:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConsoleRole.
+const (
+	Admin          ConsoleRole = "admin"
+	PublisherAdmin ConsoleRole = "publisher_admin"
+	Viewer         ConsoleRole = "viewer"
+)
+
+// Valid indicates whether the value is a known member of the ConsoleRole enum.
+func (e ConsoleRole) Valid() bool {
+	switch e {
+	case Admin:
+		return true
+	case PublisherAdmin:
+		return true
+	case Viewer:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DatasetCollectionCisDataset.
 const (
 	DatasetCollectionCisDatasetRestrictions   DatasetCollectionCisDataset = "restrictions"
@@ -278,6 +398,24 @@ func (e DeliveryListLog) Valid() bool {
 	case DeliveryListLogNotConfigured:
 		return true
 	case DeliveryListLogUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DisplayGeometryType.
+const (
+	GeometryCollection DisplayGeometryType = "GeometryCollection"
+	Polygon            DisplayGeometryType = "Polygon"
+)
+
+// Valid indicates whether the value is a known member of the DisplayGeometryType enum.
+func (e DisplayGeometryType) Valid() bool {
+	switch e {
+	case GeometryCollection:
+		return true
+	case Polygon:
 		return true
 	default:
 		return false
@@ -458,6 +596,21 @@ func (e PublicationResultDataset) Valid() bool {
 	case PublicationResultDatasetUsspList:
 		return true
 	case PublicationResultDatasetZones:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PublicationResultMappedFrom.
+const (
+	PublicationResultMappedFromEd269 PublicationResultMappedFrom = "ed269"
+)
+
+// Valid indicates whether the value is a known member of the PublicationResultMappedFrom enum.
+func (e PublicationResultMappedFrom) Valid() bool {
+	switch e {
+	case PublicationResultMappedFromEd269:
 		return true
 	default:
 		return false
@@ -751,13 +904,13 @@ func (e StreamFrameSchema) Valid() bool {
 
 // Defines values for StreamFrameTimeSource.
 const (
-	System StreamFrameTimeSource = "system"
+	StreamFrameTimeSourceSystem StreamFrameTimeSource = "system"
 )
 
 // Valid indicates whether the value is a known member of the StreamFrameTimeSource enum.
 func (e StreamFrameTimeSource) Valid() bool {
 	switch e {
-	case System:
+	case StreamFrameTimeSourceSystem:
 		return true
 	default:
 		return false
@@ -1208,6 +1361,21 @@ func (e ListDatasetVersionsParamsDataset) Valid() bool {
 	}
 }
 
+// Defines values for GetDatasetVersionParamsFormat.
+const (
+	GetDatasetVersionParamsFormatEd269 GetDatasetVersionParamsFormat = "ed269"
+)
+
+// Valid indicates whether the value is a known member of the GetDatasetVersionParamsFormat enum.
+func (e GetDatasetVersionParamsFormat) Valid() bool {
+	switch e {
+	case GetDatasetVersionParamsFormatEd269:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetDatasetVersionParamsDataset.
 const (
 	GetDatasetVersionParamsDatasetRestrictions   GetDatasetVersionParamsDataset = "restrictions"
@@ -1245,7 +1413,11 @@ type AirspaceConstraints struct {
 // bbox is [min lng, min lat, max lng, max lat] of what changed,
 // absent for the whole dataset. producer is uspace-cisp on the bus,
 // the change feed and the stream, and cisp/deliver-<instance> in a
-// webhook (the deliver instance that sent it).
+// webhook (the deliver instance that sent it). A record the ANSP
+// delivers directly to /v1/cis/notifications while the CISP is
+// unreachable (cross-plan M1, M5) names the ANSP process,
+// ansp/<process> or ansp-<n>/<process>-<n> as in the common
+// envelope (ansp/api today); receivers allow-list its issuer.
 //
 // reason is an open enumeration (spec 04 section 4: values are
 // added within v1). A receiver pulls pull_url only for publication
@@ -1319,6 +1491,240 @@ type CisRestrictionEndedBy string
 
 // CisRestrictionState defines model for CisRestriction.State.
 type CisRestrictionState string
+
+// ConsoleAccount A console account; never its password hash or TOTP secret.
+type ConsoleAccount struct {
+	CreatedAt    time.Time  `json:"created_at"`
+	FailedLogins int        `json:"failed_logins"`
+	Id           string     `json:"id"`
+	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
+	LockedUntil  *time.Time `json:"locked_until,omitempty"`
+
+	// MfaEnrolled A TOTP secret is set.
+	MfaEnrolled bool                 `json:"mfa_enrolled"`
+	MfaRequired bool                 `json:"mfa_required"`
+	Role        ConsoleRole          `json:"role"`
+	Status      ConsoleAccountStatus `json:"status"`
+	Username    string               `json:"username"`
+}
+
+// ConsoleAccountStatus defines model for ConsoleAccount.Status.
+type ConsoleAccountStatus string
+
+// ConsoleAccountCreate defines model for ConsoleAccountCreate.
+type ConsoleAccountCreate struct {
+	// MfaRequired Forced true for admin.
+	MfaRequired *bool       `json:"mfa_required,omitempty"`
+	Role        ConsoleRole `json:"role"`
+	Username    string      `json:"username"`
+}
+
+// ConsoleAccountCreated defines model for ConsoleAccountCreated.
+type ConsoleAccountCreated struct {
+	// Account A console account; never its password hash or TOTP secret.
+	Account ConsoleAccount `json:"account"`
+
+	// InitialPassword The one-time initial password, shown once.
+	InitialPassword string `json:"initial_password"`
+
+	// TotpUri The otpauth URL of the new TOTP secret, shown once; present when MFA is required.
+	TotpUri *string `json:"totp_uri,omitempty"`
+}
+
+// ConsoleAccountList defines model for ConsoleAccountList.
+type ConsoleAccountList struct {
+	Accounts []ConsoleAccount `json:"accounts"`
+}
+
+// ConsoleAccountPatch defines model for ConsoleAccountPatch.
+type ConsoleAccountPatch struct {
+	ResetMfa *bool                      `json:"reset_mfa,omitempty"`
+	Role     *ConsoleRole               `json:"role,omitempty"`
+	Status   *ConsoleAccountPatchStatus `json:"status,omitempty"`
+}
+
+// ConsoleAccountPatchStatus defines model for ConsoleAccountPatch.Status.
+type ConsoleAccountPatchStatus string
+
+// ConsoleAccountPatched defines model for ConsoleAccountPatched.
+type ConsoleAccountPatched struct {
+	// Account A console account; never its password hash or TOTP secret.
+	Account         ConsoleAccount `json:"account"`
+	SessionsRevoked int            `json:"sessions_revoked"`
+
+	// TotpUri The otpauth URL of a new TOTP secret, shown once.
+	TotpUri *string `json:"totp_uri,omitempty"`
+}
+
+// ConsoleActionReason defines model for ConsoleActionReason.
+type ConsoleActionReason struct {
+	// Reason Why; kept in the audit row.
+	Reason string `json:"reason"`
+}
+
+// ConsoleAuditEvent defines model for ConsoleAuditEvent.
+type ConsoleAuditEvent struct {
+	ActorId    string                     `json:"actor_id"`
+	ActorType  ConsoleAuditEventActorType `json:"actor_type"`
+	EntityId   string                     `json:"entity_id"`
+	EntityType string                     `json:"entity_type"`
+	EventType  string                     `json:"event_type"`
+
+	// Hash Lower-case hex SHA-256 over prev_hash and the row's canonical fields.
+	Hash    string                 `json:"hash"`
+	Id      int64                  `json:"id"`
+	Payload map[string]interface{} `json:"payload"`
+
+	// PrevHash Lower-case hex; absent for the chain's first row.
+	PrevHash *string   `json:"prev_hash,omitempty"`
+	Ts       time.Time `json:"ts"`
+}
+
+// ConsoleAuditEventActorType defines model for ConsoleAuditEvent.ActorType.
+type ConsoleAuditEventActorType string
+
+// ConsoleAuditList defines model for ConsoleAuditList.
+type ConsoleAuditList struct {
+	Events []ConsoleAuditEvent `json:"events"`
+
+	// NextBeforeId Pass as before_id for the next page; absent on the last page.
+	NextBeforeId *int64 `json:"next_before_id,omitempty"`
+}
+
+// ConsoleLogin defines model for ConsoleLogin.
+type ConsoleLogin struct {
+	Password string `json:"password"`
+
+	// Totp The six-digit TOTP code of an account with mfa_required, to sign in in one step; without it such an account gets an MFA challenge.
+	Totp     *string `json:"totp,omitempty"`
+	Username string  `json:"username"`
+}
+
+// ConsoleMFA defines model for ConsoleMFA.
+type ConsoleMFA struct {
+	// Code The six-digit TOTP code.
+	Code string `json:"code"`
+
+	// MfaToken The challenge of POST /v1/console/session.
+	MfaToken string `json:"mfa_token"`
+}
+
+// ConsoleMFAChallenge The password step's answer for an account with mfa_required; the token is shown once and only its SHA-256 is stored.
+type ConsoleMFAChallenge struct {
+	ExpiresAt time.Time `json:"expires_at"`
+	MfaToken  string    `json:"mfa_token"`
+}
+
+// ConsoleMe defines model for ConsoleMe.
+type ConsoleMe struct {
+	// Account A console account; never its password hash or TOTP secret.
+	Account ConsoleAccount `json:"account"`
+	Session struct {
+		ExpiresAt time.Time `json:"expires_at"`
+		IssuedAt  time.Time `json:"issued_at"`
+		Jti       string    `json:"jti"`
+	} `json:"session"`
+}
+
+// ConsolePathChange defines model for ConsolePathChange.
+type ConsolePathChange struct {
+	Op ConsolePathChangeOp `json:"op"`
+
+	// Path A JSON Pointer (RFC 6901) into the feature (or the USSP list).
+	Path string `json:"path"`
+}
+
+// ConsolePathChangeOp defines model for ConsolePathChange.Op.
+type ConsolePathChangeOp string
+
+// ConsolePublicationDiff defines model for ConsolePublicationDiff.
+type ConsolePublicationDiff struct {
+	// BodyPaths For the USSP list, the paths of its body that changed.
+	BodyPaths          *[]ConsolePathChange `json:"body_paths,omitempty"`
+	BodyPathsTruncated *bool                `json:"body_paths_truncated,omitempty"`
+	Features           []struct {
+		FeatureId      string                           `json:"feature_id"`
+		Op             ConsolePublicationDiffFeaturesOp `json:"op"`
+		Paths          *[]ConsolePathChange             `json:"paths,omitempty"`
+		PathsTruncated *bool                            `json:"paths_truncated,omitempty"`
+	} `json:"features"`
+
+	// PreviousVersion The version diffed against; absent for a first version.
+	PreviousVersion *int64                    `json:"previous_version,omitempty"`
+	Publication     ConsolePublicationVersion `json:"publication"`
+
+	// Truncated More features changed than limit.
+	Truncated bool `json:"truncated"`
+}
+
+// ConsolePublicationDiffFeaturesOp defines model for ConsolePublicationDiff.Features.Op.
+type ConsolePublicationDiffFeaturesOp string
+
+// ConsolePublicationList defines model for ConsolePublicationList.
+type ConsolePublicationList struct {
+	Dataset string `json:"dataset"`
+
+	// NextBefore Pass as before for the next page; absent on the last page.
+	NextBefore *int64                      `json:"next_before,omitempty"`
+	Versions   []ConsolePublicationVersion `json:"versions"`
+}
+
+// ConsolePublicationVersion defines model for ConsolePublicationVersion.
+type ConsolePublicationVersion struct {
+	Added             int       `json:"added"`
+	Changed           int       `json:"changed"`
+	Dataset           string    `json:"dataset"`
+	FeatureCount      int       `json:"feature_count"`
+	Id                string    `json:"id"`
+	Publisher         string    `json:"publisher"`
+	Reason            string    `json:"reason"`
+	ReceivedAt        time.Time `json:"received_at"`
+	Removed           int       `json:"removed"`
+	SupersedesVersion *int64    `json:"supersedes_version,omitempty"`
+	Version           int64     `json:"version"`
+}
+
+// ConsoleRole defines model for ConsoleRole.
+type ConsoleRole string
+
+// ConsoleSession defines model for ConsoleSession.
+type ConsoleSession struct {
+	// Account A console account; never its password hash or TOTP secret.
+	Account   ConsoleAccount `json:"account"`
+	ExpiresAt time.Time      `json:"expires_at"`
+
+	// Token The session JWT (shown once); the BFF keeps it in the uspace_session cookie.
+	Token string `json:"token"`
+}
+
+// ConsoleStatus defines model for ConsoleStatus.
+type ConsoleStatus struct {
+	// Counters This instance's counters since start, by component.name.
+	Counters map[string]int64 `json:"counters"`
+
+	// Status The status document (docs/PLAN.md section 6.3).
+	Status Status `json:"status"`
+}
+
+// ConsoleSubscription defines model for ConsoleSubscription.
+type ConsoleSubscription struct {
+	// Deliveries The subscription's deliveries per state.
+	Deliveries struct {
+		Delivered  int64 `json:"delivered"`
+		Delivering int64 `json:"delivering"`
+		Expired    int64 `json:"expired"`
+		Failed     int64 `json:"failed"`
+		Queued     int64 `json:"queued"`
+	} `json:"deliveries"`
+	Subscription Subscription `json:"subscription"`
+}
+
+// ConsoleSubscriptionList defines model for ConsoleSubscriptionList.
+type ConsoleSubscriptionList struct {
+	// NextAfter Pass as after for the next page; absent on the last page.
+	NextAfter     *string               `json:"next_after,omitempty"`
+	Subscriptions []ConsoleSubscription `json:"subscriptions"`
+}
 
 // DatasetCollection An ED-318 FeatureCollection as the CISP serves it: the features
 // as published (canonical JSON), metadata.issued the version's
@@ -1419,6 +1825,35 @@ type DeliveryList struct {
 
 // DeliveryListLog Whether the attempts of the delivery log were read.
 type DeliveryListLog string
+
+// DisplayGeometry The drawable outline of a feature that holds an ED-318 circle (a
+// Point with extent.radius), written into its copy on filtered
+// reads (bbox, at, applies_at; docs/PLAN.md section 15 Q43). A
+// circle becomes a GeoJSON Polygon of 64 vertices on the geodesic
+// circle (WGS84, uspace-core geodesy; each vertex at the radius
+// within 5 mm), counterclockwise from due north and closed; in a
+// GeometryCollection the other parts are copied as published.
+// Positions are [longitude, latitude]; there is no layer. It is a
+// drawing for maps, never a judgement: a consumer judges the
+// circle as published. Absent for a feature without a circle, and
+// on unfiltered reads, which serve the published bytes.
+type DisplayGeometry struct {
+	// Coordinates Polygon only. Rings of [longitude, latitude] positions, exterior first.
+	Coordinates *[][][]float32 `json:"coordinates,omitempty"`
+
+	// Geometries GeometryCollection only. One Polygon per published part.
+	Geometries *[]DisplayGeometry  `json:"geometries,omitempty"`
+	Type       DisplayGeometryType `json:"type"`
+}
+
+// DisplayGeometryType defines model for DisplayGeometry.Type.
+type DisplayGeometryType string
+
+// ED269Document A EUROCAE ED-269 geo-zone document (a features list, optionally
+// in a UASZoneList wrapper), as uspace-core/ed269 reads and writes
+// it. The server validates it with uspace-core; this schema does
+// not.
+type ED269Document = json.RawMessage
 
 // FieldProblem defines model for FieldProblem.
 type FieldProblem struct {
@@ -1563,11 +1998,15 @@ type PublicationResult struct {
 	Dataset      PublicationResultDataset `json:"dataset"`
 
 	// Etag Examples: "zones:5"
-	Etag         string     `json:"etag"`
-	FeatureCount *int       `json:"feature_count,omitempty"`
-	ReceivedAt   *time.Time `json:"received_at,omitempty"`
-	Removed      *[]string  `json:"removed,omitempty"`
-	RemovedCount *int       `json:"removed_count,omitempty"`
+	Etag         string `json:"etag"`
+	FeatureCount *int   `json:"feature_count,omitempty"`
+
+	// MappedFrom ed269 when the publication was an ED-269 document that
+	// uspace-core mapped onto ED-318 (WP-12); absent otherwise.
+	MappedFrom   *PublicationResultMappedFrom `json:"mapped_from,omitempty"`
+	ReceivedAt   *time.Time                   `json:"received_at,omitempty"`
+	Removed      *[]string                    `json:"removed,omitempty"`
+	RemovedCount *int                         `json:"removed_count,omitempty"`
 
 	// Truncated How many identifiers each list left out.
 	Truncated *struct {
@@ -1582,6 +2021,10 @@ type PublicationResult struct {
 
 // PublicationResultDataset defines model for PublicationResult.Dataset.
 type PublicationResultDataset string
+
+// PublicationResultMappedFrom ed269 when the publication was an ED-269 document that
+// uspace-core mapped onto ED-318 (WP-12); absent otherwise.
+type PublicationResultMappedFrom string
 
 // PublicationVersion defines model for PublicationVersion.
 type PublicationVersion struct {
@@ -2104,13 +2547,28 @@ type Warning struct {
 
 // ZoneFeature One ED-318 UASZone feature as published. The CISP adds only
 // extendedProperties.cis_applicability (at and applies_at reads)
-// to its copy, never to the stored feature, and to a restriction
-// extendedProperties.cis_restriction (CisRestriction).
+// and extendedProperties.cis_display_geometry (filtered reads, a
+// feature with a circle) to its copy, never to the stored feature,
+// and to a restriction extendedProperties.cis_restriction
+// (CisRestriction).
 type ZoneFeature struct {
 	Geometry   map[string]interface{} `json:"geometry"`
 	Properties struct {
 		ExtendedProperties *struct {
 			CisApplicability *ZoneFeaturePropertiesExtendedPropertiesCisApplicability `json:"cis_applicability,omitempty"`
+
+			// CisDisplayGeometry The drawable outline of a feature that holds an ED-318 circle (a
+			// Point with extent.radius), written into its copy on filtered
+			// reads (bbox, at, applies_at; docs/PLAN.md section 15 Q43). A
+			// circle becomes a GeoJSON Polygon of 64 vertices on the geodesic
+			// circle (WGS84, uspace-core geodesy; each vertex at the radius
+			// within 5 mm), counterclockwise from due north and closed; in a
+			// GeometryCollection the other parts are copied as published.
+			// Positions are [longitude, latitude]; there is no layer. It is a
+			// drawing for maps, never a judgement: a consumer judges the
+			// circle as published. Absent for a feature without a circle, and
+			// on unfiltered reads, which serve the published bytes.
+			CisDisplayGeometry *DisplayGeometry `json:"cis_display_geometry,omitempty"`
 
 			// CisRestriction extendedProperties.cis_restriction of a served restriction
 			// feature: the only member the CISP adds to a published feature
@@ -2151,6 +2609,12 @@ type At = string
 // BBox Examples: 44.70,41.65,44.90,41.80
 type BBox = string
 
+// ConsoleAccountID defines model for ConsoleAccountID.
+type ConsoleAccountID = string
+
+// ConsolePublicationID defines model for ConsolePublicationID.
+type ConsolePublicationID = string
+
 // DatasetPath defines model for DatasetPath.
 type DatasetPath string
 
@@ -2183,6 +2647,10 @@ type DatasetApplicationGeoPlusJSON = DatasetCollection
 
 // DatasetApplicationJSON The application/json read of a dataset, the USSP list or a delta.
 type DatasetApplicationJSON = DatasetDocument
+
+// Locked The ecosystem-wide error body (RFC 9457), the same shape as
+// uspace-lab schemas/common/problem/v1.
+type Locked = Problem
 
 // PreconditionFailed The ecosystem-wide error body (RFC 9457), the same shape as
 // uspace-lab schemas/common/problem/v1.
@@ -2302,8 +2770,23 @@ type ListDatasetVersionsParamsDataset string
 
 // GetDatasetVersionParams defines parameters for GetDatasetVersion.
 type GetDatasetVersionParams struct {
+	// Format ed269 exports the version as an ED-269 document.
+	Format *GetDatasetVersionParamsFormat `form:"format,omitempty" json:"format,omitempty"`
+
+	// Source With format=ed269: the ED-269 bytes the publisher sent,
+	// verbatim (400 without format=ed269).
+	Source *bool `form:"source,omitempty" json:"source,omitempty"`
+
+	// Lang With format=ed269: the language whose text an ED-269
+	// single-string field takes (else English, else the first; the
+	// whole list is carried in extendedProperties.ed269.texts); ka
+	// when absent.
+	Lang        *string      `form:"lang,omitempty" json:"lang,omitempty"`
 	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
 }
+
+// GetDatasetVersionParamsFormat defines parameters for GetDatasetVersion.
+type GetDatasetVersionParamsFormat string
 
 // GetDatasetVersionParamsDataset defines parameters for GetDatasetVersion.
 type GetDatasetVersionParamsDataset string
@@ -2791,6 +3274,27 @@ type ClientInterface interface {
 	// serving: a mismatch is 500 integrity and an error log line,
 	// never the bytes. Token scope cis.read.
 	//
+	// A version published as ED-269 (WP-12) is stored as the ED-318
+	// uspace-core mapped it to: these bytes are served with
+	// X-CIS-Mapped-From ed269 and without X-Publisher-Signature, which
+	// covers the ED-269 bytes (source=true below).
+	//
+	// format=ed269 (zones and restrictions) exports the version as an
+	// ED-269 document through uspace-core (ed318.ToED269 with the
+	// texts in lang, ed269.Export), Content-Type
+	// application/vnd.ed269+json, X-CIS-Mapped-From ed318 and
+	// X-CIS-Signature over the exported bytes (for restrictions, whose
+	// version bytes are the ANSP's request, the dataset collection at
+	// that version is exported); 406 not_representable
+	// names the field when the version holds what ED-269 cannot
+	// (USPACE, DAR, daylight events, two-layer zones), so a
+	// restrictions version with a restriction in it is always 406, and
+	// uspace_airspace and ussp_list are 406 by dataset. With
+	// source=true the answer is instead the ED-269 bytes the publisher
+	// sent, verbatim, with X-Publisher-Signature (404 when the version
+	// was not published as ED-269). The ETag of an export or a source
+	// names its representation ("zones:4;ed269;ka", "zones:4;source").
+	//
 	// Corresponds with GET /v1/{dataset}/versions/{version} (the `GetDatasetVersion` operationId).
 	GetDatasetVersion(ctx context.Context, dataset GetDatasetVersionParamsDataset, version int64, params *GetDatasetVersionParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
@@ -3224,6 +3728,27 @@ func (c *Client) ListDatasetVersions(ctx context.Context, dataset ListDatasetVer
 // kept per version. The stored body_sha256 is checked before
 // serving: a mismatch is 500 integrity and an error log line,
 // never the bytes. Token scope cis.read.
+//
+// A version published as ED-269 (WP-12) is stored as the ED-318
+// uspace-core mapped it to: these bytes are served with
+// X-CIS-Mapped-From ed269 and without X-Publisher-Signature, which
+// covers the ED-269 bytes (source=true below).
+//
+// format=ed269 (zones and restrictions) exports the version as an
+// ED-269 document through uspace-core (ed318.ToED269 with the
+// texts in lang, ed269.Export), Content-Type
+// application/vnd.ed269+json, X-CIS-Mapped-From ed318 and
+// X-CIS-Signature over the exported bytes (for restrictions, whose
+// version bytes are the ANSP's request, the dataset collection at
+// that version is exported); 406 not_representable
+// names the field when the version holds what ED-269 cannot
+// (USPACE, DAR, daylight events, two-layer zones), so a
+// restrictions version with a restriction in it is always 406, and
+// uspace_airspace and ussp_list are 406 by dataset. With
+// source=true the answer is instead the ED-269 bytes the publisher
+// sent, verbatim, with X-Publisher-Signature (404 when the version
+// was not published as ED-269). The ETag of an export or a source
+// names its representation ("zones:4;ed269;ka", "zones:4;source").
 //
 // Corresponds with GET /v1/{dataset}/versions/{version} (the `GetDatasetVersion` operationId).
 func (c *Client) GetDatasetVersion(ctx context.Context, dataset GetDatasetVersionParamsDataset, version int64, params *GetDatasetVersionParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4050,6 +4575,57 @@ func NewGetDatasetVersionRequest(server string, dataset GetDatasetVersionParamsD
 		return nil, err
 	}
 
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Format != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "format", *params.Format, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Source != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "source", *params.Source, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Lang != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "lang", *params.Lang, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
@@ -4417,6 +4993,27 @@ type ClientWithResponsesInterface interface {
 	// kept per version. The stored body_sha256 is checked before
 	// serving: a mismatch is 500 integrity and an error log line,
 	// never the bytes. Token scope cis.read.
+	//
+	// A version published as ED-269 (WP-12) is stored as the ED-318
+	// uspace-core mapped it to: these bytes are served with
+	// X-CIS-Mapped-From ed269 and without X-Publisher-Signature, which
+	// covers the ED-269 bytes (source=true below).
+	//
+	// format=ed269 (zones and restrictions) exports the version as an
+	// ED-269 document through uspace-core (ed318.ToED269 with the
+	// texts in lang, ed269.Export), Content-Type
+	// application/vnd.ed269+json, X-CIS-Mapped-From ed318 and
+	// X-CIS-Signature over the exported bytes (for restrictions, whose
+	// version bytes are the ANSP's request, the dataset collection at
+	// that version is exported); 406 not_representable
+	// names the field when the version holds what ED-269 cannot
+	// (USPACE, DAR, daylight events, two-layer zones), so a
+	// restrictions version with a restriction in it is always 406, and
+	// uspace_airspace and ussp_list are 406 by dataset. With
+	// source=true the answer is instead the ED-269 bytes the publisher
+	// sent, verbatim, with X-Publisher-Signature (404 when the version
+	// was not published as ED-269). The ETag of an export or a source
+	// names its representation ("zones:4;ed269;ka", "zones:4;source").
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -5592,6 +6189,7 @@ type GetDatasetVersionResponse200Headers struct {
 	CacheControl        *string
 	ETag                *string
 	LastModified        *string
+	XCISMappedFrom      *string
 	XCISSignature       string
 	XCISVersion         *int64
 	XPublisherKid       *string
@@ -5618,6 +6216,8 @@ type GetDatasetVersionResponse struct {
 	ApplicationgeoJSON200 *PublicationBody
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *PublicationBody
+	// ApplicationvndEd269JSON200 the response for an HTTP 200 `application/vnd.ed269+json` response
+	ApplicationvndEd269JSON200 *ED269Document
 	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
 	ApplicationproblemJSON400 *Problem
 	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
@@ -5626,6 +6226,8 @@ type GetDatasetVersionResponse struct {
 	ApplicationproblemJSON403 *Problem
 	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
 	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSON406 the response for an HTTP 406 `application/problem+json` response
+	ApplicationproblemJSON406 *Problem
 	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
 	ApplicationproblemJSON500 *Problem
 	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
@@ -5650,6 +6252,11 @@ func (r GetDatasetVersionResponse) GetJSON200() *PublicationBody {
 	return r.JSON200
 }
 
+// GetApplicationvndEd269JSON200 returns the response for an HTTP 200 `application/vnd.ed269+json` response
+func (r GetDatasetVersionResponse) GetApplicationvndEd269JSON200() *ED269Document {
+	return r.ApplicationvndEd269JSON200
+}
+
 // GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
 func (r GetDatasetVersionResponse) GetApplicationproblemJSON400() *Problem {
 	return r.ApplicationproblemJSON400
@@ -5668,6 +6275,11 @@ func (r GetDatasetVersionResponse) GetApplicationproblemJSON403() *Problem {
 // GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
 func (r GetDatasetVersionResponse) GetApplicationproblemJSON404() *Problem {
 	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON406 returns the response for an HTTP 406 `application/problem+json` response
+func (r GetDatasetVersionResponse) GetApplicationproblemJSON406() *Problem {
+	return r.ApplicationproblemJSON406
 }
 
 // GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
@@ -6105,6 +6717,27 @@ func (c *ClientWithResponses) ListDatasetVersionsWithResponse(ctx context.Contex
 // kept per version. The stored body_sha256 is checked before
 // serving: a mismatch is 500 integrity and an error log line,
 // never the bytes. Token scope cis.read.
+//
+// A version published as ED-269 (WP-12) is stored as the ED-318
+// uspace-core mapped it to: these bytes are served with
+// X-CIS-Mapped-From ed269 and without X-Publisher-Signature, which
+// covers the ED-269 bytes (source=true below).
+//
+// format=ed269 (zones and restrictions) exports the version as an
+// ED-269 document through uspace-core (ed318.ToED269 with the
+// texts in lang, ed269.Export), Content-Type
+// application/vnd.ed269+json, X-CIS-Mapped-From ed318 and
+// X-CIS-Signature over the exported bytes (for restrictions, whose
+// version bytes are the ANSP's request, the dataset collection at
+// that version is exported); 406 not_representable
+// names the field when the version holds what ED-269 cannot
+// (USPACE, DAR, daylight events, two-layer zones), so a
+// restrictions version with a restriction in it is always 406, and
+// uspace_airspace and ussp_list are 406 by dataset. With
+// source=true the answer is instead the ED-269 bytes the publisher
+// sent, verbatim, with X-Publisher-Signature (404 when the version
+// was not published as ED-269). The ETag of an export or a source
+// names its representation ("zones:4;ed269;ka", "zones:4;source").
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -7437,6 +8070,13 @@ func ParseGetDatasetVersionResponse(rsp *http.Response) (*GetDatasetVersionRespo
 		}
 		response.JSON200 = &dest
 
+	case rsp.Header.Get("Content-Type") == "application/vnd.ed269+json" && rsp.StatusCode == 200:
+		var dest ED269Document
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationvndEd269JSON200 = &dest
+
 	case rsp.StatusCode == 304:
 		break // No content-type
 
@@ -7467,6 +8107,13 @@ func ParseGetDatasetVersionResponse(rsp *http.Response) (*GetDatasetVersionRespo
 			return nil, err
 		}
 		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 406:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON406 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest Problem
@@ -7514,6 +8161,13 @@ func ParseGetDatasetVersionResponse(rsp *http.Response) (*GetDatasetVersionRespo
 				return nil, err
 			}
 			headers.LastModified = &value
+		}
+		if values := rsp.Header.Values("X-CIS-Mapped-From"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-CIS-Mapped-From", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XCISMappedFrom = &value
 		}
 		if values := rsp.Header.Values("X-CIS-Signature"); len(values) > 0 {
 			var value string
