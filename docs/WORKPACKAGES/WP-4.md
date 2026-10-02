@@ -134,3 +134,50 @@ alerts), WP-10/11 (`monitor` zones).
 `feat(cis): cache store and zone/applicable projection per cell [WP-4 S-M1]`,
 `feat(cis): evaluator over core zones with staleness [WP-4 S-M1]`,
 `test(cis): run the owned zone vectors through the evaluator [WP-4 S-M1]`.
+
+## As built (the PR)
+
+What the build decided where the brief, the contracts or core left a
+choice; each is in the PR body as well.
+
+- Applicability is `ed318.Applies` over the feature's
+  `limitedApplicability`, at the centre of each part's bounding box;
+  `ed318.ToZones` builds the shapes and limits from a copy without the
+  periods. ToZones refuses a daylight schedule without end dates, which
+  ED-318 allows and the CISP publishes with a warning ("judge it with
+  Applies"); building it from ToZones' windows would refuse such a
+  publication. An applicability that cannot be evaluated is `unknown`,
+  returned and counted, never "does not apply".
+- The done-when's `zones_changed` is not a `cis/change/v1` reason: by M16
+  it is acknowledged 204 without a pull (tested). The pulling reasons
+  are `publication` and the `restriction_*` ones (tested with
+  `publication` and `restriction_activated`).
+- An ANSP-signed notification is verified, logged and pulls the dataset
+  from the configured CISP. Its `pull_url` (the ANSP's
+  `GET /v1/restrictions/{id}`) is not followed: the ANSP's OpenAPI is not
+  pinned here yet (ANSP WP-8). Spec gap; while the CISP is down the
+  notified version stays on `/readyz` as "notified ... not pulled yet".
+- `signature_ok` is false: the CISP's `X-CIS-Signature` is not verified.
+  The CISP signs a version once, at its first serve, and keeps that
+  signature, while core's `DetachedVerifier` bounds iat to 5 min. The
+  pull is over TLS with a `cis.read` token. Spec gap for core or the CISP.
+- An issuer of `USSP_CIS_NOTIFY_ISSUERS` is the CISP or the ANSP by the
+  host of its JWKS URL (the host of `USSP_CISP_BASE_URL` or
+  `USSP_ANSP_BASE_URL`); one on neither refuses the start.
+- `Age()`: the age is the time since the CISP last confirmed each ED-318
+  dataset (a 200, a 304, or a 404 `no_version`, which makes the dataset
+  a known empty one, `zones:0`); the oldest counts; nothing loaded is
+  `("", 0, true)`. The `ussp_list` is cached but not part of the age.
+- The token client of outgoing calls asks `POST /oauth/token` on the
+  origin of the first `USSP_TOKEN_ISSUERS` entry's JWKS URL.
+- The vector adapter maps the ED-269 zones of `zones_applicability.json`
+  and `zones_vertical.json` to ED-318 with core's `ed318.FromED269`; a
+  zone with no authority gets a placeholder (ED-318 requires one; no
+  judgement reads it). The height-limit cases run through
+  `Evaluator.JudgeHeightLimit` (a U-space airspace's
+  `max_height_agl_m`). The `to_ed269` and `from_ed269` cases of
+  `ed318_roundtrip.json` test a mapping the USSP never makes; for them
+  the ED-318 side is ingested whole. 103 cases owned by ussp run.
+- The KV value per cell (`CellEntry`) carries `zone/applicable/v1` bodies
+  evaluated when projected, with the dataset, the restriction state and
+  the feature, under `c5:` keys and `all` for a zone over 400 cells.
