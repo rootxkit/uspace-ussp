@@ -19,9 +19,11 @@ import (
 	"math"
 	"time"
 
+	"github.com/rootxkit/uspace-core/alerting"
 	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/cpa"
 	"github.com/rootxkit/uspace-core/rid"
+	"github.com/rootxkit/uspace-core/zones"
 )
 
 // Values are the thresholds of one policy version. Every field carries
@@ -150,6 +152,18 @@ type Values struct {
 	RIDRecentPositionsMaxCount int     `json:"rid_recent_positions_max_count"`
 	SessionISARadiusM          float64 `json:"session_isa_radius_m"`
 	SessionISAHorizonS         float64 `json:"session_isa_horizon_s"`
+
+	// Conformance monitoring (WP-10). ConformanceClearAfterS is the
+	// hysteresis: a nonconforming flight returns to conforming only once
+	// its samples have shown it inside for longer than this since it was
+	// last outside (C-06). PressureUncertaintyM widens the authorised band,
+	// each way, for a sample whose AMSL altitude comes from pressure
+	// (R-09; spec 04 §3.1 within_band). MonitorLiveMaxAgeS bounds the
+	// ingest-to-monitor leg, wall - rx_ts (T-05): an older sample is
+	// rejected as late and judges nothing.
+	ConformanceClearAfterS float64 `json:"conformance_clear_after_s"`
+	PressureUncertaintyM   float64 `json:"pressure_uncertainty_m"`
+	MonitorLiveMaxAgeS     float64 `json:"monitor_live_max_age_s"`
 }
 
 // MaxSpecialOperationPriority bounds SpecialOperationPriority (an
@@ -205,9 +219,15 @@ const TelemetryRetentionFloorDays = 30
 // The Service Provider defaults (WP-9, no figure in the plan): 120
 // samples per flight (60 s at the ingest's 2 Hz cap), a 2000 m session
 // ISA reaching one hour ahead.
+//
+// The conformance defaults (WP-10) are uspace-core's alert lifecycle
+// figures (alerting.DefaultConfig: 3 s hysteresis, 10 s live age) and
+// its pressure margin (zones.DefaultPolicy: 250 m), so a conformance
+// judgement and a zone judgement treat one sample alike.
 func Defaults() Values {
 	c := cpa.DefaultPolicy
 	alt := rid.DefaultAltPolicy()
+	lc := alerting.DefaultConfig()
 	return Values{
 		DeviationHM:                 50,
 		DeviationVM:                 15,
@@ -253,6 +273,10 @@ func Defaults() Values {
 		RIDRecentPositionsMaxCount: 120,
 		SessionISARadiusM:          2000,
 		SessionISAHorizonS:         3600,
+
+		ConformanceClearAfterS: lc.ClearAfterS,
+		PressureUncertaintyM:   zones.DefaultPolicy().PressureUncertaintyM,
+		MonitorLiveMaxAgeS:     lc.LiveMaxAgeS,
 	}
 }
 
@@ -307,6 +331,7 @@ func (v Values) Validate() error {
 		{"telemetry_anchor_max_age_s", v.TelemetryAnchorMaxAgeS}, {"telemetry_batch_span_s", v.TelemetryBatchSpanS},
 		{"pressure_hold_s", v.PressureHoldS}, {"teleport_speed_ms", v.TeleportSpeedMS},
 		{"session_isa_radius_m", v.SessionISARadiusM}, {"session_isa_horizon_s", v.SessionISAHorizonS},
+		{"conformance_clear_after_s", v.ConformanceClearAfterS}, {"monitor_live_max_age_s", v.MonitorLiveMaxAgeS},
 	}
 	for _, f := range positive {
 		if !finite(f.v) || f.v <= 0 {
@@ -317,7 +342,8 @@ func (v Values) Validate() error {
 		name string
 		v    float64
 	}{{"cpa_tcpa_max_s", v.CPATCPAMaxS}, {"cpa_neighbour_max_age_s", v.CPANeighbourMaxAgeS},
-		{"deconflict_buffer_m", v.DeconflictBufferM}, {"deconflict_vertical_buffer_m", v.DeconflictVerticalBufferM}} {
+		{"deconflict_buffer_m", v.DeconflictBufferM}, {"deconflict_vertical_buffer_m", v.DeconflictVerticalBufferM},
+		{"pressure_uncertainty_m", v.PressureUncertaintyM}} {
 		if !finite(f.v) || f.v < 0 {
 			errs = append(errs, core.Fieldf(f.name, "must be a finite number of at least 0, got %v", f.v))
 		}
@@ -348,6 +374,12 @@ func (v Values) Validate() error {
 	}
 	if finite(v.FlightEndAfterS) && finite(v.TelemetryLostS) && v.FlightEndAfterS <= v.TelemetryLostS {
 		errs = append(errs, core.Fieldf("flight_end_after_s", "must be longer than telemetry_lost_s (%v), got %v", v.TelemetryLostS, v.FlightEndAfterS))
+	}
+	// The hysteresis must outlast what a clock ahead within the tolerance
+	// could shift (alerting.Config's rule: clear_after_s > 2 x the ahead
+	// tolerance), or a placement ahead would buy a clear.
+	if finite(v.ConformanceClearAfterS) && finite(v.TelemetryAheadToleranceS) && v.ConformanceClearAfterS <= 2*v.TelemetryAheadToleranceS {
+		errs = append(errs, core.Fieldf("conformance_clear_after_s", "must be longer than twice telemetry_ahead_tolerance_s (%v), got %v", v.TelemetryAheadToleranceS, v.ConformanceClearAfterS))
 	}
 	if v.ClientSecretOverlapS < 0 || v.ClientSecretOverlapS > MaxClientSecretOverlapS {
 		errs = append(errs, core.Fieldf("client_secret_overlap_s", "must be from 0 to %d, got %d", MaxClientSecretOverlapS, v.ClientSecretOverlapS))
