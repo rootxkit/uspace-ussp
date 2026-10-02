@@ -55,10 +55,11 @@ type Config struct {
 	DSSSyncAddr         string `env:"USSP_DSS_SYNC_ADDR" default:":8085" by:"dss-sync" help:"listen address of dss-sync (health and metrics only)"`
 	TSDBWriterAddr      string `env:"USSP_TSDB_WRITER_ADDR" default:":8086" by:"tsdb-writer" help:"listen address of tsdb-writer (health and metrics only)"`
 
-	PGURL     string `env:"USSP_PG_URL" by:"api" need:"api" kind:"url" secret:"url" help:"relational database (PostgreSQL + PostGIS); only api opens it"`
-	TSURL     string `env:"USSP_TS_URL" by:"api,tsdb-writer" need:"api,tsdb-writer" kind:"url" secret:"url" help:"time-series database (TimescaleDB); tsdb-writer writes, api reads"`
-	NATSURL   string `env:"USSP_NATS_URL" by:"all" need:"all" kind:"url" secret:"url" help:"NATS JetStream; the process reconnects forever and starts degraded when it is down"`
-	NATSCreds string `env:"USSP_NATS_CREDS" by:"all" help:"path of the NATS credentials file of this process; empty uses the URL's userinfo"`
+	PGURL       string `env:"USSP_PG_URL" by:"api" need:"api" kind:"url" secret:"url" help:"relational database (PostgreSQL + PostGIS); only api opens it"`
+	TSURL       string `env:"USSP_TS_URL" by:"api,tsdb-writer" need:"api,tsdb-writer" kind:"url" secret:"url" help:"time-series database (TimescaleDB); tsdb-writer writes, api reads"`
+	SchemaWaitS int    `env:"USSP_SCHEMA_WAIT_S" default:"60" by:"api,tsdb-writer" min:"0" max:"3600" unit:"s" help:"how long a process waits at start for the migrate subcommand to bring its schema to the version it needs; then it refuses to start, naming both versions"`
+	NATSURL     string `env:"USSP_NATS_URL" by:"all" need:"all" kind:"url" secret:"url" help:"NATS JetStream; the process reconnects forever and starts degraded when it is down"`
+	NATSCreds   string `env:"USSP_NATS_CREDS" by:"all" help:"path of the NATS credentials file of this process; empty uses the URL's userinfo"`
 
 	SystemID                string   `env:"USSP_SYSTEM_ID" default:"USSP-DEV" by:"api,rid-sp,dss-sync" help:"the USSP code from the authority's certificate (M8); never an audience"`
 	Audiences               []string `env:"USSP_AUDIENCES" by:"api,telemetry-ingest,rid-sp,traffic-ws" help:"hosts accepted as JWT aud, comma-separated: the public host and a lab alias (M18)"`

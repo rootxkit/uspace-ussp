@@ -248,3 +248,26 @@ func TestBodyLimitOverridesTheDefaultPerRoute(t *testing.T) {
 		t.Fatalf("standalone: %d", rec.Code)
 	}
 }
+
+type unavailable struct{}
+
+func (unavailable) Error() string       { return "kv down: secret internals" }
+func (unavailable) HTTPStatus() int     { return http.StatusServiceUnavailable }
+func (unavailable) ProblemSlug() string { return "projection_unavailable" }
+func (unavailable) ProblemDetail() string {
+	return "the policy projection cannot take the write; nothing was changed"
+}
+
+// A StatusError, even wrapped, is its own problem with its own safe
+// detail; the same text as a plain error stays a 500 without the text.
+func TestProblemFromErrorHonoursStatusError(t *testing.T) {
+	p := ProblemFromError(fmt.Errorf("put policy: %w", unavailable{}))
+	if p.Status != http.StatusServiceUnavailable || p.Slug() != "projection_unavailable" ||
+		p.Detail != "the policy projection cannot take the write; nothing was changed" {
+		t.Fatalf("status error: %+v", p)
+	}
+	p = ProblemFromError(errors.New("kv down: secret internals"))
+	if p.Status != http.StatusInternalServerError || p.Slug() != SlugInternal || p.Detail != "" {
+		t.Fatalf("plain error: %+v", p)
+	}
+}

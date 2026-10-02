@@ -5,10 +5,15 @@
 -- (CLAUDE.md rule 10):
 --
 --   ussp_relational  PostgreSQL + PostGIS, owned by ussp_api, the only
---                    writer (migrations/relational, WP-1).
---   ussp_timeseries  TimescaleDB, owned by ussp_tsdb, the only writer
---                    (migrations/timeseries, WP-1); ussp_api reads it
---                    for records through default privileges.
+--                    writer (migrations/relational, WP-1). ussp_api runs
+--                    the migrations; the api process works as ussp_app
+--                    (NOLOGIN, granted to ussp_api), which the migrations
+--                    grant table by table and which may only SELECT and
+--                    INSERT on the append-only tables (PLAN §8, 06 T7).
+--   ussp_timeseries  TimescaleDB + PostGIS (geometry columns), owned by
+--                    ussp_tsdb, the only writer (migrations/timeseries,
+--                    WP-1); ussp_api reads it for records through
+--                    default privileges.
 --
 -- The passwords come from the environment (psql \getenv), never from
 -- this file: USSP_PG_API_PASSWORD and USSP_PG_TSDB_PASSWORD.
@@ -33,6 +38,8 @@ SELECT length(:'api_password') = 0 OR length(:'tsdb_password') = 0 AS empty_pass
 
 CREATE ROLE ussp_api LOGIN PASSWORD :'api_password';
 CREATE ROLE ussp_tsdb LOGIN PASSWORD :'tsdb_password';
+CREATE ROLE ussp_app NOLOGIN;
+GRANT ussp_app TO ussp_api;
 
 CREATE DATABASE ussp_relational OWNER ussp_api;
 CREATE DATABASE ussp_timeseries OWNER ussp_tsdb;
@@ -46,6 +53,7 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 -- Time series: TimescaleDB; api reads it, never writes it.
 \connect ussp_timeseries
 CREATE EXTENSION IF NOT EXISTS timescaledb;
+CREATE EXTENSION IF NOT EXISTS postgis;
 GRANT CONNECT ON DATABASE ussp_timeseries TO ussp_api;
 GRANT USAGE ON SCHEMA public TO ussp_api;
 ALTER DEFAULT PRIVILEGES FOR ROLE ussp_tsdb IN SCHEMA public GRANT SELECT ON TABLES TO ussp_api;

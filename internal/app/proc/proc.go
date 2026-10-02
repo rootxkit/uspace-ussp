@@ -13,6 +13,7 @@ package proc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -100,11 +101,17 @@ func Run(ctx context.Context, cfg config.Config, spec Spec, opts Options) error 
 	rt.Status = &obs.Status{Logger: logger, Interval: time.Duration(cfg.StatusIntervalS) * time.Second, Health: rt.Health}
 	rt.Status.Add("http", rt.Counters)
 
-	closeDeps, err := openDependencies(rt, spec)
+	pools, closeDeps, err := openDependencies(rt, spec)
 	if err != nil {
 		return err
 	}
 	defer closeDeps()
+	if err := waitForSchemas(ctx, rt, pools); err != nil {
+		if ctx.Err() != nil {
+			return nil // stopped while waiting: nothing started, nothing to drain
+		}
+		return err
+	}
 
 	mux := http.NewServeMux()
 	HealthRoutes(mux, rt.Health, rt.Registry)
@@ -158,10 +165,18 @@ func Run(ctx context.Context, cfg config.Config, spec Spec, opts Options) error 
 	return nil
 }
 
+// schemaPool is an opened database and the migration tree it holds.
+type schemaPool struct {
+	pool *store.Pool
+	tree store.Tree
+}
+
 // openDependencies opens what spec declares and registers each in the
 // health registry; the returned function closes them. Opening never
-// waits for a server: only a malformed URL is an error.
-func openDependencies(rt *Runtime, spec Spec) (func(), error) {
+// waits for a server: only a malformed URL is an error. The relational
+// pool works as store.AppRole (the grants of the migrations); the
+// time-series pool as its login role.
+func openDependencies(rt *Runtime, spec Spec) ([]schemaPool, func(), error) {
 	var closers []func()
 	closeAll := func() {
 		for i := len(closers) - 1; i >= 0; i-- {
@@ -169,32 +184,66 @@ func openDependencies(rt *Runtime, spec Spec) (func(), error) {
 		}
 	}
 	type db struct {
-		name, url, extension string
-		need                 Need
+		name, url, extension, role string
+		tree                       store.Tree
+		need                       Need
 	}
+	var pools []schemaPool
 	for _, d := range []db{
-		{DepPostgres, rt.Config.PGURL, "postgis", spec.Postgres},
-		{DepTimescaleDB, rt.Config.TSURL, "timescaledb", spec.TimescaleDB},
+		{DepPostgres, rt.Config.PGURL, "postgis", store.AppRole, store.TreeRelational, spec.Postgres},
+		{DepTimescaleDB, rt.Config.TSURL, "timescaledb", "", store.TreeTimeseries, spec.TimescaleDB},
 	} {
 		if d.need == NotUsed {
 			continue
 		}
-		pool, err := store.Open(d.url, 4)
+		pool, err := store.OpenPool(store.PoolOptions{URL: d.url, MaxConns: 4, Role: d.role, ApplicationName: "ussp-" + spec.Process})
 		if err != nil {
 			closeAll()
-			return nil, errors.New(d.name + ": " + err.Error())
+			return nil, nil, errors.New(d.name + ": " + err.Error())
 		}
 		closers = append(closers, pool.Close)
-		rt.Health.Register(d.name, d.need == Required, pool.Probe(d.extension))
+		rt.Health.Register(d.name, d.need == Required, pool.Probe(d.extension, d.tree))
+		pools = append(pools, schemaPool{pool: pool, tree: d.tree})
 	}
 	if spec.NATS != NotUsed {
 		nc, err := bus.Connect(rt.Config.NATSURL, rt.Config.NATSCreds, "ussp-"+spec.Process, rt.Logger)
 		if err != nil {
 			closeAll()
-			return nil, errors.New("nats: " + err.Error())
+			return nil, nil, errors.New("nats: " + err.Error())
 		}
 		closers = append(closers, nc.Close)
 		rt.Health.Register(DepNATS, spec.NATS == Required, nc.Probe())
 	}
-	return closeAll, nil
+	return pools, closeAll, nil
+}
+
+// waitForSchemas is the start-up check of D5: a process never migrates;
+// it waits up to USSP_SCHEMA_WAIT_S for each database it opens to reach
+// the version this build needs (the migrate subcommand brings it there)
+// and refuses to start on a lower one, naming both versions. A database
+// that does not answer is not a lower version: the process starts
+// degraded (B-08) and its readiness probe reports the schema once the
+// database answers.
+func waitForSchemas(ctx context.Context, rt *Runtime, pools []schemaPool) error {
+	for _, sp := range pools {
+		want, err := store.Latest(sp.tree)
+		if err != nil {
+			return err
+		}
+		wctx, cancel := context.WithTimeout(ctx, time.Duration(rt.Config.SchemaWaitS)*time.Second)
+		err = sp.pool.WaitForVersion(wctx, sp.tree, want)
+		cancel()
+		switch {
+		case err == nil:
+			rt.Logger.LogAttrs(ctx, slog.LevelInfo, "schema", slog.String("tree", string(sp.tree)), slog.Int64("need", want), slog.String("state", "ready"))
+		case errors.Is(err, store.ErrSchemaUnreachable):
+			rt.Logger.LogAttrs(ctx, slog.LevelWarn, "schema version not checked", slog.String("tree", string(sp.tree)),
+				slog.Int64("need", want), slog.String("reason", err.Error()))
+		case ctx.Err() != nil:
+			return ctx.Err()
+		default:
+			return fmt.Errorf("refusing to start: %w", err)
+		}
+	}
+	return nil
 }

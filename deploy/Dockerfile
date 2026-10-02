@@ -11,6 +11,8 @@ ENV CGO_ENABLED=0 GOTOOLCHAIN=local
 COPY go.mod go.sum ./
 COPY cmd ./cmd
 COPY internal ./internal
+# The embedded migration trees (the migrate subcommand; WP-1).
+COPY migrations ./migrations
 ARG VERSION=dev
 ARG COMMIT=unknown
 # No `go mod download`: it would fetch the tool directive's module

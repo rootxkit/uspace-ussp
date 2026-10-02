@@ -204,7 +204,7 @@ func TestReadyzAnswers200WhenReadyOrDegraded(t *testing.T) {
 func TestMainExitCodes(t *testing.T) {
 	var out, errOut bytes.Buffer
 	if code := Main(context.Background(), apiSpec, []string{"--help"}, &out, &errOut, env(nil)); code != ExitOK ||
-		!strings.Contains(out.String(), "usage: ussp-api [--help | healthcheck [path] | migrate]") || !strings.Contains(out.String(), "USSP_PG_URL (required)") {
+		!strings.Contains(out.String(), "usage: ussp-api [--help | healthcheck [path] | migrate [up | down [version] | status]]") || !strings.Contains(out.String(), "USSP_PG_URL (required)") {
 		t.Fatalf("help %d: %s", code, out.String())
 	}
 	errOut.Reset()
@@ -223,10 +223,30 @@ func TestMainExitCodes(t *testing.T) {
 		!strings.Contains(errOut.String(), "unknown argument") {
 		t.Fatalf("migrate on monitor %d: %s", code, errOut.String())
 	}
+	errOut.Reset()
+	if code := Main(context.Background(), apiSpec, []string{"migrate"}, &out, &errOut, env(nil)); code != ExitConfig ||
+		!strings.Contains(errOut.String(), `"variables":["USSP_PG_URL"]`) {
+		t.Fatalf("migrate without a database %d: %s", code, errOut.String())
+	}
+	errOut.Reset()
+	tsdb := Spec{Process: config.ProcessTSDBWriter, TimescaleDB: Optional, NATS: Required, Migrate: true}
+	if code := Main(context.Background(), tsdb, []string{"migrate", "status"}, &out, &errOut, env(nil)); code != ExitConfig ||
+		!strings.Contains(errOut.String(), `"variables":["USSP_TS_URL"]`) {
+		t.Fatalf("tsdb-writer migrate without a database %d: %s", code, errOut.String())
+	}
+	for _, args := range [][]string{{"migrate", "sideways"}, {"migrate", "down", "-1"}, {"migrate", "down", "x"}, {"migrate", "up", "2"}} {
+		errOut.Reset()
+		if code := Main(context.Background(), apiSpec, args, &out, &errOut, env(map[string]string{"USSP_PG_URL": "postgres://u@" + closedAddr(t) + "/db"})); code != ExitConfig ||
+			!strings.Contains(errOut.String(), "unknown argument") {
+			t.Fatalf("%v %d: %s", args, code, errOut.String())
+		}
+	}
+	// A database that does not answer: the subcommand fails (exit 1) and
+	// says so; it never reports a version it did not reach.
 	out.Reset()
-	if code := Main(context.Background(), apiSpec, []string{"migrate"}, &out, &errOut, env(nil)); code != ExitOK ||
-		!strings.Contains(out.String(), `"msg":"migrate: no migration tree yet","process":"api","tree":"migrations/relational","applied":0`) {
-		t.Fatalf("migrate %d: %s", code, out.String())
+	if code := Main(context.Background(), apiSpec, []string{"migrate"}, &out, &errOut, env(map[string]string{"USSP_PG_URL": "postgres://u@" + closedAddr(t) + "/db?connect_timeout=1"})); code != ExitFailed ||
+		!strings.Contains(out.String(), `"msg":"migrate failed"`) || strings.Contains(out.String(), "migrate done") {
+		t.Fatalf("migrate against a closed port %d: %s", code, out.String())
 	}
 	errOut.Reset()
 	if code := Main(context.Background(), apiSpec, []string{"healthcheck"}, &out, &errOut, env(map[string]string{"USSP_API_ADDR": closedAddr(t)})); code != ExitFailed ||
