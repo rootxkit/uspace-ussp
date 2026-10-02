@@ -174,3 +174,74 @@ if one PR grows past review size; say so in the PR.
 `feat(intent): decision pipeline with zones, registry and airspace [WP-7 S-M1]`,
 `feat(intent): states, versions, authorisation number and the API [WP-7 S-M1]`,
 `test(deconflict): the deconfliction vectors [WP-7 S-M1]`.
+
+## As built (the PR)
+
+What the build decided where the brief, the plan or core left a choice,
+and where it is stricter than the brief; each is in the PR body as well.
+
+- **Nothing untrusted, stale or unavailable authorises.** A stale CIS
+  refuses everywhere, not only inside U-space airspace (whether a volume
+  is outside it is read from the stale cache). A newer CIS version held
+  untrusted, refused, or notified and not pulled refuses with
+  `cis_outdated` (`cis.Cache.Outdated`, added here). A registry answer
+  that is `unknown` (not held, unavailable or refused) holds the intent
+  `pending_validation` inside **and outside** U-space airspace; the brief
+  asked for an accepted intent with `registry_unverified` outside. No
+  geoid refuses with 503 `geoid_unavailable`.
+- **Exempt (Art. 1(3)) intents** skip deconfliction, the DSS and the
+  number, but not the CIS checks: a C0 A1 volume over a PROHIBITED zone
+  or an active restriction is refused (the brief skips steps 3 to 6).
+  Exempt intents are never in another intent's deconfliction set.
+- **No DSS writer before WP-13.** The api process's DSS is never
+  available, so an intent inside U-space airspace waits as
+  `pending_dss`; outside, local checks suffice (02 F5). Pending intents
+  have no path to accepted in this WP (WP-12/13 re-decide them); they
+  can be ended.
+- **AGL is not judged over an area yet.** uspace-core has no lowest or
+  highest ground under an outline, so the api process runs without
+  terrain: a zone limit in AGL counts as overlapping (Z-09) and a
+  U-space airspace with `max_height_agl_m` refuses with
+  `airspace_ceiling_not_judged`. The `Terrain` interface is there for
+  the day core offers an area range. WGS84 zone limits are compared with
+  the volume's W84 band as given; AMSL limits with the AMSL band.
+- U-space airspace membership is the volume's outline against the
+  airspace's (deconflict geometry), not `AirspacesAt` at a point, so a
+  volume that only grazes an airspace is inside it. Zone holes are not
+  subtracted (more refusals, never fewer).
+- Geometry: edges are straight in latitude and longitude as core's
+  `geodesy.Polygon` reads them; separations are Vincenty distances to
+  the nearest point found on the vertex's tangent plane; a pair within
+  1 cm (F3548 `IntersectionMinimumPrecisionCm`) plus 1e-4 of the
+  separation of the buffer is a conflict.
+- First come, first served ranks on `filed_at`, when the volumes judged
+  were filed: a modification re-ranks (an operator cannot file early and
+  then move into others' space). Equal instants fall back to the id.
+  Peers' intents rank as filed when fetched (so they precede ours at
+  equal priority); a peer intent that cannot be judged refuses the
+  decision with 503.
+- `special_operation` is self-declared by the operator (spec gap: the
+  regulation's special operations should be verified by the authority);
+  the priority follows the flight type and a stated priority must equal
+  it.
+- Modify is accepted only in `accepted` (not in flight); a modification
+  that is not authorised leaves the intent in its new decision's state
+  without its number.
+- `operator_reg` is checked as the operator account stores it (text
+  without white space, compared on its public part with regnum); the
+  format is the registry's. The client must hold a live binding of the
+  serial (403 `serial_not_bound`) and `operator_reg` must be its
+  operator's (403 `operator_mismatch`).
+- Schemas follow uspace-lab's layout
+  (`schemas/<name>/v1/schema.json`, `examples/`, `examples/invalid/`) so
+  the lab mirrors the directory byte for byte; PLAN §4 named
+  `schemas/examples/`. `check-schemas.sh` gained its validator here
+  (`schemas/schemas_test.go`, santhosh-tekuri/jsonschema already in
+  go.mod) since WP-7's schemas are the first.
+- The KV put and the `intent.v1` publish run inside the transaction
+  before it commits (B-09: either failing refuses with 503 and nothing is
+  written); a commit that fails after them leaves a projection without a
+  row until the next transition of that id.
+- The lab scenario is run in process (docs/RUNBOOKS/WP-7.md): the lab has
+  no runner for this USSP's intents yet.
+

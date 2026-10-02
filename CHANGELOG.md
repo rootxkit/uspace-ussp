@@ -29,6 +29,25 @@ additively within `/v1`.
 
 ### Added
 
+- WP-7: flight authorisation. `POST`, `GET`, list and `PATCH
+  /v1/intents` (scope `ussp.intents`, the operator's own intents only):
+  the ten Annex IV items validated (problems name `annex_iv.N`), volumes
+  through uspace-core's F3548 validation and the geoid to AMSL, then the
+  registry (F8, purpose authorisation), the CIS cache (stale or known
+  outdated refuses; U-space airspace and its ceiling; zones; ANSP
+  restrictions), strategic deconfliction (`internal/intent/deconflict`,
+  priority then first come first served), the DSS, the deviation
+  thresholds and the authorisation number. A missing, stale or untrusted
+  input refuses or holds; it never authorises. States, versions, the
+  time_end sweep, KV `intent_active` and `intent.v1.<state>.<id>`.
+  Schemas `intent/request/v1`, `intent/decision/v1`, `intent/state/v1`
+  with examples both ways and `scripts/check-schemas.sh` validating them;
+  `testdata/vectors/deconfliction.json` (72 cases). Relational migration
+  00011; policy thresholds `special_operation_priority`,
+  `deconflict_buffer_m`, `deconflict_vertical_buffer_m`,
+  `activation_lead_s`, `intent_open_max_count`; `cis.Cache.Outdated`;
+  api reads `USSP_GEOID_FILE` and lists `geoid` on `/readyz`.
+
 - WP-6 bus, partition cell and tsdb-writer: `internal/cell` over core
   `geodesy/cell` (Key, Ring1, CellsFor, CellsForEnvelope, ownership of
   `USSP_CELL_OWNERSHIP`; the 800 m ring guarantee checked against brute
