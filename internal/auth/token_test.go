@@ -285,6 +285,18 @@ func TestTokenUnavailablePaths(t *testing.T) {
 	if res := f.post(t, creds("op-a", secretA), nil); res.status != 503 || f.counters.Get(CounterTokenRefusedBase+"no_issuer_key") != 1 {
 		t.Fatalf("no key: %d", res.status)
 	}
+	// No auditor: refused before anything is signed, not a nil
+	// dereference; with one, the same request is issued (E-01).
+	f = newTokenFixture(t)
+	f.ep.Audit = nil
+	res := f.post(t, creds("op-a", secretA), nil)
+	if res.status != 503 || res.body["access_token"] != nil || f.counters.Get(CounterTokenRefusedBase+"no_auditor") != 1 {
+		t.Fatalf("no auditor: %d %v", res.status, res.body)
+	}
+	f.ep.Audit = f.audit
+	if res := f.post(t, creds("op-a", secretA), nil); res.status != 200 {
+		t.Fatalf("with an auditor: %d %v", res.status, res.body)
+	}
 	f = newTokenFixture(t)
 	f.clients.fail = errors.New("db down")
 	if res := f.post(t, creds("op-a", secretA), nil); res.status != 503 || res.oauthError() != OAuthUnavailable {
@@ -292,7 +304,7 @@ func TestTokenUnavailablePaths(t *testing.T) {
 	}
 	f = newTokenFixture(t)
 	f.audit.failIss = errors.New("db down")
-	res := f.post(t, creds("op-a", secretA), nil)
+	res = f.post(t, creds("op-a", secretA), nil)
 	if res.status != 503 || res.body["access_token"] != nil || f.counters.Get(CounterTokenRefusedBase+"audit_failed") != 1 {
 		t.Fatalf("audit down: %d %v", res.status, res.body)
 	}

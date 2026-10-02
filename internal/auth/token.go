@@ -87,7 +87,9 @@ type TokenEndpoint struct {
 	Issuer  *Issuer
 	Clients ClientStore
 	Hasher  *Hasher
-	Audit   TokenAuditor
+	// Audit records issuances and refusals; nil refuses every request
+	// with 503 (nothing is issued that the record cannot show).
+	Audit TokenAuditor
 	// TTL is policy.OperatorTokenTTLS of the current policy version.
 	TTL           func() time.Duration
 	ClientLimiter *httpx.RateLimiter
@@ -220,6 +222,12 @@ func (e *TokenEndpoint) serve(r *http.Request, ip string) (string, Issued, *toke
 	if e.Issuer == nil {
 		return "", Issued{}, &tokenRefusal{code: OAuthUnavailable, status: http.StatusServiceUnavailable, reason: "no_issuer_key",
 			desc: "this USSP has no issuer key configured"}
+	}
+	if e.Audit == nil {
+		// No auditor, no token: an issuance the record cannot show must
+		// not exist (fail closed rather than a nil dereference).
+		return "", Issued{}, &tokenRefusal{code: OAuthUnavailable, status: http.StatusServiceUnavailable, reason: "no_auditor",
+			desc: "the issuance cannot be recorded"}
 	}
 	f, ref := form(r)
 	if ref != nil {
