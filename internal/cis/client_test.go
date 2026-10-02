@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -101,6 +102,76 @@ func TestClientReads(t *testing.T) {
 	}
 	if _, err := c.Changes(ctx, 0, ""); err == nil {
 		t.Fatal("changes while down")
+	}
+}
+
+// A pull_url is followed only on the CISP's scheme, host and port, and
+// only over https: each refused one makes no request, and the one on
+// the CISP is read (a delta answer).
+func TestClientPullURLGuard(t *testing.T) {
+	fake, err := cisp.NewTLS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fake.Close()
+	c, err := NewClient(ClientConfig{BaseURL: fake.URL(), Tokens: cisp.Tokens{}, HTTPClient: fake.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	ch := fake.Publish("zones", prohibited("TZP001").json())
+	fake.Publish("zones", prohibited("TZP001").json(), prohibited("TZP002").json())
+	base, _ := url.Parse(fake.URL())
+	refused := map[string]string{
+		"plain http, same host and port": "http://" + base.Host + "/v1/zones?since_version=1",
+		"another port":                   "https://" + base.Hostname() + ":1/v1/zones?since_version=1",
+		"the default port":               "https://" + base.Hostname() + "/v1/zones?since_version=1",
+		"another host":                   "https://elsewhere.test:" + base.Port() + "/v1/zones?since_version=1",
+		"user information":               "https://u:p@" + base.Host + "/v1/zones?since_version=1",
+		"relative":                       "/v1/zones?since_version=1",
+		"another scheme":                 "ftp://" + base.Host + "/v1/zones",
+	}
+	before := fake.TotalRequests()
+	for name, raw := range refused {
+		if _, err := c.GetURL(ctx, raw); !errors.Is(err, ErrPullURLRefused) {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	if n := fake.TotalRequests() - before; n != 0 {
+		t.Fatalf("refused pull_urls made %d requests", n)
+	}
+	f, err := c.GetURL(ctx, ch.PullURL)
+	if err != nil || f.Status != http.StatusOK || f.Version != 2 || !strings.Contains(string(f.Body), `"from_version":0`) {
+		t.Fatalf("the CISP's own pull_url: %+v %v", f, err)
+	}
+	if n := fake.Requests("GET /v1/zones"); n != 1 {
+		t.Fatalf("%d reads of the delta", n)
+	}
+}
+
+// An http base URL (a lab CISP) never has a pull_url followed, not even
+// its own: the dataset is read whole from the base URL instead. A
+// default port written out is the same port.
+func TestClientPullURLPlainHTTPBase(t *testing.T) {
+	fake, err := cisp.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fake.Close()
+	c, err := NewClient(ClientConfig{BaseURL: fake.URL(), Tokens: cisp.Tokens{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := fake.Publish("zones", prohibited("TZP001").json())
+	if _, err := c.GetURL(t.Context(), ch.PullURL); !errors.Is(err, ErrPullURLRefused) || fake.TotalRequests() != 0 {
+		t.Fatalf("http pull_url: %v, %d requests", err, fake.TotalRequests())
+	}
+	tls, err := NewClient(ClientConfig{BaseURL: "https://cisp.test", Tokens: cisp.Tokens{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u, err := tls.checkPullURL("https://CISP.test:443/v1/zones?since_version=1"); err != nil || u.Port() != "443" {
+		t.Fatalf("explicit default port: %v", err)
 	}
 }
 

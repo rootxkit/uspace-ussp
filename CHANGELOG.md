@@ -24,8 +24,8 @@ additively within `/v1`.
   (core `CompactVerifier`, aud = this host, iat at most 5 min, delivery
   ids remembered in `cis_notification_jtis` on the database clock;
   `subscription_test`, `republished` and unknown reasons acknowledged
-  without a pull; `pull_url` followed only on the CISP's host, a
-  mismatch counted); the 60 s conditional reconciliation
+  without a pull; `pull_url` followed only over https on the CISP's
+  scheme, host and port, a mismatch counted); the 60 s conditional reconciliation
   (`USSP_CIS_RECONCILE_S`); versions accepted whole through
   `ed318.Parse` and `ed318.ToZones` or refused whole with the previous
   kept and `/readyz` degraded; `cis_datasets`/`cis_features` (current

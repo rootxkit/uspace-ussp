@@ -23,14 +23,14 @@ type cacheRig struct {
 
 func newCacheRig(t *testing.T, callback string) *cacheRig {
 	t.Helper()
-	fake, err := cisp.New()
+	fake, err := cisp.NewTLS()
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(fake.Close)
 	g := &cacheRig{fake: fake, clk: newClock(), store: newMemStore(), proj: &MemoryProjector{}}
 	g.eval = NewEvaluator(EvaluatorConfig{StaleS: func() float64 { return 300 }, Now: g.clk.Now})
-	client, err := NewClient(ClientConfig{BaseURL: fake.URL(), Tokens: cisp.Tokens{}})
+	client, err := NewClient(ClientConfig{BaseURL: fake.URL(), Tokens: cisp.Tokens{}, HTTPClient: fake.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}

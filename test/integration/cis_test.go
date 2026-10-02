@@ -96,7 +96,7 @@ func newCISRig(t *testing.T, reconcile time.Duration) *cisRig {
 	cleanCIS(t)
 	g := &cisRig{t: t, counters: &core.Counters{}, proj: &cis.MemoryProjector{}, store: pgstore.Store{S: appStore(t)}}
 	var err error
-	if g.fake, err = cisp.New(); err != nil {
+	if g.fake, err = cisp.NewTLS(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(g.fake.Close)
@@ -116,7 +116,7 @@ func newCISRig(t *testing.T, reconcile time.Duration) *cisRig {
 		g.ansp.Signer.Issuer: {ANSP: true, BaseHost: g.ansp.Host()},
 	}
 	g.eval = cis.NewEvaluator(cis.EvaluatorConfig{StaleS: func() float64 { return 300 }, Counters: g.counters})
-	client, err := cis.NewClient(cis.ClientConfig{BaseURL: g.fake.URL(), Tokens: cisp.Tokens{}})
+	client, err := cis.NewClient(cis.ClientConfig{BaseURL: g.fake.URL(), Tokens: cisp.Tokens{}, HTTPClient: g.fake.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}

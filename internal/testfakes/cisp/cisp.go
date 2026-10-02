@@ -91,10 +91,18 @@ type Delivery struct {
 	Err      string
 }
 
-// New starts a fake CISP whose issuer is its own URL.
-func New() (*Fake, error) {
+// New starts a fake CISP over plain HTTP whose issuer is its own URL.
+// Its pull_urls are http ones, which the client never follows (the
+// dataset is read whole); NewTLS serves the delta path.
+func New() (*Fake, error) { return start(httptest.NewServer) }
+
+// NewTLS starts a fake CISP over HTTPS (a test certificate: Client
+// trusts it) whose issuer is its own URL.
+func NewTLS() (*Fake, error) { return start(httptest.NewTLSServer) }
+
+func start(serve func(http.Handler) *httptest.Server) (*Fake, error) {
 	f := &Fake{versions: map[string][]*version{}, requests: map[string]int{}, HTTPClient: &http.Client{Timeout: 2 * time.Second}}
-	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
+	f.srv = serve(http.HandlerFunc(f.serve))
 	s, err := signer.New(f.srv.URL, "fake-cisp-1")
 	if err != nil {
 		f.srv.Close()
@@ -106,6 +114,14 @@ func New() (*Fake, error) {
 
 // Close stops the server.
 func (f *Fake) Close() { f.srv.Close() }
+
+// Client is an HTTP client that trusts the fake's certificate (NewTLS)
+// and, like the cis client's default, never follows a redirect.
+func (f *Fake) Client() *http.Client {
+	c := *f.srv.Client()
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &c
+}
 
 // URL is the fake's base URL.
 func (f *Fake) URL() string { return f.srv.URL }

@@ -161,6 +161,11 @@ choice; each is in the PR body as well.
   The CISP signs a version once, at its first serve, and keeps that
   signature, while core's `DetachedVerifier` bounds iat to 5 min. The
   pull is over TLS with a `cis.read` token. Spec gap for core or the CISP.
+- A `pull_url` is followed only when it is https with the scheme, host
+  and port of `USSP_CISP_BASE_URL` (a missing port is the scheme's
+  default) and carries no user information (`cis.Client.GetURL`).
+  Plain http is never followed, not even on an http base URL (a lab
+  CISP): the dataset is then read whole from the base URL.
 - An issuer of `USSP_CIS_NOTIFY_ISSUERS` is the CISP or the ANSP by the
   host of its JWKS URL (the host of `USSP_CISP_BASE_URL` or
   `USSP_ANSP_BASE_URL`); one on neither refuses the start.

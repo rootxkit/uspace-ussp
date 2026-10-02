@@ -62,6 +62,7 @@ type ClientConfig struct {
 // the pinned api/clients/cisp.yaml.
 type Client struct {
 	cfg  ClientConfig
+	base *url.URL
 	host string
 	gen  *cispclient.Client
 }
@@ -82,7 +83,7 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	if cfg.MaxBodyBytes <= 0 {
 		cfg.MaxBodyBytes = MaxBodyBytes
 	}
-	c := &Client{cfg: cfg, host: u.Hostname()}
+	c := &Client{cfg: cfg, base: u, host: u.Hostname()}
 	c.gen, err = cispclient.NewClient(strings.TrimRight(cfg.BaseURL, "/"), cispclient.WithHTTPClient(cfg.HTTPClient),
 		cispclient.WithRequestEditorFn(c.authorise))
 	if err != nil {
@@ -181,11 +182,51 @@ func (c *Client) GetVersion(ctx context.Context, d Dataset, v int64) (Fetched, e
 	return c.read(resp)
 }
 
-// GetURL reads a pull_url the caller has checked is on the CISP's host.
-func (c *Client) GetURL(ctx context.Context, raw string) (Fetched, error) {
+// ErrPullURLRefused is returned by GetURL for a pull_url that is not on
+// the configured CISP: another scheme, host or port, user information,
+// or plain http.
+var ErrPullURLRefused = errors.New("pull_url refused")
+
+// checkPullURL says whether raw may be followed: an absolute https URL
+// with the scheme, host and port of USSP_CISP_BASE_URL (a missing port
+// is the scheme's default) and no user information. Plain http is never
+// followed, even when the base URL is http (a test or lab CISP): the
+// dataset is then read whole from the base URL.
+func (c *Client) checkPullURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
-	if err != nil || u.Hostname() != c.host || (u.Scheme != "https" && u.Scheme != "http") {
-		return Fetched{}, errors.New("pull_url is not on the CISP's host")
+	switch {
+	case err != nil || !u.IsAbs() || u.Host == "":
+		return nil, fmt.Errorf("%w: not an absolute URL", ErrPullURLRefused)
+	case u.Scheme != "https":
+		return nil, fmt.Errorf("%w: scheme %q, only https is followed", ErrPullURLRefused, short(u.Scheme))
+	case u.Scheme != c.base.Scheme:
+		return nil, fmt.Errorf("%w: scheme %q, the CISP's is %q", ErrPullURLRefused, short(u.Scheme), c.base.Scheme)
+	case u.User != nil:
+		return nil, fmt.Errorf("%w: it carries user information", ErrPullURLRefused)
+	case !strings.EqualFold(u.Hostname(), c.base.Hostname()):
+		return nil, fmt.Errorf("%w: not on the CISP's host", ErrPullURLRefused)
+	case effectivePort(u) != effectivePort(c.base):
+		return nil, fmt.Errorf("%w: port %s, the CISP's is %s", ErrPullURLRefused, short(effectivePort(u)), effectivePort(c.base))
+	}
+	return u, nil
+}
+
+// effectivePort is u's port, or its scheme's default.
+func effectivePort(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	if u.Scheme == "http" {
+		return "80"
+	}
+	return "443"
+}
+
+// GetURL reads a pull_url; one checkPullURL refuses is never requested.
+func (c *Client) GetURL(ctx context.Context, raw string) (Fetched, error) {
+	u, err := c.checkPullURL(raw)
+	if err != nil {
+		return Fetched{}, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, c.cfg.Timeout)
 	defer cancel()
