@@ -7,13 +7,10 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	coreauth "github.com/rootxkit/uspace-core/auth"
 
 	"github.com/rootxkit/uspace-ussp/internal/app/proc"
 	"github.com/rootxkit/uspace-ussp/internal/config"
@@ -60,14 +57,6 @@ func TestIssuerFromConfig(t *testing.T) {
 		if _, err := IssuerFromConfig(c); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
-	}
-}
-
-func TestRefuseAllRefusesEveryToken(t *testing.T) {
-	_, err := refuseAll{}.Verify(context.Background(), "x")
-	var te *coreauth.TokenError
-	if !errors.As(err, &te) || te.Counter != coreauth.CounterRejectedAudience {
-		t.Fatalf("%v", err)
 	}
 }
 

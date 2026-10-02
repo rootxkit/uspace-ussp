@@ -89,56 +89,6 @@ func IssuerFromConfig(cfg config.Config) (*auth.Issuer, error) {
 	return auth.NewIssuer(url, cfg.Audiences[0], keys)
 }
 
-// refuseAll is the verifier of a process with no audience configured:
-// it can verify nothing, and says so.
-type refuseAll struct{}
-
-// Verify refuses every token as rejected_audience.
-func (refuseAll) Verify(context.Context, string) (coreauth.Claims, error) {
-	return coreauth.Claims{}, &coreauth.TokenError{Counter: coreauth.CounterRejectedAudience, Claim: "aud", Reason: "USSP_AUDIENCES is empty: no token is accepted"}
-}
-
-func publish(rt *proc.Runtime, name string, c *core.Counters) {
-	rt.Status.Add(name, c)
-	rt.Registry.MustRegister(obs.NewCountersCollector(name, c))
-}
-
-// VerifierFromConfig builds the verifier of every token the process
-// accepts and registers its readiness (jwks); without an audience the
-// verifier refuses every token and jwks says why.
-func VerifierFromConfig(ctx context.Context, rt *proc.Runtime, issuer *auth.Issuer) (auth.TokenVerifier, string, error) {
-	cfg := rt.Config
-	if len(cfg.Audiences) == 0 {
-		rt.Health.Register(auth.DepJWKS, false, func(context.Context) (obs.State, string) {
-			return obs.StateDown, "USSP_AUDIENCES is empty: no token is accepted"
-		})
-		return refuseAll{}, "", nil
-	}
-	eco := coreauth.Config{Audiences: cfg.Audiences, StrictSessionClaims: true}
-	if len(cfg.TokenIssuers) > 0 {
-		var err error
-		if eco, err = cfg.VerifierConfig(); err != nil {
-			return nil, "", err
-		}
-	}
-	v, err := auth.NewVerifier(ctx, auth.VerifierConfig{Ecosystem: eco, Own: issuer})
-	if err != nil {
-		return nil, "", err
-	}
-	for name, c := range v.CounterSets() {
-		publish(rt, name, c)
-	}
-	rt.Health.Register(auth.DepJWKS, false, v.Probe)
-	rt.Go(ctx, func(ctx context.Context) {
-		v.Run(ctx)
-		if eco := v.CounterSets()[auth.CounterSetEcosystem]; eco != nil {
-			publish(rt, auth.CounterSetEcosystem, eco)
-		}
-	})
-	own := v.OwnIssuer()
-	return v, own, nil
-}
-
 func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	cfg := rt.Config
 	issuer, err := IssuerFromConfig(cfg)
@@ -151,7 +101,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 		}
 		return obs.StateUp, ""
 	})
-	verifier, ownIss, err := VerifierFromConfig(ctx, rt, issuer)
+	verifier, ownIss, err := proc.TokenVerifier(ctx, rt, issuer)
 	if err != nil {
 		return err
 	}
@@ -177,7 +127,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	}
 
 	counters := &core.Counters{}
-	publish(rt, "accounts", counters)
+	proc.Publish(rt, "accounts", counters)
 	perMin := func(n int) float64 { return float64(n) / 60 }
 	burst := func(n int) int { return max(1, n/6) }
 	svc := &accounts.Service{
