@@ -2,7 +2,8 @@
 // accounts, intents, the CIS cache and the KV projections; the only
 // writer of the relational database. WP-2 brings its routes: the token
 // issuer, the JWKS and the accounts, every operation behind the
-// fail-closed access table of internal/national.
+// fail-closed access table of internal/national; WP-3 mounts the F3548
+// USS endpoints (internal/stdapi), 501 until WP-13.
 package api
 
 import (
@@ -27,6 +28,7 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/national"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
+	"github.com/rootxkit/uspace-ussp/internal/stdapi"
 	"github.com/rootxkit/uspace-ussp/internal/store"
 )
 
@@ -151,6 +153,13 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc, Logger: rt.Logger}
 	if err := national.Register(mux, srv, guard.Require); err != nil {
 		return fmt.Errorf("access table: %w", err)
+	}
+	// The F3548 USS endpoints (PLAN §6.2), 501 until WP-13, behind the
+	// standard's scopes.
+	std := &core.Counters{}
+	proc.Publish(rt, "stdapi", std)
+	if err := stdapi.MountF3548(mux, stdapi.NotImplementedF3548{}, stdapi.Options{Guard: guard.Require, Validate: auth.ValidateAccess, Counters: std}); err != nil {
+		return fmt.Errorf("F3548 access table: %w", err)
 	}
 	rt.Go(ctx, func(ctx context.Context) { svc.RunSweep(ctx, sweepInterval) })
 	return nil
