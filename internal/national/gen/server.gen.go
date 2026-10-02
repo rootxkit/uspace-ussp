@@ -6,6 +6,7 @@
 package gen
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -164,6 +165,66 @@ func (e Realm) Valid() bool {
 	case Console:
 		return true
 	case Portal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RegistryAnswerReason.
+const (
+	RegistryAnswerRefused RegistryAnswerReason = "registry_answer_refused"
+	RegistryUnavailable   RegistryAnswerReason = "registry_unavailable"
+)
+
+// Valid indicates whether the value is a known member of the RegistryAnswerReason enum.
+func (e RegistryAnswerReason) Valid() bool {
+	switch e {
+	case RegistryAnswerRefused:
+		return true
+	case RegistryUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RegistryPurpose.
+const (
+	Authorisation  RegistryPurpose = "authorisation"
+	Identification RegistryPurpose = "identification"
+)
+
+// Valid indicates whether the value is a known member of the RegistryPurpose enum.
+func (e RegistryPurpose) Valid() bool {
+	switch e {
+	case Authorisation:
+		return true
+	case Identification:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RegistryStatus.
+const (
+	RegistryStatusRevoked   RegistryStatus = "revoked"
+	RegistryStatusSuspended RegistryStatus = "suspended"
+	RegistryStatusUnknown   RegistryStatus = "unknown"
+	RegistryStatusValid     RegistryStatus = "valid"
+)
+
+// Valid indicates whether the value is a known member of the RegistryStatus enum.
+func (e RegistryStatus) Valid() bool {
+	switch e {
+	case RegistryStatusRevoked:
+		return true
+	case RegistryStatusSuspended:
+		return true
+	case RegistryStatusUnknown:
+		return true
+	case RegistryStatusValid:
 		return true
 	default:
 		return false
@@ -418,6 +479,52 @@ type ReadinessStatus string
 // Realm portal for operator users, console for staff (M20).
 type Realm string
 
+// RegistryAnswer One entity's answer, status only.
+type RegistryAnswer struct {
+	// CacheAgeS The age of the answer in seconds (0 when the authority was just asked); absent when there is no answer.
+	CacheAgeS    *float64              `json:"cache_age_s,omitempty"`
+	ClassLabel   *string               `json:"class_label,omitempty"`
+	Competencies *[]RegistryCompetency `json:"competencies,omitempty"`
+
+	// Key The key as answered (an operator number's public part, the serial, the pilot id).
+	Key      string  `json:"key"`
+	MtomBand *string `json:"mtom_band,omitempty"`
+
+	// Reason Why the status is unknown without the registry having said so; absent when it did.
+	Reason *RegistryAnswerReason `json:"reason,omitempty"`
+	Status RegistryStatus        `json:"status"`
+
+	// ValidUntil The registration's end of validity (an operator's), as the authority answers it.
+	ValidUntil *time.Time `json:"valid_until,omitempty"`
+}
+
+// RegistryAnswerReason Why the status is unknown without the registry having said so; absent when it did.
+type RegistryAnswerReason string
+
+// RegistryCompetency defines model for RegistryCompetency.
+type RegistryCompetency struct {
+	Competency string    `json:"competency"`
+	ValidUntil time.Time `json:"valid_until"`
+}
+
+// RegistryPurpose Why the lookup is made; recorded on every call here and at the authority (spec 02 F8).
+type RegistryPurpose string
+
+// RegistryStatus defines model for RegistryStatus.
+type RegistryStatus string
+
+// RegistryValidation One part per key asked.
+type RegistryValidation struct {
+	// Operator One entity's answer, status only.
+	Operator *RegistryAnswer `json:"operator,omitempty"`
+
+	// Pilot One entity's answer, status only.
+	Pilot *RegistryAnswer `json:"pilot,omitempty"`
+
+	// Uas One entity's answer, status only.
+	Uas *RegistryAnswer `json:"uas,omitempty"`
+}
+
 // SerialBinding defines model for SerialBinding.
 type SerialBinding struct {
 	BoundAt  time.Time `json:"bound_at"`
@@ -503,6 +610,14 @@ type OperatorID = openapi_types.UUID
 // problem.
 type OAuthError = OAuthProblem
 
+// ValidateRegistryParams defines parameters for ValidateRegistry.
+type ValidateRegistryParams struct {
+	Purpose  RegistryPurpose `form:"purpose" json:"purpose"`
+	Operator *string         `form:"operator,omitempty" json:"operator,omitempty"`
+	Serial   *string         `form:"serial,omitempty" json:"serial,omitempty"`
+	Pilot    *string         `form:"pilot,omitempty" json:"pilot,omitempty"`
+}
+
 // RequestTokenFormdataRequestBody defines body for RequestToken for application/x-www-form-urlencoded ContentType.
 type RequestTokenFormdataRequestBody = TokenRequest
 
@@ -568,6 +683,9 @@ type ServerInterface interface {
 	// ReceiveCISNotification Receive a CIS change notification (F3 push)
 	// (POST /v1/cis/notifications)
 	ReceiveCISNotification(w http.ResponseWriter, r *http.Request)
+	// ValidateRegistry Validity of an operator, a UAS and a remote pilot (F8, cached)
+	// (GET /v1/registry/validate)
+	ValidateRegistry(w http.ResponseWriter, r *http.Request, params ValidateRegistryParams)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -897,6 +1015,78 @@ func (siw *ServerInterfaceWrapper) ReceiveCISNotification(w http.ResponseWriter,
 	handler.ServeHTTP(w, r)
 }
 
+// ValidateRegistry operation middleware
+func (siw *ServerInterfaceWrapper) ValidateRegistry(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ValidateRegistryParams
+
+	// ------------- Required query parameter "purpose" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "purpose", r.URL.Query(), &params.Purpose, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "purpose"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "purpose", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "operator" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "operator", r.URL.Query(), &params.Operator, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "operator"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "operator", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "serial" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "serial", r.URL.Query(), &params.Serial, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "serial"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serial", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "pilot" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "pilot", r.URL.Query(), &params.Pilot, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "pilot"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "pilot", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ValidateRegistry(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -1020,6 +1210,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/healthz", wrapper.GetHealthz)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/readyz", wrapper.GetReadyz)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/cis/notifications", wrapper.ReceiveCISNotification)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/registry/validate", wrapper.ValidateRegistry)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/oauth/token", wrapper.RequestToken)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/jwks.json", wrapper.GetJWKS)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/login", wrapper.Login)

@@ -20,4 +20,7 @@ these copies.
 
 Copies: `cisp.yaml` (WP-4, the CIS cache), generated into
 `internal/cis/cispclient` with `api/oapi-codegen.cisp.yaml` (the
-`datasets` and `subscriptions` tags only).
+`datasets` and `subscriptions` tags only); `authority.yaml` (WP-5, the
+registry validity cache), generated into `internal/registry/authclient`
+with `api/oapi-codegen.authority.yaml` (the `registry-f8` tag only: the
+F8 lookups and the change feed).

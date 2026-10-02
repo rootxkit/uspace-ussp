@@ -344,16 +344,32 @@ type RecordBundle struct {
 	Flights     int32       `json:"flights"`
 }
 
+type RegistryFeed struct {
+	ID       bool      `json:"id"`
+	Since    int64     `json:"since"`
+	Etag     *string   `json:"etag"`
+	PolledAt time.Time `json:"polled_at"`
+}
+
+type RegistryInvalidation struct {
+	EntityType string    `json:"entity_type"`
+	KeyFold    string    `json:"key_fold"`
+	Seq        int64     `json:"seq"`
+	At         time.Time `json:"at"`
+}
+
 type RegistryValidity struct {
-	EntityType   string    `json:"entity_type"`
-	Key          string    `json:"key"`
-	Status       string    `json:"status"`
-	ValidUntil   time.Time `json:"valid_until"`
-	ClassLabel   *string   `json:"class_label"`
-	MtomBand     *string   `json:"mtom_band"`
-	Competencies []byte    `json:"competencies"`
-	FetchedAt    time.Time `json:"fetched_at"`
-	Negative     bool      `json:"negative"`
+	EntityType string `json:"entity_type"`
+	Key        string `json:"key"`
+	Status     string `json:"status"`
+	// the registration's end of validity as F8 answers it; null where F8 gives none
+	ValidUntil   *time.Time `json:"valid_until"`
+	ClassLabel   *string    `json:"class_label"`
+	MtomBand     *string    `json:"mtom_band"`
+	Competencies []byte     `json:"competencies"`
+	FetchedAt    time.Time  `json:"fetched_at"`
+	Negative     bool       `json:"negative"`
+	KeyFold      string     `json:"key_fold"`
 }
 
 type Session struct {

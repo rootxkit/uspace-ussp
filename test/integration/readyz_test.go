@@ -144,8 +144,9 @@ func wantStates(t *testing.T, body *client.Readiness, want map[string]client.Dep
 			t.Errorf("%s: %+v, want %s", name, d, state)
 			continue
 		}
-		// cis says what it is up with: its versions and age.
-		if state == client.DependencyStateUp && (d.AgeS == nil || *d.AgeS != 0 || (d.Detail != nil) != (name == "cis")) {
+		// cis says what it is up with (its versions and age), registry
+		// its last success and the feed's cursor.
+		if state == client.DependencyStateUp && (d.AgeS == nil || *d.AgeS != 0 || (d.Detail != nil) != (name == "cis" || name == "registry")) {
 			t.Errorf("%s up with age %v detail %v", name, d.AgeS, d.Detail)
 		}
 		if state == client.DependencyStateDown && (d.Detail == nil || *d.Detail == "") {
@@ -173,12 +174,13 @@ func TestIntegrationAPIReadyWithEveryDependencyUp(t *testing.T) {
 		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateUp,
 		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
 		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
+		"registry": client.DependencyStateUp,
 	})
 }
 
-// Without an issuer key, an audience and a CISP, api still starts
-// (B-08) and says what it cannot do: issuer and jwks down with their
-// reasons, cis unknown, ready but degraded.
+// Without an issuer key, an audience, a CISP and an authority, api still
+// starts (B-08) and says what it cannot do: issuer, jwks and registry
+// down with their reasons, cis unknown, ready but degraded.
 func TestIntegrationAPIDegradedWithoutAuthConfiguration(t *testing.T) {
 	ensureSchemas(t)
 	c := run(t, api.Spec, map[string]string{
@@ -188,12 +190,13 @@ func TestIntegrationAPIDegradedWithoutAuthConfiguration(t *testing.T) {
 		"USSP_NATS_URL": mustEnv(t, "USSP_TEST_NATS_URL"),
 	})
 	code, body := readyz(t, c, client.ReadinessStatusDegraded)
-	if code != 200 || strings.Join(body.Degraded, ",") != "cis,issuer,jwks" {
+	if code != 200 || strings.Join(body.Degraded, ",") != "cis,issuer,jwks,registry" {
 		t.Fatalf("readyz %d %+v", code, body)
 	}
 	wantStates(t, body, map[string]client.DependencyState{
 		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateUp,
 		"issuer": client.DependencyStateDown, "jwks": client.DependencyStateDown, "cis": client.DependencyStateUnknown,
+		"registry": client.DependencyStateDown,
 	})
 }
 
@@ -208,7 +211,8 @@ func TestIntegrationAPINotReadyWithoutNATS(t *testing.T) {
 		"USSP_NATS_URL": "nats://" + closedAddr(t),
 	}, newFakeAuthority(t)))
 	code, body := readyz(t, c, client.ReadinessStatusNotReady)
-	// The CIS cache comes up on its own (it needs no NATS); wait for it.
+	// The CIS cache and the registry feed come up on their own (they
+	// need no NATS); wait for them.
 	for deadline := time.Now().Add(10 * time.Second); strings.Join(body.Degraded, ",") != "nats" && time.Now().Before(deadline); {
 		time.Sleep(250 * time.Millisecond)
 		code, body = readyz(t, c, client.ReadinessStatusNotReady)
@@ -220,6 +224,7 @@ func TestIntegrationAPINotReadyWithoutNATS(t *testing.T) {
 		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateDown,
 		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
 		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
+		"registry": client.DependencyStateUp,
 	})
 }
 
@@ -331,6 +336,7 @@ func TestIntegrationAPIFollowsNATSAwayAndBack(t *testing.T) {
 		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateDown,
 		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
 		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
+		"registry": client.DependencyStateUp,
 	})
 	if d := body.Dependencies["nats"]; d.AgeS == nil || *d.AgeS <= 0 {
 		t.Errorf("nats down without the age of its last good state: %+v", d)

@@ -8,6 +8,7 @@ package national
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -22,6 +23,8 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/national/gen"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
+	"github.com/rootxkit/uspace-ussp/internal/registry"
+	"github.com/rootxkit/uspace-ussp/internal/store"
 )
 
 // Health serves the two health operations (the process supplies them).
@@ -40,8 +43,17 @@ type Server struct {
 	Accounts *accounts.Service
 	// CIS is POST /v1/cis/notifications (internal/cis.Receiver); nil
 	// answers 503 cis_unavailable.
-	CIS    http.Handler
-	Logger *slog.Logger
+	CIS http.Handler
+	// Registry answers GET /v1/registry/validate (internal/registry's
+	// Cache); nil answers 503 registry_unavailable.
+	Registry RegistryValidator
+	Logger   *slog.Logger
+}
+
+// RegistryValidator is the cached, audited F8 lookup
+// (internal/registry.Cache).
+type RegistryValidator interface {
+	ValidateAudited(ctx context.Context, actorType, actorID string, qs []registry.Query, p registry.Purpose) ([]registry.Result, error)
 }
 
 var _ gen.ServerInterface = (*Server)(nil)
@@ -64,6 +76,7 @@ func AccessTable() map[string]httpx.Access {
 		"POST /v1/accounts/login":                           public, // limited per address and per username
 		"POST /v1/accounts/operators":                       public, // self-registration, limited per address
 		"POST /v1/cis/notifications":                        public, // no bearer: the compact JWS in the body is verified by internal/cis.Receiver (issuer allow-list, aud, iat, jti)
+		"GET /v1/registry/validate":                         {Scopes: []string{auth.ScopeIntents}},
 		"POST /v1/accounts/logout":                          anySession,
 		"GET /v1/accounts/me":                               anySession,
 		"GET /v1/accounts/operators/{operator_id}":          portalAdmin,
@@ -177,6 +190,53 @@ func (s *Server) ReceiveCISNotification(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.CIS.ServeHTTP(w, r)
+}
+
+// ValidateRegistry is GET /v1/registry/validate: the cached F8 answer,
+// status only, recorded with the client and the purpose.
+func (s *Server) ValidateRegistry(w http.ResponseWriter, r *http.Request, params gen.ValidateRegistryParams) {
+	if s.Registry == nil {
+		httpx.NewProblem(http.StatusServiceUnavailable, registry.ReasonRegistryUnavailable, "", "the registry lookup is not configured on this process").Write(w, r)
+		return
+	}
+	deref := func(p *string) string {
+		if p == nil {
+			return ""
+		}
+		return *p
+	}
+	q := registry.Query{Operator: deref(params.Operator), Serial: deref(params.Serial), Pilot: deref(params.Pilot)}
+	rs, err := s.Registry.ValidateAudited(r.Context(), store.ActorClient, principal(r).Claims.Subject, []registry.Query{q}, registry.Purpose(params.Purpose))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, gen.RegistryValidation{Operator: registryAnswer(rs[0].Operator), Uas: registryAnswer(rs[0].UAS), Pilot: registryAnswer(rs[0].Pilot)})
+}
+
+func registryAnswer(a *registry.Answer) *gen.RegistryAnswer {
+	if a == nil {
+		return nil
+	}
+	out := &gen.RegistryAnswer{Key: a.Key, Status: gen.RegistryStatus(a.Status), ValidUntil: a.ValidUntil, CacheAgeS: a.CacheAgeS}
+	if a.Reason != "" {
+		reason := gen.RegistryAnswerReason(a.Reason)
+		out.Reason = &reason
+	}
+	if a.ClassLabel != "" {
+		out.ClassLabel = &a.ClassLabel
+	}
+	if a.MTOMBand != "" {
+		out.MtomBand = &a.MTOMBand
+	}
+	if a.Competencies != nil {
+		cs := make([]gen.RegistryCompetency, len(a.Competencies))
+		for i, c := range a.Competencies {
+			cs[i] = gen.RegistryCompetency{Competency: c.Competency, ValidUntil: c.ValidUntil}
+		}
+		out.Competencies = &cs
+	}
+	return out
 }
 
 // GetJWKS is GET /.well-known/jwks.json.

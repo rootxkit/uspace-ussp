@@ -14,7 +14,8 @@ info:
 
     Skeleton (WP-0): health and readiness, the security schemes and the
     tags. Every later work package adds its paths under its tag. WP-4:
-    the CIS change-notification receiver.
+    the CIS change-notification receiver. WP-5: the cached registry
+    validity lookup.
   license:
     name: Apache-2.0
 servers:
@@ -145,6 +146,60 @@ paths:
         "413":
           $ref: "#/components/responses/Problem"
         "415":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/registry/validate:
+    get:
+      operationId: validateRegistry
+      tags: [registry]
+      summary: Validity of an operator, a UAS and a remote pilot (F8, cached)
+      description: |
+        The authority's F8 answer through this USSP's cache, status only:
+        `valid`, `suspended`, `revoked` or `unknown` per key asked, with
+        the end of validity, the class label and MTOM band of a UAS and
+        the competency set of a pilot, never a name, address, phone or
+        e-mail (spec 02 F8, 06 §5). An answer cached within the policy's
+        TTL (`registry_positive_ttl_s`, `registry_negative_ttl_s`) carries
+        its `cache_age_s`; otherwise the authority is asked and the answer
+        cached. When the authority cannot answer, a key without a cached
+        answer is `unknown` with `reason: registry_unavailable` (or
+        `registry_answer_refused` when its answer was refused), never an
+        error and never `valid`. `operator` is compared on its public part
+        (a secret part is neither sent, stored nor echoed); `serial` as
+        given, trimmed. Every call is an `events` row
+        (`registry_validated`) with the client and the purpose.
+      security:
+        - operatorToken: []
+      parameters:
+        - name: purpose
+          in: query
+          required: true
+          schema: {$ref: "#/components/schemas/RegistryPurpose"}
+        - name: operator
+          in: query
+          schema: {type: string, maxLength: 64}
+        - name: serial
+          in: query
+          schema: {type: string, maxLength: 64}
+        - name: pilot
+          in: query
+          schema: {type: string, maxLength: 32}
+      responses:
+        "200":
+          description: One part per key asked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryValidation"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
           $ref: "#/components/responses/Problem"
         "503":
           $ref: "#/components/responses/Problem"
@@ -658,6 +713,54 @@ components:
         reason:
           type: string
 
+    RegistryPurpose:
+      type: string
+      enum: [authorisation, identification]
+      description: Why the lookup is made; recorded on every call here and at the authority (spec 02 F8).
+    RegistryStatus:
+      type: string
+      enum: [valid, suspended, revoked, unknown]
+    RegistryCompetency:
+      type: object
+      required: [competency, valid_until]
+      properties:
+        competency: {type: string, maxLength: 64}
+        valid_until: {type: string, format: date-time}
+    RegistryAnswer:
+      type: object
+      required: [key, status]
+      description: One entity's answer, status only.
+      properties:
+        key:
+          type: string
+          description: The key as answered (an operator number's public part, the serial, the pilot id).
+        status: {$ref: "#/components/schemas/RegistryStatus"}
+        reason:
+          type: string
+          enum: [registry_unavailable, registry_answer_refused]
+          description: Why the status is unknown without the registry having said so; absent when it did.
+        valid_until:
+          type: string
+          format: date-time
+          description: The registration's end of validity (an operator's), as the authority answers it.
+        class_label: {type: string, maxLength: 64}
+        mtom_band: {type: string, maxLength: 64}
+        competencies:
+          type: array
+          maxItems: 64
+          items: {$ref: "#/components/schemas/RegistryCompetency"}
+        cache_age_s:
+          type: number
+          format: double
+          minimum: 0
+          description: The age of the answer in seconds (0 when the authority was just asked); absent when there is no answer.
+    RegistryValidation:
+      type: object
+      description: One part per key asked.
+      properties:
+        operator: {$ref: "#/components/schemas/RegistryAnswer"}
+        uas: {$ref: "#/components/schemas/RegistryAnswer"}
+        pilot: {$ref: "#/components/schemas/RegistryAnswer"}
     Health:
       type: object
       required: [status]

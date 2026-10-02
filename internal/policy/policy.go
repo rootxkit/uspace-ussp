@@ -67,6 +67,13 @@ type Values struct {
 	// of a rotated client keeps working (0: not at all).
 	OperatorTokenTTLS    int `json:"operator_token_ttl_s"`
 	ClientSecretOverlapS int `json:"client_secret_overlap_s"`
+
+	// RegistryPositiveTTLS is how long an F8 answer the registry holds
+	// (valid, suspended, revoked) is served from the cache;
+	// RegistryNegativeTTLS how long an unknown is (spec 02 F8: 24 h and
+	// 5 min). The change feed invalidates either sooner.
+	RegistryPositiveTTLS float64 `json:"registry_positive_ttl_s"`
+	RegistryNegativeTTLS float64 `json:"registry_negative_ttl_s"`
 }
 
 // MaxOperatorTokenTTLS bounds OperatorTokenTTLS: an operator token
@@ -87,7 +94,8 @@ const TelemetryRetentionFloorDays = 30
 // (cpa.DefaultPolicy: 60 s, 60 m, 20 m, 800 m, 10 s), CIS stale after
 // 300 s, escalation every 10 s, telemetry 90 days, records 5 years,
 // audit 10 years, operator tokens for one hour and a rotated client
-// secret overlapping its successor for one day. ProximityRadiusM has no figure in the plan; it takes
+// secret overlapping its successor for one day, registry answers cached
+// for 24 h and an unknown for 5 min (spec 02 F8). ProximityRadiusM has no figure in the plan; it takes
 // the CPA neighbour radius until GCAA answers Q6. They are shown with
 // their policy_version, never presented as the policy answer.
 func Defaults() Values {
@@ -112,6 +120,8 @@ func Defaults() Values {
 		AuditRetentionDays:          10 * 365,
 		OperatorTokenTTLS:           3600,
 		ClientSecretOverlapS:        24 * 3600,
+		RegistryPositiveTTLS:        24 * 3600,
+		RegistryNegativeTTLS:        300,
 	}
 }
 
@@ -145,6 +155,7 @@ func (v Values) Validate() error {
 		{"cis_stale_s", v.CISStaleS}, {"escalation_repeat_s", v.EscalationRepeatS},
 		{"cpa_horizontal_min_m", v.CPAHorizontalMinM}, {"cpa_vertical_min_m", v.CPAVerticalMinM},
 		{"cpa_neighbour_radius_m", v.CPANeighbourRadiusM},
+		{"registry_positive_ttl_s", v.RegistryPositiveTTLS}, {"registry_negative_ttl_s", v.RegistryNegativeTTLS},
 	}
 	for _, f := range positive {
 		if !finite(f.v) || f.v <= 0 {

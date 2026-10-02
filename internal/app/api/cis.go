@@ -36,12 +36,13 @@ type CIS struct {
 	Receiver  http.Handler
 }
 
-// startCIS builds the CIS cache from the configuration, registers its
+// startCIS builds the CIS cache from the configuration (tokens is the
+// process's outgoing token client, nil without one), registers its
 // readiness and starts its workers on rt. Nothing here refuses the start
 // because a dependency is down; a configuration that cannot be right
 // (an issuer on neither the CISP's nor the ANSP's host, a malformed box)
 // does.
-func startCIS(ctx context.Context, rt *proc.Runtime, current func() policy.Values) (*CIS, error) {
+func startCIS(ctx context.Context, rt *proc.Runtime, current func() policy.Values, tokens *auth.Outgoing) (*CIS, error) {
 	cfg := rt.Config
 	counters := &core.Counters{}
 	proc.Publish(rt, "cis", counters)
@@ -55,13 +56,6 @@ func startCIS(ctx context.Context, rt *proc.Runtime, current func() policy.Value
 	}
 	var client *cis.Client
 	if cfg.CISPBaseURL != "" {
-		tokens, err := outgoingTokens(cfg)
-		if err != nil {
-			return nil, err
-		}
-		if tokens != nil {
-			proc.Publish(rt, "token_client", tokens.Counters())
-		}
 		cc := cis.ClientConfig{BaseURL: cfg.CISPBaseURL}
 		if tokens != nil {
 			cc.Tokens = tokens

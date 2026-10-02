@@ -1,0 +1,3169 @@
+openapi: 3.1.0
+info:
+  title: uspace-authority national API
+  version: 0.1.0
+  description: |
+    The competent authority's system of the Georgian U-space rebuild.
+    This file is the contract: the only source of handlers and types
+    (`api/gen/`), and an endpoint that is not in it does not exist
+    (spec `00 §7`). Paths are versioned under `/v1`; changes within a
+    version are additive only.
+
+    Every error is `application/problem+json` in the shape of the
+    `Problem` schema (the lab's `schemas/common/problem/v1`, decision
+    M28).
+
+    Every operation carries `security` (an empty list only for the
+    health paths) and the vendor extension `x-audit`, which names the
+    `events` row the operation writes:
+
+    - `x-audit: none` the operation writes no `events` row (health and
+      public reads only);
+    - `x-audit: {event_type: <name>, entity_type: <name>, purpose:
+      required | optional | none}` the operation writes one `events`
+      row of that type, inside the same transaction as its effect;
+      `purpose: required` means the request is refused without a
+      `purpose` (every PII read, CLAUDE.md rule 6).
+
+    An operation for machines carries `x-scope: <scope>` instead of
+    `x-roles`: it admits an ecosystem token granting that scope and
+    never a console session (WP-2 table B). An operation with neither
+    `x-roles`, `x-scope` nor `x-session` is refused (fail closed).
+    The Remote ID receiver operations carry `x-receiver: true` instead:
+    the receiver's bearer key and the HMAC of the body authenticate
+    them (WP-7), and they are served outside the generated server.
+
+    Work packages add their path groups below under a `# WP-k` comment
+    and regenerate `api/gen/` with `scripts/generate.sh`.
+servers:
+  - url: /
+tags:
+  - name: health
+    description: Liveness, readiness and metrics of one process instance (admin port).
+  - name: policy
+    description: The versioned authority policy (INV-03); thresholds are data.
+  - name: audit
+    description: The append-only audit log with its monthly hash chain.
+  - name: tokens
+    description: |
+      The ecosystem OAuth2 token service (WP-2): client credentials,
+      the JWKS and the issuer metadata. The JWT contract and the scope
+      catalogue are the normative tables A and B of
+      `docs/WORKPACKAGES/WP-2.md`, restated in
+      `docs/runbooks/token-service.md`.
+  - name: oauth-admin
+    description: The token service's client registry and signing keys (admin).
+  - name: auth
+    description: Console sign-in, TOTP and sessions (WP-2).
+  - name: users
+    description: Console accounts (admin).
+  - name: registry
+    description: |
+      The registry of UAS operators, UAS and remote pilots (WP-3,
+      2019/947 Art. 14). Records carry no personal data; personal data
+      has its own purpose-logged operations.
+  - name: registry-f8
+    description: Status-only validity lookups and the change feed for USSPs (F8, scope registry.validate).
+  - name: rid-receivers
+    description: |
+      The Remote ID receiver registry (WP-7, spec 02 F9): keys shown
+      once, audited switches, and the receiver's own config and
+      heartbeat endpoints.
+  - name: rid-ingest
+    description: Signed observation batches from receivers, served by rid-ingest (WP-7).
+  - name: rid-frames
+    description: Raw Remote ID frames as stored, purpose-logged (WP-7, LESSONS R-15).
+  - name: sources
+    description: "Source control (WP-10, U-15): switches by type and instance, audited, and every source's health."
+  - name: cells
+    description: The partition cells' ownership map (WP-10, spec 05 §3); cells never cross an external interface.
+
+paths:
+  # WP-0: health paths, served by every process on its admin port.
+  /healthz:
+    get:
+      operationId: getHealthz
+      tags: [health]
+      summary: Liveness
+      description: 200 while the process runs. Says nothing about dependencies.
+      security: []
+      x-audit: none
+      responses:
+        "200":
+          description: The process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        default:
+          $ref: "#/components/responses/Problem"
+  /readyz:
+    get:
+      operationId: getReadyz
+      tags: [health]
+      summary: Readiness
+      description: |
+        200 when every readiness check the process registered passes,
+        503 otherwise. Every check is listed with its state, so a
+        process that registered no check says so with an empty map
+        rather than claiming a dependency is healthy.
+      security: []
+      x-audit: none
+      responses:
+        "200":
+          description: Ready to serve.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        "503":
+          description: At least one readiness check failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        default:
+          $ref: "#/components/responses/Problem"
+  /metrics:
+    get:
+      operationId: getMetrics
+      tags: [health]
+      summary: Prometheus metrics
+      description: |
+        Prometheus text exposition, on the admin port only (loopback or
+        the private network, never routed by Caddy). Served by the
+        Prometheus handler, not by a generated handler
+        (`api/oapi-codegen.yaml` excludes this operation).
+      security: []
+      x-audit: none
+      responses:
+        "200":
+          description: The metrics.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  # WP-1: the authority policy and the audit log. Every operation below
+  # names the console roles allowed in `x-roles`; until WP-2 lands the
+  # role check is a placeholder that refuses every request without a
+  # session (401 unauthenticated).
+  /v1/policy:
+    get:
+      operationId: getPolicy
+      tags: [policy]
+      summary: The active policy
+      description: The one active policy version and its thresholds.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: none
+      responses:
+        "200":
+          description: The active policy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Policy"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createPolicy
+      tags: [policy]
+      summary: Create a new policy version
+      description: |
+        Validates every threshold (finite and positive, E-15; a refusal
+        names each field) and stores it as the next version, inactive.
+        Activation is a separate, audited step.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: policy_created, entity_type: authority_policy, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PolicyInput"
+      responses:
+        "201":
+          description: The new version, inactive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Policy"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/policy/{version}/activate:
+    post:
+      operationId: activatePolicy
+      tags: [policy]
+      summary: Activate a policy version
+      description: |
+        Makes `version` the one active policy and publishes it to the
+        processes that follow it. Only a version newer than the active
+        one can be activated (followers apply only a higher version); a
+        rollback is a new version with the old values (409 otherwise).
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: policy_activated, entity_type: authority_policy, purpose: none}
+      parameters:
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The policy now active.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Policy"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/audit/events:
+    get:
+      operationId: listAuditEvents
+      tags: [audit]
+      summary: Audit events, newest first
+      description: |
+        Every filter is optional; pages are cut by `before_id` (the
+        `next_before_id` of the previous page). Reading the log is itself
+        recorded as an `audit_events_viewed` event.
+      security:
+        - sessionCookie: []
+      x-roles: [admin, auditor]
+      x-audit: {event_type: audit_events_viewed, entity_type: events, purpose: optional}
+      parameters:
+        - {name: entity_type, in: query, schema: {type: string}}
+        - {name: entity_id, in: query, schema: {type: string}}
+        - {name: actor_id, in: query, schema: {type: string}}
+        - {name: event_type, in: query, schema: {type: string}}
+        - {name: from, in: query, description: Inclusive lower bound of ts., schema: {type: string, format: date-time}}
+        - {name: to, in: query, description: Exclusive upper bound of ts., schema: {type: string, format: date-time}}
+        - {name: before_id, in: query, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+        - {name: purpose, in: query, description: Why the log is read; recorded on the view event., schema: {type: string}}
+      responses:
+        "200":
+          description: One page of events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventPage"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # WP-2: console sign-in (password, then TOTP) and sessions. A session
+  # is table A's session JWT (M20), presented as a bearer by the web BFF
+  # from the uspace_session cookie (docs/runbooks/session-contract.md).
+  /v1/auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: First sign-in step (password)
+      description: |
+        Checks the password and returns a short, single-use MFA
+        challenge. An unknown user, a disabled user and a wrong password
+        get the same answer after the same argon2id work (no user
+        enumeration). An account without confirmed TOTP gets its
+        enrolment secret here, after the password. Rate-limited per
+        client address and per username (429 with `Retry-After`).
+        Every attempt is an events row (`login_password_accepted` or
+        `login_refused`).
+      security: []
+      x-audit: {event_type: login_password_accepted, entity_type: user, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: The MFA challenge.
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginChallenge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/auth/mfa:
+    post:
+      operationId: verifyMFA
+      tags: [auth]
+      summary: Second sign-in step (TOTP or a recovery code)
+      description: |
+        Exchanges the challenge and a TOTP code (or one recovery code)
+        for a session. A code is accepted once; a challenge allows a
+        bounded number of attempts and is used once. The first success
+        after enrolment confirms it and returns the recovery codes,
+        once. Every failure is an `mfa_refused` event; the session is a
+        `session_started` event.
+      security: []
+      x-audit: {event_type: session_started, entity_type: session, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MFARequest"
+      responses:
+        "200":
+          description: The session.
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionIssued"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/auth/session:
+    get:
+      operationId: getSession
+      tags: [auth]
+      summary: The session of the caller
+      security:
+        - sessionCookie: []
+      x-session: any
+      x-audit: none
+      responses:
+        "200":
+          description: The session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionInfo"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: End the session of the caller
+      security:
+        - sessionCookie: []
+      x-session: any
+      x-audit: {event_type: logout, entity_type: session, purpose: none}
+      responses:
+        "204":
+          description: The session is revoked.
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: Console accounts
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: none
+      responses:
+        "200":
+          description: Every account, by username.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserList"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Create an account
+      description: |
+        The account signs in with the password given here and enrols
+        TOTP at its first sign-in.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: user_created, entity_type: user, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserInput"
+      responses:
+        "201":
+          description: The account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/users/{user_id}:
+    parameters:
+      - {name: user_id, in: path, required: true, schema: {type: string, maxLength: 32}}
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: One account
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: none
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/users/{user_id}/roles:
+    parameters:
+      - {name: user_id, in: path, required: true, schema: {type: string, maxLength: 32}}
+    put:
+      operationId: setUserRoles
+      tags: [users]
+      summary: Replace the roles of an account
+      description: Revokes the sessions of the account, so the new roles apply at the next sign-in. The last active admin cannot lose the role (409).
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: user_roles_changed, entity_type: user, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RolesInput"
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/users/{user_id}/disable:
+    parameters:
+      - {name: user_id, in: path, required: true, schema: {type: string, maxLength: 32}}
+    post:
+      operationId: disableUser
+      tags: [users]
+      summary: Disable an account
+      description: Revokes its sessions; it can no longer sign in. The last active admin cannot be disabled (409).
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: user_disabled, entity_type: user, purpose: none}
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/users/{user_id}/enable:
+    parameters:
+      - {name: user_id, in: path, required: true, schema: {type: string, maxLength: 32}}
+    post:
+      operationId: enableUser
+      tags: [users]
+      summary: Enable a disabled account
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: user_enabled, entity_type: user, purpose: none}
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/users/{user_id}/mfa/reset:
+    parameters:
+      - {name: user_id, in: path, required: true, schema: {type: string, maxLength: 32}}
+    post:
+      operationId: resetUserMFA
+      tags: [users]
+      summary: Reset the TOTP of an account
+      description: Deletes the TOTP secret and the recovery codes and revokes the sessions; the account enrols again at its next sign-in.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: user_mfa_reset, entity_type: user, purpose: none}
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/users/{user_id}/mfa/unlock:
+    parameters:
+      - {name: user_id, in: path, required: true, schema: {type: string, maxLength: 32}}
+    post:
+      operationId: unlockUserMFA
+      tags: [users]
+      summary: Clear the MFA lock of an account
+      description: |
+        Wrong TOTP or recovery codes count against the account across
+        challenges and addresses (NIST SP 800-63B 5.2.2): from
+        `MFA_LOCKOUT_AFTER` failures the account is locked for a time
+        that doubles with each failure, and at `MFA_HARD_LOCK_AFTER`
+        (at most 100) until an admin calls this. A success clears the
+        count.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: user_mfa_unlocked, entity_type: user, purpose: none}
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/users/{user_id}/sessions/revoke:
+    parameters:
+      - {name: user_id, in: path, required: true, schema: {type: string, maxLength: 32}}
+    post:
+      operationId: revokeUserSessions
+      tags: [users]
+      summary: Revoke every session of an account
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: session_revoked, entity_type: session, purpose: none}
+      responses:
+        "200":
+          description: How many sessions were revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Revoked"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # WP-2: the ecosystem token service. /oauth/token and /.well-known/*
+  # are public (the client authenticates in the body); /v1/oauth/* is
+  # for admins. Every issuance and every refusal is an events row
+  # (token_issued, token_refused; 06 §3).
+  /oauth/token:
+    post:
+      operationId: requestToken
+      tags: [tokens]
+      summary: Client credentials grant
+      description: |
+        RFC 6749 §4.4 client credentials. The client authenticates with
+        `client_secret_post` (`client_id`, `client_secret`) or
+        `private_key_jwt` (RFC 7523: `client_assertion_type` =
+        `urn:ietf:params:oauth:client-assertion-type:jwt-bearer`,
+        `client_assertion` an RS256 JWT with `iss` = `sub` = the client
+        id, `aud` = this issuer or its token endpoint, `exp` at most
+        5 min ahead and a `jti` used once). Parameters in the query
+        string are refused. `scope` names catalogue scopes (WP-2 table
+        B), a subset of the client's. `audience`, or one RFC 8707
+        `resource`, names the target: a host or the target's base URL,
+        reduced to its host, which becomes `aud` (M18). For national
+        scopes the host must be on the client's audience list; for
+        `utm.*` and `rid.*` any host is accepted. One audience per
+        token. Errors carry RFC 6749 `error` and `error_description`
+        beside the problem members. Issuance is rate-limited per
+        client (429 with `Retry-After`). Every refusal is a
+        `token_refused` event.
+      security: []
+      x-audit: {event_type: token_issued, entity_type: oauth_client, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/TokenRequest"
+      responses:
+        "200":
+          description: An ecosystem machine token (table A).
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          $ref: "#/components/responses/OAuthError"
+        "401":
+          $ref: "#/components/responses/OAuthError"
+        "429":
+          description: The client's issuance budget is spent.
+          headers:
+            Retry-After:
+              schema: {type: integer, minimum: 1}
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/OAuthProblem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /.well-known/jwks.json:
+    get:
+      operationId: getJWKS
+      tags: [tokens]
+      summary: The issuer's public keys
+      description: |
+        Every RS256 key a verifier may meet (`use: sig`, distinguished by
+        `kid`): the active token-signing key, retired token-signing keys
+        until their retirement plus the JWKS cache TTL (24 h), and this
+        system's publication-signing key of the detached
+        `X-JWS-Signature` (M26). Cacheable for 300 s.
+      security: []
+      x-audit: none
+      responses:
+        "200":
+          description: The JWKS.
+          headers:
+            Cache-Control:
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JWKS"
+        default:
+          $ref: "#/components/responses/Problem"
+  /.well-known/openid-configuration:
+    get:
+      operationId: getIssuerMetadata
+      tags: [tokens]
+      summary: Issuer metadata
+      description: |
+        The issuer, its JWKS URL and token endpoint, the grant type and
+        the client authentication methods. This is an OAuth2 issuer, not
+        an OpenID provider: there is no authorisation endpoint.
+      security: []
+      x-audit: none
+      responses:
+        "200":
+          description: The metadata.
+          headers:
+            Cache-Control:
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuerMetadata"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/oauth/clients:
+    get:
+      operationId: listOAuthClients
+      tags: [oauth-admin]
+      summary: Registered clients
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: none
+      responses:
+        "200":
+          description: Every client, by client id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthClientList"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createOAuthClient
+      tags: [oauth-admin]
+      summary: Register a client
+      description: |
+        One client per calling system (M24). Scopes must be grantable
+        to this client (in the catalogue, not reserved, not of a USSP's
+        issuer, `dp.observe` for `lab-01` only); audiences are hosts.
+        For `client_secret_post` the secret is generated here and
+        returned once; only its argon2id hash is kept. For
+        `private_key_jwt` the client's public JWKS is given (RSA keys of
+        at least 2048 bits, no private members).
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: oauth_client_created, entity_type: oauth_client, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OAuthClientInput"
+      responses:
+        "201":
+          description: The client, and its secret once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthClientCreated"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/oauth/clients/{client_id}:
+    parameters:
+      - {name: client_id, in: path, required: true, schema: {type: string, maxLength: 64}}
+    get:
+      operationId: getOAuthClient
+      tags: [oauth-admin]
+      summary: One client
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: none
+      responses:
+        "200":
+          description: The client.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthClient"
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      operationId: updateOAuthClient
+      tags: [oauth-admin]
+      summary: Change a client's status, scopes, audiences or note
+      description: |
+        A suspended or revoked client gets no new token; tokens already
+        issued expire within their TTL (at most 1 h).
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: oauth_client_updated, entity_type: oauth_client, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OAuthClientPatch"
+      responses:
+        "200":
+          description: The client as changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthClient"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/oauth/keys:
+    get:
+      operationId: listSigningKeys
+      tags: [oauth-admin]
+      summary: Signing keys and their state
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: none
+      responses:
+        "200":
+          description: Every registered key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SigningKeyList"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/oauth/keys/{kid}/compromised:
+    parameters:
+      - {name: kid, in: path, required: true, schema: {type: string, maxLength: 128}}
+    post:
+      operationId: compromiseSigningKey
+      tags: [oauth-admin]
+      summary: Drop a compromised key now
+      description: |
+        The emergency retirement: the key leaves the JWKS at once (no
+        24 h overlap), never signs again and is never a rotation
+        candidate. An active token key is replaced by the next
+        candidate; without one this issuer stops issuing until a key is
+        added. One admin suffices; the act is a `signing_key_compromised`
+        event with the reason. Other replicas follow within
+        `KEY_REFRESH_S`; verifiers drop the key when their JWKS cache
+        refreshes.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: signing_key_compromised, entity_type: signing_key, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: {type: string, maxLength: 1000}
+      responses:
+        "200":
+          description: The key as marked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SigningKey"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/oauth/keys/rotate:
+    post:
+      operationId: rotateSigningKey
+      tags: [oauth-admin]
+      summary: Activate the next token-signing key
+      description: |
+        The next key is the first key of `SIGNING_KEY_FILES` never
+        activated. With the two-person rule (`KEY_ROTATION_TWO_PERSON`,
+        default on) the first admin's call records the request (202)
+        and a second admin's call within `KEY_ROTATION_CONFIRM_S`
+        (600 s) activates it (200); the same admin twice is refused
+        (409). The previous key is retired and stays in the JWKS for
+        `KEY_RETIRE_GRACE_S` (24 h).
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: signing_key_activated, entity_type: signing_key, purpose: none}
+      responses:
+        "200":
+          description: The next key is active.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyRotation"
+        "202":
+          description: Requested; a second admin must confirm.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KeyRotation"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # WP-3: the registry of operators, UAS and remote pilots (2019/947
+  # Art. 14), its F8 validity lookups and change feed for USSPs.
+  # Registry records carry no personal data: an operator's or a pilot's
+  # personal data is served only by the `personal-data` operations, to
+  # the registrar and inspector roles, with a `purpose`, each read an
+  # events row (`registry_pii_viewed`). A viewer, a USSP and the public
+  # never reach them (CLAUDE.md rule 6). Every change writes the
+  # registry projection the resolvers read inside the same change; a
+  # failed projection write rolls the change back and answers 503
+  # `projection_unavailable` (LESSONS G-08).
+  /v1/registry/operators:
+    get:
+      operationId: listRegistryOperators
+      tags: [registry]
+      summary: UAS operators, in id order
+      description: |
+        `number` looks an operator up by registration number, compared
+        on its public part with ASCII letters upper-cased
+        (uspace-core `regnum.CompareKey`, G-04). No personal data.
+      security:
+        - sessionCookie: []
+      x-roles: [registrar, inspector, viewer]
+      x-audit: none
+      parameters:
+        - {name: number, in: query, schema: {type: string, maxLength: 64}}
+        - {name: status, in: query, schema: {$ref: "#/components/schemas/RegistryStatus"}}
+        - {name: after, in: query, description: The next_after of the previous page., schema: {type: string, maxLength: 32}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+      responses:
+        "200":
+          description: One page of operators.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryOperatorList"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createRegistryOperator
+      tags: [registry]
+      summary: Register a UAS operator
+      description: |
+        The 2019/947 Art. 14(2) field set. The registration number is
+        validated by uspace-core `regnum` against the active policy's
+        `registration_number_pattern`; a number with a hyphen is refused
+        (only the public part is registered). The secret part, when the
+        authority issues one, is stored as a keyed hash only. Personal
+        data is sealed and never echoed. 409 when the number is
+        registered already.
+      security:
+        - sessionCookie: []
+      x-roles: [registrar]
+      x-audit: {event_type: operator_registered, entity_type: operator, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryOperatorInput"
+      responses:
+        "201":
+          description: The registered operator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryOperator"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/operators/{operator_id}:
+    parameters:
+      - {name: operator_id, in: path, required: true, schema: {type: string, maxLength: 32}}
+    get:
+      operationId: getRegistryOperator
+      tags: [registry]
+      summary: One UAS operator, without personal data
+      security:
+        - sessionCookie: []
+      x-roles: [registrar, inspector, viewer]
+      x-audit: none
+      responses:
+        "200":
+          description: The operator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryOperator"
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      operationId: updateRegistryOperator
+      tags: [registry]
+      summary: Change an operator's details
+      description: |
+        Contact and personal details, authorisations and the end of
+        validity. The type, the registration number and the status are
+        not changed here (a correction is a revocation and a new
+        registration; the status has its own operation).
+      security:
+        - sessionCookie: []
+      x-roles: [registrar]
+      x-audit: {event_type: operator_updated, entity_type: operator, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryOperatorPatch"
+      responses:
+        "200":
+          description: The operator after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryOperator"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/operators/{operator_id}/status:
+    parameters:
+      - {name: operator_id, in: path, required: true, schema: {type: string, maxLength: 32}}
+    post:
+      operationId: setRegistryOperatorStatus
+      tags: [registry]
+      summary: Suspend, reinstate or revoke an operator
+      description: |
+        The allowed transitions: active to suspended or revoked,
+        suspended to active or revoked, expired to active (a renewal,
+        once `valid_until` is in the future) or revoked; revoked is
+        final; expired is set by the expiry job only. A suspension or a
+        revocation needs a reason. Each change is an events row and an
+        entry of the F8 change feed.
+      security:
+        - sessionCookie: []
+      x-roles: [registrar]
+      x-audit: {event_type: registry_status_changed, entity_type: operator, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryStatusInput"
+      responses:
+        "200":
+          description: The operator after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryOperator"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/operators/{operator_id}/personal-data:
+    parameters:
+      - {name: operator_id, in: path, required: true, schema: {type: string, maxLength: 32}}
+    get:
+      operationId: getRegistryOperatorPersonalData
+      tags: [registry]
+      summary: An operator's personal data (purpose required, audited)
+      description: |
+        Refused without `purpose`. Every read is a `registry_pii_viewed`
+        event with the purpose, written before the data is returned.
+      security:
+        - sessionCookie: []
+      x-roles: [registrar, inspector]
+      x-audit: {event_type: registry_pii_viewed, entity_type: operator, purpose: required}
+      parameters:
+        - {name: purpose, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
+      responses:
+        "200":
+          description: The personal data.
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryOperatorPersonalData"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/uas:
+    get:
+      operationId: listRegistryUAS
+      tags: [registry]
+      summary: UAS, in id order
+      description: |
+        `serial` looks an aircraft up by serial: the ASCII-folded key
+        (uspace-core `serial.FoldKey`, G-05, G-12), which the registry
+        keeps unique.
+      security:
+        - sessionCookie: []
+      x-roles: [registrar, inspector, viewer]
+      x-audit: none
+      parameters:
+        - {name: serial, in: query, schema: {type: string, maxLength: 64}}
+        - {name: operator_id, in: query, schema: {type: string, maxLength: 32}}
+        - {name: status, in: query, schema: {$ref: "#/components/schemas/RegistryStatus"}}
+        - {name: after, in: query, schema: {type: string, maxLength: 32}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+      responses:
+        "200":
+          description: One page of aircraft.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryUASList"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createRegistryUAS
+      tags: [registry]
+      summary: Register a UAS
+      description: |
+        The serial is kept as given, trimmed (G-05), and validated for
+        its class by uspace-core `serial.ValidateForClass` (C1, C2, C3,
+        C5 and C6 need an ANSI/CTA-2063-A serial, G-06). 409 when the
+        serial is registered already, or when another aircraft's serial
+        differs from it only by case (a lookup of either would be
+        ambiguous).
+      security:
+        - sessionCookie: []
+      x-roles: [registrar]
+      x-audit: {event_type: uas_registered, entity_type: uas, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryUASInput"
+      responses:
+        "201":
+          description: The registered aircraft.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryUAS"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/uas/{uas_id}:
+    parameters:
+      - {name: uas_id, in: path, required: true, schema: {type: string, maxLength: 32}}
+    get:
+      operationId: getRegistryUAS
+      tags: [registry]
+      summary: One UAS
+      security:
+        - sessionCookie: []
+      x-roles: [registrar, inspector, viewer]
+      x-audit: none
+      responses:
+        "200":
+          description: The aircraft.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryUAS"
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      operationId: updateRegistryUAS
+      tags: [registry]
+      summary: Change an aircraft's details
+      description: The serial and the operator are not changed here; a class change re-validates the serial.
+      security:
+        - sessionCookie: []
+      x-roles: [registrar]
+      x-audit: {event_type: uas_updated, entity_type: uas, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryUASPatch"
+      responses:
+        "200":
+          description: The aircraft after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryUAS"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/uas/{uas_id}/status:
+    parameters:
+      - {name: uas_id, in: path, required: true, schema: {type: string, maxLength: 32}}
+    post:
+      operationId: setRegistryUASStatus
+      tags: [registry]
+      summary: Suspend, reinstate or revoke a UAS
+      description: The transitions of setRegistryOperatorStatus.
+      security:
+        - sessionCookie: []
+      x-roles: [registrar]
+      x-audit: {event_type: registry_status_changed, entity_type: uas, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryStatusInput"
+      responses:
+        "200":
+          description: The aircraft after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryUAS"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/pilots:
+    get:
+      operationId: listRegistryPilots
+      tags: [registry]
+      summary: Remote pilots, in id order
+      security:
+        - sessionCookie: []
+      x-roles: [registrar, inspector, viewer]
+      x-audit: none
+      parameters:
+        - {name: operator_id, in: query, schema: {type: string, maxLength: 32}}
+        - {name: status, in: query, schema: {$ref: "#/components/schemas/RegistryStatus"}}
+        - {name: after, in: query, schema: {type: string, maxLength: 32}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+      responses:
+        "200":
+          description: One page of pilots.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryPilotList"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createRegistryPilot
+      tags: [registry]
+      summary: Register a remote pilot
+      description: |
+        The national id is stored as a keyed hash and its last four
+        characters (spec 06 §5), the name sealed. 409 when the person is
+        registered already.
+      security:
+        - sessionCookie: []
+      x-roles: [registrar]
+      x-audit: {event_type: pilot_registered, entity_type: pilot, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryPilotInput"
+      responses:
+        "201":
+          description: The registered pilot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryPilot"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/pilots/{pilot_id}:
+    parameters:
+      - {name: pilot_id, in: path, required: true, schema: {type: string, maxLength: 32}}
+    get:
+      operationId: getRegistryPilot
+      tags: [registry]
+      summary: One remote pilot, without personal data
+      security:
+        - sessionCookie: []
+      x-roles: [registrar, inspector, viewer]
+      x-audit: none
+      responses:
+        "200":
+          description: The pilot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryPilot"
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      operationId: updateRegistryPilot
+      tags: [registry]
+      summary: Change a pilot's name or operator
+      security:
+        - sessionCookie: []
+      x-roles: [registrar]
+      x-audit: {event_type: pilot_updated, entity_type: pilot, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryPilotPatch"
+      responses:
+        "200":
+          description: The pilot after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryPilot"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/pilots/{pilot_id}/status:
+    parameters:
+      - {name: pilot_id, in: path, required: true, schema: {type: string, maxLength: 32}}
+    post:
+      operationId: setRegistryPilotStatus
+      tags: [registry]
+      summary: Suspend, reinstate or revoke a remote pilot
+      description: The transitions of setRegistryOperatorStatus.
+      security:
+        - sessionCookie: []
+      x-roles: [registrar]
+      x-audit: {event_type: registry_status_changed, entity_type: pilot, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryStatusInput"
+      responses:
+        "200":
+          description: The pilot after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryPilot"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/pilots/{pilot_id}/personal-data:
+    parameters:
+      - {name: pilot_id, in: path, required: true, schema: {type: string, maxLength: 32}}
+    get:
+      operationId: getRegistryPilotPersonalData
+      tags: [registry]
+      summary: A pilot's personal data (purpose required, audited)
+      security:
+        - sessionCookie: []
+      x-roles: [registrar, inspector]
+      x-audit: {event_type: registry_pii_viewed, entity_type: pilot, purpose: required}
+      parameters:
+        - {name: purpose, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
+      responses:
+        "200":
+          description: The personal data.
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryPilotPersonalData"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/pilots/{pilot_id}/competencies:
+    parameters:
+      - {name: pilot_id, in: path, required: true, schema: {type: string, maxLength: 32}}
+    post:
+      operationId: recordPilotCompetency
+      tags: [registry]
+      summary: Record or renew a pilot's competency
+      description: One row per competency; recording it again replaces its certificate and end of validity.
+      security:
+        - sessionCookie: []
+      x-roles: [registrar]
+      x-audit: {event_type: pilot_competency_recorded, entity_type: pilot, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PilotCompetencyInput"
+      responses:
+        "200":
+          description: The pilot with its competencies.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryPilot"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/validate:
+    get:
+      operationId: validateRegistry
+      tags: [registry-f8]
+      summary: Validity of an operator, a UAS and a pilot (F8)
+      description: |
+        Status only, per entity: `valid`, `suspended`, `revoked` or
+        `unknown`, the end of validity, the class label and MTOM band of
+        a UAS and the competency set of a pilot. No name, address, phone
+        or e-mail: the response schema has no such property, and a test
+        fails if one appears. An expired registration answers `revoked`
+        with its `valid_until` in the past. `operator` is compared on its
+        public part (an EU secret suffix is removed, G-04); `serial`
+        exactly, else on its ASCII fold when one aircraft has it (G-05);
+        `pilot` is the remote pilot's registry id. Every call is an
+        events row with the client and the purpose.
+      security:
+        - ecosystemToken: []
+      x-scope: registry.validate
+      x-audit: {event_type: registry_validated, entity_type: registry, purpose: required}
+      parameters:
+        - {name: purpose, in: query, required: true, schema: {$ref: "#/components/schemas/RegistryPurpose"}}
+        - {name: operator, in: query, schema: {type: string, maxLength: 64}}
+        - {name: serial, in: query, schema: {type: string, maxLength: 64}}
+        - {name: pilot, in: query, schema: {type: string, maxLength: 32}}
+      responses:
+        "200":
+          description: The answer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryValidity"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: validateRegistryBatch
+      tags: [registry-f8]
+      summary: Validity of up to 100 entities (F8)
+      description: The GET's answer for each item, in order; one events row for the batch.
+      security:
+        - ecosystemToken: []
+      x-scope: registry.validate
+      x-audit: {event_type: registry_validated, entity_type: registry, purpose: required}
+      parameters:
+        - {name: purpose, in: query, required: true, schema: {$ref: "#/components/schemas/RegistryPurpose"}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryValidateBatch"
+      responses:
+        "200":
+          description: The answers, in the order of the items.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryValidityList"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/changes:
+    get:
+      operationId: listRegistryChanges
+      tags: [registry-f8]
+      summary: The status change feed (F8), ids and statuses only
+      description: |
+        Changes after `since` in sequence order, for cache
+        invalidation. `next_since` is the last sequence of the page;
+        an `ETag` names the page, and `If-None-Match` with it answers
+        304 while nothing newer exists.
+      security:
+        - ecosystemToken: []
+      x-scope: registry.validate
+      x-audit: none
+      parameters:
+        - {name: since, in: query, schema: {type: integer, format: int64, minimum: 0, default: 0}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 1000, default: 500}}
+        - {name: If-None-Match, in: header, schema: {type: string, maxLength: 128}}
+      responses:
+        "200":
+          description: One page of changes.
+          headers:
+            ETag:
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryChangePage"
+        "304":
+          description: Nothing changed since the page the ETag names.
+          headers:
+            ETag:
+              schema: {type: string}
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # WP-7: the Remote ID receiver registry (admin), the two receiver
+  # endpoints (config and heartbeat, served by api), the observation
+  # ingest (served by rid-ingest) and the raw frames (spec 02 F9, 06 §2
+  # T2). A receiver authenticates with its bearer key (receiverKey) and,
+  # on every request with a body, an HMAC-SHA256 of the exact body bytes
+  # under a separate secret in X-Report-Signature (64 lower-case hex
+  # characters); the body carries sent_at_ms (30 s window) and a nonce
+  # never repeated within 60 s. The three receiver operations carry
+  # `x-receiver: true`: they are excluded from the generated server
+  # (api/oapi-codegen.yaml) because the signature covers the raw body,
+  # which a generated handler has already decoded, and are served by
+  # internal/receivers. A disabled receiver is refused with 503 and
+  # Retry-After, never 401 or 403, which receivers treat as fatal
+  # (LESSONS B-10). docs/runbooks/receivers.md is the signing contract.
+  /v1/rid/receivers:
+    get:
+      operationId: listRIDReceivers
+      tags: [rid-receivers]
+      summary: Remote ID receivers, in id order
+      description: No key material, ever; the key generation and the end of the previous key's grace only.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: none
+      parameters:
+        - {name: after, in: query, description: The next_after of the previous page., schema: {type: string, maxLength: 63}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+      responses:
+        "200":
+          description: One page of receivers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RIDReceiverList"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createRIDReceiver
+      tags: [rid-receivers]
+      summary: Register a receiver; its keys are shown once
+      description: |
+        Generates the bearer key (stored as an argon2id hash only) and
+        the 32-byte HMAC secret (stored sealed with the PII key) and
+        returns both in this response and never again. The key set
+        reaches rid-ingest through the KV bucket `rid_receiver_keys`,
+        written inside the same transaction: when the bucket cannot
+        take it the registration is refused with 503
+        `key_store_unavailable` and nothing is recorded. 409 when the
+        id exists.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: rid_receiver_created, entity_type: rid_receiver, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RIDReceiverInput"
+      responses:
+        "201":
+          description: The receiver and its credentials, shown once.
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RIDReceiverCreated"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/rid/receivers/{receiver_id}:
+    parameters:
+      - {name: receiver_id, in: path, required: true, schema: {type: string, maxLength: 63}}
+    get:
+      operationId: getRIDReceiver
+      tags: [rid-receivers]
+      summary: One receiver, with its last heartbeat and position deviation
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: none
+      responses:
+        "200":
+          description: The receiver.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RIDReceiver"
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      operationId: updateRIDReceiver
+      tags: [rid-receivers]
+      summary: Change a receiver's name, pinned position, owner or configuration
+      description: The id, the keys and the status are changed by their own operations.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: rid_receiver_updated, entity_type: rid_receiver, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RIDReceiverPatch"
+      responses:
+        "200":
+          description: The receiver after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RIDReceiver"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteRIDReceiver
+      tags: [rid-receivers]
+      summary: Delete a receiver and revoke its keys
+      description: |
+        The row and its key-set entry go; its stored observations stay.
+        A later request with its keys is an unknown receiver (401).
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: rid_receiver_deleted, entity_type: rid_receiver, purpose: none}
+      parameters:
+        - {name: reason, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 500}}
+      responses:
+        "204":
+          description: Deleted.
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/rid/receivers/{receiver_id}/status:
+    parameters:
+      - {name: receiver_id, in: path, required: true, schema: {type: string, maxLength: 63}}
+    post:
+      operationId: setRIDReceiverStatus
+      tags: [rid-receivers]
+      summary: Disable or enable a receiver
+      description: |
+        A disabled receiver's observations are refused with 503 and
+        Retry-After and counted (B-10); its status says who disabled it
+        and why (B-11). A reason is required either way. rid-ingest
+        follows the change within a second (KV watch).
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: rid_receiver_status_changed, entity_type: rid_receiver, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RIDReceiverStatusInput"
+      responses:
+        "200":
+          description: The receiver after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RIDReceiver"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/rid/receivers/{receiver_id}/keys/rotate:
+    parameters:
+      - {name: receiver_id, in: path, required: true, schema: {type: string, maxLength: 63}}
+    post:
+      operationId: rotateRIDReceiverKeys
+      tags: [rid-receivers]
+      summary: Issue a new bearer key and HMAC secret; shown once
+      description: |
+        The previous generation keeps working until `grace_s` has
+        passed (default RID_KEY_ROTATION_GRACE_S), so a receiver can be
+        re-flashed without a gap; a generation older than that is
+        revoked at once. `grace_s: 0` revokes the previous keys now (a
+        captured receiver).
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: rid_receiver_keys_rotated, entity_type: rid_receiver, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RIDKeyRotationInput"
+      responses:
+        "200":
+          description: The new credentials, shown once.
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RIDReceiverCreated"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/rid/receivers/{receiver_id}/config:
+    parameters:
+      - {name: receiver_id, in: path, required: true, schema: {type: string, maxLength: 63}}
+    get:
+      operationId: getRIDReceiverConfig
+      tags: [rid-receivers]
+      summary: The receiver's own configuration (receiver key)
+      description: |
+        For the receiver whose bearer key is presented; another
+        receiver's id is 401. Served also while the receiver is
+        disabled, with its status, so it can say so.
+      security:
+        - receiverKey: []
+      x-receiver: true
+      x-audit: none
+      responses:
+        "200":
+          description: The configuration and the limits of the ingest.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RIDReceiverConfigView"
+        "401":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/rid/receivers/{receiver_id}/heartbeat:
+    parameters:
+      - {name: receiver_id, in: path, required: true, schema: {type: string, maxLength: 63}}
+    post:
+      operationId: postRIDReceiverHeartbeat
+      tags: [rid-receivers]
+      summary: Receiver heartbeat every 10 s (receiver key and body HMAC)
+      description: |
+        Records when the receiver was last seen (api's clock), the
+        position it reports and its firmware. A position farther from
+        the pinned one than the receiver's `position_tolerance_m` is
+        counted and shown (T2), and its start is an events row. The
+        body is signed like an observation batch (X-Report-Signature,
+        sent_at_ms, nonce). Accepted also while disabled.
+      security:
+        - receiverKey: []
+      x-receiver: true
+      x-audit: {event_type: rid_receiver_position_deviation, entity_type: rid_receiver, purpose: none}
+      parameters:
+        - {name: X-Report-Signature, in: header, required: true, schema: {type: string, pattern: "^[0-9a-f]{64}$"}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RIDHeartbeat"
+      responses:
+        "200":
+          description: Recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RIDHeartbeatAck"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/rid/observations:
+    post:
+      operationId: postRIDObservations
+      tags: [rid-ingest]
+      summary: A signed batch of Remote ID observations (rid-ingest)
+      description: |
+        Served by rid-ingest. `rid/observation/v1` (schemas/rid/observation/v1.json):
+        at most 64 observations and 65536 bytes, about one second of
+        reception. 202 only after the batch is written to the JetStream
+        work queue (B-05); observations already accepted from this
+        receiver within 60 s (same transmitter, rx_ts and payload) are
+        counted as duplicates and not queued again. Refusals: 401
+        `unauthenticated` (no or unknown bearer key), 401 `signature`
+        (unsigned, unknown receiver, wrong signature), 401 `skew`
+        (sent_at_ms more than 30 s from the ingest's clock), 409
+        `replay` (nonce seen before), 400 `validation`, 413
+        `body_too_large`, 503 `source_disabled`, `queue_full` or
+        `queue_unavailable` with Retry-After. Never 403.
+      security:
+        - receiverKey: []
+      x-receiver: true
+      x-audit: none
+      parameters:
+        - {name: X-Report-Signature, in: header, required: true, schema: {type: string, pattern: "^[0-9a-f]{64}$"}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RIDObservationBatch"
+      responses:
+        "202":
+          description: Written to the work queue.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RIDObservationAck"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "503":
+          description: Disabled, or the queue cannot take the batch now; retry after the given seconds.
+          headers:
+            Retry-After:
+              schema: {type: integer, minimum: 1}
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/rid/frames:
+    get:
+      operationId: listRIDFrames
+      tags: [rid-frames]
+      summary: Raw Remote ID frames in a time window (purpose required, audited)
+      description: |
+        Read-only from `rid_observations`, by ingest time in [from, to).
+        A window longer than 24 h is refused, never thinned (B-13); a
+        page holds at most `limit` frames and says `truncated` when the
+        window holds more (narrow it, or start the next window at the
+        last `ingest_ts`). Every read is an events row with its purpose.
+      security:
+        - sessionCookie: []
+      x-roles: [incident_officer, inspector]
+      x-audit: {event_type: rid_frames_viewed, entity_type: rid_observations, purpose: required}
+      parameters:
+        - {name: from, in: query, required: true, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: true, schema: {type: string, format: date-time}}
+        - {name: transmitter, in: query, schema: {type: string, maxLength: 64}}
+        - {name: receiver_id, in: query, schema: {type: string, maxLength: 63}}
+        - {name: purpose, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 5000, default: 1000}}
+      responses:
+        "200":
+          description: The frames, oldest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RIDFramePage"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/rid/frames/{frame_id}:
+    parameters:
+      - {name: frame_id, in: path, required: true, schema: {type: string, pattern: "^[0-9a-f]{32}$"}}
+    get:
+      operationId: getRIDFrame
+      tags: [rid-frames]
+      summary: Every stored row of one frame id (purpose required, audited)
+      security:
+        - sessionCookie: []
+      x-roles: [incident_officer, inspector]
+      x-audit: {event_type: rid_frames_viewed, entity_type: rid_observations, purpose: required}
+      parameters:
+        - {name: purpose, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
+      responses:
+        "200":
+          description: The rows of the frame.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RIDFramePage"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # WP-10: the cell3 -> detect worker ownership map.
+  /v1/cells:
+    get:
+      operationId: getCellOwnership
+      tags: [cells]
+      summary: The cell3 -> detect worker ownership map
+      description: |
+        Read from KV bucket `cells`, where detect workers read it. A
+        worker judges the cells the map gives it and refuses to start
+        with none unless `CELLS=all` (05 §3). 404 when no map has been
+        written yet.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: none
+      responses:
+        "200":
+          description: The map.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CellOwnership"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      operationId: putCellOwnership
+      tags: [cells]
+      summary: Replace the ownership map (an operator's rebalance)
+      description: |
+        Writes the whole map with the next version into KV bucket
+        `cells`, inside the transaction of its `events` row: when the
+        bucket cannot take it the change is refused with 503
+        `cell_store_unavailable` and nothing is recorded. A map past the
+        bucket's value bound is refused with 400 naming the bound.
+        Workers take a new map at their next start.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: cell_ownership_changed, entity_type: cells, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CellOwnershipInput"
+      responses:
+        "200":
+          description: The map as stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CellOwnership"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # WP-10: source control (U-15).
+  /v1/sources:
+    get:
+      operationId: listSources
+      tags: [sources]
+      summary: Every switch and every source with its switch and its health
+      description: |
+        The switches as the database holds them (the state api
+        publishes), and every source a switch names or an adapter has
+        reported on `src.v1.<type>.<instance>`: enabled or disabled (by
+        type, instance or default deny, and by whom), and healthy,
+        stale, lagging or never heard (B-11, B-03). `status_age_s` is
+        the age of the adapter's last status; past
+        `SOURCE_STATUS_STALE_S` the source is stale whatever it said.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: none
+      responses:
+        "200":
+          description: The switches and the sources.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceOverview"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/sources/{source_type}:
+    parameters:
+      - {name: source_type, in: path, required: true, schema: {$ref: "#/components/schemas/SourceType"}}
+    put:
+      operationId: switchSourceType
+      tags: [sources]
+      summary: Switch a whole source type on or off
+      description: |
+        A type switched off disables every instance of it, even one
+        switched on. In one transaction under the advisory lock
+        `source_controls`: the row, its `events` row, then the KV write
+        of the whole state (bucket `source_control`, key `state`); when
+        the bucket cannot take it the switch is refused with 503
+        `source_control_unavailable` and nothing is written (B-09). The
+        state is then pushed on `ctl.sources`; adapters refuse a
+        disabled source with 503 and Retry-After (B-10). A state past
+        the bucket's value bound is refused with 400 naming the bound
+        (E-10). A switch to the state already held changes and records
+        nothing (`changed: false`).
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: source_disabled, entity_type: source, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceSwitchInput"
+      responses:
+        "200":
+          description: The switch as stored and the state's version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceSwitchResult"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/sources/{source_type}/{instance_id}:
+    parameters:
+      - {name: source_type, in: path, required: true, schema: {$ref: "#/components/schemas/SourceType"}}
+      - {name: instance_id, in: path, required: true, schema: {type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$"}}
+    put:
+      operationId: switchSourceInstance
+      tags: [sources]
+      summary: Switch one instance (a receiver, a USSP, a feed) on or off
+      description: |
+        As for a type. An instance switched off stays off under a type
+        that is on; an instance switched on overrides default deny but
+        not a type that is off.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: source_disabled, entity_type: source, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceSwitchInput"
+      responses:
+        "200":
+          description: The switch as stored and the state's version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceSwitchResult"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: uspace_session
+      description: |
+        Console session (decision M20): a JWT with `scope = "session"`,
+        `roles[]`, `realm` (`console` or `police`), `jti`, `aud` = this
+        system's host, set by the web BFF. State-changing requests also
+        carry `X-CSRF-Token` matching the `uspace_csrf` cookie (M21).
+    ecosystemToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Ecosystem machine token issued by a trusted issuer (RS256,
+        `aud` = this system's host, scope from the catalogue in
+        `docs/WORKPACKAGES/WP-2.md`), verified by uspace-core `auth`.
+        Table B, the whole catalogue: `cis.read`, `cis.publish:zones`,
+        `cis.publish:uspace`, `cis.publish:ussp_list`,
+        `cis.publish:restrictions`, `cis.publish:ats_data` (reserved,
+        never issued), `registry.validate`, `ussp.records`,
+        `occurrences.write`, `certificates.status`, `police.query`,
+        `ansp.traffic`, `ansp.coordination`, `ansp.requests`,
+        `dp.observe` (lab-01 only), `utm.strategic_coordination`,
+        `utm.constraint_processing`, `utm.constraint_management`,
+        `utm.conformance_monitoring_sa`, `utm.availability_arbitration`,
+        `rid.service_provider`, `rid.display_provider`, and at a USSP's
+        issuer only `ussp.intents`, `ussp.telemetry`, `ussp.traffic`,
+        `ussp.geo`.
+    receiverKey:
+      type: http
+      scheme: bearer
+      description: |
+        Per-receiver bearer key of a Remote ID receiver, together with
+        an HMAC-SHA256 of the exact body bytes under a separate secret
+        (WP-7). Not a JWT and not a scope.
+
+  responses:
+    Problem:
+      description: An error.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    RateLimited:
+      description: The budget of this client address or account is spent.
+      headers:
+        Retry-After:
+          schema: {type: integer, minimum: 1}
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    OAuthError:
+      description: A refused token request (RFC 6749 §5.2 inside a problem).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/OAuthProblem"
+
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    Readiness:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+        checks:
+          type: object
+          description: Check name to its state; an error names the cause.
+          additionalProperties:
+            $ref: "#/components/schemas/Check"
+    Check:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+        error:
+          type: string
+    FieldProblem:
+      type: object
+      required: [field, reason]
+      properties:
+        field:
+          type: string
+          description: JSON path or parameter name, as core.FieldError writes it.
+        reason:
+          type: string
+          minLength: 1
+    Problem:
+      type: object
+      description: |
+        RFC 9457 problem details with the field-error extension of
+        decision M28; the shape of uspace-lab `schemas/common/problem/v1`.
+        `errors` is capped at 100 entries; `truncated` is true when it
+        was cut.
+      required: [type, title, status, errors]
+      properties:
+        type:
+          type: string
+          pattern: "^https://schemas\\.uspace\\.ge/problems/[a-z_]+$"
+          description: "`https://schemas.uspace.ge/problems/<slug>`, slug = the counter or refusal name."
+        title:
+          type: string
+          minLength: 1
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        errors:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/FieldProblem"
+        truncated:
+          type: boolean
+    Severity:
+      type: string
+      enum: [info, warning, critical]
+    PolicyInput:
+      type: object
+      description: |
+        The thresholds of one policy version. Units are in the names;
+        every number is finite and positive (E-15). The defaults named
+        below are those of version 1, the predecessor's values.
+      required:
+        - height_limit_agl_m
+        - pressure_uncertainty_m
+        - zone_conditional_severity
+        - mismatch_severity
+        - identification_severity
+        - spoof_distance_m
+        - identity_ttl_s
+        - max_gap_s
+        - identify_within_s
+        - broadcast_tolerance_s
+        - max_latency_s
+        - live_max_age_s
+        - clear_after_s
+        - stale_after_s
+        - dp_view_diagonal_km
+        - dp_poll_hz
+        - cis_stale_bound_s
+        - height_limit_in_uspace
+      properties:
+        height_limit_agl_m: {type: number, format: double, description: "Height limit over the ground (default 120)."}
+        pressure_uncertainty_m: {type: number, format: double, description: "Pressure-altitude margin (default 250)."}
+        zone_conditional_severity: {$ref: "#/components/schemas/Severity"}
+        mismatch_severity: {$ref: "#/components/schemas/Severity"}
+        identification_severity: {$ref: "#/components/schemas/Severity"}
+        spoof_distance_m: {type: number, format: double, description: "Default 300."}
+        identity_ttl_s: {type: number, format: double, description: "Default 15."}
+        max_gap_s: {type: number, format: double, description: "Default 3."}
+        identify_within_s: {type: number, format: double, description: "Default 4."}
+        broadcast_tolerance_s: {type: number, format: double, description: "Default 1."}
+        max_latency_s: {type: number, format: double, description: "Default 5."}
+        live_max_age_s: {type: number, format: double, description: "Default 10."}
+        clear_after_s: {type: number, format: double, description: "Default 3."}
+        stale_after_s: {type: number, format: double, description: "Default 15."}
+        dp_view_diagonal_km: {type: number, format: double, description: "Default 7."}
+        dp_poll_hz: {type: number, format: double, description: "Default 1."}
+        cis_stale_bound_s: {type: number, format: double, description: "Default 300."}
+        height_limit_in_uspace:
+          type: string
+          enum: [evaluate, skip_when_authorised]
+        registration_number_pattern:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: |
+            The operator registration-number format the registry
+            validates against (uspace-core regnum, G-07; the Georgian
+            format is open, spec Q5). Default the EU shape
+            `^[A-Z]{3}[A-Za-z0-9]{8,16}$`.
+        note:
+          type: string
+          maxLength: 1000
+    Policy:
+      allOf:
+        - $ref: "#/components/schemas/PolicyInput"
+        - type: object
+          required: [version, active, created_at, created_by, note, registration_number_pattern]
+          properties:
+            version:
+              type: integer
+              format: int64
+              description: The policy_version every violation carries.
+            active:
+              type: boolean
+            created_at:
+              type: string
+              format: date-time
+            created_by:
+              type: string
+            activated_at:
+              type: string
+              format: date-time
+            activated_by:
+              type: string
+    AuditEvent:
+      type: object
+      required: [id, ts, actor_type, actor_id, entity_type, event_type, payload, prev_hash, hash]
+      properties:
+        id:
+          type: integer
+          format: int64
+        ts:
+          type: string
+          format: date-time
+        actor_type:
+          type: string
+          enum: [user, client, receiver, system]
+        actor_id:
+          type: string
+        realm:
+          type: string
+        purpose:
+          type: string
+        entity_type:
+          type: string
+        entity_id:
+          type: string
+        event_type:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        prev_hash:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        hash:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+    AuditEventPage:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+        next_before_id:
+          type: integer
+          format: int64
+          description: Pass as before_id for the next page; absent on the last page.
+    OAuthProblem:
+      description: |
+        A problem (M28) that also carries the RFC 6749 §5.2 members, so
+        an OAuth2 client library reads `error` and a uspace client reads
+        the problem. `error` is `invalid_request`, `invalid_client`,
+        `invalid_scope`, `invalid_target` (RFC 8707),
+        `unauthorized_client`, `unsupported_grant_type` or
+        `temporarily_unavailable` (rate limit).
+      allOf:
+        - $ref: "#/components/schemas/Problem"
+        - type: object
+          required: [error]
+          properties:
+            error:
+              type: string
+              enum: [invalid_request, invalid_client, invalid_scope, invalid_target, unauthorized_client, unsupported_grant_type, temporarily_unavailable]
+            error_description:
+              type: string
+    TokenRequest:
+      type: object
+      required: [grant_type]
+      properties:
+        grant_type: {type: string}
+        client_id: {type: string}
+        client_secret: {type: string}
+        client_assertion_type: {type: string}
+        client_assertion: {type: string}
+        scope: {type: string, description: "Space-separated catalogue scopes (WP-2 table B)."}
+        audience: {type: string, description: "The target's host or base URL; its host becomes aud (M18)."}
+        resource:
+          type: array
+          description: RFC 8707 resource indicator (one), an alternative to audience.
+          items: {type: string}
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in, scope]
+      properties:
+        access_token: {type: string}
+        token_type: {type: string, enum: [Bearer]}
+        expires_in: {type: integer, description: Seconds until exp (at most 3600).}
+        scope: {type: string}
+    JWKS:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    IssuerMetadata:
+      type: object
+      required: [issuer, jwks_uri, token_endpoint, grant_types_supported, token_endpoint_auth_methods_supported, token_endpoint_auth_signing_alg_values_supported, scopes_supported]
+      properties:
+        issuer: {type: string}
+        jwks_uri: {type: string}
+        token_endpoint: {type: string}
+        grant_types_supported:
+          type: array
+          items: {type: string}
+        token_endpoint_auth_methods_supported:
+          type: array
+          items: {type: string}
+        token_endpoint_auth_signing_alg_values_supported:
+          type: array
+          items: {type: string}
+        scopes_supported:
+          type: array
+          items: {type: string}
+    OAuthClientStatus:
+      type: string
+      enum: [active, suspended, revoked]
+    OAuthAuthMethod:
+      type: string
+      enum: [client_secret_post, private_key_jwt]
+    OAuthClientInput:
+      type: object
+      required: [client_id, scopes, auth_method]
+      properties:
+        client_id:
+          type: string
+          maxLength: 64
+          description: "authority-01, cisp-01, ansp-01, ussp-<code>-01 or lab-01 (M24)."
+        scopes:
+          type: array
+          maxItems: 32
+          items: {type: string}
+        audiences:
+          type: array
+          maxItems: 32
+          description: Hosts this client may name for national scopes.
+          items: {type: string}
+        auth_method:
+          $ref: "#/components/schemas/OAuthAuthMethod"
+        jwks:
+          $ref: "#/components/schemas/JWKS"
+        mtls_subject: {type: string, maxLength: 512}
+        certificate_id: {type: string, maxLength: 64}
+        note: {type: string, maxLength: 1000}
+    OAuthClientPatch:
+      type: object
+      properties:
+        status:
+          $ref: "#/components/schemas/OAuthClientStatus"
+        scopes:
+          type: array
+          maxItems: 32
+          items: {type: string}
+        audiences:
+          type: array
+          maxItems: 32
+          items: {type: string}
+        note: {type: string, maxLength: 1000}
+    OAuthClient:
+      type: object
+      required: [client_id, system, scopes, audiences, auth_method, status, note, created_at, created_by, updated_at, updated_by]
+      properties:
+        client_id: {type: string}
+        system: {type: string, enum: [authority, cisp, ansp, ussp, lab]}
+        scopes:
+          type: array
+          items: {type: string}
+        audiences:
+          type: array
+          items: {type: string}
+        auth_method:
+          $ref: "#/components/schemas/OAuthAuthMethod"
+        jwks:
+          $ref: "#/components/schemas/JWKS"
+        mtls_subject: {type: string}
+        certificate_id: {type: string}
+        status:
+          $ref: "#/components/schemas/OAuthClientStatus"
+        note: {type: string}
+        created_at: {type: string, format: date-time}
+        created_by: {type: string}
+        updated_at: {type: string, format: date-time}
+        updated_by: {type: string}
+    OAuthClientList:
+      type: object
+      required: [clients]
+      properties:
+        clients:
+          type: array
+          items:
+            $ref: "#/components/schemas/OAuthClient"
+    OAuthClientCreated:
+      type: object
+      required: [client]
+      properties:
+        client:
+          $ref: "#/components/schemas/OAuthClient"
+        client_secret:
+          type: string
+          description: The client_secret_post secret; shown here once and never again.
+    SigningKey:
+      type: object
+      required: [kid, purpose, state, registered_at]
+      properties:
+        kid: {type: string}
+        purpose: {type: string, enum: [token, publication]}
+        state:
+          type: string
+          enum: [candidate, requested, active, retiring, retired, compromised]
+          description: "retiring: retired but still in the JWKS; retired: no longer published."
+        registered_at: {type: string, format: date-time}
+        active_from: {type: string, format: date-time}
+        retired_at: {type: string, format: date-time}
+        requested_by: {type: string}
+        requested_at: {type: string, format: date-time}
+        compromised_at: {type: string, format: date-time}
+        compromised_by: {type: string}
+        compromise_reason: {type: string}
+    SigningKeyList:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/SigningKey"
+    KeyRotation:
+      type: object
+      required: [state, kid, active_kid]
+      properties:
+        state: {type: string, enum: [requested, activated]}
+        kid: {type: string, description: The key requested or activated.}
+        active_kid: {type: string, description: The key that signs after this call.}
+        previous_kid: {type: string}
+        requested_by: {type: string}
+        confirm_before: {type: string, format: date-time}
+    Role:
+      type: string
+      enum: [viewer, inspector, registrar, incident_officer, admin, auditor]
+    Realm:
+      type: string
+      enum: [console, police]
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: {type: string, maxLength: 256}
+        password: {type: string, maxLength: 1024}
+    LoginChallenge:
+      type: object
+      required: [mfa_token, expires_at]
+      properties:
+        mfa_token: {type: string, description: Single use; present it to /v1/auth/mfa.}
+        expires_at: {type: string, format: date-time}
+        enrolment:
+          $ref: "#/components/schemas/MFAEnrolment"
+    MFAEnrolment:
+      type: object
+      description: Present only while the account has no confirmed TOTP.
+      required: [secret, otpauth_uri]
+      properties:
+        secret: {type: string, description: Base32 TOTP secret (RFC 6238, SHA-1, 6 digits, 30 s).}
+        otpauth_uri: {type: string}
+    MFARequest:
+      type: object
+      required: [mfa_token]
+      properties:
+        mfa_token: {type: string, maxLength: 256}
+        code: {type: string, maxLength: 16, description: The current TOTP code.}
+        recovery_code: {type: string, maxLength: 64, description: One unused recovery code, instead of a TOTP code.}
+    SessionInfo:
+      type: object
+      required: [sub, roles, realm, jti, expires_at, idle_expires_at]
+      properties:
+        sub: {type: string, description: The account id.}
+        roles:
+          type: array
+          items: {type: string}
+        realm:
+          $ref: "#/components/schemas/Realm"
+        jti: {type: string, description: The session id.}
+        expires_at: {type: string, format: date-time}
+        idle_expires_at: {type: string, format: date-time}
+    SessionIssued:
+      type: object
+      required: [token, token_type, expires_at, idle_timeout_s, session]
+      properties:
+        token: {type: string, description: "The session JWT (table A): the BFF puts it in the uspace_session cookie."}
+        token_type: {type: string, enum: [Bearer]}
+        expires_at: {type: string, format: date-time}
+        idle_timeout_s: {type: integer}
+        session:
+          $ref: "#/components/schemas/SessionInfo"
+        recovery_codes:
+          type: array
+          description: Shown once, at the sign-in that confirms enrolment.
+          items: {type: string}
+    UserInput:
+      type: object
+      required: [username, password, roles, realm]
+      properties:
+        username: {type: string, maxLength: 64}
+        password: {type: string, maxLength: 1024}
+        display_name: {type: string, maxLength: 200}
+        roles:
+          type: array
+          maxItems: 6
+          items:
+            $ref: "#/components/schemas/Role"
+        realm:
+          $ref: "#/components/schemas/Realm"
+    RolesInput:
+      type: object
+      required: [roles]
+      properties:
+        roles:
+          type: array
+          maxItems: 6
+          items:
+            $ref: "#/components/schemas/Role"
+    User:
+      type: object
+      required: [id, username, display_name, roles, realm, status, mfa_enrolled, created_at, created_by, updated_at, updated_by]
+      properties:
+        id: {type: string}
+        username: {type: string}
+        display_name: {type: string}
+        roles:
+          type: array
+          items: {type: string}
+        realm:
+          $ref: "#/components/schemas/Realm"
+        status: {type: string, enum: [active, disabled]}
+        mfa_enrolled: {type: boolean}
+        mfa_failures: {type: integer, description: Consecutive wrong MFA codes.}
+        mfa_locked_until: {type: string, format: date-time, description: MFA refused until then.}
+        mfa_hard_locked: {type: boolean, description: MFA refused until an admin unlocks the account.}
+        created_at: {type: string, format: date-time}
+        created_by: {type: string}
+        updated_at: {type: string, format: date-time}
+        updated_by: {type: string}
+    UserList:
+      type: object
+      required: [users]
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+    Revoked:
+      type: object
+      required: [revoked]
+      properties:
+        revoked: {type: integer}
+    # WP-3: the registry. Records (RegistryOperator, RegistryUAS,
+    # RegistryPilot) and every F8 schema carry no personal data;
+    # internal/registry's contract test fails if a personal property
+    # name appears in them, and checks that the personal-data schemas
+    # do carry them (E-01).
+    RegistryStatus:
+      type: string
+      enum: [active, suspended, revoked, expired]
+    RegistryStatusInput:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [active, suspended, revoked]
+          description: expired is set by the expiry job only.
+        reason:
+          type: string
+          maxLength: 500
+          description: Required for suspended and revoked.
+    RegistrySource:
+      type: string
+      enum: [portal, uas_gov_ge_import, manual]
+    OperatorType:
+      type: string
+      enum: [natural, legal]
+    RegistryOperatorInput:
+      type: object
+      description: |
+        The 2019/947 Art. 14(2) field set. A natural person gives
+        full_name and date_of_birth; a legal person legal_name and
+        legal_identification_number.
+      required: [operator_type, registration_number, postal_address, contact_email, contact_phone, valid_until]
+      properties:
+        operator_type: {$ref: "#/components/schemas/OperatorType"}
+        registration_number: {type: string, maxLength: 64, description: "The public part only, under the policy's registration_number_pattern."}
+        secret_part: {type: string, minLength: 3, maxLength: 3, description: "The three secret characters the authority issued; stored as a keyed hash, never returned."}
+        full_name: {type: string, maxLength: 200}
+        legal_name: {type: string, maxLength: 200}
+        date_of_birth: {type: string, format: date}
+        legal_identification_number: {type: string, maxLength: 64}
+        postal_address: {type: string, maxLength: 500}
+        contact_email: {type: string, maxLength: 254}
+        contact_phone: {type: string, maxLength: 32}
+        insurance_policy_number: {type: string, maxLength: 64}
+        competency_confirmation: {type: boolean, description: "The Art. 14(2)(e) statement of a legal person."}
+        authorisations:
+          type: array
+          maxItems: 100
+          description: Operational authorisations, LUCs and declarations with their confirmations (Art. 14(2)(f)).
+          items: {type: object, additionalProperties: true}
+        valid_from: {type: string, format: date-time, description: Default now.}
+        valid_until: {type: string, format: date-time}
+        source: {$ref: "#/components/schemas/RegistrySource"}
+    RegistryOperatorPatch:
+      type: object
+      properties:
+        full_name: {type: string, maxLength: 200}
+        legal_name: {type: string, maxLength: 200}
+        date_of_birth: {type: string, format: date}
+        legal_identification_number: {type: string, maxLength: 64}
+        postal_address: {type: string, maxLength: 500}
+        contact_email: {type: string, maxLength: 254}
+        contact_phone: {type: string, maxLength: 32}
+        insurance_policy_number: {type: string, maxLength: 64}
+        competency_confirmation: {type: boolean}
+        authorisations:
+          type: array
+          maxItems: 100
+          items: {type: object, additionalProperties: true}
+        valid_until: {type: string, format: date-time}
+    RegistryOperator:
+      type: object
+      description: An operator without personal data.
+      required: [id, operator_type, registration_number, has_secret_part, competency_confirmation, authorisations, status, status_reason, valid_from, valid_until, source, registry_version, created_at, created_by, updated_at, updated_by]
+      properties:
+        id: {type: string}
+        operator_type: {$ref: "#/components/schemas/OperatorType"}
+        registration_number: {type: string, description: The public part as registered.}
+        has_secret_part: {type: boolean}
+        competency_confirmation: {type: boolean}
+        authorisations:
+          type: array
+          items: {type: object, additionalProperties: true}
+        status: {$ref: "#/components/schemas/RegistryStatus"}
+        status_reason: {type: string}
+        valid_from: {type: string, format: date-time}
+        valid_until: {type: string, format: date-time}
+        source: {$ref: "#/components/schemas/RegistrySource"}
+        registry_version: {type: integer, format: int64}
+        created_at: {type: string, format: date-time}
+        created_by: {type: string}
+        updated_at: {type: string, format: date-time}
+        updated_by: {type: string}
+    RegistryOperatorList:
+      type: object
+      required: [operators]
+      properties:
+        operators:
+          type: array
+          items: {$ref: "#/components/schemas/RegistryOperator"}
+        next_after: {type: string, description: Pass as after for the next page; absent on the last page.}
+    RegistryOperatorPersonalData:
+      type: object
+      required: [operator_id, postal_address, contact_email, contact_phone]
+      properties:
+        operator_id: {type: string}
+        full_name: {type: string}
+        legal_name: {type: string}
+        date_of_birth: {type: string, format: date}
+        legal_identification_number: {type: string}
+        postal_address: {type: string}
+        contact_email: {type: string}
+        contact_phone: {type: string}
+        insurance_policy_number: {type: string}
+    ClassLabel:
+      type: string
+      enum: [C0, C1, C2, C3, C4, C5, C6]
+    RIDCapability:
+      type: string
+      enum: [direct, network, both, none]
+    RegistryUASInput:
+      type: object
+      required: [operator_id, serial, rid_capability]
+      properties:
+        operator_id: {type: string, maxLength: 32}
+        serial: {type: string, maxLength: 64, description: "Kept as given, trimmed; ANSI/CTA-2063-A for C1, C2, C3, C5, C6."}
+        registration_mark: {type: string, maxLength: 32}
+        manufacturer: {type: string, maxLength: 100}
+        model: {type: string, maxLength: 100}
+        owner_ref: {type: string, maxLength: 64, description: "Certified UA: the registry person record of the owner (Art. 14(3)(d))."}
+        class_label: {$ref: "#/components/schemas/ClassLabel"}
+        mtom_g: {type: integer, minimum: 1, maximum: 10000000}
+        rid_capability: {$ref: "#/components/schemas/RIDCapability"}
+    RegistryUASPatch:
+      type: object
+      properties:
+        registration_mark: {type: string, maxLength: 32}
+        manufacturer: {type: string, maxLength: 100}
+        model: {type: string, maxLength: 100}
+        owner_ref: {type: string, maxLength: 64}
+        class_label: {$ref: "#/components/schemas/ClassLabel"}
+        mtom_g: {type: integer, minimum: 1, maximum: 10000000}
+        rid_capability: {$ref: "#/components/schemas/RIDCapability"}
+    RegistryUAS:
+      type: object
+      required: [id, operator_id, serial, manufacturer_code, manufacturer, model, rid_capability, status, status_reason, registered_at, registry_version, created_by, updated_at, updated_by]
+      properties:
+        id: {type: string}
+        operator_id: {type: string}
+        serial: {type: string}
+        manufacturer_code: {type: string}
+        registration_mark: {type: string}
+        manufacturer: {type: string}
+        model: {type: string}
+        owner_ref: {type: string}
+        class_label: {$ref: "#/components/schemas/ClassLabel"}
+        mtom_g: {type: integer}
+        rid_capability: {$ref: "#/components/schemas/RIDCapability"}
+        status: {$ref: "#/components/schemas/RegistryStatus"}
+        status_reason: {type: string}
+        registered_at: {type: string, format: date-time}
+        registry_version: {type: integer, format: int64}
+        created_by: {type: string}
+        updated_at: {type: string, format: date-time}
+        updated_by: {type: string}
+    RegistryUASList:
+      type: object
+      required: [uas]
+      properties:
+        uas:
+          type: array
+          items: {$ref: "#/components/schemas/RegistryUAS"}
+        next_after: {type: string}
+    RegistryPilotInput:
+      type: object
+      required: [person_ref, name]
+      properties:
+        person_ref: {type: string, minLength: 4, maxLength: 64, description: "The national id; stored as a keyed hash and its last four characters."}
+        name: {type: string, maxLength: 200}
+        operator_id: {type: string, maxLength: 32}
+    RegistryPilotPatch:
+      type: object
+      properties:
+        name: {type: string, maxLength: 200}
+        operator_id: {type: string, maxLength: 32, description: An empty string detaches the pilot from its operator.}
+    PilotCompetencyInput:
+      type: object
+      required: [competency, certificate_ref, valid_until]
+      properties:
+        competency: {type: string, maxLength: 41, description: "A1_A3, A2, STS_01, STS_02 or national_<code>."}
+        certificate_ref: {type: string, maxLength: 64}
+        valid_until: {type: string, format: date-time}
+    PilotCompetency:
+      type: object
+      required: [competency, certificate_ref, valid_until, recorded_at, recorded_by]
+      properties:
+        competency: {type: string}
+        certificate_ref: {type: string}
+        valid_until: {type: string, format: date-time}
+        recorded_at: {type: string, format: date-time}
+        recorded_by: {type: string}
+    RegistryPilot:
+      type: object
+      description: A remote pilot without personal data.
+      required: [id, status, status_reason, competencies, registry_version, created_at, created_by, updated_at, updated_by]
+      properties:
+        id: {type: string}
+        operator_id: {type: string}
+        status: {$ref: "#/components/schemas/RegistryStatus"}
+        status_reason: {type: string}
+        competencies:
+          type: array
+          items: {$ref: "#/components/schemas/PilotCompetency"}
+        registry_version: {type: integer, format: int64}
+        created_at: {type: string, format: date-time}
+        created_by: {type: string}
+        updated_at: {type: string, format: date-time}
+        updated_by: {type: string}
+    RegistryPilotList:
+      type: object
+      required: [pilots]
+      properties:
+        pilots:
+          type: array
+          items: {$ref: "#/components/schemas/RegistryPilot"}
+        next_after: {type: string}
+    RegistryPilotPersonalData:
+      type: object
+      required: [pilot_id, name, person_ref_last4]
+      properties:
+        pilot_id: {type: string}
+        name: {type: string}
+        person_ref_last4: {type: string}
+    RegistryPurpose:
+      type: string
+      enum: [authorisation, identification]
+    RegistryValidityStatus:
+      type: string
+      enum: [valid, suspended, revoked, unknown]
+    RegistryValidateItem:
+      type: object
+      description: At least one key.
+      properties:
+        operator: {type: string, maxLength: 64}
+        serial: {type: string, maxLength: 64}
+        pilot: {type: string, maxLength: 32}
+    RegistryValidateBatch:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: {$ref: "#/components/schemas/RegistryValidateItem"}
+    OperatorValidity:
+      type: object
+      required: [registration_number, status]
+      properties:
+        registration_number: {type: string, description: "The public part of the number asked (regnum.PublicPart); a secret part sent with it is never echoed or recorded."}
+        status: {$ref: "#/components/schemas/RegistryValidityStatus"}
+        valid_until: {type: string, format: date-time}
+    UASValidity:
+      type: object
+      required: [serial, status]
+      properties:
+        serial: {type: string, description: As asked.}
+        status: {$ref: "#/components/schemas/RegistryValidityStatus"}
+        class_label: {$ref: "#/components/schemas/ClassLabel"}
+        mtom_band: {type: string, description: "The MTOM band of REGISTRY_MTOM_BANDS_G: under_<g>g, or from_<g>g above the last bound."}
+    CompetencyValidity:
+      type: object
+      required: [competency, valid_until]
+      properties:
+        competency: {type: string}
+        valid_until: {type: string, format: date-time}
+    PilotValidity:
+      type: object
+      required: [pilot, status, competencies]
+      properties:
+        pilot: {type: string, description: As asked.}
+        status: {$ref: "#/components/schemas/RegistryValidityStatus"}
+        competencies:
+          type: array
+          items: {$ref: "#/components/schemas/CompetencyValidity"}
+    RegistryValidity:
+      type: object
+      description: One answer per key asked; status only.
+      properties:
+        operator: {$ref: "#/components/schemas/OperatorValidity"}
+        uas: {$ref: "#/components/schemas/UASValidity"}
+        pilot: {$ref: "#/components/schemas/PilotValidity"}
+    RegistryValidityList:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items: {$ref: "#/components/schemas/RegistryValidity"}
+    RegistryChange:
+      type: object
+      required: [seq, entity_type, entity_id, public_key, status, at]
+      properties:
+        seq: {type: integer, format: int64}
+        entity_type: {type: string, enum: [operator, uas, pilot]}
+        entity_id: {type: string}
+        public_key: {type: string, description: "The registration number, the serial or the pilot id."}
+        status: {$ref: "#/components/schemas/RegistryStatus"}
+        at: {type: string, format: date-time}
+    RegistryChangePage:
+      type: object
+      required: [changes, next_since]
+      properties:
+        changes:
+          type: array
+          items: {$ref: "#/components/schemas/RegistryChange"}
+        next_since: {type: integer, format: int64, description: Pass as since for the next page.}
+    # WP-7: Remote ID receivers, observations and raw frames.
+    RIDReceiverOwner:
+      type: string
+      enum: [authority, third_party]
+    RIDReceiverStatus:
+      type: string
+      enum: [enabled, disabled]
+    RIDReportingField:
+      type: string
+      enum: [transmitter, payload_hex, rssi_dbm, rx_ts, receiver_position]
+    RIDReceiverConfig:
+      type: object
+      description: |
+        What the receiver is told to do (GET .../config). Absent members
+        take the defaults of the ingest's configuration
+        (RID_DEFAULT_* variables), so a default is never a literal
+        here (INV-03).
+      properties:
+        batch_interval_ms: {type: integer, minimum: 100, maximum: 1000, description: How often the receiver posts a batch; at most one second of reception per batch.}
+        backlog_cap: {type: integer, minimum: 1, maximum: 10000000, description: Observations the receiver buffers while the ingest is unreachable, replayed with backlog true and the original rx_ts.}
+        heartbeat_interval_s: {type: integer, minimum: 1, maximum: 300}
+        position_tolerance_m: {type: number, format: double, exclusiveMinimum: 0, maximum: 100000, description: Distance from the pinned position beyond which a heartbeat's reported position is counted as a deviation (T2).}
+        reporting_fields:
+          type: array
+          maxItems: 5
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/RIDReportingField"}
+    RIDPosition:
+      type: object
+      required: [lat_deg, lon_deg]
+      properties:
+        lat_deg: {type: number, format: double, minimum: -90, maximum: 90}
+        lon_deg: {type: number, format: double, minimum: -180, maximum: 180}
+        alt_hae_m: {type: [number, "null"], format: double, minimum: -1000, maximum: 10000, description: Height above the WGS-84 ellipsoid, as the receiver's GNSS reports it.}
+    RIDReceiverInput:
+      type: object
+      required: [id, label, lat_deg, lon_deg, owner]
+      properties:
+        id: {type: string, pattern: "^[a-z0-9][a-z0-9-]{1,62}$", description: Slug; the receiver id of every batch and status.}
+        label: {type: string, minLength: 1, maxLength: 200, description: The receiver's display label (rid_receivers.name).}
+        lat_deg: {type: number, format: double, minimum: -90, maximum: 90, description: Pinned position.}
+        lon_deg: {type: number, format: double, minimum: -180, maximum: 180}
+        owner: {$ref: "#/components/schemas/RIDReceiverOwner"}
+        owner_name: {type: string, maxLength: 200}
+        config: {$ref: "#/components/schemas/RIDReceiverConfig"}
+    RIDReceiverPatch:
+      type: object
+      description: Members present are changed; lat_deg and lon_deg come together.
+      properties:
+        label: {type: string, minLength: 1, maxLength: 200, description: The receiver's display label (rid_receivers.name).}
+        lat_deg: {type: number, format: double, minimum: -90, maximum: 90}
+        lon_deg: {type: number, format: double, minimum: -180, maximum: 180}
+        owner: {$ref: "#/components/schemas/RIDReceiverOwner"}
+        owner_name: {type: string, maxLength: 200}
+        config: {$ref: "#/components/schemas/RIDReceiverConfig"}
+    RIDReceiver:
+      type: object
+      required: [id, label, lat_deg, lon_deg, owner, status, key_generation, position_deviations, config, version, created_at, created_by, updated_at, updated_by]
+      properties:
+        id: {type: string}
+        label: {type: string}
+        lat_deg: {type: number, format: double}
+        lon_deg: {type: number, format: double}
+        owner: {$ref: "#/components/schemas/RIDReceiverOwner"}
+        owner_name: {type: string}
+        status: {$ref: "#/components/schemas/RIDReceiverStatus"}
+        disabled_by: {type: string, description: Who disabled it, as the audit log names them.}
+        disabled_reason: {type: string}
+        disabled_at: {type: string, format: date-time}
+        key_generation: {type: integer}
+        previous_key_valid_until: {type: string, format: date-time, description: The previous generation's keys are accepted until then.}
+        last_seen_at: {type: string, format: date-time, description: The last heartbeat, on api's clock; absent when never heard.}
+        last_position: {$ref: "#/components/schemas/RIDPosition"}
+        position_deviation_m: {type: number, format: double, description: Distance of the last reported position from the pinned one.}
+        position_deviations: {type: integer, format: int64, description: Heartbeats whose position was beyond the tolerance.}
+        firmware: {type: string}
+        config: {$ref: "#/components/schemas/RIDReceiverConfig"}
+        version: {type: integer, format: int64}
+        created_at: {type: string, format: date-time}
+        created_by: {type: string}
+        updated_at: {type: string, format: date-time}
+        updated_by: {type: string}
+    RIDReceiverList:
+      type: object
+      required: [receivers]
+      properties:
+        receivers:
+          type: array
+          items: {$ref: "#/components/schemas/RIDReceiver"}
+        next_after: {type: string, description: Pass as after for the next page; absent on the last page.}
+    RIDReceiverCredentials:
+      type: object
+      description: Shown once. Neither value can be read back; a lost key is replaced by a rotation.
+      required: [generation, bearer_key, hmac_secret_hex, signature_header]
+      properties:
+        generation: {type: integer}
+        bearer_key: {type: string, description: "Authorization: Bearer <bearer_key> on every receiver request."}
+        hmac_secret_hex: {type: string, pattern: "^[0-9a-f]{64}$", description: The 32-byte HMAC-SHA256 secret, hex.}
+        signature_header: {type: string, enum: [X-Report-Signature]}
+    RIDReceiverCreated:
+      type: object
+      required: [receiver, credentials]
+      properties:
+        receiver: {$ref: "#/components/schemas/RIDReceiver"}
+        credentials: {$ref: "#/components/schemas/RIDReceiverCredentials"}
+    RIDReceiverStatusInput:
+      type: object
+      required: [status, reason]
+      properties:
+        status: {$ref: "#/components/schemas/RIDReceiverStatus"}
+        reason: {type: string, minLength: 1, maxLength: 500}
+    RIDKeyRotationInput:
+      type: object
+      properties:
+        grace_s: {type: integer, minimum: 0, maximum: 604800, description: How long the previous keys keep working; default RID_KEY_ROTATION_GRACE_S.}
+    RIDIngestLimits:
+      type: object
+      required: [max_batch_bytes, max_observations, max_payload_bytes, max_skew_s, nonce_window_s]
+      properties:
+        max_batch_bytes: {type: integer}
+        max_observations: {type: integer}
+        max_payload_bytes: {type: integer}
+        max_skew_s: {type: integer}
+        nonce_window_s: {type: integer, description: A nonce is refused if seen again from this receiver within this window (twice max_skew_s).}
+    RIDReceiverConfigView:
+      type: object
+      required: [receiver_id, status, config, limits, signature_header, server_time_ms]
+      properties:
+        receiver_id: {type: string}
+        status: {$ref: "#/components/schemas/RIDReceiverStatus"}
+        config: {$ref: "#/components/schemas/RIDReceiverConfig"}
+        limits: {$ref: "#/components/schemas/RIDIngestLimits"}
+        signature_header: {type: string, enum: [X-Report-Signature]}
+        server_time_ms: {type: integer, format: int64, description: The authority's clock, so a receiver can see its own skew.}
+    RIDHeartbeat:
+      type: object
+      required: [receiver_id, sent_at_ms, nonce]
+      properties:
+        receiver_id: {type: string}
+        sent_at_ms: {type: integer, format: int64, description: Epoch milliseconds on the receiver's clock.}
+        nonce: {type: string, minLength: 1, maxLength: 256}
+        position: {$ref: "#/components/schemas/RIDPosition"}
+        firmware: {type: string, maxLength: 100}
+        queue_depth: {type: integer, minimum: 0, description: Observations the receiver holds unsent.}
+    RIDHeartbeatAck:
+      type: object
+      required: [receiver_id, status, last_seen_at, server_time_ms]
+      properties:
+        receiver_id: {type: string}
+        status: {$ref: "#/components/schemas/RIDReceiverStatus"}
+        last_seen_at: {type: string, format: date-time}
+        position_deviation_m: {type: number, format: double}
+        position_tolerance_m: {type: number, format: double}
+        server_time_ms: {type: integer, format: int64}
+    RIDObservation:
+      type: object
+      description: One frame as the receiver heard it (schemas/rid/observation/v1.json).
+      required: [transmitter, payload_hex]
+      properties:
+        transmitter: {type: string, pattern: "^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$", description: The BT or Wi-Fi MAC address the frame came from.}
+        payload_hex: {type: string, minLength: 2, maxLength: 1024, pattern: "^([0-9A-Fa-f]{2})+$", description: The ODID message or message pack, as received.}
+        rssi_dbm: {type: [number, "null"], format: double, minimum: -200, maximum: 50}
+        rx_ts: {type: [string, "null"], format: date-time, description: "Reception time on the receiver's clock, RFC 3339 UTC; null when unknown (placed at arrival, T-12)."}
+        receiver_position: {$ref: "#/components/schemas/RIDPosition"}
+    RIDObservationBatch:
+      type: object
+      description: rid/observation/v1, the exact bytes signed.
+      required: [receiver_id, sent_at_ms, nonce, observations]
+      properties:
+        receiver_id: {type: string}
+        sent_at_ms: {type: integer, format: int64}
+        nonce: {type: string, minLength: 1, maxLength: 256}
+        backlog: {type: boolean, default: false, description: True when the batch replays observations buffered while the ingest was unreachable (T-04).}
+        observations:
+          type: array
+          maxItems: 64
+          items: {$ref: "#/components/schemas/RIDObservation"}
+    RIDObservationAck:
+      type: object
+      required: [batch_id, accepted, duplicates]
+      properties:
+        batch_id: {type: string, description: "<receiver_id>:<nonce>"}
+        accepted: {type: integer, description: Observations written to the work queue.}
+        duplicates: {type: integer, description: Observations already accepted within the dedupe window, not queued again.}
+    RIDFrame:
+      type: object
+      required: [frame_id, ingest_ts, receiver_id, transmitter, payload_hex, payload_sha256_hex, backlog, sent_at_ms, nonce]
+      properties:
+        frame_id: {type: string}
+        ingest_ts: {type: string, format: date-time}
+        receiver_ts: {type: string, format: date-time, description: "The receiver's clock (rid_observations.receiver_ts; rx_ts in the batch). Not comparable with another clock."}
+        receiver_id: {type: string}
+        transmitter: {type: string}
+        msg_type: {type: integer}
+        payload_hex: {type: string}
+        payload_sha256_hex: {type: string}
+        rssi_dbm: {type: number, format: double}
+        backlog: {type: boolean}
+        receiver_position: {$ref: "#/components/schemas/RIDPosition"}
+        sent_at_ms: {type: integer, format: int64}
+        nonce: {type: string}
+    RIDFramePage:
+      type: object
+      required: [frames, truncated]
+      properties:
+        frames:
+          type: array
+          items: {$ref: "#/components/schemas/RIDFrame"}
+        truncated: {type: boolean, description: The window holds more frames than were returned.}
+    CellOwnership:
+      type: object
+      required: [version, assignments, updated_by, updated_at]
+      properties:
+        version: {type: integer, format: int64, minimum: 1, description: Rises by one with every change.}
+        assignments:
+          type: object
+          description: cell3 name (`c3:<lat_idx>:<lon_idx>`, uspace-core geodesy/cell) -> detect worker id.
+          additionalProperties: {type: string}
+        updated_by: {type: string}
+        updated_at: {type: string, format: date-time}
+    CellOwnershipInput:
+      type: object
+      required: [assignments, reason]
+      properties:
+        assignments:
+          type: object
+          description: cell3 name -> detect worker id (`^[a-z0-9][a-z0-9_-]{0,62}$`); the whole map, replacing the stored one.
+          maxProperties: 64800
+          additionalProperties: {type: string, maxLength: 63}
+        reason: {type: string, minLength: 1, maxLength: 500}
+    SourceType:
+      type: string
+      description: The adapter type (04 §2 `source`), one per adapter process.
+      enum: [direct_rid, network_rid, ansp_feed]
+    SourceSwitchInput:
+      type: object
+      required: [enabled, reason]
+      properties:
+        enabled: {type: boolean}
+        reason: {type: string, minLength: 1, maxLength: 500}
+    SourceControl:
+      type: object
+      required: [source_type, enabled, reason, actor, changed_at, version]
+      properties:
+        source_type: {$ref: "#/components/schemas/SourceType"}
+        instance_id: {type: string, description: Absent for the switch of the whole type.}
+        enabled: {type: boolean}
+        reason: {type: string}
+        actor: {type: string, description: Who switched it, as the audit log names them.}
+        changed_at: {type: string, format: date-time}
+        version: {type: integer, format: int64}
+    SourceSwitchResult:
+      type: object
+      required: [control, changed, epoch, version]
+      properties:
+        control: {$ref: "#/components/schemas/SourceControl"}
+        changed: {type: boolean, description: False when the switch already held this state; nothing was written.}
+        epoch: {type: string}
+        version: {type: integer, format: int64, description: The version of the whole state after the switch.}
+    SourceView:
+      type: object
+      required: [source_type, switch, health]
+      properties:
+        source_type: {$ref: "#/components/schemas/SourceType"}
+        instance_id: {type: string}
+        switch: {type: string, enum: [enabled, disabled]}
+        disabled_by: {type: string, enum: [type, instance, default_deny]}
+        disabled_by_who: {type: string}
+        disabled_reason: {type: string}
+        health: {type: string, enum: [healthy, stale, lagging, never_heard]}
+        age_s: {type: number, format: double, description: Seconds since the adapter last heard the source.}
+        lag_s: {type: number, format: double}
+        status_age_s: {type: number, format: double, description: Seconds since the adapter's last status reached api.}
+        counters:
+          type: object
+          additionalProperties: {type: integer, format: int64}
+    SourceOverview:
+      type: object
+      required: [epoch, version, default_deny, controls, sources]
+      properties:
+        epoch: {type: string}
+        version: {type: integer, format: int64}
+        default_deny: {type: boolean}
+        controls:
+          type: array
+          items: {$ref: "#/components/schemas/SourceControl"}
+        sources:
+          type: array
+          items: {$ref: "#/components/schemas/SourceView"}
