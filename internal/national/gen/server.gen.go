@@ -6,12 +6,12 @@
 package gen
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Defines values for DependencyState.
@@ -53,6 +53,84 @@ func (e HealthStatus) Valid() bool {
 	}
 }
 
+// Defines values for OAuthProblemError.
+const (
+	InvalidClient          OAuthProblemError = "invalid_client"
+	InvalidRequest         OAuthProblemError = "invalid_request"
+	InvalidScope           OAuthProblemError = "invalid_scope"
+	InvalidTarget          OAuthProblemError = "invalid_target"
+	TemporarilyUnavailable OAuthProblemError = "temporarily_unavailable"
+	UnauthorizedClient     OAuthProblemError = "unauthorized_client"
+	UnsupportedGrantType   OAuthProblemError = "unsupported_grant_type"
+)
+
+// Valid indicates whether the value is a known member of the OAuthProblemError enum.
+func (e OAuthProblemError) Valid() bool {
+	switch e {
+	case InvalidClient:
+		return true
+	case InvalidRequest:
+		return true
+	case InvalidScope:
+		return true
+	case InvalidTarget:
+		return true
+	case TemporarilyUnavailable:
+		return true
+	case UnauthorizedClient:
+		return true
+	case UnsupportedGrantType:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OperatorScope.
+const (
+	UsspGeo       OperatorScope = "ussp.geo"
+	UsspIntents   OperatorScope = "ussp.intents"
+	UsspTelemetry OperatorScope = "ussp.telemetry"
+	UsspTraffic   OperatorScope = "ussp.traffic"
+)
+
+// Valid indicates whether the value is a known member of the OperatorScope enum.
+func (e OperatorScope) Valid() bool {
+	switch e {
+	case UsspGeo:
+		return true
+	case UsspIntents:
+		return true
+	case UsspTelemetry:
+		return true
+	case UsspTraffic:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OperatorStatus.
+const (
+	Active            OperatorStatus = "active"
+	PendingValidation OperatorStatus = "pending_validation"
+	Refused           OperatorStatus = "refused"
+)
+
+// Valid indicates whether the value is a known member of the OperatorStatus enum.
+func (e OperatorStatus) Valid() bool {
+	switch e {
+	case Active:
+		return true
+	case PendingValidation:
+		return true
+	case Refused:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReadinessStatus.
 const (
 	ReadinessStatusDegraded ReadinessStatus = "degraded"
@@ -72,6 +150,105 @@ func (e ReadinessStatus) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// Defines values for Realm.
+const (
+	Console Realm = "console"
+	Portal  Realm = "portal"
+)
+
+// Valid indicates whether the value is a known member of the Realm enum.
+func (e Realm) Valid() bool {
+	switch e {
+	case Console:
+		return true
+	case Portal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SerialBindingRequestClassLabel.
+const (
+	C0 SerialBindingRequestClassLabel = "C0"
+	C1 SerialBindingRequestClassLabel = "C1"
+	C2 SerialBindingRequestClassLabel = "C2"
+	C3 SerialBindingRequestClassLabel = "C3"
+	C4 SerialBindingRequestClassLabel = "C4"
+	C5 SerialBindingRequestClassLabel = "C5"
+	C6 SerialBindingRequestClassLabel = "C6"
+)
+
+// Valid indicates whether the value is a known member of the SerialBindingRequestClassLabel enum.
+func (e SerialBindingRequestClassLabel) Valid() bool {
+	switch e {
+	case C0:
+		return true
+	case C1:
+		return true
+	case C2:
+		return true
+	case C3:
+		return true
+	case C4:
+		return true
+	case C5:
+		return true
+	case C6:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TokenRequestGrantType.
+const (
+	ClientCredentials TokenRequestGrantType = "client_credentials"
+)
+
+// Valid indicates whether the value is a known member of the TokenRequestGrantType enum.
+func (e TokenRequestGrantType) Valid() bool {
+	switch e {
+	case ClientCredentials:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TokenResponseTokenType.
+const (
+	Bearer TokenResponseTokenType = "Bearer"
+)
+
+// Valid indicates whether the value is a known member of the TokenResponseTokenType enum.
+func (e TokenResponseTokenType) Valid() bool {
+	switch e {
+	case Bearer:
+		return true
+	default:
+		return false
+	}
+}
+
+// ClientRequest defines model for ClientRequest.
+type ClientRequest struct {
+	Scopes []OperatorScope `json:"scopes"`
+}
+
+// ClientSecret defines model for ClientSecret.
+type ClientSecret struct {
+	ClientId string `json:"client_id"`
+
+	// ClientSecret Shown once; never stored in clear and never retrievable again.
+	ClientSecret string `json:"client_secret"`
+
+	// PreviousValidUntil Set by a rotation; the previous secret works until then.
+	PreviousValidUntil *time.Time      `json:"previous_valid_until,omitempty"`
+	Scopes             []OperatorScope `json:"scopes"`
+	Status             string          `json:"status"`
 }
 
 // Dependency defines model for Dependency.
@@ -107,6 +284,98 @@ type Health struct {
 
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
+
+// JWKS defines model for JWKS.
+type JWKS struct {
+	Keys []map[string]interface{} `json:"keys"`
+}
+
+// LoginRequest defines model for LoginRequest.
+type LoginRequest struct {
+	Password string `json:"password"`
+
+	// Realm portal for operator users, console for staff (M20).
+	Realm Realm `json:"realm"`
+
+	// TotpCode Six digits; required for a staff admin.
+	TotpCode *string `json:"totp_code,omitempty"`
+	Username string  `json:"username"`
+}
+
+// Me defines model for Me.
+type Me struct {
+	AccountId  string  `json:"account_id"`
+	OperatorId *string `json:"operator_id,omitempty"`
+
+	// Realm portal for operator users, console for staff (M20).
+	Realm            Realm     `json:"realm"`
+	Roles            []string  `json:"roles"`
+	SessionExpiresAt time.Time `json:"session_expires_at"`
+	Username         string    `json:"username"`
+}
+
+// OAuthProblem A problem (M28) that also carries the RFC 6749 §5.2 members, so an
+// OAuth2 client library reads `error` and a uspace client reads the
+// problem.
+type OAuthProblem struct {
+	Detail           *string           `json:"detail,omitempty"`
+	Error            OAuthProblemError `json:"error"`
+	ErrorDescription *string           `json:"error_description,omitempty"`
+
+	// Errors Field problems, at most 100; truncated says when more existed.
+	Errors *[]FieldProblem `json:"errors,omitempty"`
+
+	// Instance The request path.
+	Instance  *string `json:"instance,omitempty"`
+	Status    int     `json:"status"`
+	Title     string  `json:"title"`
+	Truncated *bool   `json:"truncated,omitempty"`
+
+	// Type https://schemas.uspace.ge/problems/<slug>, the slug being the counter or refusal name.
+	//
+	// Examples: https://schemas.uspace.ge/problems/not_found
+	Type string `json:"type"`
+}
+
+// OAuthProblemError defines model for OAuthProblem.Error.
+type OAuthProblemError string
+
+// Operator defines model for Operator.
+type Operator struct {
+	ContactEmail       string         `json:"contact_email"`
+	CreatedAt          time.Time      `json:"created_at"`
+	DisplayName        string         `json:"display_name"`
+	Id                 string         `json:"id"`
+	RegistrationNumber string         `json:"registration_number"`
+	Status             OperatorStatus `json:"status"`
+	ValidatedAt        *time.Time     `json:"validated_at,omitempty"`
+
+	// ValidationStatus The registry's last answer (valid, unknown, or the refusal).
+	ValidationStatus *string `json:"validation_status,omitempty"`
+}
+
+// OperatorRegistration defines model for OperatorRegistration.
+type OperatorRegistration struct {
+	AdminPassword string `json:"admin_password"`
+	AdminUsername string `json:"admin_username"`
+	ContactEmail  string `json:"contact_email"`
+	DisplayName   string `json:"display_name"`
+
+	// RegistrationNumber The operator registration number the authority issued.
+	RegistrationNumber string `json:"registration_number"`
+}
+
+// OperatorScope defines model for OperatorScope.
+type OperatorScope string
+
+// OperatorStatus defines model for OperatorStatus.
+type OperatorStatus string
+
+// OperatorUpdate defines model for OperatorUpdate.
+type OperatorUpdate struct {
+	ContactEmail *string `json:"contact_email,omitempty"`
+	DisplayName  *string `json:"display_name,omitempty"`
+}
 
 // Problem The ecosystem-wide error body (RFC 9457), the shape of
 // uspace-lab schemas/common/problem/v1, mirrored here until that
@@ -146,14 +415,156 @@ type Readiness struct {
 // ReadinessStatus not_ready while a required dependency is down or unknown; degraded while any dependency is not up.
 type ReadinessStatus string
 
+// Realm portal for operator users, console for staff (M20).
+type Realm string
+
+// SerialBinding defines model for SerialBinding.
+type SerialBinding struct {
+	BoundAt  time.Time `json:"bound_at"`
+	ClientId string    `json:"client_id"`
+	Serial   string    `json:"serial"`
+
+	// SerialFold uspace-core serial.FoldKey of the serial.
+	SerialFold string `json:"serial_fold"`
+}
+
+// SerialBindingRequest defines model for SerialBindingRequest.
+type SerialBindingRequest struct {
+	// ClassLabel The aircraft's class (2019/945). C1, C2, C3, C5 and C6 need a
+	// valid CTA-2063-A serial; C0, C4 and an unlabelled aircraft (no
+	// class_label) only a serial that is not empty (LESSONS G-06).
+	ClassLabel *SerialBindingRequestClassLabel `json:"class_label,omitempty"`
+
+	// Serial The UAS serial number (ANSI/CTA-2063-A).
+	Serial string `json:"serial"`
+}
+
+// SerialBindingRequestClassLabel The aircraft's class (2019/945). C1, C2, C3, C5 and C6 need a
+// valid CTA-2063-A serial; C0, C4 and an unlabelled aircraft (no
+// class_label) only a serial that is not empty (LESSONS G-06).
+type SerialBindingRequestClassLabel string
+
+// Session defines model for Session.
+type Session struct {
+	AccountId string `json:"account_id"`
+
+	// CsrfToken The uspace_csrf value, sent as X-CSRF-Token with a cookie-authenticated request.
+	CsrfToken     string    `json:"csrf_token"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	IdleExpiresAt time.Time `json:"idle_expires_at"`
+
+	// OperatorId The operator of a portal account.
+	OperatorId *string `json:"operator_id,omitempty"`
+
+	// Realm portal for operator users, console for staff (M20).
+	Realm Realm    `json:"realm"`
+	Roles []string `json:"roles"`
+
+	// Token The session JWT, also set as the uspace_session cookie; the BFF carries it as a bearer.
+	Token string `json:"token"`
+}
+
+// TokenRequest defines model for TokenRequest.
+type TokenRequest struct {
+	// Audience When given, this USSP's host (M18).
+	Audience     *string               `json:"audience,omitempty"`
+	ClientId     *string               `json:"client_id,omitempty"`
+	ClientSecret *string               `json:"client_secret,omitempty"`
+	GrantType    TokenRequestGrantType `json:"grant_type"`
+
+	// Scope Space-separated operator scopes.
+	Scope *string `json:"scope,omitempty"`
+}
+
+// TokenRequestGrantType defines model for TokenRequest.GrantType.
+type TokenRequestGrantType string
+
+// TokenResponse defines model for TokenResponse.
+type TokenResponse struct {
+	AccessToken string `json:"access_token"`
+
+	// ExpiresIn Seconds until exp.
+	ExpiresIn int                    `json:"expires_in"`
+	Scope     string                 `json:"scope"`
+	TokenType TokenResponseTokenType `json:"token_type"`
+}
+
+// TokenResponseTokenType defines model for TokenResponse.TokenType.
+type TokenResponseTokenType string
+
+// ClientID defines model for ClientID.
+type ClientID = string
+
+// OperatorID defines model for OperatorID.
+type OperatorID = openapi_types.UUID
+
+// OAuthError A problem (M28) that also carries the RFC 6749 §5.2 members, so an
+// OAuth2 client library reads `error` and a uspace client reads the
+// problem.
+type OAuthError = OAuthProblem
+
+// RequestTokenFormdataRequestBody defines body for RequestToken for application/x-www-form-urlencoded ContentType.
+type RequestTokenFormdataRequestBody = TokenRequest
+
+// LoginJSONRequestBody defines body for Login for application/json ContentType.
+type LoginJSONRequestBody = LoginRequest
+
+// RegisterOperatorJSONRequestBody defines body for RegisterOperator for application/json ContentType.
+type RegisterOperatorJSONRequestBody = OperatorRegistration
+
+// UpdateOperatorJSONRequestBody defines body for UpdateOperator for application/json ContentType.
+type UpdateOperatorJSONRequestBody = OperatorUpdate
+
+// CreateClientJSONRequestBody defines body for CreateClient for application/json ContentType.
+type CreateClientJSONRequestBody = ClientRequest
+
+// BindSerialJSONRequestBody defines body for BindSerial for application/json ContentType.
+type BindSerialJSONRequestBody = SerialBindingRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// GetJWKS The issuer's public keys
+	// (GET /.well-known/jwks.json)
+	GetJWKS(w http.ResponseWriter, r *http.Request)
 	// GetHealthz Liveness
 	// (GET /healthz)
 	GetHealthz(w http.ResponseWriter, r *http.Request)
+	// RequestToken Client credentials grant for operator machine clients
+	// (POST /oauth/token)
+	RequestToken(w http.ResponseWriter, r *http.Request)
 	// GetReadyz Readiness
 	// (GET /readyz)
 	GetReadyz(w http.ResponseWriter, r *http.Request)
+	// Login Start a portal or console session
+	// (POST /v1/accounts/login)
+	Login(w http.ResponseWriter, r *http.Request)
+	// Logout End the caller's session
+	// (POST /v1/accounts/logout)
+	Logout(w http.ResponseWriter, r *http.Request)
+	// GetMe The caller's account and session
+	// (GET /v1/accounts/me)
+	GetMe(w http.ResponseWriter, r *http.Request)
+	// RegisterOperator Self-registration of a UAS operator
+	// (POST /v1/accounts/operators)
+	RegisterOperator(w http.ResponseWriter, r *http.Request)
+	// GetOperator The caller's operator
+	// (GET /v1/accounts/operators/{operator_id})
+	GetOperator(w http.ResponseWriter, r *http.Request, operatorId OperatorID)
+	// UpdateOperator Change the operator's record
+	// (PATCH /v1/accounts/operators/{operator_id})
+	UpdateOperator(w http.ResponseWriter, r *http.Request, operatorId OperatorID)
+	// CreateClient Create a machine client of the operator
+	// (POST /v1/accounts/operators/{operator_id}/clients)
+	CreateClient(w http.ResponseWriter, r *http.Request, operatorId OperatorID)
+	// RotateClientSecret Rotate a client's secret
+	// (POST /v1/accounts/operators/{operator_id}/clients/{client_id}/rotate)
+	RotateClientSecret(w http.ResponseWriter, r *http.Request, operatorId OperatorID, clientId ClientID)
+	// BindSerial Bind a UAS serial number to a client
+	// (POST /v1/accounts/operators/{operator_id}/clients/{client_id}/serials)
+	BindSerial(w http.ResponseWriter, r *http.Request, operatorId OperatorID, clientId ClientID)
+	// UnbindSerial Unbind a serial from a client
+	// (DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial})
+	UnbindSerial(w http.ResponseWriter, r *http.Request, operatorId OperatorID, clientId ClientID, serial string)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -164,6 +575,20 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// GetJWKS operation middleware
+func (siw *ServerInterfaceWrapper) GetJWKS(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetJWKS(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // GetHealthz operation middleware
 func (siw *ServerInterfaceWrapper) GetHealthz(w http.ResponseWriter, r *http.Request) {
@@ -179,11 +604,273 @@ func (siw *ServerInterfaceWrapper) GetHealthz(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// RequestToken operation middleware
+func (siw *ServerInterfaceWrapper) RequestToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RequestToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetReadyz operation middleware
 func (siw *ServerInterfaceWrapper) GetReadyz(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetReadyz(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Login operation middleware
+func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Login(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Logout operation middleware
+func (siw *ServerInterfaceWrapper) Logout(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Logout(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMe operation middleware
+func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RegisterOperator operation middleware
+func (siw *ServerInterfaceWrapper) RegisterOperator(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RegisterOperator(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetOperator operation middleware
+func (siw *ServerInterfaceWrapper) GetOperator(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "operator_id" -------------
+	var operatorId OperatorID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operator_id", r.PathValue("operator_id"), &operatorId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "operator_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetOperator(w, r, operatorId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateOperator operation middleware
+func (siw *ServerInterfaceWrapper) UpdateOperator(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "operator_id" -------------
+	var operatorId OperatorID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operator_id", r.PathValue("operator_id"), &operatorId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "operator_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateOperator(w, r, operatorId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateClient operation middleware
+func (siw *ServerInterfaceWrapper) CreateClient(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "operator_id" -------------
+	var operatorId OperatorID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operator_id", r.PathValue("operator_id"), &operatorId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "operator_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateClient(w, r, operatorId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RotateClientSecret operation middleware
+func (siw *ServerInterfaceWrapper) RotateClientSecret(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "operator_id" -------------
+	var operatorId OperatorID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operator_id", r.PathValue("operator_id"), &operatorId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "operator_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "client_id" -------------
+	var clientId ClientID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "client_id", r.PathValue("client_id"), &clientId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "client_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RotateClientSecret(w, r, operatorId, clientId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// BindSerial operation middleware
+func (siw *ServerInterfaceWrapper) BindSerial(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "operator_id" -------------
+	var operatorId OperatorID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operator_id", r.PathValue("operator_id"), &operatorId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "operator_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "client_id" -------------
+	var clientId ClientID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "client_id", r.PathValue("client_id"), &clientId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "client_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BindSerial(w, r, operatorId, clientId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnbindSerial operation middleware
+func (siw *ServerInterfaceWrapper) UnbindSerial(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "operator_id" -------------
+	var operatorId OperatorID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operator_id", r.PathValue("operator_id"), &operatorId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "operator_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "client_id" -------------
+	var clientId ClientID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "client_id", r.PathValue("client_id"), &clientId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "client_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "serial" -------------
+	var serial string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serial", r.PathValue("serial"), &serial, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serial", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnbindSerial(w, r, operatorId, clientId, serial)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -315,195 +1002,18 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/healthz", wrapper.GetHealthz)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/readyz", wrapper.GetReadyz)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/oauth/token", wrapper.RequestToken)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/jwks.json", wrapper.GetJWKS)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/login", wrapper.Login)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/logout", wrapper.Logout)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/accounts/me", wrapper.GetMe)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/operators", wrapper.RegisterOperator)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/accounts/operators/{operator_id}", wrapper.GetOperator)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/accounts/operators/{operator_id}", wrapper.UpdateOperator)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/operators/{operator_id}/clients", wrapper.CreateClient)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/operators/{operator_id}/clients/{client_id}/rotate", wrapper.RotateClientSecret)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/operators/{operator_id}/clients/{client_id}/serials", wrapper.BindSerial)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial}", wrapper.UnbindSerial)
 
 	return m
-}
-
-type ProblemApplicationProblemPlusJSONResponse Problem
-
-type GetHealthzRequestObject struct {
-}
-
-type GetHealthzResponseObject interface {
-	VisitGetHealthzResponse(w http.ResponseWriter) error
-}
-
-type GetHealthz200JSONResponse Health
-
-func (response GetHealthz200JSONResponse) VisitGetHealthzResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetHealthzdefaultApplicationProblemPlusJSONResponse struct {
-	Body       Problem
-	StatusCode int
-}
-
-func (response GetHealthzdefaultApplicationProblemPlusJSONResponse) VisitGetHealthzResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(response.StatusCode)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetReadyzRequestObject struct {
-}
-
-type GetReadyzResponseObject interface {
-	VisitGetReadyzResponse(w http.ResponseWriter) error
-}
-
-type GetReadyz200JSONResponse Readiness
-
-func (response GetReadyz200JSONResponse) VisitGetReadyzResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetReadyz503JSONResponse Readiness
-
-func (response GetReadyz503JSONResponse) VisitGetReadyzResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(503)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetReadyzdefaultApplicationProblemPlusJSONResponse struct {
-	Body       Problem
-	StatusCode int
-}
-
-func (response GetReadyzdefaultApplicationProblemPlusJSONResponse) VisitGetReadyzResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(response.StatusCode)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-// StrictServerInterface represents all server handlers.
-type StrictServerInterface interface {
-	// GetHealthz Liveness
-	// (GET /healthz)
-	GetHealthz(ctx context.Context, request GetHealthzRequestObject) (GetHealthzResponseObject, error)
-	// GetReadyz Readiness
-	// (GET /readyz)
-	GetReadyz(ctx context.Context, request GetReadyzRequestObject) (GetReadyzResponseObject, error)
-}
-
-type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
-type StrictMiddlewareFunc func(f StrictHandlerFunc, operationID string) StrictHandlerFunc
-
-type StrictHTTPServerOptions struct {
-	RequestErrorHandlerFunc  func(w http.ResponseWriter, r *http.Request, err error)
-	ResponseErrorHandlerFunc func(w http.ResponseWriter, r *http.Request, err error)
-}
-
-func NewStrictHandler(ssi StrictServerInterface, middlewares []StrictMiddlewareFunc) ServerInterface {
-	return &strictHandler{ssi: ssi, middlewares: middlewares, options: StrictHTTPServerOptions{
-		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		},
-		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		},
-	}}
-}
-
-func NewStrictHandlerWithOptions(ssi StrictServerInterface, middlewares []StrictMiddlewareFunc, options StrictHTTPServerOptions) ServerInterface {
-	if options.RequestErrorHandlerFunc == nil {
-		options.RequestErrorHandlerFunc = func(w http.ResponseWriter, r *http.Request, err error) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		}
-	}
-	if options.ResponseErrorHandlerFunc == nil {
-		options.ResponseErrorHandlerFunc = func(w http.ResponseWriter, r *http.Request, err error) {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-	}
-	return &strictHandler{ssi: ssi, middlewares: middlewares, options: options}
-}
-
-type strictHandler struct {
-	ssi         StrictServerInterface
-	middlewares []StrictMiddlewareFunc
-	options     StrictHTTPServerOptions
-}
-
-// GetHealthz operation middleware
-func (sh *strictHandler) GetHealthz(w http.ResponseWriter, r *http.Request) {
-	var request GetHealthzRequestObject
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.GetHealthz(ctx, request.(GetHealthzRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetHealthz")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(GetHealthzResponseObject); ok {
-		if err := validResponse.VisitGetHealthzResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// GetReadyz operation middleware
-func (sh *strictHandler) GetReadyz(w http.ResponseWriter, r *http.Request) {
-	var request GetReadyzRequestObject
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.GetReadyz(ctx, request.(GetReadyzRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetReadyz")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(GetReadyzResponseObject); ok {
-		if err := validResponse.VisitGetReadyzResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
 }

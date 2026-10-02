@@ -4,6 +4,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,9 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Defines values for DependencyState.
@@ -53,6 +57,84 @@ func (e HealthStatus) Valid() bool {
 	}
 }
 
+// Defines values for OAuthProblemError.
+const (
+	InvalidClient          OAuthProblemError = "invalid_client"
+	InvalidRequest         OAuthProblemError = "invalid_request"
+	InvalidScope           OAuthProblemError = "invalid_scope"
+	InvalidTarget          OAuthProblemError = "invalid_target"
+	TemporarilyUnavailable OAuthProblemError = "temporarily_unavailable"
+	UnauthorizedClient     OAuthProblemError = "unauthorized_client"
+	UnsupportedGrantType   OAuthProblemError = "unsupported_grant_type"
+)
+
+// Valid indicates whether the value is a known member of the OAuthProblemError enum.
+func (e OAuthProblemError) Valid() bool {
+	switch e {
+	case InvalidClient:
+		return true
+	case InvalidRequest:
+		return true
+	case InvalidScope:
+		return true
+	case InvalidTarget:
+		return true
+	case TemporarilyUnavailable:
+		return true
+	case UnauthorizedClient:
+		return true
+	case UnsupportedGrantType:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OperatorScope.
+const (
+	UsspGeo       OperatorScope = "ussp.geo"
+	UsspIntents   OperatorScope = "ussp.intents"
+	UsspTelemetry OperatorScope = "ussp.telemetry"
+	UsspTraffic   OperatorScope = "ussp.traffic"
+)
+
+// Valid indicates whether the value is a known member of the OperatorScope enum.
+func (e OperatorScope) Valid() bool {
+	switch e {
+	case UsspGeo:
+		return true
+	case UsspIntents:
+		return true
+	case UsspTelemetry:
+		return true
+	case UsspTraffic:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OperatorStatus.
+const (
+	Active            OperatorStatus = "active"
+	PendingValidation OperatorStatus = "pending_validation"
+	Refused           OperatorStatus = "refused"
+)
+
+// Valid indicates whether the value is a known member of the OperatorStatus enum.
+func (e OperatorStatus) Valid() bool {
+	switch e {
+	case Active:
+		return true
+	case PendingValidation:
+		return true
+	case Refused:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReadinessStatus.
 const (
 	ReadinessStatusDegraded ReadinessStatus = "degraded"
@@ -72,6 +154,105 @@ func (e ReadinessStatus) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// Defines values for Realm.
+const (
+	Console Realm = "console"
+	Portal  Realm = "portal"
+)
+
+// Valid indicates whether the value is a known member of the Realm enum.
+func (e Realm) Valid() bool {
+	switch e {
+	case Console:
+		return true
+	case Portal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SerialBindingRequestClassLabel.
+const (
+	C0 SerialBindingRequestClassLabel = "C0"
+	C1 SerialBindingRequestClassLabel = "C1"
+	C2 SerialBindingRequestClassLabel = "C2"
+	C3 SerialBindingRequestClassLabel = "C3"
+	C4 SerialBindingRequestClassLabel = "C4"
+	C5 SerialBindingRequestClassLabel = "C5"
+	C6 SerialBindingRequestClassLabel = "C6"
+)
+
+// Valid indicates whether the value is a known member of the SerialBindingRequestClassLabel enum.
+func (e SerialBindingRequestClassLabel) Valid() bool {
+	switch e {
+	case C0:
+		return true
+	case C1:
+		return true
+	case C2:
+		return true
+	case C3:
+		return true
+	case C4:
+		return true
+	case C5:
+		return true
+	case C6:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TokenRequestGrantType.
+const (
+	ClientCredentials TokenRequestGrantType = "client_credentials"
+)
+
+// Valid indicates whether the value is a known member of the TokenRequestGrantType enum.
+func (e TokenRequestGrantType) Valid() bool {
+	switch e {
+	case ClientCredentials:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TokenResponseTokenType.
+const (
+	Bearer TokenResponseTokenType = "Bearer"
+)
+
+// Valid indicates whether the value is a known member of the TokenResponseTokenType enum.
+func (e TokenResponseTokenType) Valid() bool {
+	switch e {
+	case Bearer:
+		return true
+	default:
+		return false
+	}
+}
+
+// ClientRequest defines model for ClientRequest.
+type ClientRequest struct {
+	Scopes []OperatorScope `json:"scopes"`
+}
+
+// ClientSecret defines model for ClientSecret.
+type ClientSecret struct {
+	ClientId string `json:"client_id"`
+
+	// ClientSecret Shown once; never stored in clear and never retrievable again.
+	ClientSecret string `json:"client_secret"`
+
+	// PreviousValidUntil Set by a rotation; the previous secret works until then.
+	PreviousValidUntil *time.Time      `json:"previous_valid_until,omitempty"`
+	Scopes             []OperatorScope `json:"scopes"`
+	Status             string          `json:"status"`
 }
 
 // Dependency defines model for Dependency.
@@ -107,6 +288,98 @@ type Health struct {
 
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
+
+// JWKS defines model for JWKS.
+type JWKS struct {
+	Keys []map[string]interface{} `json:"keys"`
+}
+
+// LoginRequest defines model for LoginRequest.
+type LoginRequest struct {
+	Password string `json:"password"`
+
+	// Realm portal for operator users, console for staff (M20).
+	Realm Realm `json:"realm"`
+
+	// TotpCode Six digits; required for a staff admin.
+	TotpCode *string `json:"totp_code,omitempty"`
+	Username string  `json:"username"`
+}
+
+// Me defines model for Me.
+type Me struct {
+	AccountId  string  `json:"account_id"`
+	OperatorId *string `json:"operator_id,omitempty"`
+
+	// Realm portal for operator users, console for staff (M20).
+	Realm            Realm     `json:"realm"`
+	Roles            []string  `json:"roles"`
+	SessionExpiresAt time.Time `json:"session_expires_at"`
+	Username         string    `json:"username"`
+}
+
+// OAuthProblem A problem (M28) that also carries the RFC 6749 §5.2 members, so an
+// OAuth2 client library reads `error` and a uspace client reads the
+// problem.
+type OAuthProblem struct {
+	Detail           *string           `json:"detail,omitempty"`
+	Error            OAuthProblemError `json:"error"`
+	ErrorDescription *string           `json:"error_description,omitempty"`
+
+	// Errors Field problems, at most 100; truncated says when more existed.
+	Errors *[]FieldProblem `json:"errors,omitempty"`
+
+	// Instance The request path.
+	Instance  *string `json:"instance,omitempty"`
+	Status    int     `json:"status"`
+	Title     string  `json:"title"`
+	Truncated *bool   `json:"truncated,omitempty"`
+
+	// Type https://schemas.uspace.ge/problems/<slug>, the slug being the counter or refusal name.
+	//
+	// Examples: https://schemas.uspace.ge/problems/not_found
+	Type string `json:"type"`
+}
+
+// OAuthProblemError defines model for OAuthProblem.Error.
+type OAuthProblemError string
+
+// Operator defines model for Operator.
+type Operator struct {
+	ContactEmail       string         `json:"contact_email"`
+	CreatedAt          time.Time      `json:"created_at"`
+	DisplayName        string         `json:"display_name"`
+	Id                 string         `json:"id"`
+	RegistrationNumber string         `json:"registration_number"`
+	Status             OperatorStatus `json:"status"`
+	ValidatedAt        *time.Time     `json:"validated_at,omitempty"`
+
+	// ValidationStatus The registry's last answer (valid, unknown, or the refusal).
+	ValidationStatus *string `json:"validation_status,omitempty"`
+}
+
+// OperatorRegistration defines model for OperatorRegistration.
+type OperatorRegistration struct {
+	AdminPassword string `json:"admin_password"`
+	AdminUsername string `json:"admin_username"`
+	ContactEmail  string `json:"contact_email"`
+	DisplayName   string `json:"display_name"`
+
+	// RegistrationNumber The operator registration number the authority issued.
+	RegistrationNumber string `json:"registration_number"`
+}
+
+// OperatorScope defines model for OperatorScope.
+type OperatorScope string
+
+// OperatorStatus defines model for OperatorStatus.
+type OperatorStatus string
+
+// OperatorUpdate defines model for OperatorUpdate.
+type OperatorUpdate struct {
+	ContactEmail *string `json:"contact_email,omitempty"`
+	DisplayName  *string `json:"display_name,omitempty"`
+}
 
 // Problem The ecosystem-wide error body (RFC 9457), the shape of
 // uspace-lab schemas/common/problem/v1, mirrored here until that
@@ -145,6 +418,112 @@ type Readiness struct {
 
 // ReadinessStatus not_ready while a required dependency is down or unknown; degraded while any dependency is not up.
 type ReadinessStatus string
+
+// Realm portal for operator users, console for staff (M20).
+type Realm string
+
+// SerialBinding defines model for SerialBinding.
+type SerialBinding struct {
+	BoundAt  time.Time `json:"bound_at"`
+	ClientId string    `json:"client_id"`
+	Serial   string    `json:"serial"`
+
+	// SerialFold uspace-core serial.FoldKey of the serial.
+	SerialFold string `json:"serial_fold"`
+}
+
+// SerialBindingRequest defines model for SerialBindingRequest.
+type SerialBindingRequest struct {
+	// ClassLabel The aircraft's class (2019/945). C1, C2, C3, C5 and C6 need a
+	// valid CTA-2063-A serial; C0, C4 and an unlabelled aircraft (no
+	// class_label) only a serial that is not empty (LESSONS G-06).
+	ClassLabel *SerialBindingRequestClassLabel `json:"class_label,omitempty"`
+
+	// Serial The UAS serial number (ANSI/CTA-2063-A).
+	Serial string `json:"serial"`
+}
+
+// SerialBindingRequestClassLabel The aircraft's class (2019/945). C1, C2, C3, C5 and C6 need a
+// valid CTA-2063-A serial; C0, C4 and an unlabelled aircraft (no
+// class_label) only a serial that is not empty (LESSONS G-06).
+type SerialBindingRequestClassLabel string
+
+// Session defines model for Session.
+type Session struct {
+	AccountId string `json:"account_id"`
+
+	// CsrfToken The uspace_csrf value, sent as X-CSRF-Token with a cookie-authenticated request.
+	CsrfToken     string    `json:"csrf_token"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	IdleExpiresAt time.Time `json:"idle_expires_at"`
+
+	// OperatorId The operator of a portal account.
+	OperatorId *string `json:"operator_id,omitempty"`
+
+	// Realm portal for operator users, console for staff (M20).
+	Realm Realm    `json:"realm"`
+	Roles []string `json:"roles"`
+
+	// Token The session JWT, also set as the uspace_session cookie; the BFF carries it as a bearer.
+	Token string `json:"token"`
+}
+
+// TokenRequest defines model for TokenRequest.
+type TokenRequest struct {
+	// Audience When given, this USSP's host (M18).
+	Audience     *string               `json:"audience,omitempty"`
+	ClientId     *string               `json:"client_id,omitempty"`
+	ClientSecret *string               `json:"client_secret,omitempty"`
+	GrantType    TokenRequestGrantType `json:"grant_type"`
+
+	// Scope Space-separated operator scopes.
+	Scope *string `json:"scope,omitempty"`
+}
+
+// TokenRequestGrantType defines model for TokenRequest.GrantType.
+type TokenRequestGrantType string
+
+// TokenResponse defines model for TokenResponse.
+type TokenResponse struct {
+	AccessToken string `json:"access_token"`
+
+	// ExpiresIn Seconds until exp.
+	ExpiresIn int                    `json:"expires_in"`
+	Scope     string                 `json:"scope"`
+	TokenType TokenResponseTokenType `json:"token_type"`
+}
+
+// TokenResponseTokenType defines model for TokenResponse.TokenType.
+type TokenResponseTokenType string
+
+// ClientID defines model for ClientID.
+type ClientID = string
+
+// OperatorID defines model for OperatorID.
+type OperatorID = openapi_types.UUID
+
+// OAuthError A problem (M28) that also carries the RFC 6749 §5.2 members, so an
+// OAuth2 client library reads `error` and a uspace client reads the
+// problem.
+type OAuthError = OAuthProblem
+
+// RequestTokenFormdataRequestBody defines body for RequestToken for application/x-www-form-urlencoded ContentType.
+type RequestTokenFormdataRequestBody = TokenRequest
+
+// LoginJSONRequestBody defines body for Login for application/json ContentType.
+type LoginJSONRequestBody = LoginRequest
+
+// RegisterOperatorJSONRequestBody defines body for RegisterOperator for application/json ContentType.
+type RegisterOperatorJSONRequestBody = OperatorRegistration
+
+// UpdateOperatorJSONRequestBody defines body for UpdateOperator for application/json ContentType.
+type UpdateOperatorJSONRequestBody = OperatorUpdate
+
+// CreateClientJSONRequestBody defines body for CreateClient for application/json ContentType.
+type CreateClientJSONRequestBody = ClientRequest
+
+// BindSerialJSONRequestBody defines body for BindSerial for application/json ContentType.
+type BindSerialJSONRequestBody = SerialBindingRequest
 
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -220,12 +599,72 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 // The interface specification for the client above.
 type ClientInterface interface {
 
+	// GetJWKS The issuer's public keys
+	//
+	// The RS256 keys of this USSP's issuer (`use: sig`, `kid` = the RFC
+	// 7638 SHA-256 thumbprint): the current key and, during a rotation,
+	// the previous one (`USSP_ISSUER_PREVIOUS_KEY_FILE`). Operator
+	// tokens and session tokens are signed by the current key.
+	//
+	// Corresponds with GET /.well-known/jwks.json (the `GetJWKS` operationId).
+	GetJWKS(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetHealthz Liveness
 	//
 	// 200 while the process runs. Says nothing about dependencies.
 	//
 	// Corresponds with GET /healthz (the `GetHealthz` operationId).
 	GetHealthz(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RequestTokenWithBody Client credentials grant for operator machine clients
+	//
+	// RFC 6749 §4.4 client credentials at this USSP's own issuer (D9).
+	// The client authenticates with HTTP Basic (`client_secret_basic`)
+	// or with `client_id` and `client_secret` in the body
+	// (`client_secret_post`), never both; the secret is checked with
+	// argon2id in constant time, and during a rotation the previous
+	// secret is accepted until its overlap ends
+	// (`policy.client_secret_overlap_s`). Parameters in the query
+	// string are refused. `scope` names operator scopes (`ussp.intents`,
+	// `ussp.telemetry`, `ussp.traffic`, `ussp.geo`); an unknown scope is
+	// refused; the token grants the requested scopes that the client
+	// holds (all of them when `scope` is absent). `audience`, when
+	// given, must be this USSP's host: `aud` is always this USSP's host
+	// (M18). The TTL is `policy.operator_token_ttl_s` (at most 3600 s).
+	// Issuance is rate-limited per client and per client address (429
+	// with `Retry-After`). Every issuance and refusal is an `events`
+	// row. Errors carry the RFC 6749 §5.2 `error` beside the problem
+	// members.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /oauth/token (the `RequestToken` operationId).
+	RequestTokenWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RequestTokenWithFormdataBody Client credentials grant for operator machine clients
+	//
+	// RFC 6749 §4.4 client credentials at this USSP's own issuer (D9).
+	// The client authenticates with HTTP Basic (`client_secret_basic`)
+	// or with `client_id` and `client_secret` in the body
+	// (`client_secret_post`), never both; the secret is checked with
+	// argon2id in constant time, and during a rotation the previous
+	// secret is accepted until its overlap ends
+	// (`policy.client_secret_overlap_s`). Parameters in the query
+	// string are refused. `scope` names operator scopes (`ussp.intents`,
+	// `ussp.telemetry`, `ussp.traffic`, `ussp.geo`); an unknown scope is
+	// refused; the token grants the requested scopes that the client
+	// holds (all of them when `scope` is absent). `audience`, when
+	// given, must be this USSP's host: `aud` is always this USSP's host
+	// (M18). The TTL is `policy.operator_token_ttl_s` (at most 3600 s).
+	// Issuance is rate-limited per client and per client address (429
+	// with `Retry-After`). Every issuance and refusal is an `events`
+	// row. Errors carry the RFC 6749 §5.2 `error` beside the problem
+	// members.
+	//
+	// Takes a body of the `application/x-www-form-urlencoded` content type.
+	//
+	// Corresponds with POST /oauth/token (the `RequestToken` operationId).
+	RequestTokenWithFormdataBody(ctx context.Context, body RequestTokenFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetReadyz Readiness
 	//
@@ -238,6 +677,207 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /readyz (the `GetReadyz` operationId).
 	GetReadyz(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LoginWithBody Start a portal or console session
+	//
+	// Checks a username and password (argon2id) in the realm `portal`
+	// (operator users) or `console` (staff); a staff `admin` also sends
+	// a TOTP code. An unknown user, a wrong password and a wrong code
+	// are one answer. Ten consecutive failures for one username lock it
+	// for 15 minutes (the lock is in the database and holds across
+	// replicas; 429 with `Retry-After`); attempts are also limited per
+	// client address. On success the answer carries the session JWT
+	// (`iss` = this issuer, `aud` = this host, `sub` = the account id,
+	// `scope = "session"`, `roles`, `realm`, `jti` = the session id,
+	// `exp` at most 12 h, idle end after 30 min) and sets the cookies
+	// `uspace_session` and `uspace_csrf` (`HttpOnly; Secure;
+	// SameSite=Strict`). A request authenticated by the cookie sends the
+	// `uspace_csrf` value as `X-CSRF-Token` on every method that is not
+	// GET, HEAD or OPTIONS. Every attempt is an `events` row.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/accounts/login (the `Login` operationId).
+	LoginWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// Login Start a portal or console session
+	//
+	// Checks a username and password (argon2id) in the realm `portal`
+	// (operator users) or `console` (staff); a staff `admin` also sends
+	// a TOTP code. An unknown user, a wrong password and a wrong code
+	// are one answer. Ten consecutive failures for one username lock it
+	// for 15 minutes (the lock is in the database and holds across
+	// replicas; 429 with `Retry-After`); attempts are also limited per
+	// client address. On success the answer carries the session JWT
+	// (`iss` = this issuer, `aud` = this host, `sub` = the account id,
+	// `scope = "session"`, `roles`, `realm`, `jti` = the session id,
+	// `exp` at most 12 h, idle end after 30 min) and sets the cookies
+	// `uspace_session` and `uspace_csrf` (`HttpOnly; Secure;
+	// SameSite=Strict`). A request authenticated by the cookie sends the
+	// `uspace_csrf` value as `X-CSRF-Token` on every method that is not
+	// GET, HEAD or OPTIONS. Every attempt is an `events` row.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/accounts/login (the `Login` operationId).
+	Login(ctx context.Context, body LoginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// Logout End the caller's session
+	//
+	// Revokes the session (its `jti`) and clears both cookies.
+	//
+	// Corresponds with POST /v1/accounts/logout (the `Logout` operationId).
+	Logout(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetMe The caller's account and session
+	//
+	// Corresponds with GET /v1/accounts/me (the `GetMe` operationId).
+	GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RegisterOperatorWithBody Self-registration of a UAS operator
+	//
+	// Creates the USSP's customer record of an operator registered with
+	// the authority, and its first portal user with the role
+	// `operator_admin`. The registration number is checked with the
+	// authority's registry (F8): the operator is `active` once the
+	// registry says `valid`, `pending_validation` while it says
+	// `unknown` or cannot be asked, and refused when it says anything
+	// else. No client may be created and no token issued before the
+	// operator is `active`. Rate-limited per client address.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/accounts/operators (the `RegisterOperator` operationId).
+	RegisterOperatorWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RegisterOperator Self-registration of a UAS operator
+	//
+	// Creates the USSP's customer record of an operator registered with
+	// the authority, and its first portal user with the role
+	// `operator_admin`. The registration number is checked with the
+	// authority's registry (F8): the operator is `active` once the
+	// registry says `valid`, `pending_validation` while it says
+	// `unknown` or cannot be asked, and refused when it says anything
+	// else. No client may be created and no token issued before the
+	// operator is `active`. Rate-limited per client address.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/accounts/operators (the `RegisterOperator` operationId).
+	RegisterOperator(ctx context.Context, body RegisterOperatorJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetOperator The caller's operator
+	//
+	// Portal session of an `operator_admin` of this operator.
+	//
+	// Corresponds with GET /v1/accounts/operators/{operator_id} (the `GetOperator` operationId).
+	GetOperator(ctx context.Context, operatorId OperatorID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateOperatorWithBody Change the operator's record
+	//
+	// Changes the display name and the contact email. An operator still
+	// `pending_validation` is checked with the registry again.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /v1/accounts/operators/{operator_id} (the `UpdateOperator` operationId).
+	UpdateOperatorWithBody(ctx context.Context, operatorId OperatorID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateOperator Change the operator's record
+	//
+	// Changes the display name and the contact email. An operator still
+	// `pending_validation` is checked with the registry again.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /v1/accounts/operators/{operator_id} (the `UpdateOperator` operationId).
+	UpdateOperator(ctx context.Context, operatorId OperatorID, body UpdateOperatorJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateClientWithBody Create a machine client of the operator
+	//
+	// A client-credentials client with operator scopes, for an `active`
+	// operator. The secret is in this answer only; it is stored as an
+	// argon2id hash. The creation is an `events` row, which is the
+	// operator's notification for now (06 T3).
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/accounts/operators/{operator_id}/clients (the `CreateClient` operationId).
+	CreateClientWithBody(ctx context.Context, operatorId OperatorID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateClient Create a machine client of the operator
+	//
+	// A client-credentials client with operator scopes, for an `active`
+	// operator. The secret is in this answer only; it is stored as an
+	// argon2id hash. The creation is an `events` row, which is the
+	// operator's notification for now (06 T3).
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/accounts/operators/{operator_id}/clients (the `CreateClient` operationId).
+	CreateClient(ctx context.Context, operatorId OperatorID, body CreateClientJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RotateClientSecret Rotate a client's secret
+	//
+	// A new secret, shown once. The previous one keeps working until
+	// `previous_valid_until` (`policy.client_secret_overlap_s` from
+	// now) and never after.
+	//
+	// Corresponds with POST /v1/accounts/operators/{operator_id}/clients/{client_id}/rotate (the `RotateClientSecret` operationId).
+	RotateClientSecret(ctx context.Context, operatorId OperatorID, clientId ClientID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BindSerialWithBody Bind a UAS serial number to a client
+	//
+	// A client sends telemetry only for its bound serials (06 T3). The
+	// serial is validated by uspace-core `serial.ValidateForClass` with
+	// `class_label` and compared by `serial.FoldKey`; a serial bound to
+	// another client is refused (409). The binding is projected to KV `client_bindings`
+	// in the same transaction; when the projection cannot take it,
+	// nothing changes (503).
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/accounts/operators/{operator_id}/clients/{client_id}/serials (the `BindSerial` operationId).
+	BindSerialWithBody(ctx context.Context, operatorId OperatorID, clientId ClientID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BindSerial Bind a UAS serial number to a client
+	//
+	// A client sends telemetry only for its bound serials (06 T3). The
+	// serial is validated by uspace-core `serial.ValidateForClass` with
+	// `class_label` and compared by `serial.FoldKey`; a serial bound to
+	// another client is refused (409). The binding is projected to KV `client_bindings`
+	// in the same transaction; when the projection cannot take it,
+	// nothing changes (503).
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/accounts/operators/{operator_id}/clients/{client_id}/serials (the `BindSerial` operationId).
+	BindSerial(ctx context.Context, operatorId OperatorID, clientId ClientID, body BindSerialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UnbindSerial Unbind a serial from a client
+	//
+	// Corresponds with DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial} (the `UnbindSerial` operationId).
+	UnbindSerial(ctx context.Context, operatorId OperatorID, clientId ClientID, serial string, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+// GetJWKS The issuer's public keys
+//
+// The RS256 keys of this USSP's issuer (`use: sig`, `kid` = the RFC
+// 7638 SHA-256 thumbprint): the current key and, during a rotation,
+// the previous one (`USSP_ISSUER_PREVIOUS_KEY_FILE`). Operator
+// tokens and session tokens are signed by the current key.
+//
+// Corresponds with GET /.well-known/jwks.json (the `GetJWKS` operationId).
+func (c *Client) GetJWKS(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetJWKSRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 // GetHealthz Liveness
@@ -247,6 +887,76 @@ type ClientInterface interface {
 // Corresponds with GET /healthz (the `GetHealthz` operationId).
 func (c *Client) GetHealthz(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetHealthzRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RequestTokenWithBody Client credentials grant for operator machine clients
+//
+// RFC 6749 §4.4 client credentials at this USSP's own issuer (D9).
+// The client authenticates with HTTP Basic (`client_secret_basic`)
+// or with `client_id` and `client_secret` in the body
+// (`client_secret_post`), never both; the secret is checked with
+// argon2id in constant time, and during a rotation the previous
+// secret is accepted until its overlap ends
+// (`policy.client_secret_overlap_s`). Parameters in the query
+// string are refused. `scope` names operator scopes (`ussp.intents`,
+// `ussp.telemetry`, `ussp.traffic`, `ussp.geo`); an unknown scope is
+// refused; the token grants the requested scopes that the client
+// holds (all of them when `scope` is absent). `audience`, when
+// given, must be this USSP's host: `aud` is always this USSP's host
+// (M18). The TTL is `policy.operator_token_ttl_s` (at most 3600 s).
+// Issuance is rate-limited per client and per client address (429
+// with `Retry-After`). Every issuance and refusal is an `events`
+// row. Errors carry the RFC 6749 §5.2 `error` beside the problem
+// members.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /oauth/token (the `RequestToken` operationId).
+func (c *Client) RequestTokenWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRequestTokenRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RequestTokenWithFormdataBody Client credentials grant for operator machine clients
+//
+// RFC 6749 §4.4 client credentials at this USSP's own issuer (D9).
+// The client authenticates with HTTP Basic (`client_secret_basic`)
+// or with `client_id` and `client_secret` in the body
+// (`client_secret_post`), never both; the secret is checked with
+// argon2id in constant time, and during a rotation the previous
+// secret is accepted until its overlap ends
+// (`policy.client_secret_overlap_s`). Parameters in the query
+// string are refused. `scope` names operator scopes (`ussp.intents`,
+// `ussp.telemetry`, `ussp.traffic`, `ussp.geo`); an unknown scope is
+// refused; the token grants the requested scopes that the client
+// holds (all of them when `scope` is absent). `audience`, when
+// given, must be this USSP's host: `aud` is always this USSP's host
+// (M18). The TTL is `policy.operator_token_ttl_s` (at most 3600 s).
+// Issuance is rate-limited per client and per client address (429
+// with `Retry-After`). Every issuance and refusal is an `events`
+// row. Errors carry the RFC 6749 §5.2 `error` beside the problem
+// members.
+//
+// Takes a body of the `application/x-www-form-urlencoded` content type.
+//
+// Corresponds with POST /oauth/token (the `RequestToken` operationId).
+func (c *Client) RequestTokenWithFormdataBody(ctx context.Context, body RequestTokenFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRequestTokenRequestWithFormdataBody(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -279,6 +989,364 @@ func (c *Client) GetReadyz(ctx context.Context, reqEditors ...RequestEditorFn) (
 	return c.Client.Do(req)
 }
 
+// LoginWithBody Start a portal or console session
+//
+// Checks a username and password (argon2id) in the realm `portal`
+// (operator users) or `console` (staff); a staff `admin` also sends
+// a TOTP code. An unknown user, a wrong password and a wrong code
+// are one answer. Ten consecutive failures for one username lock it
+// for 15 minutes (the lock is in the database and holds across
+// replicas; 429 with `Retry-After`); attempts are also limited per
+// client address. On success the answer carries the session JWT
+// (`iss` = this issuer, `aud` = this host, `sub` = the account id,
+// `scope = "session"`, `roles`, `realm`, `jti` = the session id,
+// `exp` at most 12 h, idle end after 30 min) and sets the cookies
+// `uspace_session` and `uspace_csrf` (`HttpOnly; Secure;
+// SameSite=Strict`). A request authenticated by the cookie sends the
+// `uspace_csrf` value as `X-CSRF-Token` on every method that is not
+// GET, HEAD or OPTIONS. Every attempt is an `events` row.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/accounts/login (the `Login` operationId).
+func (c *Client) LoginWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLoginRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// Login Start a portal or console session
+//
+// Checks a username and password (argon2id) in the realm `portal`
+// (operator users) or `console` (staff); a staff `admin` also sends
+// a TOTP code. An unknown user, a wrong password and a wrong code
+// are one answer. Ten consecutive failures for one username lock it
+// for 15 minutes (the lock is in the database and holds across
+// replicas; 429 with `Retry-After`); attempts are also limited per
+// client address. On success the answer carries the session JWT
+// (`iss` = this issuer, `aud` = this host, `sub` = the account id,
+// `scope = "session"`, `roles`, `realm`, `jti` = the session id,
+// `exp` at most 12 h, idle end after 30 min) and sets the cookies
+// `uspace_session` and `uspace_csrf` (`HttpOnly; Secure;
+// SameSite=Strict`). A request authenticated by the cookie sends the
+// `uspace_csrf` value as `X-CSRF-Token` on every method that is not
+// GET, HEAD or OPTIONS. Every attempt is an `events` row.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/accounts/login (the `Login` operationId).
+func (c *Client) Login(ctx context.Context, body LoginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLoginRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// Logout End the caller's session
+//
+// Revokes the session (its `jti`) and clears both cookies.
+//
+// Corresponds with POST /v1/accounts/logout (the `Logout` operationId).
+func (c *Client) Logout(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLogoutRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetMe The caller's account and session
+//
+// Corresponds with GET /v1/accounts/me (the `GetMe` operationId).
+func (c *Client) GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMeRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RegisterOperatorWithBody Self-registration of a UAS operator
+//
+// Creates the USSP's customer record of an operator registered with
+// the authority, and its first portal user with the role
+// `operator_admin`. The registration number is checked with the
+// authority's registry (F8): the operator is `active` once the
+// registry says `valid`, `pending_validation` while it says
+// `unknown` or cannot be asked, and refused when it says anything
+// else. No client may be created and no token issued before the
+// operator is `active`. Rate-limited per client address.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/accounts/operators (the `RegisterOperator` operationId).
+func (c *Client) RegisterOperatorWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRegisterOperatorRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RegisterOperator Self-registration of a UAS operator
+//
+// Creates the USSP's customer record of an operator registered with
+// the authority, and its first portal user with the role
+// `operator_admin`. The registration number is checked with the
+// authority's registry (F8): the operator is `active` once the
+// registry says `valid`, `pending_validation` while it says
+// `unknown` or cannot be asked, and refused when it says anything
+// else. No client may be created and no token issued before the
+// operator is `active`. Rate-limited per client address.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/accounts/operators (the `RegisterOperator` operationId).
+func (c *Client) RegisterOperator(ctx context.Context, body RegisterOperatorJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRegisterOperatorRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetOperator The caller's operator
+//
+// Portal session of an `operator_admin` of this operator.
+//
+// Corresponds with GET /v1/accounts/operators/{operator_id} (the `GetOperator` operationId).
+func (c *Client) GetOperator(ctx context.Context, operatorId OperatorID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetOperatorRequest(c.Server, operatorId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateOperatorWithBody Change the operator's record
+//
+// Changes the display name and the contact email. An operator still
+// `pending_validation` is checked with the registry again.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /v1/accounts/operators/{operator_id} (the `UpdateOperator` operationId).
+func (c *Client) UpdateOperatorWithBody(ctx context.Context, operatorId OperatorID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateOperatorRequestWithBody(c.Server, operatorId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateOperator Change the operator's record
+//
+// Changes the display name and the contact email. An operator still
+// `pending_validation` is checked with the registry again.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /v1/accounts/operators/{operator_id} (the `UpdateOperator` operationId).
+func (c *Client) UpdateOperator(ctx context.Context, operatorId OperatorID, body UpdateOperatorJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateOperatorRequest(c.Server, operatorId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateClientWithBody Create a machine client of the operator
+//
+// A client-credentials client with operator scopes, for an `active`
+// operator. The secret is in this answer only; it is stored as an
+// argon2id hash. The creation is an `events` row, which is the
+// operator's notification for now (06 T3).
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/accounts/operators/{operator_id}/clients (the `CreateClient` operationId).
+func (c *Client) CreateClientWithBody(ctx context.Context, operatorId OperatorID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateClientRequestWithBody(c.Server, operatorId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateClient Create a machine client of the operator
+//
+// A client-credentials client with operator scopes, for an `active`
+// operator. The secret is in this answer only; it is stored as an
+// argon2id hash. The creation is an `events` row, which is the
+// operator's notification for now (06 T3).
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/accounts/operators/{operator_id}/clients (the `CreateClient` operationId).
+func (c *Client) CreateClient(ctx context.Context, operatorId OperatorID, body CreateClientJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateClientRequest(c.Server, operatorId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RotateClientSecret Rotate a client's secret
+//
+// A new secret, shown once. The previous one keeps working until
+// `previous_valid_until` (`policy.client_secret_overlap_s` from
+// now) and never after.
+//
+// Corresponds with POST /v1/accounts/operators/{operator_id}/clients/{client_id}/rotate (the `RotateClientSecret` operationId).
+func (c *Client) RotateClientSecret(ctx context.Context, operatorId OperatorID, clientId ClientID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRotateClientSecretRequest(c.Server, operatorId, clientId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// BindSerialWithBody Bind a UAS serial number to a client
+//
+// A client sends telemetry only for its bound serials (06 T3). The
+// serial is validated by uspace-core `serial.ValidateForClass` with
+// `class_label` and compared by `serial.FoldKey`; a serial bound to
+// another client is refused (409). The binding is projected to KV `client_bindings`
+// in the same transaction; when the projection cannot take it,
+// nothing changes (503).
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/accounts/operators/{operator_id}/clients/{client_id}/serials (the `BindSerial` operationId).
+func (c *Client) BindSerialWithBody(ctx context.Context, operatorId OperatorID, clientId ClientID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBindSerialRequestWithBody(c.Server, operatorId, clientId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// BindSerial Bind a UAS serial number to a client
+//
+// A client sends telemetry only for its bound serials (06 T3). The
+// serial is validated by uspace-core `serial.ValidateForClass` with
+// `class_label` and compared by `serial.FoldKey`; a serial bound to
+// another client is refused (409). The binding is projected to KV `client_bindings`
+// in the same transaction; when the projection cannot take it,
+// nothing changes (503).
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/accounts/operators/{operator_id}/clients/{client_id}/serials (the `BindSerial` operationId).
+func (c *Client) BindSerial(ctx context.Context, operatorId OperatorID, clientId ClientID, body BindSerialJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBindSerialRequest(c.Server, operatorId, clientId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UnbindSerial Unbind a serial from a client
+//
+// Corresponds with DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial} (the `UnbindSerial` operationId).
+func (c *Client) UnbindSerial(ctx context.Context, operatorId OperatorID, clientId ClientID, serial string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUnbindSerialRequest(c.Server, operatorId, clientId, serial)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// NewGetJWKSRequest constructs an http.Request for the GetJWKS method
+func NewGetJWKSRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/.well-known/jwks.json")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetHealthzRequest constructs an http.Request for the GetHealthz method
 func NewGetHealthzRequest(server string) (*http.Request, error) {
 	var err error
@@ -306,6 +1374,46 @@ func NewGetHealthzRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewRequestTokenRequestWithFormdataBody calls the generic RequestToken builder with application/x-www-form-urlencoded body
+func NewRequestTokenRequestWithFormdataBody(server string, body RequestTokenFormdataRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	bodyStr, err := runtime.MarshalForm(body, nil)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = strings.NewReader(bodyStr.Encode())
+	return NewRequestTokenRequestWithBody(server, "application/x-www-form-urlencoded", bodyReader)
+}
+
+// NewRequestTokenRequestWithBody constructs an http.Request for the RequestToken method, with any body, and a specified content type
+func NewRequestTokenRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/oauth/token")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetReadyzRequest constructs an http.Request for the GetReadyz method
 func NewGetReadyzRequest(server string) (*http.Request, error) {
 	var err error
@@ -326,6 +1434,411 @@ func NewGetReadyzRequest(server string) (*http.Request, error) {
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewLoginRequest calls the generic Login builder with application/json body
+func NewLoginRequest(server string, body LoginJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewLoginRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewLoginRequestWithBody constructs an http.Request for the Login method, with any body, and a specified content type
+func NewLoginRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/accounts/login")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewLogoutRequest constructs an http.Request for the Logout method
+func NewLogoutRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/accounts/logout")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetMeRequest constructs an http.Request for the GetMe method
+func NewGetMeRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/accounts/me")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRegisterOperatorRequest calls the generic RegisterOperator builder with application/json body
+func NewRegisterOperatorRequest(server string, body RegisterOperatorJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRegisterOperatorRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewRegisterOperatorRequestWithBody constructs an http.Request for the RegisterOperator method, with any body, and a specified content type
+func NewRegisterOperatorRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/accounts/operators")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetOperatorRequest constructs an http.Request for the GetOperator method
+func NewGetOperatorRequest(server string, operatorId OperatorID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "operator_id", operatorId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/accounts/operators/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateOperatorRequest calls the generic UpdateOperator builder with application/json body
+func NewUpdateOperatorRequest(server string, operatorId OperatorID, body UpdateOperatorJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateOperatorRequestWithBody(server, operatorId, "application/json", bodyReader)
+}
+
+// NewUpdateOperatorRequestWithBody constructs an http.Request for the UpdateOperator method, with any body, and a specified content type
+func NewUpdateOperatorRequestWithBody(server string, operatorId OperatorID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "operator_id", operatorId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/accounts/operators/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCreateClientRequest calls the generic CreateClient builder with application/json body
+func NewCreateClientRequest(server string, operatorId OperatorID, body CreateClientJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateClientRequestWithBody(server, operatorId, "application/json", bodyReader)
+}
+
+// NewCreateClientRequestWithBody constructs an http.Request for the CreateClient method, with any body, and a specified content type
+func NewCreateClientRequestWithBody(server string, operatorId OperatorID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "operator_id", operatorId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/accounts/operators/%s/clients", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRotateClientSecretRequest constructs an http.Request for the RotateClientSecret method
+func NewRotateClientSecretRequest(server string, operatorId OperatorID, clientId ClientID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "operator_id", operatorId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "client_id", clientId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/accounts/operators/%s/clients/%s/rotate", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewBindSerialRequest calls the generic BindSerial builder with application/json body
+func NewBindSerialRequest(server string, operatorId OperatorID, clientId ClientID, body BindSerialJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewBindSerialRequestWithBody(server, operatorId, clientId, "application/json", bodyReader)
+}
+
+// NewBindSerialRequestWithBody constructs an http.Request for the BindSerial method, with any body, and a specified content type
+func NewBindSerialRequestWithBody(server string, operatorId OperatorID, clientId ClientID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "operator_id", operatorId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "client_id", clientId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/accounts/operators/%s/clients/%s/serials", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewUnbindSerialRequest constructs an http.Request for the UnbindSerial method
+func NewUnbindSerialRequest(server string, operatorId OperatorID, clientId ClientID, serial string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "operator_id", operatorId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "client_id", clientId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "serial", serial, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/accounts/operators/%s/clients/%s/serials/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -377,6 +1890,18 @@ func WithBaseURL(baseURL string) ClientOption {
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
 
+	// GetJWKSWithResponse The issuer's public keys
+	//
+	// The RS256 keys of this USSP's issuer (`use: sig`, `kid` = the RFC
+	// 7638 SHA-256 thumbprint): the current key and, during a rotation,
+	// the previous one (`USSP_ISSUER_PREVIOUS_KEY_FILE`). Operator
+	// tokens and session tokens are signed by the current key.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /.well-known/jwks.json (the `GetJWKS` operationId).
+	GetJWKSWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetJWKSResponse, error)
+
 	// GetHealthzWithResponse Liveness
 	//
 	// 200 while the process runs. Says nothing about dependencies.
@@ -385,6 +1910,56 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /healthz (the `GetHealthz` operationId).
 	GetHealthzWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthzResponse, error)
+
+	// RequestTokenWithBodyWithResponse Client credentials grant for operator machine clients
+	//
+	// RFC 6749 §4.4 client credentials at this USSP's own issuer (D9).
+	// The client authenticates with HTTP Basic (`client_secret_basic`)
+	// or with `client_id` and `client_secret` in the body
+	// (`client_secret_post`), never both; the secret is checked with
+	// argon2id in constant time, and during a rotation the previous
+	// secret is accepted until its overlap ends
+	// (`policy.client_secret_overlap_s`). Parameters in the query
+	// string are refused. `scope` names operator scopes (`ussp.intents`,
+	// `ussp.telemetry`, `ussp.traffic`, `ussp.geo`); an unknown scope is
+	// refused; the token grants the requested scopes that the client
+	// holds (all of them when `scope` is absent). `audience`, when
+	// given, must be this USSP's host: `aud` is always this USSP's host
+	// (M18). The TTL is `policy.operator_token_ttl_s` (at most 3600 s).
+	// Issuance is rate-limited per client and per client address (429
+	// with `Retry-After`). Every issuance and refusal is an `events`
+	// row. Errors carry the RFC 6749 §5.2 `error` beside the problem
+	// members.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /oauth/token (the `RequestToken` operationId).
+	RequestTokenWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RequestTokenResponse, error)
+
+	// RequestTokenWithFormdataBodyWithResponse Client credentials grant for operator machine clients
+	//
+	// RFC 6749 §4.4 client credentials at this USSP's own issuer (D9).
+	// The client authenticates with HTTP Basic (`client_secret_basic`)
+	// or with `client_id` and `client_secret` in the body
+	// (`client_secret_post`), never both; the secret is checked with
+	// argon2id in constant time, and during a rotation the previous
+	// secret is accepted until its overlap ends
+	// (`policy.client_secret_overlap_s`). Parameters in the query
+	// string are refused. `scope` names operator scopes (`ussp.intents`,
+	// `ussp.telemetry`, `ussp.traffic`, `ussp.geo`); an unknown scope is
+	// refused; the token grants the requested scopes that the client
+	// holds (all of them when `scope` is absent). `audience`, when
+	// given, must be this USSP's host: `aud` is always this USSP's host
+	// (M18). The TTL is `policy.operator_token_ttl_s` (at most 3600 s).
+	// Issuance is rate-limited per client and per client address (429
+	// with `Retry-After`). Every issuance and refusal is an `events`
+	// row. Errors carry the RFC 6749 §5.2 `error` beside the problem
+	// members.
+	//
+	// Takes a body of the `application/x-www-form-urlencoded` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /oauth/token (the `RequestToken` operationId).
+	RequestTokenWithFormdataBodyWithResponse(ctx context.Context, body RequestTokenFormdataRequestBody, reqEditors ...RequestEditorFn) (*RequestTokenResponse, error)
 
 	// GetReadyzWithResponse Readiness
 	//
@@ -399,6 +1974,259 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /readyz (the `GetReadyz` operationId).
 	GetReadyzWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetReadyzResponse, error)
+
+	// LoginWithBodyWithResponse Start a portal or console session
+	//
+	// Checks a username and password (argon2id) in the realm `portal`
+	// (operator users) or `console` (staff); a staff `admin` also sends
+	// a TOTP code. An unknown user, a wrong password and a wrong code
+	// are one answer. Ten consecutive failures for one username lock it
+	// for 15 minutes (the lock is in the database and holds across
+	// replicas; 429 with `Retry-After`); attempts are also limited per
+	// client address. On success the answer carries the session JWT
+	// (`iss` = this issuer, `aud` = this host, `sub` = the account id,
+	// `scope = "session"`, `roles`, `realm`, `jti` = the session id,
+	// `exp` at most 12 h, idle end after 30 min) and sets the cookies
+	// `uspace_session` and `uspace_csrf` (`HttpOnly; Secure;
+	// SameSite=Strict`). A request authenticated by the cookie sends the
+	// `uspace_csrf` value as `X-CSRF-Token` on every method that is not
+	// GET, HEAD or OPTIONS. Every attempt is an `events` row.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/accounts/login (the `Login` operationId).
+	LoginWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LoginResponse, error)
+
+	// LoginWithResponse Start a portal or console session
+	//
+	// Checks a username and password (argon2id) in the realm `portal`
+	// (operator users) or `console` (staff); a staff `admin` also sends
+	// a TOTP code. An unknown user, a wrong password and a wrong code
+	// are one answer. Ten consecutive failures for one username lock it
+	// for 15 minutes (the lock is in the database and holds across
+	// replicas; 429 with `Retry-After`); attempts are also limited per
+	// client address. On success the answer carries the session JWT
+	// (`iss` = this issuer, `aud` = this host, `sub` = the account id,
+	// `scope = "session"`, `roles`, `realm`, `jti` = the session id,
+	// `exp` at most 12 h, idle end after 30 min) and sets the cookies
+	// `uspace_session` and `uspace_csrf` (`HttpOnly; Secure;
+	// SameSite=Strict`). A request authenticated by the cookie sends the
+	// `uspace_csrf` value as `X-CSRF-Token` on every method that is not
+	// GET, HEAD or OPTIONS. Every attempt is an `events` row.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/accounts/login (the `Login` operationId).
+	LoginWithResponse(ctx context.Context, body LoginJSONRequestBody, reqEditors ...RequestEditorFn) (*LoginResponse, error)
+
+	// LogoutWithResponse End the caller's session
+	//
+	// Revokes the session (its `jti`) and clears both cookies.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/accounts/logout (the `Logout` operationId).
+	LogoutWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*LogoutResponse, error)
+
+	// GetMeWithResponse The caller's account and session
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/accounts/me (the `GetMe` operationId).
+	GetMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeResponse, error)
+
+	// RegisterOperatorWithBodyWithResponse Self-registration of a UAS operator
+	//
+	// Creates the USSP's customer record of an operator registered with
+	// the authority, and its first portal user with the role
+	// `operator_admin`. The registration number is checked with the
+	// authority's registry (F8): the operator is `active` once the
+	// registry says `valid`, `pending_validation` while it says
+	// `unknown` or cannot be asked, and refused when it says anything
+	// else. No client may be created and no token issued before the
+	// operator is `active`. Rate-limited per client address.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/accounts/operators (the `RegisterOperator` operationId).
+	RegisterOperatorWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegisterOperatorResponse, error)
+
+	// RegisterOperatorWithResponse Self-registration of a UAS operator
+	//
+	// Creates the USSP's customer record of an operator registered with
+	// the authority, and its first portal user with the role
+	// `operator_admin`. The registration number is checked with the
+	// authority's registry (F8): the operator is `active` once the
+	// registry says `valid`, `pending_validation` while it says
+	// `unknown` or cannot be asked, and refused when it says anything
+	// else. No client may be created and no token issued before the
+	// operator is `active`. Rate-limited per client address.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/accounts/operators (the `RegisterOperator` operationId).
+	RegisterOperatorWithResponse(ctx context.Context, body RegisterOperatorJSONRequestBody, reqEditors ...RequestEditorFn) (*RegisterOperatorResponse, error)
+
+	// GetOperatorWithResponse The caller's operator
+	//
+	// Portal session of an `operator_admin` of this operator.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/accounts/operators/{operator_id} (the `GetOperator` operationId).
+	GetOperatorWithResponse(ctx context.Context, operatorId OperatorID, reqEditors ...RequestEditorFn) (*GetOperatorResponse, error)
+
+	// UpdateOperatorWithBodyWithResponse Change the operator's record
+	//
+	// Changes the display name and the contact email. An operator still
+	// `pending_validation` is checked with the registry again.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /v1/accounts/operators/{operator_id} (the `UpdateOperator` operationId).
+	UpdateOperatorWithBodyWithResponse(ctx context.Context, operatorId OperatorID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateOperatorResponse, error)
+
+	// UpdateOperatorWithResponse Change the operator's record
+	//
+	// Changes the display name and the contact email. An operator still
+	// `pending_validation` is checked with the registry again.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /v1/accounts/operators/{operator_id} (the `UpdateOperator` operationId).
+	UpdateOperatorWithResponse(ctx context.Context, operatorId OperatorID, body UpdateOperatorJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateOperatorResponse, error)
+
+	// CreateClientWithBodyWithResponse Create a machine client of the operator
+	//
+	// A client-credentials client with operator scopes, for an `active`
+	// operator. The secret is in this answer only; it is stored as an
+	// argon2id hash. The creation is an `events` row, which is the
+	// operator's notification for now (06 T3).
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/accounts/operators/{operator_id}/clients (the `CreateClient` operationId).
+	CreateClientWithBodyWithResponse(ctx context.Context, operatorId OperatorID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateClientResponse, error)
+
+	// CreateClientWithResponse Create a machine client of the operator
+	//
+	// A client-credentials client with operator scopes, for an `active`
+	// operator. The secret is in this answer only; it is stored as an
+	// argon2id hash. The creation is an `events` row, which is the
+	// operator's notification for now (06 T3).
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/accounts/operators/{operator_id}/clients (the `CreateClient` operationId).
+	CreateClientWithResponse(ctx context.Context, operatorId OperatorID, body CreateClientJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateClientResponse, error)
+
+	// RotateClientSecretWithResponse Rotate a client's secret
+	//
+	// A new secret, shown once. The previous one keeps working until
+	// `previous_valid_until` (`policy.client_secret_overlap_s` from
+	// now) and never after.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/accounts/operators/{operator_id}/clients/{client_id}/rotate (the `RotateClientSecret` operationId).
+	RotateClientSecretWithResponse(ctx context.Context, operatorId OperatorID, clientId ClientID, reqEditors ...RequestEditorFn) (*RotateClientSecretResponse, error)
+
+	// BindSerialWithBodyWithResponse Bind a UAS serial number to a client
+	//
+	// A client sends telemetry only for its bound serials (06 T3). The
+	// serial is validated by uspace-core `serial.ValidateForClass` with
+	// `class_label` and compared by `serial.FoldKey`; a serial bound to
+	// another client is refused (409). The binding is projected to KV `client_bindings`
+	// in the same transaction; when the projection cannot take it,
+	// nothing changes (503).
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/accounts/operators/{operator_id}/clients/{client_id}/serials (the `BindSerial` operationId).
+	BindSerialWithBodyWithResponse(ctx context.Context, operatorId OperatorID, clientId ClientID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BindSerialResponse, error)
+
+	// BindSerialWithResponse Bind a UAS serial number to a client
+	//
+	// A client sends telemetry only for its bound serials (06 T3). The
+	// serial is validated by uspace-core `serial.ValidateForClass` with
+	// `class_label` and compared by `serial.FoldKey`; a serial bound to
+	// another client is refused (409). The binding is projected to KV `client_bindings`
+	// in the same transaction; when the projection cannot take it,
+	// nothing changes (503).
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/accounts/operators/{operator_id}/clients/{client_id}/serials (the `BindSerial` operationId).
+	BindSerialWithResponse(ctx context.Context, operatorId OperatorID, clientId ClientID, body BindSerialJSONRequestBody, reqEditors ...RequestEditorFn) (*BindSerialResponse, error)
+
+	// UnbindSerialWithResponse Unbind a serial from a client
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial} (the `UnbindSerial` operationId).
+	UnbindSerialWithResponse(ctx context.Context, operatorId OperatorID, clientId ClientID, serial string, reqEditors ...RequestEditorFn) (*UnbindSerialResponse, error)
+}
+
+// GetJWKSResponse200Headers the declared response headers of an HTTP 200 response for GetJWKS
+type GetJWKSResponse200Headers struct {
+	CacheControl *string
+}
+
+type GetJWKSResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *JWKS
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetJWKSResponse200Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetJWKSResponse) GetJSON200() *JWKS {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r GetJWKSResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetJWKSResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetJWKSResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetJWKSResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetJWKSResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetJWKSResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
 }
 
 type GetHealthzResponse struct {
@@ -443,6 +2271,96 @@ func (r GetHealthzResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetHealthzResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// RequestTokenResponse200Headers the declared response headers of an HTTP 200 response for RequestToken
+type RequestTokenResponse200Headers struct {
+	CacheControl *string
+}
+
+// RequestTokenResponse429Headers the declared response headers of an HTTP 429 response for RequestToken
+type RequestTokenResponse429Headers struct {
+	RetryAfter *int
+}
+
+type RequestTokenResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *TokenResponse
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *OAuthError
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *OAuthError
+	// ApplicationproblemJSON429 the response for an HTTP 429 `application/problem+json` response
+	ApplicationproblemJSON429 *OAuthProblem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *OAuthError
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *RequestTokenResponse200Headers
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *RequestTokenResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RequestTokenResponse) GetJSON200() *TokenResponse {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r RequestTokenResponse) GetApplicationproblemJSON400() *OAuthError {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r RequestTokenResponse) GetApplicationproblemJSON401() *OAuthError {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON429 returns the response for an HTTP 429 `application/problem+json` response
+func (r RequestTokenResponse) GetApplicationproblemJSON429() *OAuthProblem {
+	return r.ApplicationproblemJSON429
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r RequestTokenResponse) GetApplicationproblemJSON503() *OAuthError {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r RequestTokenResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RequestTokenResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RequestTokenResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RequestTokenResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RequestTokenResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -504,6 +2422,749 @@ func (r GetReadyzResponse) ContentType() string {
 	return ""
 }
 
+// LoginResponse200Headers the declared response headers of an HTTP 200 response for Login
+type LoginResponse200Headers struct {
+	SetCookie *string
+}
+
+// LoginResponse429Headers the declared response headers of an HTTP 429 response for Login
+type LoginResponse429Headers struct {
+	RetryAfter *int
+}
+
+type LoginResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Session
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON429 the response for an HTTP 429 `application/problem+json` response
+	ApplicationproblemJSON429 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *LoginResponse200Headers
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *LoginResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r LoginResponse) GetJSON200() *Session {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r LoginResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r LoginResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON429 returns the response for an HTTP 429 `application/problem+json` response
+func (r LoginResponse) GetApplicationproblemJSON429() *Problem {
+	return r.ApplicationproblemJSON429
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r LoginResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r LoginResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r LoginResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r LoginResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r LoginResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type LogoutResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r LogoutResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r LogoutResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r LogoutResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r LogoutResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r LogoutResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r LogoutResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r LogoutResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetMeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Me
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetMeResponse) GetJSON200() *Me {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r GetMeResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetMeResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetMeResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetMeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RegisterOperatorResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Operator
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *Problem
+	// ApplicationproblemJSON429 the response for an HTTP 429 `application/problem+json` response
+	ApplicationproblemJSON429 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r RegisterOperatorResponse) GetJSON201() *Operator {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r RegisterOperatorResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r RegisterOperatorResponse) GetApplicationproblemJSON409() *Problem {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON429 returns the response for an HTTP 429 `application/problem+json` response
+func (r RegisterOperatorResponse) GetApplicationproblemJSON429() *Problem {
+	return r.ApplicationproblemJSON429
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r RegisterOperatorResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RegisterOperatorResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RegisterOperatorResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RegisterOperatorResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RegisterOperatorResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetOperatorResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Operator
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetOperatorResponse) GetJSON200() *Operator {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r GetOperatorResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r GetOperatorResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r GetOperatorResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetOperatorResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetOperatorResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetOperatorResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetOperatorResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetOperatorResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateOperatorResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Operator
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateOperatorResponse) GetJSON200() *Operator {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r UpdateOperatorResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r UpdateOperatorResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r UpdateOperatorResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r UpdateOperatorResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r UpdateOperatorResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateOperatorResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateOperatorResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateOperatorResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateOperatorResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// CreateClientResponse201Headers the declared response headers of an HTTP 201 response for CreateClient
+type CreateClientResponse201Headers struct {
+	CacheControl *string
+}
+
+type CreateClientResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *ClientSecret
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+	// Headers201 the parsed response headers for an HTTP 201 response
+	Headers201 *CreateClientResponse201Headers
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateClientResponse) GetJSON201() *ClientSecret {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r CreateClientResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r CreateClientResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r CreateClientResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r CreateClientResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r CreateClientResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateClientResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateClientResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateClientResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateClientResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// RotateClientSecretResponse200Headers the declared response headers of an HTTP 200 response for RotateClientSecret
+type RotateClientSecretResponse200Headers struct {
+	CacheControl *string
+}
+
+type RotateClientSecretResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ClientSecret
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *RotateClientSecretResponse200Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RotateClientSecretResponse) GetJSON200() *ClientSecret {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r RotateClientSecretResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r RotateClientSecretResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r RotateClientSecretResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r RotateClientSecretResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RotateClientSecretResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RotateClientSecretResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RotateClientSecretResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RotateClientSecretResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type BindSerialResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *SerialBinding
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r BindSerialResponse) GetJSON201() *SerialBinding {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r BindSerialResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r BindSerialResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r BindSerialResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r BindSerialResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r BindSerialResponse) GetApplicationproblemJSON409() *Problem {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r BindSerialResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r BindSerialResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r BindSerialResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r BindSerialResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r BindSerialResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r BindSerialResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UnbindSerialResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r UnbindSerialResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r UnbindSerialResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r UnbindSerialResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r UnbindSerialResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r UnbindSerialResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UnbindSerialResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UnbindSerialResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UnbindSerialResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UnbindSerialResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetJWKSWithResponse The issuer's public keys
+//
+// The RS256 keys of this USSP's issuer (`use: sig`, `kid` = the RFC
+// 7638 SHA-256 thumbprint): the current key and, during a rotation,
+// the previous one (`USSP_ISSUER_PREVIOUS_KEY_FILE`). Operator
+// tokens and session tokens are signed by the current key.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /.well-known/jwks.json (the `GetJWKS` operationId).
+func (c *ClientWithResponses) GetJWKSWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetJWKSResponse, error) {
+	rsp, err := c.GetJWKS(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetJWKSResponse(rsp)
+}
+
 // GetHealthzWithResponse Liveness
 //
 // 200 while the process runs. Says nothing about dependencies.
@@ -517,6 +3178,68 @@ func (c *ClientWithResponses) GetHealthzWithResponse(ctx context.Context, reqEdi
 		return nil, err
 	}
 	return ParseGetHealthzResponse(rsp)
+}
+
+// RequestTokenWithBodyWithResponse Client credentials grant for operator machine clients
+//
+// RFC 6749 §4.4 client credentials at this USSP's own issuer (D9).
+// The client authenticates with HTTP Basic (`client_secret_basic`)
+// or with `client_id` and `client_secret` in the body
+// (`client_secret_post`), never both; the secret is checked with
+// argon2id in constant time, and during a rotation the previous
+// secret is accepted until its overlap ends
+// (`policy.client_secret_overlap_s`). Parameters in the query
+// string are refused. `scope` names operator scopes (`ussp.intents`,
+// `ussp.telemetry`, `ussp.traffic`, `ussp.geo`); an unknown scope is
+// refused; the token grants the requested scopes that the client
+// holds (all of them when `scope` is absent). `audience`, when
+// given, must be this USSP's host: `aud` is always this USSP's host
+// (M18). The TTL is `policy.operator_token_ttl_s` (at most 3600 s).
+// Issuance is rate-limited per client and per client address (429
+// with `Retry-After`). Every issuance and refusal is an `events`
+// row. Errors carry the RFC 6749 §5.2 `error` beside the problem
+// members.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /oauth/token (the `RequestToken` operationId).
+func (c *ClientWithResponses) RequestTokenWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RequestTokenResponse, error) {
+	rsp, err := c.RequestTokenWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRequestTokenResponse(rsp)
+}
+
+// RequestTokenWithFormdataBodyWithResponse Client credentials grant for operator machine clients
+//
+// RFC 6749 §4.4 client credentials at this USSP's own issuer (D9).
+// The client authenticates with HTTP Basic (`client_secret_basic`)
+// or with `client_id` and `client_secret` in the body
+// (`client_secret_post`), never both; the secret is checked with
+// argon2id in constant time, and during a rotation the previous
+// secret is accepted until its overlap ends
+// (`policy.client_secret_overlap_s`). Parameters in the query
+// string are refused. `scope` names operator scopes (`ussp.intents`,
+// `ussp.telemetry`, `ussp.traffic`, `ussp.geo`); an unknown scope is
+// refused; the token grants the requested scopes that the client
+// holds (all of them when `scope` is absent). `audience`, when
+// given, must be this USSP's host: `aud` is always this USSP's host
+// (M18). The TTL is `policy.operator_token_ttl_s` (at most 3600 s).
+// Issuance is rate-limited per client and per client address (429
+// with `Retry-After`). Every issuance and refusal is an `events`
+// row. Errors carry the RFC 6749 §5.2 `error` beside the problem
+// members.
+//
+// Takes a body of the `application/x-www-form-urlencoded` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /oauth/token (the `RequestToken` operationId).
+func (c *ClientWithResponses) RequestTokenWithFormdataBodyWithResponse(ctx context.Context, body RequestTokenFormdataRequestBody, reqEditors ...RequestEditorFn) (*RequestTokenResponse, error) {
+	rsp, err := c.RequestTokenWithFormdataBody(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRequestTokenResponse(rsp)
 }
 
 // GetReadyzWithResponse Readiness
@@ -537,6 +3260,340 @@ func (c *ClientWithResponses) GetReadyzWithResponse(ctx context.Context, reqEdit
 		return nil, err
 	}
 	return ParseGetReadyzResponse(rsp)
+}
+
+// LoginWithBodyWithResponse Start a portal or console session
+//
+// Checks a username and password (argon2id) in the realm `portal`
+// (operator users) or `console` (staff); a staff `admin` also sends
+// a TOTP code. An unknown user, a wrong password and a wrong code
+// are one answer. Ten consecutive failures for one username lock it
+// for 15 minutes (the lock is in the database and holds across
+// replicas; 429 with `Retry-After`); attempts are also limited per
+// client address. On success the answer carries the session JWT
+// (`iss` = this issuer, `aud` = this host, `sub` = the account id,
+// `scope = "session"`, `roles`, `realm`, `jti` = the session id,
+// `exp` at most 12 h, idle end after 30 min) and sets the cookies
+// `uspace_session` and `uspace_csrf` (`HttpOnly; Secure;
+// SameSite=Strict`). A request authenticated by the cookie sends the
+// `uspace_csrf` value as `X-CSRF-Token` on every method that is not
+// GET, HEAD or OPTIONS. Every attempt is an `events` row.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/accounts/login (the `Login` operationId).
+func (c *ClientWithResponses) LoginWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LoginResponse, error) {
+	rsp, err := c.LoginWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLoginResponse(rsp)
+}
+
+// LoginWithResponse Start a portal or console session
+//
+// Checks a username and password (argon2id) in the realm `portal`
+// (operator users) or `console` (staff); a staff `admin` also sends
+// a TOTP code. An unknown user, a wrong password and a wrong code
+// are one answer. Ten consecutive failures for one username lock it
+// for 15 minutes (the lock is in the database and holds across
+// replicas; 429 with `Retry-After`); attempts are also limited per
+// client address. On success the answer carries the session JWT
+// (`iss` = this issuer, `aud` = this host, `sub` = the account id,
+// `scope = "session"`, `roles`, `realm`, `jti` = the session id,
+// `exp` at most 12 h, idle end after 30 min) and sets the cookies
+// `uspace_session` and `uspace_csrf` (`HttpOnly; Secure;
+// SameSite=Strict`). A request authenticated by the cookie sends the
+// `uspace_csrf` value as `X-CSRF-Token` on every method that is not
+// GET, HEAD or OPTIONS. Every attempt is an `events` row.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/accounts/login (the `Login` operationId).
+func (c *ClientWithResponses) LoginWithResponse(ctx context.Context, body LoginJSONRequestBody, reqEditors ...RequestEditorFn) (*LoginResponse, error) {
+	rsp, err := c.Login(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLoginResponse(rsp)
+}
+
+// LogoutWithResponse End the caller's session
+//
+// Revokes the session (its `jti`) and clears both cookies.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/accounts/logout (the `Logout` operationId).
+func (c *ClientWithResponses) LogoutWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*LogoutResponse, error) {
+	rsp, err := c.Logout(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLogoutResponse(rsp)
+}
+
+// GetMeWithResponse The caller's account and session
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/accounts/me (the `GetMe` operationId).
+func (c *ClientWithResponses) GetMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeResponse, error) {
+	rsp, err := c.GetMe(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMeResponse(rsp)
+}
+
+// RegisterOperatorWithBodyWithResponse Self-registration of a UAS operator
+//
+// Creates the USSP's customer record of an operator registered with
+// the authority, and its first portal user with the role
+// `operator_admin`. The registration number is checked with the
+// authority's registry (F8): the operator is `active` once the
+// registry says `valid`, `pending_validation` while it says
+// `unknown` or cannot be asked, and refused when it says anything
+// else. No client may be created and no token issued before the
+// operator is `active`. Rate-limited per client address.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/accounts/operators (the `RegisterOperator` operationId).
+func (c *ClientWithResponses) RegisterOperatorWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegisterOperatorResponse, error) {
+	rsp, err := c.RegisterOperatorWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRegisterOperatorResponse(rsp)
+}
+
+// RegisterOperatorWithResponse Self-registration of a UAS operator
+//
+// Creates the USSP's customer record of an operator registered with
+// the authority, and its first portal user with the role
+// `operator_admin`. The registration number is checked with the
+// authority's registry (F8): the operator is `active` once the
+// registry says `valid`, `pending_validation` while it says
+// `unknown` or cannot be asked, and refused when it says anything
+// else. No client may be created and no token issued before the
+// operator is `active`. Rate-limited per client address.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/accounts/operators (the `RegisterOperator` operationId).
+func (c *ClientWithResponses) RegisterOperatorWithResponse(ctx context.Context, body RegisterOperatorJSONRequestBody, reqEditors ...RequestEditorFn) (*RegisterOperatorResponse, error) {
+	rsp, err := c.RegisterOperator(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRegisterOperatorResponse(rsp)
+}
+
+// GetOperatorWithResponse The caller's operator
+//
+// Portal session of an `operator_admin` of this operator.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/accounts/operators/{operator_id} (the `GetOperator` operationId).
+func (c *ClientWithResponses) GetOperatorWithResponse(ctx context.Context, operatorId OperatorID, reqEditors ...RequestEditorFn) (*GetOperatorResponse, error) {
+	rsp, err := c.GetOperator(ctx, operatorId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetOperatorResponse(rsp)
+}
+
+// UpdateOperatorWithBodyWithResponse Change the operator's record
+//
+// Changes the display name and the contact email. An operator still
+// `pending_validation` is checked with the registry again.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /v1/accounts/operators/{operator_id} (the `UpdateOperator` operationId).
+func (c *ClientWithResponses) UpdateOperatorWithBodyWithResponse(ctx context.Context, operatorId OperatorID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateOperatorResponse, error) {
+	rsp, err := c.UpdateOperatorWithBody(ctx, operatorId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateOperatorResponse(rsp)
+}
+
+// UpdateOperatorWithResponse Change the operator's record
+//
+// Changes the display name and the contact email. An operator still
+// `pending_validation` is checked with the registry again.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /v1/accounts/operators/{operator_id} (the `UpdateOperator` operationId).
+func (c *ClientWithResponses) UpdateOperatorWithResponse(ctx context.Context, operatorId OperatorID, body UpdateOperatorJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateOperatorResponse, error) {
+	rsp, err := c.UpdateOperator(ctx, operatorId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateOperatorResponse(rsp)
+}
+
+// CreateClientWithBodyWithResponse Create a machine client of the operator
+//
+// A client-credentials client with operator scopes, for an `active`
+// operator. The secret is in this answer only; it is stored as an
+// argon2id hash. The creation is an `events` row, which is the
+// operator's notification for now (06 T3).
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/accounts/operators/{operator_id}/clients (the `CreateClient` operationId).
+func (c *ClientWithResponses) CreateClientWithBodyWithResponse(ctx context.Context, operatorId OperatorID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateClientResponse, error) {
+	rsp, err := c.CreateClientWithBody(ctx, operatorId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateClientResponse(rsp)
+}
+
+// CreateClientWithResponse Create a machine client of the operator
+//
+// A client-credentials client with operator scopes, for an `active`
+// operator. The secret is in this answer only; it is stored as an
+// argon2id hash. The creation is an `events` row, which is the
+// operator's notification for now (06 T3).
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/accounts/operators/{operator_id}/clients (the `CreateClient` operationId).
+func (c *ClientWithResponses) CreateClientWithResponse(ctx context.Context, operatorId OperatorID, body CreateClientJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateClientResponse, error) {
+	rsp, err := c.CreateClient(ctx, operatorId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateClientResponse(rsp)
+}
+
+// RotateClientSecretWithResponse Rotate a client's secret
+//
+// A new secret, shown once. The previous one keeps working until
+// `previous_valid_until` (`policy.client_secret_overlap_s` from
+// now) and never after.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/accounts/operators/{operator_id}/clients/{client_id}/rotate (the `RotateClientSecret` operationId).
+func (c *ClientWithResponses) RotateClientSecretWithResponse(ctx context.Context, operatorId OperatorID, clientId ClientID, reqEditors ...RequestEditorFn) (*RotateClientSecretResponse, error) {
+	rsp, err := c.RotateClientSecret(ctx, operatorId, clientId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRotateClientSecretResponse(rsp)
+}
+
+// BindSerialWithBodyWithResponse Bind a UAS serial number to a client
+//
+// A client sends telemetry only for its bound serials (06 T3). The
+// serial is validated by uspace-core `serial.ValidateForClass` with
+// `class_label` and compared by `serial.FoldKey`; a serial bound to
+// another client is refused (409). The binding is projected to KV `client_bindings`
+// in the same transaction; when the projection cannot take it,
+// nothing changes (503).
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/accounts/operators/{operator_id}/clients/{client_id}/serials (the `BindSerial` operationId).
+func (c *ClientWithResponses) BindSerialWithBodyWithResponse(ctx context.Context, operatorId OperatorID, clientId ClientID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BindSerialResponse, error) {
+	rsp, err := c.BindSerialWithBody(ctx, operatorId, clientId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBindSerialResponse(rsp)
+}
+
+// BindSerialWithResponse Bind a UAS serial number to a client
+//
+// A client sends telemetry only for its bound serials (06 T3). The
+// serial is validated by uspace-core `serial.ValidateForClass` with
+// `class_label` and compared by `serial.FoldKey`; a serial bound to
+// another client is refused (409). The binding is projected to KV `client_bindings`
+// in the same transaction; when the projection cannot take it,
+// nothing changes (503).
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/accounts/operators/{operator_id}/clients/{client_id}/serials (the `BindSerial` operationId).
+func (c *ClientWithResponses) BindSerialWithResponse(ctx context.Context, operatorId OperatorID, clientId ClientID, body BindSerialJSONRequestBody, reqEditors ...RequestEditorFn) (*BindSerialResponse, error) {
+	rsp, err := c.BindSerial(ctx, operatorId, clientId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBindSerialResponse(rsp)
+}
+
+// UnbindSerialWithResponse Unbind a serial from a client
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial} (the `UnbindSerial` operationId).
+func (c *ClientWithResponses) UnbindSerialWithResponse(ctx context.Context, operatorId OperatorID, clientId ClientID, serial string, reqEditors ...RequestEditorFn) (*UnbindSerialResponse, error) {
+	rsp, err := c.UnbindSerial(ctx, operatorId, clientId, serial, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUnbindSerialResponse(rsp)
+}
+
+// ParseGetJWKSResponse parses an HTTP response from a GetJWKSWithResponse call
+func ParseGetJWKSResponse(rsp *http.Response) (*GetJWKSResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetJWKSResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest JWKS
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetJWKSResponse200Headers
+		if values := rsp.Header.Values("Cache-Control"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Cache-Control", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.CacheControl = &value
+		}
+		response.Headers200 = &headers
+	}
+
+	return response, nil
 }
 
 // ParseGetHealthzResponse parses an HTTP response from a GetHealthzWithResponse call
@@ -572,6 +3629,90 @@ func ParseGetHealthzResponse(rsp *http.Response) (*GetHealthzResponse, error) {
 	return response, nil
 }
 
+// ParseRequestTokenResponse parses an HTTP response from a RequestTokenWithResponse call
+func ParseRequestTokenResponse(rsp *http.Response) (*RequestTokenResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RequestTokenResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest TokenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OAuthError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OAuthError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest OAuthProblem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OAuthError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers RequestTokenResponse200Headers
+		if values := rsp.Header.Values("Cache-Control"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Cache-Control", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.CacheControl = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 429:
+		var headers RequestTokenResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
 // ParseGetReadyzResponse parses an HTTP response from a GetReadyzWithResponse call
 func ParseGetReadyzResponse(rsp *http.Response) (*GetReadyzResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -599,6 +3740,608 @@ func ParseGetReadyzResponse(rsp *http.Response) (*GetReadyzResponse, error) {
 			return nil, err
 		}
 		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseLoginResponse parses an HTTP response from a LoginWithResponse call
+func ParseLoginResponse(rsp *http.Response) (*LoginResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &LoginResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Session
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers LoginResponse200Headers
+		if values := rsp.Header.Values("Set-Cookie"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Set-Cookie", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.SetCookie = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 429:
+		var headers LoginResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseLogoutResponse parses an HTTP response from a LogoutWithResponse call
+func ParseLogoutResponse(rsp *http.Response) (*LogoutResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &LogoutResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetMeResponse parses an HTTP response from a GetMeWithResponse call
+func ParseGetMeResponse(rsp *http.Response) (*GetMeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Me
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRegisterOperatorResponse parses an HTTP response from a RegisterOperatorWithResponse call
+func ParseRegisterOperatorResponse(rsp *http.Response) (*RegisterOperatorResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RegisterOperatorResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Operator
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetOperatorResponse parses an HTTP response from a GetOperatorWithResponse call
+func ParseGetOperatorResponse(rsp *http.Response) (*GetOperatorResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetOperatorResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Operator
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateOperatorResponse parses an HTTP response from a UpdateOperatorWithResponse call
+func ParseUpdateOperatorResponse(rsp *http.Response) (*UpdateOperatorResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateOperatorResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Operator
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateClientResponse parses an HTTP response from a CreateClientWithResponse call
+func ParseCreateClientResponse(rsp *http.Response) (*CreateClientResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateClientResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest ClientSecret
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 201:
+		var headers CreateClientResponse201Headers
+		if values := rsp.Header.Values("Cache-Control"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Cache-Control", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.CacheControl = &value
+		}
+		response.Headers201 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseRotateClientSecretResponse parses an HTTP response from a RotateClientSecretWithResponse call
+func ParseRotateClientSecretResponse(rsp *http.Response) (*RotateClientSecretResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RotateClientSecretResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ClientSecret
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers RotateClientSecretResponse200Headers
+		if values := rsp.Header.Values("Cache-Control"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Cache-Control", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.CacheControl = &value
+		}
+		response.Headers200 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseBindSerialResponse parses an HTTP response from a BindSerialWithResponse call
+func ParseBindSerialResponse(rsp *http.Response) (*BindSerialResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &BindSerialResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest SerialBinding
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUnbindSerialResponse parses an HTTP response from a UnbindSerialWithResponse call
+func ParseUnbindSerialResponse(rsp *http.Response) (*UnbindSerialResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UnbindSerialResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Problem

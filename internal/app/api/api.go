@@ -1,13 +1,33 @@
-// Package api is the api process: the control plane: the national API, accounts, intents, the CIS cache and the KV projections; the only writer of the relational database. Its routes and
-// workers arrive with their work packages; until then it serves its
-// health, readiness and metrics and reports its dependencies.
+// Package api is the api process: the control plane: the national API,
+// accounts, intents, the CIS cache and the KV projections; the only
+// writer of the relational database. WP-2 brings its routes: the token
+// issuer, the JWKS and the accounts, every operation behind the
+// fail-closed access table of internal/national.
 package api
 
 import (
+	"bufio"
 	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+	"time"
 
+	coreauth "github.com/rootxkit/uspace-core/auth"
+	"github.com/rootxkit/uspace-core/core"
+
+	"github.com/rootxkit/uspace-ussp/internal/accounts"
 	"github.com/rootxkit/uspace-ussp/internal/app/proc"
+	"github.com/rootxkit/uspace-ussp/internal/auth"
 	"github.com/rootxkit/uspace-ussp/internal/config"
+	"github.com/rootxkit/uspace-ussp/internal/httpx"
+	"github.com/rootxkit/uspace-ussp/internal/national"
+	"github.com/rootxkit/uspace-ussp/internal/obs"
+	"github.com/rootxkit/uspace-ussp/internal/policy"
+	"github.com/rootxkit/uspace-ussp/internal/store"
 )
 
 // Spec declares the process and the dependencies it reads.
@@ -17,9 +37,231 @@ var Spec = proc.Spec{
 	TimescaleDB: proc.Optional,
 	NATS:        proc.Required,
 	Migrate:     true,
+	Routes:      routes,
+	Commands:    map[string]proc.Command{"staff-add": staffAdd},
 }
 
 // Run runs api with cfg until ctx ends.
 func Run(ctx context.Context, cfg config.Config) error {
 	return proc.Run(ctx, cfg, Spec, proc.Options{})
+}
+
+// DepIssuer is the readiness dependency of this USSP's own issuer key.
+const DepIssuer = "issuer"
+
+// sweepInterval is how often expired sessions and stale lockouts are
+// deleted.
+const sweepInterval = time.Hour
+
+// IssuerFromConfig loads USSP_ISSUER_KEY_FILE (and the previous key)
+// into the issuer; nil without a key file. A key without an audience,
+// or a key that does not load, refuses the start.
+func IssuerFromConfig(cfg config.Config) (*auth.Issuer, error) {
+	if cfg.IssuerKeyFile == "" {
+		if cfg.IssuerPreviousKeyFile != "" {
+			return nil, core.Fieldf("USSP_ISSUER_PREVIOUS_KEY_FILE", "set without USSP_ISSUER_KEY_FILE")
+		}
+		return nil, nil
+	}
+	if len(cfg.Audiences) == 0 {
+		return nil, core.Fieldf("USSP_AUDIENCES", "required with USSP_ISSUER_KEY_FILE: aud of this issuer's tokens is the first entry")
+	}
+	cur, err := auth.LoadKeyFile("USSP_ISSUER_KEY_FILE", cfg.IssuerKeyFile)
+	if err != nil {
+		return nil, err
+	}
+	var prev *coreauth.SigningKey
+	if cfg.IssuerPreviousKeyFile != "" {
+		k, err := auth.LoadKeyFile("USSP_ISSUER_PREVIOUS_KEY_FILE", cfg.IssuerPreviousKeyFile)
+		if err != nil {
+			return nil, err
+		}
+		prev = &k
+	}
+	keys, err := auth.NewIssuerKeys(cur, prev)
+	if err != nil {
+		return nil, err
+	}
+	url := cfg.IssuerURL
+	if url == "" {
+		url = "https://" + cfg.Audiences[0]
+	}
+	return auth.NewIssuer(url, cfg.Audiences[0], keys)
+}
+
+// refuseAll is the verifier of a process with no audience configured:
+// it can verify nothing, and says so.
+type refuseAll struct{}
+
+// Verify refuses every token as rejected_audience.
+func (refuseAll) Verify(context.Context, string) (coreauth.Claims, error) {
+	return coreauth.Claims{}, &coreauth.TokenError{Counter: coreauth.CounterRejectedAudience, Claim: "aud", Reason: "USSP_AUDIENCES is empty: no token is accepted"}
+}
+
+func publish(rt *proc.Runtime, name string, c *core.Counters) {
+	rt.Status.Add(name, c)
+	rt.Registry.MustRegister(obs.NewCountersCollector(name, c))
+}
+
+// VerifierFromConfig builds the verifier of every token the process
+// accepts and registers its readiness (jwks); without an audience the
+// verifier refuses every token and jwks says why.
+func VerifierFromConfig(ctx context.Context, rt *proc.Runtime, issuer *auth.Issuer) (auth.TokenVerifier, string, error) {
+	cfg := rt.Config
+	if len(cfg.Audiences) == 0 {
+		rt.Health.Register(auth.DepJWKS, false, func(context.Context) (obs.State, string) {
+			return obs.StateDown, "USSP_AUDIENCES is empty: no token is accepted"
+		})
+		return refuseAll{}, "", nil
+	}
+	eco := coreauth.Config{Audiences: cfg.Audiences, StrictSessionClaims: true}
+	if len(cfg.TokenIssuers) > 0 {
+		var err error
+		if eco, err = cfg.VerifierConfig(); err != nil {
+			return nil, "", err
+		}
+	}
+	v, err := auth.NewVerifier(ctx, auth.VerifierConfig{Ecosystem: eco, Own: issuer})
+	if err != nil {
+		return nil, "", err
+	}
+	for name, c := range v.CounterSets() {
+		publish(rt, name, c)
+	}
+	rt.Health.Register(auth.DepJWKS, false, v.Probe)
+	rt.Go(ctx, func(ctx context.Context) {
+		v.Run(ctx)
+		if eco := v.CounterSets()[auth.CounterSetEcosystem]; eco != nil {
+			publish(rt, auth.CounterSetEcosystem, eco)
+		}
+	})
+	own := v.OwnIssuer()
+	return v, own, nil
+}
+
+func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
+	cfg := rt.Config
+	issuer, err := IssuerFromConfig(cfg)
+	if err != nil {
+		return err
+	}
+	rt.Health.Register(DepIssuer, false, func(context.Context) (obs.State, string) {
+		if issuer == nil {
+			return obs.StateDown, "USSP_ISSUER_KEY_FILE is not set: no operator token is issued and no session starts"
+		}
+		return obs.StateUp, ""
+	})
+	verifier, ownIss, err := VerifierFromConfig(ctx, rt, issuer)
+	if err != nil {
+		return err
+	}
+	hasher, err := auth.NewHasher()
+	if err != nil {
+		return err
+	}
+	var sealer *accounts.Sealer
+	if cfg.MFAKeyFile != "" {
+		if sealer, err = accounts.LoadSealer(cfg.MFAKeyFile); err != nil {
+			return err
+		}
+	}
+	pol := policy.New(rt.Store, nil, nil)
+	if _, err := pol.Load(ctx); err != nil {
+		rt.Logger.Warn("policy not loaded; the defaults apply until it is", obs.Err(err))
+	}
+	current := func() policy.Values {
+		if r, ok := pol.Current(); ok {
+			return r.Values
+		}
+		return policy.Defaults()
+	}
+
+	counters := &core.Counters{}
+	publish(rt, "accounts", counters)
+	perMin := func(n int) float64 { return float64(n) / 60 }
+	burst := func(n int) int { return max(1, n/6) }
+	svc := &accounts.Service{
+		Store: rt.Store, Hasher: hasher, Issuer: issuer, Registry: accounts.UnknownRegistry{},
+		Bindings: auth.NewMemoryBindings(), Policy: current, MFA: sealer,
+		LoginLimiter: httpx.NewRateLimiter(perMin(cfg.LoginRatePerMin), burst(cfg.LoginRatePerMin), 100_000, counters),
+		Counters:     counters, Logger: rt.Logger,
+		Config: accounts.Config{
+			SessionTTL: time.Duration(cfg.SessionTTLS) * time.Second, SessionIdle: time.Duration(cfg.SessionIdleS) * time.Second,
+			LockoutAfter: cfg.LoginLockoutAfter, LockoutFor: time.Duration(cfg.LoginLockoutS) * time.Second, TOTPIssuer: cfg.SystemID,
+		},
+	}
+	guard := &auth.Guard{Verifier: verifier, OwnIssuer: ownIss, Sessions: svc, Audit: svc, Counters: counters, Logger: rt.Logger}
+	token := &auth.TokenEndpoint{
+		Issuer: issuer, Clients: svc, Hasher: hasher, Audit: svc,
+		TTL:           func() time.Duration { return time.Duration(current().OperatorTokenTTLS) * time.Second },
+		ClientLimiter: httpx.NewRateLimiter(perMin(cfg.TokenRatePerMin), burst(cfg.TokenRatePerMin), 100_000, counters),
+		IPLimiter:     httpx.NewRateLimiter(perMin(cfg.TokenRatePerMin), burst(cfg.TokenRatePerMin), 100_000, counters),
+		Counters:      counters, Logger: rt.Logger,
+	}
+	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc, Logger: rt.Logger}
+	if err := national.Register(mux, srv, guard.Require); err != nil {
+		return fmt.Errorf("access table: %w", err)
+	}
+	rt.Go(ctx, func(ctx context.Context) { svc.RunSweep(ctx, sweepInterval) })
+	return nil
+}
+
+// staffAdd is `ussp-api staff-add <username> <role>`: it creates a
+// console account with the password read from the first line of
+// standard input, and prints the account id and, for an admin, the TOTP
+// enrolment URI, once. The console's user management is WP-18's; this
+// is the bootstrap.
+func staffAdd(ctx context.Context, cfg config.Config, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	logger := obs.NewLogger(stderr, "info", "staff-add")
+	if len(args) != 2 {
+		logger.Error("usage: ussp-api staff-add <username> <supervisor|support|admin> < password")
+		return proc.ExitConfig
+	}
+	if cfg.PGURL == "" {
+		logger.Error("configuration invalid", obs.Err(core.Fieldf("USSP_PG_URL", "required")))
+		return proc.ExitConfig
+	}
+	line, err := bufio.NewReader(io.LimitReader(stdin, auth.MaxSecretBytes+2)).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		obs.Error(ctx, logger, "password not read", err)
+		return proc.ExitFailed
+	}
+	pass := strings.TrimRight(line, "\r\n")
+	st, err := store.Open(ctx, store.Config{RelURL: cfg.PGURL, RelRole: store.AppRole, MaxConns: 2, ApplicationName: "ussp-api-staff-add"})
+	if err != nil {
+		obs.Error(ctx, logger, "database", err)
+		return proc.ExitFailed
+	}
+	defer st.Close()
+	hasher, err := auth.NewHasher()
+	if err != nil {
+		obs.Error(ctx, logger, "hasher", err)
+		return proc.ExitFailed
+	}
+	svc := &accounts.Service{Store: st, Hasher: hasher, Config: accounts.Config{TOTPIssuer: cfg.SystemID}}
+	if cfg.MFAKeyFile != "" {
+		if svc.MFA, err = accounts.LoadSealer(cfg.MFAKeyFile); err != nil {
+			obs.Error(ctx, logger, "MFA key", err)
+			return proc.ExitConfig
+		}
+	}
+	out, err := svc.CreateStaff(ctx, args[0], pass, args[1], "staff-add:"+osUser())
+	if err != nil {
+		obs.Error(ctx, logger, "staff account not created", err)
+		return proc.ExitFailed
+	}
+	_, _ = fmt.Fprintf(stdout, "id %s\n", out.ID)
+	if out.TOTPURI != "" {
+		_, _ = fmt.Fprintf(stdout, "totp %s\n", out.TOTPURI)
+	}
+	return proc.ExitOK
+}
+
+func osUser() string {
+	for _, k := range []string{"USER", "USERNAME"} {
+		if u := os.Getenv(k); u != "" {
+			return u
+		}
+	}
+	return "unknown"
 }

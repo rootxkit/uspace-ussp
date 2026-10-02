@@ -49,6 +49,288 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/oauth/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Client credentials grant for operator machine clients
+         * @description RFC 6749 §4.4 client credentials at this USSP's own issuer (D9).
+         *     The client authenticates with HTTP Basic (`client_secret_basic`)
+         *     or with `client_id` and `client_secret` in the body
+         *     (`client_secret_post`), never both; the secret is checked with
+         *     argon2id in constant time, and during a rotation the previous
+         *     secret is accepted until its overlap ends
+         *     (`policy.client_secret_overlap_s`). Parameters in the query
+         *     string are refused. `scope` names operator scopes (`ussp.intents`,
+         *     `ussp.telemetry`, `ussp.traffic`, `ussp.geo`); an unknown scope is
+         *     refused; the token grants the requested scopes that the client
+         *     holds (all of them when `scope` is absent). `audience`, when
+         *     given, must be this USSP's host: `aud` is always this USSP's host
+         *     (M18). The TTL is `policy.operator_token_ttl_s` (at most 3600 s).
+         *     Issuance is rate-limited per client and per client address (429
+         *     with `Retry-After`). Every issuance and refusal is an `events`
+         *     row. Errors carry the RFC 6749 §5.2 `error` beside the problem
+         *     members.
+         */
+        post: operations["requestToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/jwks.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The issuer's public keys
+         * @description The RS256 keys of this USSP's issuer (`use: sig`, `kid` = the RFC
+         *     7638 SHA-256 thumbprint): the current key and, during a rotation,
+         *     the previous one (`USSP_ISSUER_PREVIOUS_KEY_FILE`). Operator
+         *     tokens and session tokens are signed by the current key.
+         */
+        get: operations["getJWKS"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/accounts/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a portal or console session
+         * @description Checks a username and password (argon2id) in the realm `portal`
+         *     (operator users) or `console` (staff); a staff `admin` also sends
+         *     a TOTP code. An unknown user, a wrong password and a wrong code
+         *     are one answer. Ten consecutive failures for one username lock it
+         *     for 15 minutes (the lock is in the database and holds across
+         *     replicas; 429 with `Retry-After`); attempts are also limited per
+         *     client address. On success the answer carries the session JWT
+         *     (`iss` = this issuer, `aud` = this host, `sub` = the account id,
+         *     `scope = "session"`, `roles`, `realm`, `jti` = the session id,
+         *     `exp` at most 12 h, idle end after 30 min) and sets the cookies
+         *     `uspace_session` and `uspace_csrf` (`HttpOnly; Secure;
+         *     SameSite=Strict`). A request authenticated by the cookie sends the
+         *     `uspace_csrf` value as `X-CSRF-Token` on every method that is not
+         *     GET, HEAD or OPTIONS. Every attempt is an `events` row.
+         */
+        post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/accounts/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End the caller's session
+         * @description Revokes the session (its `jti`) and clears both cookies.
+         */
+        post: operations["logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/accounts/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's account and session */
+        get: operations["getMe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/accounts/operators": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Self-registration of a UAS operator
+         * @description Creates the USSP's customer record of an operator registered with
+         *     the authority, and its first portal user with the role
+         *     `operator_admin`. The registration number is checked with the
+         *     authority's registry (F8): the operator is `active` once the
+         *     registry says `valid`, `pending_validation` while it says
+         *     `unknown` or cannot be asked, and refused when it says anything
+         *     else. No client may be created and no token issued before the
+         *     operator is `active`. Rate-limited per client address.
+         */
+        post: operations["registerOperator"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/accounts/operators/{operator_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operator_id: components["parameters"]["OperatorID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The caller's operator
+         * @description Portal session of an `operator_admin` of this operator.
+         */
+        get: operations["getOperator"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change the operator's record
+         * @description Changes the display name and the contact email. An operator still
+         *     `pending_validation` is checked with the registry again.
+         */
+        patch: operations["updateOperator"];
+        trace?: never;
+    };
+    "/v1/accounts/operators/{operator_id}/clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operator_id: components["parameters"]["OperatorID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a machine client of the operator
+         * @description A client-credentials client with operator scopes, for an `active`
+         *     operator. The secret is in this answer only; it is stored as an
+         *     argon2id hash. The creation is an `events` row, which is the
+         *     operator's notification for now (06 T3).
+         */
+        post: operations["createClient"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/accounts/operators/{operator_id}/clients/{client_id}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operator_id: components["parameters"]["OperatorID"];
+                client_id: components["parameters"]["ClientID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate a client's secret
+         * @description A new secret, shown once. The previous one keeps working until
+         *     `previous_valid_until` (`policy.client_secret_overlap_s` from
+         *     now) and never after.
+         */
+        post: operations["rotateClientSecret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/accounts/operators/{operator_id}/clients/{client_id}/serials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operator_id: components["parameters"]["OperatorID"];
+                client_id: components["parameters"]["ClientID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bind a UAS serial number to a client
+         * @description A client sends telemetry only for its bound serials (06 T3). The
+         *     serial is validated by uspace-core `serial.ValidateForClass` with
+         *     `class_label` and compared by `serial.FoldKey`; a serial bound to
+         *     another client is refused (409). The binding is projected to KV `client_bindings`
+         *     in the same transaction; when the projection cannot take it,
+         *     nothing changes (503).
+         */
+        post: operations["bindSerial"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operator_id: components["parameters"]["OperatorID"];
+                client_id: components["parameters"]["ClientID"];
+                serial: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Unbind a serial from a client */
+        delete: operations["unbindSerial"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -116,6 +398,138 @@ export interface components {
             /** @description Why the dependency is not up; absent while it is. */
             detail?: string;
         };
+        /**
+         * @description A problem (M28) that also carries the RFC 6749 §5.2 members, so an
+         *     OAuth2 client library reads `error` and a uspace client reads the
+         *     problem.
+         */
+        OAuthProblem: components["schemas"]["Problem"] & {
+            /** @enum {string} */
+            error: "invalid_request" | "invalid_client" | "invalid_scope" | "invalid_target" | "unauthorized_client" | "unsupported_grant_type" | "temporarily_unavailable";
+            error_description?: string;
+        };
+        TokenRequest: {
+            /** @enum {string} */
+            grant_type: "client_credentials";
+            client_id?: string;
+            client_secret?: string;
+            /** @description Space-separated operator scopes. */
+            scope?: string;
+            /** @description When given, this USSP's host (M18). */
+            audience?: string;
+        };
+        TokenResponse: {
+            access_token: string;
+            /** @enum {string} */
+            token_type: "Bearer";
+            /** @description Seconds until exp. */
+            expires_in: number;
+            scope: string;
+        };
+        JWKS: {
+            keys: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
+         * @description portal for operator users, console for staff (M20).
+         * @enum {string}
+         */
+        Realm: "portal" | "console";
+        LoginRequest: {
+            realm: components["schemas"]["Realm"];
+            username: string;
+            password: string;
+            /** @description Six digits; required for a staff admin. */
+            totp_code?: string;
+        };
+        Session: {
+            /** @description The session JWT, also set as the uspace_session cookie; the BFF carries it as a bearer. */
+            token: string;
+            /** @description The uspace_csrf value, sent as X-CSRF-Token with a cookie-authenticated request. */
+            csrf_token: string;
+            account_id: string;
+            realm: components["schemas"]["Realm"];
+            roles: string[];
+            /** @description The operator of a portal account. */
+            operator_id?: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: date-time */
+            idle_expires_at: string;
+        };
+        Me: {
+            account_id: string;
+            username: string;
+            realm: components["schemas"]["Realm"];
+            roles: string[];
+            operator_id?: string;
+            /** Format: date-time */
+            session_expires_at: string;
+        };
+        /** @enum {string} */
+        OperatorStatus: "pending_validation" | "active" | "refused";
+        OperatorRegistration: {
+            /** @description The operator registration number the authority issued. */
+            registration_number: string;
+            display_name: string;
+            contact_email: string;
+            admin_username: string;
+            admin_password: string;
+        };
+        OperatorUpdate: {
+            display_name?: string;
+            contact_email?: string;
+        };
+        Operator: {
+            id: string;
+            registration_number: string;
+            display_name: string;
+            contact_email: string;
+            status: components["schemas"]["OperatorStatus"];
+            /** @description The registry's last answer (valid, unknown, or the refusal). */
+            validation_status?: string;
+            /** Format: date-time */
+            validated_at?: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @enum {string} */
+        OperatorScope: "ussp.intents" | "ussp.telemetry" | "ussp.traffic" | "ussp.geo";
+        ClientRequest: {
+            scopes: components["schemas"]["OperatorScope"][];
+        };
+        ClientSecret: {
+            client_id: string;
+            /** @description Shown once; never stored in clear and never retrievable again. */
+            client_secret: string;
+            scopes: components["schemas"]["OperatorScope"][];
+            status: string;
+            /**
+             * Format: date-time
+             * @description Set by a rotation; the previous secret works until then.
+             */
+            previous_valid_until?: string;
+        };
+        SerialBindingRequest: {
+            /** @description The UAS serial number (ANSI/CTA-2063-A). */
+            serial: string;
+            /**
+             * @description The aircraft's class (2019/945). C1, C2, C3, C5 and C6 need a
+             *     valid CTA-2063-A serial; C0, C4 and an unlabelled aircraft (no
+             *     class_label) only a serial that is not empty (LESSONS G-06).
+             * @enum {string}
+             */
+            class_label?: "C0" | "C1" | "C2" | "C3" | "C4" | "C5" | "C6";
+        };
+        SerialBinding: {
+            client_id: string;
+            serial: string;
+            /** @description uspace-core serial.FoldKey of the serial. */
+            serial_fold: string;
+            /** Format: date-time */
+            bound_at: string;
+        };
     };
     responses: {
         /** @description An error, as RFC 9457 problem details. */
@@ -127,8 +541,20 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
+        /** @description A refused token request (RFC 6749 §5.2 inside a problem). */
+        OAuthError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["OAuthProblem"];
+            };
+        };
     };
-    parameters: never;
+    parameters: {
+        OperatorID: string;
+        ClientID: string;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -183,6 +609,363 @@ export interface operations {
                     "application/json": components["schemas"]["Readiness"];
                 };
             };
+            default: components["responses"]["Problem"];
+        };
+    };
+    requestToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/x-www-form-urlencoded": components["schemas"]["TokenRequest"];
+            };
+        };
+        responses: {
+            /** @description An operator machine token (cross-plan Appendix A). */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            400: components["responses"]["OAuthError"];
+            401: components["responses"]["OAuthError"];
+            /** @description The client's or the address's issuance budget is spent. */
+            429: {
+                headers: {
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["OAuthProblem"];
+                };
+            };
+            503: components["responses"]["OAuthError"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getJWKS: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The JWKS. */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JWKS"];
+                };
+            };
+            /** @description No issuer key is configured. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description The session. */
+            200: {
+                headers: {
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            /** @description The username is locked or the address's budget is spent. */
+            429: {
+                headers: {
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The session is ended. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The account behind the session. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    registerOperator: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperatorRegistration"];
+            };
+        };
+        responses: {
+            /** @description The operator. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Operator"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getOperator: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operator_id: components["parameters"]["OperatorID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The operator. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Operator"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateOperator: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operator_id: components["parameters"]["OperatorID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperatorUpdate"];
+            };
+        };
+        responses: {
+            /** @description The operator. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Operator"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    createClient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operator_id: components["parameters"]["OperatorID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientRequest"];
+            };
+        };
+        responses: {
+            /** @description The client and its secret, shown once. */
+            201: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientSecret"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    rotateClientSecret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operator_id: components["parameters"]["OperatorID"];
+                client_id: components["parameters"]["ClientID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new secret. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientSecret"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    bindSerial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operator_id: components["parameters"]["OperatorID"];
+                client_id: components["parameters"]["ClientID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SerialBindingRequest"];
+            };
+        };
+        responses: {
+            /** @description The binding. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SerialBinding"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    unbindSerial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operator_id: components["parameters"]["OperatorID"];
+                client_id: components["parameters"]["ClientID"];
+                serial: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The serial is no longer bound to the client. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
         };
     };

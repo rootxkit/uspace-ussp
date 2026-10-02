@@ -50,7 +50,18 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_MTLS_CERT_FILE` | `monitor` |  |  |  | client certificate (PEM) for USSP_MTLS_MODE=required |
 | `USSP_MTLS_KEY_FILE` | `monitor` |  |  |  | client key (PEM) for USSP_MTLS_MODE=required |
 | `USSP_MTLS_CA_FILE` | `monitor` |  |  |  | CA bundle (PEM) the ANSP's certificate is checked against |
-| `USSP_ISSUER_KEY_FILE` | `api` |  |  |  | RSA key (PEM) of this USSP's own token issuer |
+| `USSP_ISSUER_KEY_FILE` | `api` |  |  |  | RSA key (PEM, at least 2048 bits) of this USSP's own token issuer (scripts/gen-issuer-key.sh); unset, api issues no token and starts no session, and says so on /readyz |
+| `USSP_ISSUER_PREVIOUS_KEY_FILE` | `api` |  |  |  | the previous issuer key (PEM) during a rotation: published in the JWKS and accepted, never used to sign |
+| `USSP_ISSUER_URL` | `api` |  |  |  | iss of this USSP's own tokens; default https:// followed by the first USSP_AUDIENCES entry |
+| `USSP_MFA_KEY_FILE` | `api` |  |  |  | file holding the base64 of a 32-byte AES-256-GCM key that seals staff TOTP secrets; unset, a staff admin cannot sign in |
+| `USSP_SESSION_TTL_S` | `api` |  | `43200` | s | lifetime of a portal or console session (exp; at most 12 h, M20) |
+| `USSP_SESSION_IDLE_S` | `api` |  | `1800` | s | a session unused this long ends |
+| `USSP_LOGIN_LOCKOUT_AFTER` | `api` |  | `10` |  | consecutive failed sign-ins of one username that lock it (kept in the database, across replicas) |
+| `USSP_LOGIN_LOCKOUT_S` | `api` |  | `900` | s | how long a locked username stays locked |
+| `USSP_LOGIN_RATE_PER_MIN` | `api` |  | `30` | 1/min | sign-in and self-registration attempts per client address per minute (per process) |
+| `USSP_TOKEN_RATE_PER_MIN` | `api` |  | `60` | 1/min | POST /oauth/token requests per client id and per client address per minute (per process) |
+| `USSP_TRUSTED_PROXIES` | `api,telemetry-ingest,rid-sp,traffic-ws` |  |  |  | CIDRs or addresses of the reverse proxies whose X-Forwarded-For is believed, comma-separated; the client is the rightmost hop that is not one of them; empty: the peer is the client |
+| `USSP_TOKEN_CLIENT_SECRET_FILE` | `api,rid-sp,monitor,dss-sync` |  |  |  | file holding the client secret of this USSP's client ussp-<code>-01 at the first USSP_TOKEN_ISSUERS entry, for outgoing calls |
 | `USSP_GEOID_FILE` | `telemetry-ingest,monitor` |  |  |  | geoid grid file for AMSL |
 | `USSP_TERRAIN_DIR` | `monitor` |  |  |  | directory of terrain tiles |
 | `USSP_CELL_OWNERSHIP` | `monitor` |  | `all` |  | cells this monitor instance owns: all, or a comma list of c3 cells |

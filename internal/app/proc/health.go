@@ -1,34 +1,41 @@
 package proc
 
 import (
-	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/national/gen"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 )
 
-// healthServer implements the generated strict server for the health
-// paths of api/openapi.yaml, so their bodies are the contract's types.
-type healthServer struct{ health *obs.Health }
+// HealthHandlers answer the health paths of api/openapi.yaml with the
+// contract's types. The api process serves them through the generated
+// router (internal/national); every other process through HealthRoutes.
+type HealthHandlers struct{ Health *obs.Health }
 
 // GetHealthz answers 200 while the process runs.
-func (s healthServer) GetHealthz(context.Context, gen.GetHealthzRequestObject) (gen.GetHealthzResponseObject, error) {
-	return gen.GetHealthz200JSONResponse{Status: gen.Ok}, nil
+func (h HealthHandlers) GetHealthz(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, gen.Health{Status: gen.Ok})
 }
 
 // GetReadyz runs every dependency check and answers 503 while a
 // required dependency is down or unknown, 200 otherwise.
-func (s healthServer) GetReadyz(ctx context.Context, _ gen.GetReadyzRequestObject) (gen.GetReadyzResponseObject, error) {
-	rep := s.health.Check(ctx)
-	body := Readiness(rep)
+func (h HealthHandlers) GetReadyz(w http.ResponseWriter, r *http.Request) {
+	rep := h.Health.Check(r.Context())
+	status := http.StatusOK
 	if !rep.Ready() {
-		return gen.GetReadyz503JSONResponse(body), nil
+		status = http.StatusServiceUnavailable
 	}
-	return gen.GetReadyz200JSONResponse(body), nil
+	writeJSON(w, status, Readiness(rep))
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 // Readiness converts a health report into the contract's body.
@@ -50,12 +57,17 @@ func Readiness(rep obs.Report) gen.Readiness {
 	return out
 }
 
-// HealthRoutes adds GET /healthz, GET /readyz and GET /metrics to mux.
+// HealthRoutes adds GET /healthz and GET /readyz (the contract's health
+// operations) and GET /metrics to mux, for a process that serves no
+// other operation of api/openapi.yaml.
 func HealthRoutes(mux *http.ServeMux, health *obs.Health, reg *prometheus.Registry) {
-	strict := gen.NewStrictHandlerWithOptions(healthServer{health: health}, nil, gen.StrictHTTPServerOptions{
-		RequestErrorHandlerFunc:  httpx.WriteError,
-		ResponseErrorHandlerFunc: httpx.WriteError,
-	})
-	gen.HandlerWithOptions(strict, gen.StdHTTPServerOptions{BaseRouter: mux})
+	h := HealthHandlers{Health: health}
+	mux.HandleFunc("GET /healthz", h.GetHealthz)
+	mux.HandleFunc("GET /readyz", h.GetReadyz)
+	MetricsRoute(mux, reg)
+}
+
+// MetricsRoute adds GET /metrics to mux.
+func MetricsRoute(mux *http.ServeMux, reg *prometheus.Registry) {
 	mux.Handle("GET /metrics", obs.MetricsHandler(reg))
 }

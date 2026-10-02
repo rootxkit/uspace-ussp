@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"net/netip"
 	"net/url"
 	"reflect"
 	"slices"
@@ -94,6 +95,15 @@ func loadField(f field, lookup LookupFunc) error {
 	case "issuers":
 		if _, err := ParseIssuers(f.v.Interface().([]string)); err != nil {
 			return &core.FieldError{Field: f.name, Reason: err.Error()}
+		}
+	case "cidrs":
+		for _, s := range f.v.Interface().([]string) {
+			if _, err := netip.ParsePrefix(s); err == nil {
+				continue
+			}
+			if _, err := netip.ParseAddr(s); err != nil {
+				return core.Fieldf(f.name, "%q is neither a CIDR nor an address", s)
+			}
 		}
 	}
 	return nil

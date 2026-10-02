@@ -153,9 +153,31 @@ func wantStates(t *testing.T, body *client.Readiness, want map[string]client.Dep
 	}
 }
 
-// With every dependency running, api reports postgres, timescaledb and
-// nats up and is ready (the success path, E-02).
+// With every dependency running, api reports postgres, timescaledb,
+// nats, its issuer key and the ecosystem JWKS up and is ready (the
+// success path, E-02).
 func TestIntegrationAPIReadyWithEveryDependencyUp(t *testing.T) {
+	ensureSchemas(t)
+	c := run(t, api.Spec, withAuth(t, map[string]string{
+		"USSP_API_ADDR": "127.0.0.1:0",
+		"USSP_PG_URL":   mustEnv(t, "USSP_TEST_PG_URL"),
+		"USSP_TS_URL":   mustEnv(t, "USSP_TEST_TS_URL"),
+		"USSP_NATS_URL": mustEnv(t, "USSP_TEST_NATS_URL"),
+	}, newFakeAuthority(t)))
+	code, body := readyz(t, c, client.ReadinessStatusReady)
+	if code != 200 || body.Status != client.ReadinessStatusReady || len(body.Degraded) != 0 {
+		t.Fatalf("readyz %d %+v", code, body)
+	}
+	wantStates(t, body, map[string]client.DependencyState{
+		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateUp,
+		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
+	})
+}
+
+// Without an issuer key and an audience, api still starts (B-08) and
+// says what it cannot do: issuer and jwks down with their reasons,
+// ready but degraded.
+func TestIntegrationAPIDegradedWithoutAuthConfiguration(t *testing.T) {
 	ensureSchemas(t)
 	c := run(t, api.Spec, map[string]string{
 		"USSP_API_ADDR": "127.0.0.1:0",
@@ -163,12 +185,13 @@ func TestIntegrationAPIReadyWithEveryDependencyUp(t *testing.T) {
 		"USSP_TS_URL":   mustEnv(t, "USSP_TEST_TS_URL"),
 		"USSP_NATS_URL": mustEnv(t, "USSP_TEST_NATS_URL"),
 	})
-	code, body := readyz(t, c, client.ReadinessStatusReady)
-	if code != 200 || body.Status != client.ReadinessStatusReady || len(body.Degraded) != 0 {
+	code, body := readyz(t, c, client.ReadinessStatusDegraded)
+	if code != 200 || strings.Join(body.Degraded, ",") != "issuer,jwks" {
 		t.Fatalf("readyz %d %+v", code, body)
 	}
 	wantStates(t, body, map[string]client.DependencyState{
 		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateUp,
+		"issuer": client.DependencyStateDown, "jwks": client.DependencyStateDown,
 	})
 }
 
@@ -176,18 +199,19 @@ func TestIntegrationAPIReadyWithEveryDependencyUp(t *testing.T) {
 // with its reason, and /readyz answers 503 (E-02).
 func TestIntegrationAPINotReadyWithoutNATS(t *testing.T) {
 	ensureSchemas(t)
-	c := run(t, api.Spec, map[string]string{
+	c := run(t, api.Spec, withAuth(t, map[string]string{
 		"USSP_API_ADDR": "127.0.0.1:0",
 		"USSP_PG_URL":   mustEnv(t, "USSP_TEST_PG_URL"),
 		"USSP_TS_URL":   mustEnv(t, "USSP_TEST_TS_URL"),
 		"USSP_NATS_URL": "nats://" + closedAddr(t),
-	})
+	}, newFakeAuthority(t)))
 	code, body := readyz(t, c, client.ReadinessStatusNotReady)
 	if code != 503 || body.Status != client.ReadinessStatusNotReady || strings.Join(body.Degraded, ",") != "nats" {
 		t.Fatalf("readyz %d %+v", code, body)
 	}
 	wantStates(t, body, map[string]client.DependencyState{
 		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateDown,
+		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
 	})
 }
 
@@ -280,12 +304,12 @@ func TestIntegrationAPIFollowsNATSAwayAndBack(t *testing.T) {
 	}
 	p := newProxy(t, natsURL.Host)
 	natsURL.Host = p.addr
-	c := run(t, api.Spec, map[string]string{
+	c := run(t, api.Spec, withAuth(t, map[string]string{
 		"USSP_API_ADDR": "127.0.0.1:0",
 		"USSP_PG_URL":   mustEnv(t, "USSP_TEST_PG_URL"),
 		"USSP_TS_URL":   mustEnv(t, "USSP_TEST_TS_URL"),
 		"USSP_NATS_URL": natsURL.String(),
-	})
+	}, newFakeAuthority(t)))
 	if code, body := readyz(t, c, client.ReadinessStatusReady); code != 200 {
 		t.Fatalf("before: %d %+v", code, body)
 	}
@@ -297,6 +321,7 @@ func TestIntegrationAPIFollowsNATSAwayAndBack(t *testing.T) {
 	}
 	wantStates(t, body, map[string]client.DependencyState{
 		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateDown,
+		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
 	})
 	if d := body.Dependencies["nats"]; d.AgeS == nil || *d.AgeS <= 0 {
 		t.Errorf("nats down without the age of its last good state: %+v", d)

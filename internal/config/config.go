@@ -35,7 +35,8 @@ var Processes = []string{
 //	need      the processes for which it is required
 //	secret    "url": the userinfo of the URL is redacted; "true": the whole value
 //	enum      the allowed values, "|"-separated
-//	kind      "url" (absolute URL) or "issuers" (iss=jwks_url pairs)
+//	kind      "url" (absolute URL), "issuers" (iss=jwks_url pairs) or
+//	          "cidrs" (CIDRs or addresses)
 //	min, max  bounds of an integer
 //	unit      the unit, for deploy/ENV.md
 //	help      one line
@@ -75,7 +76,18 @@ type Config struct {
 	MTLSCertFile            string   `env:"USSP_MTLS_CERT_FILE" by:"monitor" help:"client certificate (PEM) for USSP_MTLS_MODE=required"`
 	MTLSKeyFile             string   `env:"USSP_MTLS_KEY_FILE" by:"monitor" help:"client key (PEM) for USSP_MTLS_MODE=required"`
 	MTLSCAFile              string   `env:"USSP_MTLS_CA_FILE" by:"monitor" help:"CA bundle (PEM) the ANSP's certificate is checked against"`
-	IssuerKeyFile           string   `env:"USSP_ISSUER_KEY_FILE" by:"api" help:"RSA key (PEM) of this USSP's own token issuer"`
+	IssuerKeyFile           string   `env:"USSP_ISSUER_KEY_FILE" by:"api" help:"RSA key (PEM, at least 2048 bits) of this USSP's own token issuer (scripts/gen-issuer-key.sh); unset, api issues no token and starts no session, and says so on /readyz"`
+	IssuerPreviousKeyFile   string   `env:"USSP_ISSUER_PREVIOUS_KEY_FILE" by:"api" help:"the previous issuer key (PEM) during a rotation: published in the JWKS and accepted, never used to sign"`
+	IssuerURL               string   `env:"USSP_ISSUER_URL" by:"api" kind:"url" help:"iss of this USSP's own tokens; default https:// followed by the first USSP_AUDIENCES entry"`
+	MFAKeyFile              string   `env:"USSP_MFA_KEY_FILE" by:"api" help:"file holding the base64 of a 32-byte AES-256-GCM key that seals staff TOTP secrets; unset, a staff admin cannot sign in"`
+	SessionTTLS             int      `env:"USSP_SESSION_TTL_S" default:"43200" by:"api" min:"300" max:"43200" unit:"s" help:"lifetime of a portal or console session (exp; at most 12 h, M20)"`
+	SessionIdleS            int      `env:"USSP_SESSION_IDLE_S" default:"1800" by:"api" min:"60" max:"43200" unit:"s" help:"a session unused this long ends"`
+	LoginLockoutAfter       int      `env:"USSP_LOGIN_LOCKOUT_AFTER" default:"10" by:"api" min:"3" max:"100" help:"consecutive failed sign-ins of one username that lock it (kept in the database, across replicas)"`
+	LoginLockoutS           int      `env:"USSP_LOGIN_LOCKOUT_S" default:"900" by:"api" min:"60" max:"86400" unit:"s" help:"how long a locked username stays locked"`
+	LoginRatePerMin         int      `env:"USSP_LOGIN_RATE_PER_MIN" default:"30" by:"api" min:"1" max:"10000" unit:"1/min" help:"sign-in and self-registration attempts per client address per minute (per process)"`
+	TokenRatePerMin         int      `env:"USSP_TOKEN_RATE_PER_MIN" default:"60" by:"api" min:"1" max:"10000" unit:"1/min" help:"POST /oauth/token requests per client id and per client address per minute (per process)"`
+	TrustedProxies          []string `env:"USSP_TRUSTED_PROXIES" by:"api,telemetry-ingest,rid-sp,traffic-ws" kind:"cidrs" help:"CIDRs or addresses of the reverse proxies whose X-Forwarded-For is believed, comma-separated; the client is the rightmost hop that is not one of them; empty: the peer is the client"`
+	TokenClientSecretFile   string   `env:"USSP_TOKEN_CLIENT_SECRET_FILE" by:"api,rid-sp,monitor,dss-sync" secret:"true" help:"file holding the client secret of this USSP's client ussp-<code>-01 at the first USSP_TOKEN_ISSUERS entry, for outgoing calls"`
 	GeoidFile               string   `env:"USSP_GEOID_FILE" by:"telemetry-ingest,monitor" help:"geoid grid file for AMSL"`
 	TerrainDir              string   `env:"USSP_TERRAIN_DIR" by:"monitor" help:"directory of terrain tiles"`
 	CellOwnership           string   `env:"USSP_CELL_OWNERSHIP" default:"all" by:"monitor" help:"cells this monitor instance owns: all, or a comma list of c3 cells"`

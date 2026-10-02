@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/problem/v1.json",
+  "title": "problem/v1",
+  "description": "The error body of every national API: RFC 9457 `application/problem+json` with the field-error extension of decision record M28. `field` is the JSON path as uspace-core `core.FieldError` and `ed269.Problems` write it. `errors` is capped at 100; `truncated` is true when it was cut. This is an HTTP body, not an envelope message.",
+  "type": "object",
+  "required": ["type", "title", "status", "errors"],
+  "properties": {
+    "type": {
+      "description": "`https://schemas.uspace.ge/problems/<slug>`, slug = the counter or refusal name (`unauthenticated`, `forbidden`, `signature`, `not_a_publisher`, `cis_stale`, ...).",
+      "type": "string",
+      "pattern": "^https://schemas\\.uspace\\.ge/problems/[a-z_]+$"
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+    "detail": { "type": ["string", "null"] },
+    "instance": {
+      "oneOf": [{ "type": "string", "format": "uri-reference" }, { "type": "null" }]
+    },
+    "errors": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "required": ["field", "reason"],
+        "properties": {
+          "field": { "type": "string" },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "truncated": { "type": "boolean" }
+  },
+  "if": {
+    "properties": { "truncated": { "const": true } },
+    "required": ["truncated"]
+  },
+  "then": {
+    "description": "A list is only cut at the cap.",
+    "properties": { "errors": { "minItems": 100 } }
+  }
+}
