@@ -9,12 +9,38 @@ additively within `/v1`.
 
 ### Changed
 
+- WP-5: the api process has one outgoing token client for the CISP and
+  the authority; a stored policy version without a threshold added
+  later loads that threshold's default.
 - WP-3: uspace-core v1.2.0; session tokens are signed by core's
   `Issuer.IssueSession` instead of a local signer; the token verifier
   builder moves to `internal/app/proc` (rid-sp verifies tokens too).
 
 ### Added
 
+- WP-5 registry validity (`internal/registry`): the authority's F8 API
+  generated from the pinned copy `api/clients/authority.yaml` (GET and
+  POST `/v1/registry/validate` with `purpose` as the contract's query
+  parameter, `GET /v1/registry/changes` with ETag; a `registry.validate`
+  token for the authority's host, a 2 s deadline, a 1 MiB body cap);
+  answers decoded strictly and checked against the keys asked, a field
+  F8 does not define or an echoed secret part refused and counted
+  `registry_pii_refused`; `registry.Cache` serving answers within the
+  policy's `registry_positive_ttl_s` (24 h) and `registry_negative_ttl_s`
+  (5 min, for `unknown`) with `cache_age_s`, an unanswerable key
+  `unknown` with `registry_unavailable`, writes to `registry_validity`
+  and the KV projection in one transaction (in memory until WP-6);
+  `registry.Feed` polling the change feed every 30 s and invalidating by
+  fold key with the cursor in `registry_feed`, a fetch that raced an
+  invalidation not written (`registry_invalidations`, migration 00010);
+  `registry.Lookup`, an `identify.Lookup` over our fleet and the cached
+  answers whose Resolve methods answer `registry_unavailable` for a
+  missing projection or a key without a fresh answer, and
+  `Lookup.FleetInput` for WP-8; `GET /v1/registry/validate` for operator
+  clients holding `ussp.intents`, recorded as `registry_validated` with
+  the client and the purpose; operator accounts checked through the
+  cache; `/readyz` entry `registry` (`last_success_age_s`, the feed's
+  cursor and age); a fake authority in `internal/testfakes`.
 - WP-4 CIS cache and geo-zone evaluation (`internal/cis`): the CISP's F3
   pull API generated from the pinned copy `api/clients/cisp.yaml`
   (conditional reads by ETag, versions, the change feed, an idempotent

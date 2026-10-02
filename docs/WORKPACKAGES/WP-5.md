@@ -85,3 +85,54 @@ WP-1. Consumers: WP-2 (account validation), WP-7 (intent gate), WP-8
 `feat(registry): validity cache with TTLs, change feed and KV projection [WP-5 S-M1]`,
 `feat(registry): identify.Lookup over the projection [WP-5 S-M1]`,
 `test(registry): run the owned identification vectors [WP-5 S-M1]`.
+
+## As built (the PR)
+
+What the build decided where the brief, the contracts or core left a
+choice; each is in the PR body as well.
+
+- `purpose` is a required query parameter, not a header: the
+  authority's pinned OpenAPI says so (the API owner's contract wins).
+  `GET /v1/registry/validate` here takes it the same way.
+- F8 answers `revoked` for an expired registration (with its
+  `valid_until`) and echoes only the public part of an operator number;
+  the client refuses an echo with a secret part (`registry_pii_refused`)
+  and an echo of another number (`registry_answer_refused`). Only the
+  public part is ever sent.
+- Every field the pinned schema does not define is refused as
+  `registry_pii_refused`, not only a name: an additive change at the
+  authority needs the pinned copy bumped before this USSP accepts it.
+  The key is then `unknown` (`registry_answer_refused`), never valid.
+- The negative TTL applies to `unknown` only; `suspended` and `revoked`
+  are answers the registry gave and live for the positive TTL like
+  `valid` (the feed invalidates any of them). An answer beyond its TTL
+  is not served while the authority is down: the key is `unknown` with
+  `registry_unavailable` (spec 02 F8: cached answers up to 24 h).
+- A fetch that raced the feed invalidating its key is answered but not
+  cached: the cursor read before the fetch is compared with the
+  sequence of the invalidation, remembered for an hour in
+  `registry_invalidations` (migration 00010). The feed's cursor and the
+  ETag of its page are in `registry_feed`; every age is the database
+  clock's.
+- `registry_validity.valid_until` is the registration's end of validity
+  as F8 answers it (nullable since 00010), not the cache's expiry: the
+  TTL is applied at read time from the current policy.
+- F8 says nothing about which aircraft belongs to which operator, so the
+  identification Lookup joins our own fleet (`registry.Fleet`: the
+  operators and aircraft our records bind, supplied by the caller from
+  accounts and client bindings, WP-8) with the cached answers. F8
+  `unknown` is not in the registry for an aircraft and `owner_unknown`
+  for an operator; a fleet key without a fresh answer is
+  `registry_unavailable`, and even through `identify` directly it is
+  never registered. `SerialIsOurs` is a unique match on any aircraft of
+  our fleet: core's `IsOurs` (no UAS operator) is the authority's own
+  fleet, while every aircraft here belongs to a client.
+- The accounts service checks an operator through the cache with
+  purpose `authorisation`. An operator lookup on the API is withheld
+  (503 `audit_unavailable`) when its `registry_validated` row cannot be
+  written.
+- The projection is `registry.MemoryProjector` until WP-6's KV
+  projector; the hot path's `FromProjection` treats a projection that
+  does not exist as unavailable.
+- `make race` was not run locally (no C toolchain on the build machine);
+  CI runs it.
