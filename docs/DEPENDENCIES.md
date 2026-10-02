@@ -18,10 +18,14 @@ rules); the allowed list is `docs/PLAN.md` §14. Versions are the ones
 | `github.com/pressly/goose/v3` | v3.28.0 | WP-1 | the two embedded migration trees with their own version tables and session advisory locks (`internal/store` only, run only by the `migrate` subcommand); raises the minimum `procfs`, `grpc` and `genproto/rpc` versions by a patch |
 | `github.com/sqlc-dev/sqlc` (generator) | v1.31.1 | WP-1 | generates `internal/store/relational` and `internal/store/timeseries` from the trees and `internal/store/queries`; run by `scripts/generate.sh` with `go run …@v1.31.1` (pinned there), never linked into a binary and not a `go.mod` tool, so its dependency tree stays out of the module |
 | `github.com/lestrrat-go/jwx/v3` | (through core) | — | JWT/JWS inside `uspace-core/auth`; never imported here (depguard) |
+| `golang.org/x/crypto` | v0.57.0 | WP-2 | argon2id for passwords and client secrets (`internal/auth` Hasher); already in the build list through core |
+| `github.com/coder/websocket` | v1.8.15 | WP-2 | the WebSocket upgrade of M22 (`internal/auth` WSAuth: cookie + `Origin`, close 4401); the streams of WP-8 and WP-11 use the same library |
+| `github.com/oapi-codegen/runtime` | v1.7.0 | WP-2 | path-parameter binding of the generated server and client (`internal/national/gen`, `client`), needed from the first operation with a path parameter |
+| `github.com/santhosh-tekuri/jsonschema/v6` | v6.0.2 | WP-2 | tests only: validates problem bodies against the pinned lab `problem/v1` schema (`internal/national/testdata`); already in the build list through oapi-codegen |
 
 Planned by `docs/PLAN.md` §14 and added by the work package that first
-needs them, each with its row: `coder/websocket` (WP-8), `golang.org/x/crypto/argon2` and
-`google/uuid` (WP-2).
+needs them, each with its row: `google/uuid` (not needed by WP-2: the
+database makes the ids).
 
 ## web/ (npm, exact pins)
 

@@ -9,6 +9,32 @@ additively within `/v1`.
 
 ### Added
 
+- WP-2 auth and accounts: `internal/auth` on uspace-core's verifier
+  (own issuer and allow-listed ecosystem issuers, `USSP_AUDIENCES`,
+  `StrictSessionClaims`; the ecosystem JWKS fetched in the background
+  so api starts while the token service is down, `/readyz` `jwks` up,
+  degraded with the cache's age, or down), the guard behind a
+  fail-closed access table (every operation of `api/openapi.yaml` has
+  an entry or api refuses to start; refusals typed by core's counter,
+  counted and audited with the token's `sub` or `unknown`), this
+  USSP's issuer (`USSP_ISSUER_KEY_FILE`, `kid` = RFC 7638 thumbprint,
+  the previous key published during a rotation,
+  `scripts/gen-issuer-key.sh`), `POST /oauth/token` (client
+  credentials, Basic or body, argon2id, previous secret within
+  `policy.client_secret_overlap_s`, per-client and per-address limits,
+  `policy.operator_token_ttl_s`), `GET /.well-known/jwks.json`, session
+  JWTs (M20) with the `uspace_session`/`uspace_csrf` cookies and the
+  CSRF double submit (M21), the WebSocket upgrade by cookie and
+  `Origin` with 4401 (M22), the outgoing token client, the
+  `client_bindings` projection (in memory until WP-6), the client
+  address taken only from `USSP_TRUSTED_PROXIES`; `internal/accounts`
+  and `/v1/accounts/*` (operator self-registration pending until the
+  registry says valid, clients with secrets shown once and rotation,
+  serial bindings through `core/serial`, staff accounts with TOTP for
+  `admin`, `ussp-api staff-add`, sign-in with a per-username lockout
+  and session rows in the database so both hold across replicas,
+  logout, `/me`); migration 00008 (`portal_users`, `sessions`,
+  `login_lockouts`, the rotation columns, one live client per serial).
 - WP-1 store and migrations: the two goose trees, embedded and never
   merged (`migrations/relational`: every table of PLAN §5.1 with PostGIS
   geography, the indexes of the brief and monthly `events` partitions;
