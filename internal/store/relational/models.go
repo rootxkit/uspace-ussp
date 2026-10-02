@@ -285,12 +285,22 @@ type OperationalIntent struct {
 	Alternative         []byte     `json:"alternative"`
 	Conflicts           []byte     `json:"conflicts"`
 	Conditions          []string   `json:"conditions"`
-	CisVersionChecked   *int64     `json:"cis_version_checked"`
+	CisVersionChecked   *string    `json:"cis_version_checked"`
 	RegistryCheckedAt   *time.Time `json:"registry_checked_at"`
 	WeatherCheckedRef   *string    `json:"weather_checked_ref"`
 	PolicyVersion       *int64     `json:"policy_version"`
 	CreatedAt           time.Time  `json:"created_at"`
 	UpdatedAt           time.Time  `json:"updated_at"`
+	Version             int32      `json:"version"`
+	Request             []byte     `json:"request"`
+	RequestHash         *string    `json:"request_hash"`
+	DecisionBody        []byte     `json:"decision_body"`
+	FiledAt             time.Time  `json:"filed_at"`
+	CellSet             []string   `json:"cell_set"`
+	Subcategory         *string    `json:"subcategory"`
+	PrivatelyBuilt      bool       `json:"privately_built"`
+	MtomKg              *float64   `json:"mtom_kg"`
+	UpdateRequired      []byte     `json:"update_required"`
 }
 
 type OperatorAccount struct {

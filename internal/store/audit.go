@@ -38,6 +38,7 @@ type Event struct {
 const (
 	LockPolicy  int64 = 0x7573737001 // policy versions
 	LockSources int64 = 0x7573737002 // source switches and their republication
+	LockIntents int64 = 0x7573737003 // intent decisions: the active intents read and one written
 )
 
 // Lock takes the transaction-scoped advisory lock key inside q's
