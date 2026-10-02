@@ -1,0 +1,516 @@
+package conformance
+
+import (
+	"encoding/json"
+	"errors"
+	"math"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/rootxkit/uspace-core/core"
+	"github.com/rootxkit/uspace-core/f3548"
+	"github.com/rootxkit/uspace-core/geodesy"
+
+	"github.com/rootxkit/uspace-ussp/internal/bus"
+	"github.com/rootxkit/uspace-ussp/internal/intent"
+	"github.com/rootxkit/uspace-ussp/internal/intent/deconflict"
+	"github.com/rootxkit/uspace-ussp/internal/policy"
+	"github.com/rootxkit/uspace-ussp/internal/telemetry"
+)
+
+var (
+	tt0    = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	origin = core.LatLon{LatDeg: 41.7151, LonDeg: 44.8271}
+)
+
+const (
+	flightA = "5b3f1d2e-7c4a-4e8b-9f10-2a3b4c5d6e7f"
+	flightB = "6c4f1d2e-7c4a-4e8b-9f10-2a3b4c5d6e70"
+	intentA = "8d0e7b51-3c1e-4a5f-9a43-0b6f4c2a7e01"
+)
+
+func circleAuth() Authorisation {
+	return Authorisation{
+		IntentID: intentA, AuthorisationNumber: "USSP-DEV-1",
+		Volumes: []Volume{{Shape: deconflict.Shape{Circle: &geodesy.Circle{Center: origin, RadiusM: 500}},
+			LowerAMSLM: 500, UpperAMSLM: 600, Start: tt0.Add(-time.Hour), End: tt0.Add(time.Hour)}},
+		Thresholds: Thresholds{HM: 50, VM: 15, TS: 60},
+	}
+}
+
+// fieldOf is the field a *core.FieldError names, "" for any other error.
+func fieldOf(err error) string {
+	var fe *core.FieldError
+	if errors.As(err, &fe) {
+		return fe.Field
+	}
+	return ""
+}
+
+func testConfig() Config {
+	return ConfigOf(policy.Record{Version: 3, Values: policy.Defaults()})
+}
+
+func alt(v float64) *float64 { return &v }
+
+func flying(v bool) *bool { return &v }
+
+func at(s float64) time.Time { return tt0.Add(time.Duration(s * float64(time.Second))) }
+
+func input(p core.LatLon, s float64, a *Authorisation) Input {
+	return Input{Sample: Sample{Position: p, AltAMSLM: alt(550), AltSource: core.AltGeodetic, CapturedAt: at(s)},
+		Flying: flying(true), RxAt: at(s), Auth: a, Cell5: "c5:1317:2248"}
+}
+
+func TestConfigOfAndValidate(t *testing.T) {
+	c := testConfig()
+	if c.ClearAfterS != 3 || c.LostLinkS != 15 || c.LiveMaxAgeS != 10 || c.PolicyVersion != 3 || c.PressureUncertaintyM != 250 {
+		t.Fatalf("%+v", c)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []func(*Config){
+		func(c *Config) { c.ClearAfterS = 0 },
+		func(c *Config) { c.LostLinkS = math.NaN() },
+		func(c *Config) { c.LiveMaxAgeS = -1 },
+		func(c *Config) { c.AheadToleranceS = -1 },
+		func(c *Config) { c.PressureUncertaintyM = math.Inf(1) },
+		func(c *Config) { c.ClearAfterS, c.AheadToleranceS = 2, 1 },
+	} {
+		c := testConfig()
+		bad(&c)
+		if c.Validate() == nil {
+			t.Errorf("%+v accepted", c)
+		}
+		// An invalid configuration judges nothing and is counted (E-15).
+		tr := NewTracker(flightA, intentA, "", nil)
+		a := circleAuth()
+		ev := tr.Observe(input(origin, 0, &a), c, at(0))
+		if ev.Admitted || ev.Refusal != "config_invalid" || tr.Counters.Get(CounterConfigInvalid) != 1 {
+			t.Errorf("observe on an invalid config: %+v", ev)
+		}
+		tr.Tick(c, at(30))
+		if tr.Counters.Get(CounterConfigInvalid) != 2 || tr.Snapshot().State != StateUnknown {
+			t.Errorf("tick on an invalid config: %v", tr.Snapshot())
+		}
+	}
+}
+
+func TestValidateRefusesUnjudgeableAuthorisations(t *testing.T) {
+	cases := map[string]func(*Authorisation){
+		"volumes":           func(a *Authorisation) { a.Volumes = nil },
+		"volumes[0].band":   func(a *Authorisation) { a.Volumes[0].LowerAMSLM = 700 },
+		"volumes[0].window": func(a *Authorisation) { a.Volumes[0].End = a.Volumes[0].Start.Add(-time.Second) },
+		"volumes[0].outline": func(a *Authorisation) {
+			a.Volumes[0].Shape = deconflict.Shape{}
+		},
+	}
+	for field, mut := range cases {
+		a := circleAuth()
+		mut(&a)
+		if err := a.Validate(); err == nil || fieldOf(err) != field {
+			t.Errorf("%s: %v", field, err)
+		}
+	}
+	a := circleAuth()
+	a.Volumes = make([]Volume, MaxVolumes+1)
+	if err := a.Validate(); fieldOf(err) != "volumes" {
+		t.Errorf("over the bound: %v", err)
+	}
+	// E-10 pair: the bound itself is accepted.
+	a = circleAuth()
+	for len(a.Volumes) < MaxVolumes {
+		a.Volumes = append(a.Volumes, a.Volumes[0])
+	}
+	if err := a.Validate(); err != nil {
+		t.Errorf("at the bound: %v", err)
+	}
+	if _, err := Judge(Sample{Position: origin}, circleAuth(), Policy{}); fieldOf(err) != "captured_at" {
+		t.Errorf("no time: %v", err)
+	}
+}
+
+func TestFlyingOf(t *testing.T) {
+	s := func(v string) *string { return &v }
+	for in, want := range map[string]*bool{"Airborne": flying(true), "Emergency": flying(true), "Ground": flying(false),
+		"Undeclared": nil, "RemoteIDSystemFailure": nil, "nonsense": nil} {
+		got := FlyingOf(s(in))
+		if (got == nil) != (want == nil) || (got != nil && *got != *want) {
+			t.Errorf("%s: %v", in, got)
+		}
+	}
+	if FlyingOf(nil) != nil {
+		t.Error("no status flies")
+	}
+}
+
+func stateBodyOf(t *testing.T) intent.StateBody {
+	t.Helper()
+	var b intent.StateBody
+	raw := `{"intent_id":"` + intentA + `","authorisation_number":"USSP-DEV-1","deviation_thresholds":{"h_m":50,"v_m":15,"t_s":60},
+	"volumes":[{"volume":{"outline_circle":{"center":{"lat":41.7151,"lng":44.8271},"radius":{"value":500,"units":"M"}},
+	"altitude_lower":{"value":520,"reference":"W84","units":"M"},"altitude_upper":{"value":620,"reference":"W84","units":"M"}},
+	"time_start":{"value":"2026-11-01T11:00:00Z","format":"RFC3339"},"time_end":{"value":"2026-11-01T13:00:00Z","format":"RFC3339"}}],
+	"volumes_amsl":[{"lower_amsl_m":500,"upper_amsl_m":600,"undulation_m":20,"lower_w84_m":520,"upper_w84_m":620}]}`
+	if err := json.Unmarshal([]byte(raw), &b); err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func TestAuthorisationOf(t *testing.T) {
+	a, err := AuthorisationOf(stateBodyOf(t))
+	if err != nil || a.AuthorisationNumber != "USSP-DEV-1" || len(a.Volumes) != 1 || a.Volumes[0].UpperAMSLM != 600 ||
+		a.Volumes[0].Shape.Circle == nil || a.Thresholds.TS != 60 {
+		t.Fatalf("%+v %v", a, err)
+	}
+	for field, mut := range map[string]func(*intent.StateBody){
+		"deviation_thresholds": func(b *intent.StateBody) { b.DeviationThresholds = nil },
+		"volumes":              func(b *intent.StateBody) { b.Volumes = nil },
+		"volumes_amsl":         func(b *intent.StateBody) { b.VolumesAMSL = nil },
+		"volumes[0]":           func(b *intent.StateBody) { b.Volumes[0].Volume.OutlineCircle = nil },
+		"volumes[0].band": func(b *intent.StateBody) {
+			b.VolumesAMSL[0].LowerAMSLM = 900
+		},
+	} {
+		b := stateBodyOf(t)
+		mut(&b)
+		if _, err := AuthorisationOf(b); fieldOf(err) != field {
+			t.Errorf("%s: %v", field, err)
+		}
+	}
+	b := stateBodyOf(t)
+	b.Volumes[0].TimeEnd = &f3548.Time{Value: tt0.Add(-2 * time.Hour)}
+	if _, err := AuthorisationOf(b); err == nil {
+		t.Error("a window ending before it starts read")
+	}
+}
+
+// The nonconformance_nearby fan-out: a flight 500 m away receives it and
+// loses it when the source clears; a flight 5 km away receives nothing
+// (E-01 pair); stale, grounded and the source itself are skipped.
+func TestNearbyPairs(t *testing.T) {
+	n := &Nearby{}
+	src := Alert{ID: "src-1", Kind: KindNonconformance, FlightID: flightA, CapturedAt: tt0}
+	near := Neighbour{FlightID: flightB, Position: geodesy.Destination(origin, 0, 500), SeenAt: tt0, Flying: true, Cell5: "c5:1:1"}
+	far := Neighbour{FlightID: "far", Position: geodesy.Destination(origin, 0, 5000), SeenAt: tt0, Flying: true}
+	stale := Neighbour{FlightID: "stale", Position: origin, SeenAt: tt0.Add(-time.Minute), Flying: true}
+	ground := Neighbour{FlightID: "ground", Position: origin, SeenAt: tt0, Flying: false}
+	self := Neighbour{FlightID: flightA, Position: origin, SeenAt: tt0, Flying: true}
+	ev := n.Refresh(src, origin, []Neighbour{near, far, stale, ground, self}, 2000, 15*time.Second, tt0, 4)
+	if len(ev) != 1 || ev[0].Alert.FlightID != flightB || ev[0].Alert.Kind != KindNonconformanceNearby ||
+		ev[0].Alert.Severity != core.SeverityWarning || ev[0].State != AlertRaised || ev[0].Alert.PolicyVersion != 4 {
+		t.Fatalf("raised %+v", ev)
+	}
+	if d, _ := ev[0].Alert.Detail["distance_m"].(float64); math.Abs(d-500) > 0.01 {
+		t.Errorf("distance %v", ev[0].Alert.Detail["distance_m"])
+	}
+	if n.Counters.Get(CounterNearbyNeighbourStale) != 1 {
+		t.Error("stale neighbour not counted")
+	}
+	// Refreshed, not raised again.
+	if again := n.Refresh(src, origin, []Neighbour{near}, 2000, 15*time.Second, tt0.Add(time.Second), 4); len(again) != 0 {
+		t.Fatalf("raised again: %+v", again)
+	}
+	if a := n.Active(); len(a) != 1 || !a[0].UpdatedAt.Equal(tt0.Add(time.Second)) {
+		t.Fatalf("active %+v", a)
+	}
+	cl := n.Clear("src-1", ClearResolved, tt0.Add(5*time.Second))
+	if len(cl) != 1 || cl[0].State != AlertCleared || cl[0].ClearReason != ClearResolved || len(n.Active()) != 0 {
+		t.Fatalf("cleared %+v", cl)
+	}
+	// An unusable radius raises nothing and is counted (E-15).
+	if ev := n.Refresh(src, origin, []Neighbour{near}, 0, time.Minute, tt0, 4); len(ev) != 0 || n.Counters.Get(CounterNearbyUnmeasured) != 1 {
+		t.Fatalf("zero radius: %+v", ev)
+	}
+	// A neighbour that ends loses its alert as flight_ended.
+	n.Refresh(src, origin, []Neighbour{near}, 2000, time.Minute, tt0, 4)
+	if d := n.DropFlight(flightB, tt0); len(d) != 1 || d[0].ClearReason != ClearFlightEnded {
+		t.Fatalf("drop %+v", d)
+	}
+}
+
+// E-10: past MaxNearbyPerSource the rest are counted, the nearest kept.
+func TestNearbyBound(t *testing.T) {
+	n := &Nearby{}
+	src := Alert{ID: "src", Kind: KindLostLink, FlightID: flightA}
+	var nbs []Neighbour
+	for i := range MaxNearbyPerSource + 3 {
+		nbs = append(nbs, Neighbour{FlightID: "f" + string(rune('a'+i%26)) + strings.Repeat("x", i/26),
+			Position: geodesy.Destination(origin, 0, float64(10+i)), SeenAt: tt0, Flying: true})
+	}
+	ev := n.Refresh(src, origin, nbs, 2000, time.Minute, tt0, 1)
+	if len(ev) != MaxNearbyPerSource || n.Counters.Get(CounterNearbyOverBound) != 3 {
+		t.Fatalf("%d raised, %d over", len(ev), n.Counters.Get(CounterNearbyOverBound))
+	}
+	if d, _ := ev[0].Alert.Detail["distance_m"].(float64); d > 11 {
+		t.Errorf("nearest not first: %v", d)
+	}
+}
+
+func TestStateMessageRoundTrip(t *testing.T) {
+	tr := NewTracker(flightA, intentA, "USSP-DEV-1", nil)
+	a := circleAuth()
+	ev := tr.Observe(input(geodesy.Destination(origin, 90, 600), 0, &a), testConfig(), at(0))
+	if len(ev.Transitions) != 1 || ev.Transitions[0].To != StateNonconforming {
+		t.Fatalf("%+v", ev)
+	}
+	m := StateMessageOf(tr.Snapshot(), ev, core.Times{RxTS: at(0), CapturedAt: at(0), Source: core.TimeSourceClock}, 3)
+	raw, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := DecodeState(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := back.Body
+	if b.State != StateNonconforming || !b.Transition || b.PreviousState == nil || *b.PreviousState != StateUnknown ||
+		!b.Judged || b.DistanceOutsideM == nil || math.Abs(*b.DistanceOutsideM-100) > 0.02 || *b.Reason != ReasonThresholdExceeded ||
+		b.PolicyVersion != 3 || *b.AuthorisationNumber != "USSP-DEV-1" || b.Position == nil {
+		t.Fatalf("%+v", b)
+	}
+	// A sample whose vertical did not run carries no height, never 0.
+	tr2 := NewTracker(flightA, intentA, "", nil)
+	in := input(origin, 0, &a)
+	in.Sample.AltSource, in.Sample.AltAMSLM = core.AltNone, nil
+	ev = tr2.Observe(in, testConfig(), at(0))
+	m = StateMessageOf(tr2.Snapshot(), ev, core.Times{RxTS: at(0), CapturedAt: at(0), Source: core.TimeSourceClock}, 3)
+	if m.Body.HeightOverM != nil || m.Body.VerticalKnown == nil || *m.Body.VerticalKnown || m.Body.State != StateConforming {
+		t.Fatalf("vertical not evaluated: %+v", m.Body)
+	}
+}
+
+func TestDecodeStateRefusals(t *testing.T) {
+	good := StateMessageOf(Snapshot{FlightID: flightA, State: StateConforming, BaseState: StateConforming}, Events{},
+		core.Times{RxTS: tt0, CapturedAt: tt0, Source: core.TimeSourceClock}, 1)
+	mut := func(f func(*StateMessage)) []byte {
+		c := *good
+		f(&c)
+		raw, _ := json.Marshal(c)
+		return raw
+	}
+	neg := -1.0
+	bad := map[string][]byte{
+		"not json":     []byte("{"),
+		"schema":       mut(func(m *StateMessage) { m.Schema = "alert/v1" }),
+		"flight":       mut(func(m *StateMessage) { m.Body.FlightID = "x" }),
+		"intent":       mut(func(m *StateMessage) { s := "x"; m.Body.IntentID = &s }),
+		"state":        mut(func(m *StateMessage) { m.Body.State = "fine" }),
+		"base":         mut(func(m *StateMessage) { m.Body.BaseState = StateLostLink }),
+		"previous":     mut(func(m *StateMessage) { s := State("x"); m.Body.PreviousState = &s }),
+		"reason":       mut(func(m *StateMessage) { s := strings.Repeat("r", 65); m.Body.Reason = &s }),
+		"negative":     mut(func(m *StateMessage) { m.Body.DistanceOutsideM = &neg }),
+		"envelope":     mut(func(m *StateMessage) { m.MsgID = "x" }),
+		"over a bound": make([]byte, MaxMessageBytes+1),
+	}
+	for name, raw := range bad {
+		if _, err := DecodeState(raw); err == nil {
+			t.Errorf("%s decoded", name)
+		}
+	}
+	raw, _ := json.Marshal(good)
+	if _, err := DecodeState(raw); err != nil {
+		t.Errorf("the good one refused: %v", err)
+	}
+}
+
+func TestAlertMessageOf(t *testing.T) {
+	a := Alert{ID: "a", Kind: KindLostLink, Severity: core.SeverityCritical, FlightID: flightA, IntentID: intentA,
+		RaisedAt: tt0, UpdatedAt: tt0, CapturedAt: tt0, PolicyVersion: 2}
+	m := AlertMessageOf(AlertEvent{State: AlertCleared, ClearReason: ClearFlightEnded, Alert: a}, tt0)
+	if m.Body.Detail == nil || *m.Body.ClearReason != ClearFlightEnded || m.Body.State != AlertCleared || m.Body.AuthorisationNumber != nil ||
+		m.Schema != SchemaAlert || m.Validate() != nil {
+		t.Fatalf("%+v", m)
+	}
+}
+
+func trackMessage(t *testing.T, mut func(*telemetry.Track)) []byte {
+	t.Helper()
+	id, status := flightA, "Airborne"
+	tr := &telemetry.Track{
+		Envelope: bus.NewEnvelope(telemetry.SchemaTrack, telemetry.Producer, core.Times{RxTS: tt0, CapturedAt: tt0, Source: core.TimeSourceClock}),
+		Body: telemetry.TrackBody{TrackID: id, Trust: core.TrustAuthenticated, Source: telemetry.SourceOperatorWS,
+			Position: telemetry.Position{Lat: origin.LatDeg, Lng: origin.LonDeg}, AltAMSLM: alt(550), AltSource: core.AltGeodetic,
+			Status: &status, FlightID: &id},
+	}
+	if mut != nil {
+		mut(tr)
+	}
+	raw, err := json.Marshal(tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func TestDecodeTrack(t *testing.T) {
+	tr, ours, err := DecodeTrack(trackMessage(t, nil))
+	if err != nil || !ours || *tr.Body.FlightID != flightA {
+		t.Fatalf("%v %v", ours, err)
+	}
+	in := InputOf(tr)
+	if in.Cell5 == "" || in.Flying == nil || !*in.Flying || !in.Sample.CapturedAt.Equal(tt0) {
+		t.Fatalf("%+v", in)
+	}
+	for name, mut := range map[string]func(*telemetry.Track){
+		"peer":       func(tr *telemetry.Track) { tr.Body.Trust = core.TrustProvider },
+		"no flight":  func(tr *telemetry.Track) { tr.Body.FlightID = nil },
+		"other feed": func(tr *telemetry.Track) { tr.Body.Source = "remote_id" },
+	} {
+		if _, ours, err := DecodeTrack(trackMessage(t, mut)); ours || err != nil {
+			t.Errorf("%s: ours %v err %v", name, ours, err)
+		}
+	}
+	bad := "x"
+	for name, mut := range map[string]func(*telemetry.Track){
+		"schema":   func(tr *telemetry.Track) { tr.Schema = "x/v1" },
+		"flight":   func(tr *telemetry.Track) { tr.Body.FlightID = &bad },
+		"intent":   func(tr *telemetry.Track) { tr.Body.IntentID = &bad },
+		"position": func(tr *telemetry.Track) { tr.Body.Position.Lat = 95 },
+		"envelope": func(tr *telemetry.Track) { tr.MsgID = "" },
+	} {
+		if _, _, err := DecodeTrack(trackMessage(t, mut)); err == nil {
+			t.Errorf("%s decoded", name)
+		}
+	}
+	if _, _, err := DecodeTrack([]byte("[")); err == nil {
+		t.Error("not JSON decoded")
+	}
+	if _, _, err := DecodeTrack(make([]byte, bus.TrackMsgBytes+1)); err == nil {
+		t.Error("over the bound decoded")
+	}
+}
+
+// Lost link: the presence and absence pair at the bound, the lost_link
+// alert's detail, and a Drop that clears both alerts as flight_ended.
+func TestLostLinkBoundAndDrop(t *testing.T) {
+	cfg := testConfig()
+	a := circleAuth()
+	tr := NewTracker(flightA, intentA, "", nil)
+	tr.Observe(input(geodesy.Destination(origin, 90, 600), 0, &a), cfg, at(0))
+	if ev := tr.Tick(cfg, at(14.9)); len(ev.Alerts) != 0 {
+		t.Fatalf("lost before 15 s: %+v", ev)
+	}
+	ev := tr.Tick(cfg, at(15))
+	if len(ev.Alerts) != 1 || ev.Alerts[0].Alert.Kind != KindLostLink || tr.Snapshot().State != StateLostLink {
+		t.Fatalf("not lost at 15 s: %+v", ev)
+	}
+	if got := tr.Active(); len(got) != 2 {
+		t.Fatalf("active %+v", got)
+	}
+	ev = tr.Drop("", at(20))
+	if len(ev.Alerts) != 2 || ev.Alerts[0].ClearReason != ClearFlightEnded || ev.Alerts[1].ClearReason != ClearFlightEnded {
+		t.Fatalf("drop %+v", ev)
+	}
+	if ev := tr.Drop(ClearResolved, at(21)); len(ev.Alerts) != 0 {
+		t.Fatal("cleared twice")
+	}
+}
+
+// A sample the judgement refuses neither refreshes nor clears (C-09).
+func TestJudgementFailureHoldsTheState(t *testing.T) {
+	cfg := testConfig()
+	a := circleAuth()
+	tr := NewTracker(flightA, intentA, "", nil)
+	tr.Observe(input(geodesy.Destination(origin, 90, 600), 0, &a), cfg, at(0))
+	broken := circleAuth()
+	broken.Thresholds.HM = 0
+	ev := tr.Observe(input(origin, 5, &broken), cfg, at(5))
+	if ev.Unjudged != "judgement_failed" || len(ev.Alerts) != 0 || tr.Snapshot().State != StateNonconforming ||
+		tr.Counters.Get(CounterJudgementFailed) != 1 {
+		t.Fatalf("%+v %v", ev, tr.Snapshot())
+	}
+	// The AuthErr path of an intent that does not read: counted, held.
+	in := input(origin, 6, nil)
+	in.AuthErr = core.Fieldf("deviation_thresholds", "missing")
+	if ev := tr.Observe(in, cfg, at(6)); ev.Unjudged != "judgement_failed" || tr.Snapshot().State != StateNonconforming {
+		t.Fatalf("%+v", ev)
+	}
+	// An invalid position is refused before admission.
+	in = input(core.LatLon{LatDeg: math.NaN()}, 7, &a)
+	if ev := tr.Observe(in, cfg, at(7)); ev.Admitted || ev.Refusal != "invalid" {
+		t.Fatalf("%+v", ev)
+	}
+}
+
+// A flight that has an authorisation but whose projection was never
+// read is unknown with that reason, never conforming (SC-22); the
+// authorisation appearing resolves it at the next sample.
+func TestProjectionUnavailableThenResolves(t *testing.T) {
+	cfg := testConfig()
+	tr := NewTracker(flightA, intentA, "", nil)
+	in := input(origin, 0, nil)
+	in.MissingReason = UnknownProjectionUnavailable
+	tr.Observe(in, cfg, at(0))
+	if s := tr.Snapshot(); s.State != StateUnknown || s.Reason != UnknownProjectionUnavailable {
+		t.Fatalf("%+v", s)
+	}
+	a := circleAuth()
+	ev := tr.Observe(input(origin, 1, &a), cfg, at(1))
+	if s := tr.Snapshot(); s.State != StateConforming || len(ev.Transitions) != 1 || ev.Transitions[0].From != StateUnknown {
+		t.Fatalf("%+v %+v", s, ev)
+	}
+}
+
+func FuzzDecodeState(f *testing.F) {
+	good := StateMessageOf(Snapshot{FlightID: flightA, State: StateConforming, BaseState: StateConforming}, Events{},
+		core.Times{RxTS: tt0, CapturedAt: tt0, Source: core.TimeSourceClock}, 1)
+	raw, _ := json.Marshal(good)
+	f.Add(raw)
+	f.Add([]byte(`{"schema":"conformance/state/v1","body":{"flight_id":"` + flightA + `","state":"x"}}`))
+	f.Add([]byte("null"))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		m, err := DecodeState(data)
+		if err == nil && (m.Schema != SchemaState || !states[m.Body.State]) {
+			t.Fatalf("accepted %+v", m)
+		}
+	})
+}
+
+func FuzzDecodeTrack(f *testing.F) {
+	f.Add(trackMessage(&testing.T{}, nil))
+	f.Add([]byte(`{"schema":"track/telemetry/v1","body":{"position":{"lat":1e308,"lng":-1e308}}}`))
+	f.Fuzz(func(_ *testing.T, data []byte) {
+		tr, ours, err := DecodeTrack(data)
+		if err != nil || !ours {
+			return
+		}
+		// Whatever decodes is judged without a panic.
+		a := circleAuth()
+		NewTracker(*tr.Body.FlightID, "", "", nil).Observe(func() Input { in := InputOf(tr); in.Auth = &a; return in }(), testConfig(), tt0)
+	})
+}
+
+// An intent_active value is read by AuthorisationOf and judged: nothing
+// a writer of that bucket puts there panics the judgement.
+func FuzzAuthorisationOf(f *testing.F) {
+	raw, _ := json.Marshal(stateBodyOfFuzz())
+	f.Add(raw, 41.7151, 44.8271, 550.0)
+	f.Add([]byte(`{"volumes":[{"volume":{"outline_polygon":{"vertices":[]}}}],"volumes_amsl":[{}],"deviation_thresholds":{"h_m":1,"v_m":1,"t_s":1}}`),
+		0.0, 0.0, 0.0)
+	f.Fuzz(func(_ *testing.T, data []byte, lat, lon, altM float64) {
+		var b intent.StateBody
+		if json.Unmarshal(data, &b) != nil {
+			return
+		}
+		a, err := AuthorisationOf(b)
+		if err != nil {
+			return
+		}
+		_, _ = Judge(Sample{Position: core.LatLon{LatDeg: lat, LonDeg: lon}, AltAMSLM: &altM, AltSource: core.AltPressure, CapturedAt: tt0},
+			a, Policy{PressureUncertaintyM: 250})
+	})
+}
+
+func stateBodyOfFuzz() intent.StateBody {
+	var b intent.StateBody
+	_ = json.Unmarshal([]byte(`{"intent_id":"`+intentA+`","deviation_thresholds":{"h_m":50,"v_m":15,"t_s":60},
+	"volumes":[{"volume":{"outline_polygon":{"vertices":[{"lat":41.7,"lng":44.8},{"lat":41.7,"lng":44.81},{"lat":41.71,"lng":44.81}]},
+	"altitude_lower":{"value":520,"reference":"W84","units":"M"},"altitude_upper":{"value":620,"reference":"W84","units":"M"}},
+	"time_start":{"value":"2026-11-01T11:00:00Z","format":"RFC3339"},"time_end":{"value":"2026-11-01T13:00:00Z","format":"RFC3339"}}],
+	"volumes_amsl":[{"lower_amsl_m":500,"upper_amsl_m":600,"undulation_m":20}]}`), &b)
+	return b
+}
