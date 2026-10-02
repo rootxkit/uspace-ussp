@@ -9,6 +9,17 @@ additively within `/v1`.
 
 ### Changed
 
+- WP-6: api projects policy, source_control, cis_current,
+  registry_validity and client_bindings to NATS KV through the bounded
+  `bus.Projector` instead of in-process stand-ins, so a write the KV
+  cannot take is refused with 503 (B-09); the CIS cache retries a failed
+  projection on its reconciliation tick (`cis_projection_retried`).
+  `nats` on `/readyz` is degraded when a stream or bucket is missing or
+  differs from this build's topology. Time-series migration 00003 adds
+  `msg_id` with a unique `(msg_id, time)` index to every written
+  hypertable, `telemetry.accuracy_h_m` / `accuracy_v_m`, a nullable `ts`
+  (no source clock), and `writer_gaps` / `writer_positions`.
+
 - WP-5: the api process has one outgoing token client for the CISP and
   the authority; a stored policy version without a threshold added
   later loads that threshold's default.
@@ -17,6 +28,24 @@ additively within `/v1`.
   builder moves to `internal/app/proc` (rid-sp verifies tokens too).
 
 ### Added
+
+- WP-6 bus, partition cell and tsdb-writer: `internal/cell` over core
+  `geodesy/cell` (Key, Ring1, CellsFor, CellsForEnvelope, ownership of
+  `USSP_CELL_OWNERSHIP`; the 800 m ring guarantee checked against brute
+  force on 10 000 points); `internal/bus` with the PLAN §7 streams (TRK,
+  MAN, PEER, ALRT, CONF, IDENT, INTENT, CIS, TRAFFIC, INGEST) and KV
+  buckets, created when missing and verified for drift, typed subject
+  builders and parser, the 04 §2 envelope with ULID `msg_id`, the
+  publisher (core for trk/man/peer/src/ctl, JetStream with the msg_id as
+  dedupe id otherwise; `published_*`, `publish_failed_*`), the KV
+  projector and `Follower[T]` (watch, ctl push, 300 s re-read, value with
+  its age); `sources.Follow`; tsdb-writer: one durable pull consumer per
+  stream, batched `COPY` (1000 rows or 1 s) through a staging table with
+  `ON CONFLICT DO NOTHING`, ack after commit, a 10 s / 50 000-row queue
+  (`USSP_WRITER_QUEUE_S`, `USSP_WRITER_HOLD_ROWS`), gaps for what the
+  streams removed unwritten, malformed or refused (`writer_gaps`,
+  `dropped_rows`), and queue depth, batch size and write latency on
+  `/metrics`.
 
 - WP-5 registry validity (`internal/registry`): the authority's F8 API
   generated from the pinned copy `api/clients/authority.yaml` (GET and

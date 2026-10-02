@@ -107,3 +107,52 @@ implementation that WP-1/2/4/5 wrote against, and the follower side of
 `feat(bus): projector and followers with age [WP-6 S-M0]`,
 `feat(cell): pure-Go partition grid with ring guarantee [WP-6 S-M0]`,
 `feat(tsdb-writer): batched COPY with bounded queue and dedupe [WP-6 S-M0]`.
+
+## As built (the PR)
+
+What the build decided where the brief, the plan or core left a choice;
+each is in the PR body as well.
+
+- Core v1.2.0 ships `geodesy/cell`; `internal/cell` imports it, no local
+  grid. `Key` returns an error beside the two names (an invalid position
+  is refused, never a panic). The ring guarantee holds to |lat| 85°; a
+  twin test finds the counterexample near the pole.
+- Streams MAN (`man.v1.>`) and PEER (`peer.v1.>`), 1 h, are added to
+  PLAN §7's table: those subjects stay core publishes for the hot path,
+  and the streams let tsdb-writer read them durably. Every process
+  creates a missing stream or bucket (`bus.Ensure`) and never changes an
+  existing one; what differs is drift under `nats` on `/readyz`.
+- KV keys admit no colon: a cell key is `cell.KVToken` (`c5.1317.2248`),
+  any other id a `bus.KeyToken` (unpadded base64url). cis_current also
+  holds `basis`, written last, so "no zone in this cell" and "nothing
+  loaded" differ (SC-22).
+- tsdb-writer reads one durable consumer over each whole stream, so a
+  step in the sequences is always a message the stream removed, never
+  another filter's message: a quiet stream records no gap. The writer
+  never drops a message it was delivered. "Drop oldest" is what the
+  stream's limits do to messages the writer has not read; each hole is a
+  `writer_gaps` row (`stream_removed`, its sequences and the captured_at
+  of the messages around it), committed with the message after it and so
+  before that message is acknowledged, counted in `dropped_rows` and
+  logged at error level. At start, an ack floor beyond the committed
+  `writer_positions` is the same gap (a purge while the writer was down).
+  Nothing is pulled before that check, so a writer started with
+  TimescaleDB down holds nothing until it is back; the 50 000-row hold
+  applies to an outage while running.
+- The queue bound is 10 s while writes succeed and `USSP_WRITER_HOLD_ROWS`
+  always; both are configuration (`deploy/ENV.md`), not policy rows: they
+  bound the writer, they judge nothing.
+- Dedupe: a 10 s in-memory msg_id window (bounded, E-10) and the unique
+  `(msg_id, time)` index, both counted as `dedupe_hits`.
+- Decoding: `trk.v1` tracks without a `flight_id` are skipped and counted
+  (`skipped_not_own_flight`; peer and manned tracks reach their tables on
+  `peer.v1` and `man.v1`). `man.v1` from source `adsb_rx` (trust
+  `broadcast`) goes to `econspicuity_tracks`. The bodies of
+  `traffic/product/v1` records and `conformance/state/v1` are read with
+  the column names of PLAN §5.2; WP-14 and WP-10/11 publish them so.
+- Per-user NATS subject permissions in `deploy/compose/nats.conf` are not
+  part of this PR.
+- `make integration` also runs the integration-tagged tests of
+  `internal/bus` and `internal/app/tsdbwriter`, one package at a time;
+  the bus coverage of 85 % is reached with them (unit tests alone cover
+  what needs no server).
