@@ -92,7 +92,7 @@ func ParseOperatorScopes(raw string) ([]string, error) {
 // does not have (brief WP-2: an unknown scope is refused). The
 // GuardedMux calls it for every route at start.
 func ValidateAccess(a httpx.Access) error {
-	for _, s := range a.Scopes {
+	for _, s := range slices.Concat(a.Scopes, a.AllScopes) {
 		if !KnownScope(s) {
 			return fmt.Errorf("scope %s is not in the catalogue (cross-plan Appendix B)", quote(s))
 		}

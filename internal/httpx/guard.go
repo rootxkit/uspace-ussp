@@ -9,14 +9,17 @@ import (
 )
 
 // Access is what one operation requires of its caller. Exactly one of
-// three shapes: Public (no credential); or one or both of Scopes (a
-// machine token granting any one of them) and Sessions (a session
-// token of one of these realms, with one of the listed roles). An
-// Access that is neither is not "anyone": NewGuardedMux refuses it.
+// three shapes: Public (no credential); or one or more of Scopes (a
+// machine token granting any one of them), AllScopes (a machine token
+// granting every one of them: an OpenAPI security requirement that
+// lists several scopes) and Sessions (a session token of one of these
+// realms, with one of the listed roles). An Access that is none of them
+// is not "anyone": NewGuardedMux refuses it.
 type Access struct {
-	Public   bool
-	Scopes   []string
-	Sessions []SessionAccess
+	Public    bool
+	Scopes    []string
+	AllScopes []string
+	Sessions  []SessionAccess
 }
 
 // SessionAccess admits a session of Realm whose roles contain one of
@@ -29,11 +32,11 @@ type SessionAccess struct {
 // Validate refuses an Access that grants nothing or contradicts itself.
 func (a Access) Validate() error {
 	switch {
-	case a.Public && (len(a.Scopes) > 0 || len(a.Sessions) > 0):
+	case a.Public && (len(a.Scopes) > 0 || len(a.AllScopes) > 0 || len(a.Sessions) > 0):
 		return errors.New("public and restricted at once")
-	case !a.Public && len(a.Scopes) == 0 && len(a.Sessions) == 0:
+	case !a.Public && len(a.Scopes) == 0 && len(a.AllScopes) == 0 && len(a.Sessions) == 0:
 		return errors.New("neither public nor restricted to a scope or a session realm")
-	case slices.Contains(a.Scopes, ""):
+	case slices.Contains(a.Scopes, "") || slices.Contains(a.AllScopes, ""):
 		return errors.New("an empty scope")
 	}
 	for _, s := range a.Sessions {
@@ -52,6 +55,9 @@ func (a Access) String() string {
 	var parts []string
 	for _, s := range a.Scopes {
 		parts = append(parts, "scope:"+s)
+	}
+	if len(a.AllScopes) > 0 {
+		parts = append(parts, "scopes:"+strings.Join(a.AllScopes, "+"))
 	}
 	for _, s := range a.Sessions {
 		if len(s.Roles) == 0 {

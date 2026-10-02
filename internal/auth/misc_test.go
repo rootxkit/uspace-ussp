@@ -105,6 +105,7 @@ func TestValidateAccess(t *testing.T) {
 	good := []httpx.Access{
 		{Scopes: []string{ScopeIntents, "utm.strategic_coordination", "ussp.records", "dp.observe"}},
 		{Sessions: []httpx.SessionAccess{{Realm: RealmConsole, Roles: []string{RoleAdmin}}, {Realm: RealmPortal}}},
+		{AllScopes: []string{"utm.strategic_coordination", "utm.availability_arbitration"}},
 	}
 	for _, a := range good {
 		if err := ValidateAccess(a); err != nil {
@@ -114,6 +115,7 @@ func TestValidateAccess(t *testing.T) {
 	bad := []httpx.Access{
 		{Scopes: []string{"rid.observe"}},
 		{Scopes: []string{"made.up"}},
+		{AllScopes: []string{"utm.strategic_coordination", "made.up"}},
 		{Sessions: []httpx.SessionAccess{{Realm: "police"}}},
 		{Sessions: []httpx.SessionAccess{{Realm: RealmPortal, Roles: []string{RoleAdmin}}}},
 	}

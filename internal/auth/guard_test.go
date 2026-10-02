@@ -375,6 +375,37 @@ func TestGuardKeepsScopesToTheirIssuers(t *testing.T) {
 	}
 }
 
+// AllScopes (an OpenAPI requirement listing several scopes) admits a
+// token that grants every one of them and refuses one that grants all
+// but one, naming what it wanted.
+func TestGuardAllScopesPair(t *testing.T) {
+	f := newGuardFixture(t)
+	all := httpx.Access{AllScopes: []string{"utm.strategic_coordination", "utm.constraint_processing"}}
+	tok := func(scopes ...string) func(*http.Request) {
+		return bearer(f.eco.token(t, "peer-uss", ownHost, scopes, f.c.Now()))
+	}
+	if res := f.do(t, all, http.MethodGet, tok("utm.strategic_coordination", "utm.constraint_processing")); res.status != 200 {
+		t.Fatalf("every scope: %d", res.status)
+	}
+	res := f.do(t, all, http.MethodGet, tok("utm.strategic_coordination"))
+	if res.status != 403 || !strings.Contains(res.body["detail"].(string), "all of utm.strategic_coordination, utm.constraint_processing") {
+		t.Fatalf("one missing: %d %v", res.status, res.body)
+	}
+	// Scopes and AllScopes together: either admits.
+	either := httpx.Access{Scopes: []string{"rid.display_provider"}, AllScopes: all.AllScopes}
+	if res := f.do(t, either, http.MethodGet, tok("rid.display_provider")); res.status != 200 {
+		t.Fatalf("the single scope: %d", res.status)
+	}
+	if res := f.do(t, either, http.MethodGet, tok("utm.constraint_processing")); res.status != 403 {
+		t.Fatalf("neither: %d", res.status)
+	}
+	// An operator scope in AllScopes is still honoured only from this issuer.
+	mixed := httpx.Access{AllScopes: []string{ScopeIntents, "ussp.records"}}
+	if res := f.do(t, mixed, http.MethodGet, tok(ScopeIntents, "ussp.records")); res.status != 403 {
+		t.Fatalf("an ecosystem token with an operator scope: %d", res.status)
+	}
+}
+
 // An ecosystem token before its issuer's keys were ever fetched is 503,
 // not 401: the fault is ours.
 func TestGuardAnswers503BeforeTheJWKS(t *testing.T) {

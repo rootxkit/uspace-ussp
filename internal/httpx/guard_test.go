@@ -68,6 +68,8 @@ func TestGuardedMuxRefusesInvalidEntries(t *testing.T) {
 		"empty":               {},
 		"both":                {Public: true, Scopes: []string{"ussp.geo"}},
 		"empty scope":         {Scopes: []string{""}},
+		"empty of all":        {AllScopes: []string{"ussp.geo", ""}},
+		"public and all":      {Public: true, AllScopes: []string{"ussp.geo"}},
 		"realmless entry":     {Sessions: []SessionAccess{{Roles: []string{"admin"}}}},
 		"refused by validate": {Scopes: []string{"made.up"}},
 	} {
@@ -88,11 +90,19 @@ func TestGuardedMuxRefusesInvalidEntries(t *testing.T) {
 	}
 }
 
+// An entry restricted only by AllScopes is valid (E-01 twin of "empty").
+func TestAccessAllScopesIsRestricted(t *testing.T) {
+	if err := (Access{AllScopes: []string{"a.b", "c.d"}}).Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAccessString(t *testing.T) {
 	for want, a := range map[string]Access{
 		"public":                           {Public: true},
 		"scope:ussp.geo or session:portal": {Scopes: []string{"ussp.geo"}, Sessions: []SessionAccess{{Realm: "portal"}}},
 		"session:console/supervisor|admin": {Sessions: []SessionAccess{{Realm: "console", Roles: []string{"supervisor", "admin"}}}},
+		"scopes:a.b+c.d":                   {AllScopes: []string{"a.b", "c.d"}},
 	} {
 		if got := a.String(); got != want {
 			t.Errorf("%q, want %q", got, want)
