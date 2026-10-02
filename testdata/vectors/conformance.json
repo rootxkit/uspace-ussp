@@ -3092,9 +3092,19 @@
    "expected": {
     "active_after": [],
     "counters": {
-     "conformance_vertical_not_evaluated": 1
+     "conformance_vertical_not_evaluated": 2
     },
     "per_step": [
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "unknown"
+     },
+     {
+      "cleared": [],
+      "raised": [],
+      "state": "unknown"
+     },
      {
       "cleared": [],
       "raised": [],
@@ -3115,14 +3125,32 @@
        "lon_deg": 44.8271
       },
       "t_s": 0
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "alt_amsl_m": null,
+       "alt_source": "none",
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 1
+     },
+     {
+      "op": "observe",
+      "sample": {
+       "lat_deg": 41.7151,
+       "lon_deg": 44.8271
+      },
+      "t_s": 2
      }
     ]
    },
-   "name": "undetermined-first-judgement-reads-conforming-without-vertical",
+   "name": "undetermined-first-judgement-stays-unknown",
    "owner": [
     "ussp"
    ],
-   "why": "With no geoid the horizontal judgement still runs; the state is conforming with vertical_known false on it (SC-22)."
+   "why": "With no altitude ever the flight was never shown inside its band: unknown (vertical_not_evaluated), never conforming by default (SC-22); the first sample with an altitude judges it."
   },
   {
    "expected": {

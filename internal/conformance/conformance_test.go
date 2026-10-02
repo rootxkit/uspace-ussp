@@ -278,7 +278,7 @@ func TestStateMessageRoundTrip(t *testing.T) {
 	in.Sample.AltSource, in.Sample.AltAMSLM = core.AltNone, nil
 	ev = tr2.Observe(in, testConfig(), at(0))
 	m = StateMessageOf(tr2.Snapshot(), ev, core.Times{RxTS: at(0), CapturedAt: at(0), Source: core.TimeSourceClock}, 3)
-	if m.Body.HeightOverM != nil || m.Body.VerticalKnown == nil || *m.Body.VerticalKnown || m.Body.State != StateConforming {
+	if m.Body.HeightOverM != nil || m.Body.VerticalKnown == nil || *m.Body.VerticalKnown || m.Body.State != StateUnknown {
 		t.Fatalf("vertical not evaluated: %+v", m.Body)
 	}
 }
@@ -546,5 +546,32 @@ func TestFlyingUnknownKeepsTheFlyingState(t *testing.T) {
 				t.Fatalf("lost_link %v, want %v: %+v", lost, tc.lost, ev)
 			}
 		})
+	}
+}
+
+// SC-22: a flight whose vertical has never been evaluated (no altitude,
+// or alt_source none) is unknown with that reason, never conforming;
+// the first sample with an altitude judges it (E-01 pair), and a flight
+// already judged keeps its state on an undetermined sample (C-09).
+func TestNoAltitudeEverStaysUnknown(t *testing.T) {
+	cfg := testConfig()
+	a := circleAuth()
+	tr := NewTracker(flightA, intentA, "", nil)
+	for i := range 3 {
+		in := input(origin, float64(i), &a)
+		in.Sample.AltAMSLM, in.Sample.AltSource = nil, core.AltNone
+		tr.Observe(in, cfg, at(float64(i)))
+		if s := tr.Snapshot(); s.State != StateUnknown || s.Reason != UnknownVerticalNotEvaluated {
+			t.Fatalf("sample %d: %+v", i, s)
+		}
+	}
+	ev := tr.Observe(input(origin, 3, &a), cfg, at(3))
+	if s := tr.Snapshot(); s.State != StateConforming || len(ev.Transitions) != 1 || ev.Transitions[0].From != StateUnknown {
+		t.Fatalf("%+v %+v", s, ev)
+	}
+	in := input(origin, 4, &a)
+	in.Sample.AltAMSLM, in.Sample.AltSource = nil, core.AltNone
+	if ev := tr.Observe(in, cfg, at(4)); tr.Snapshot().State != StateConforming || len(ev.Transitions) != 0 {
+		t.Fatalf("an undetermined sample moved a judged flight: %+v", ev)
 	}
 }

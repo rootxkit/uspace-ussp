@@ -332,8 +332,9 @@ func TestIntegrationConformanceLifecycle(t *testing.T) {
 
 // E-02, SC-22: a flight whose intent is not in intent_active is unknown
 // and says why, and judged within one sample once the entry appears; a
-// track without a vertical position is judged horizontally with
-// vertical_known false on its state; /readyz names intent_active.
+// track that never had a vertical position is judged horizontally and
+// stays unknown (vertical_not_evaluated) with vertical_known false on
+// its state; /readyz names intent_active.
 func TestIntegrationConformanceMissingInputs(t *testing.T) {
 	g := newConfRig(t)
 	intentID := newUUID()
@@ -367,7 +368,8 @@ func TestIntegrationConformanceMissingInputs(t *testing.T) {
 	put := time.Now()
 	within(t, 3*time.Second, func() bool {
 		s, ok := g.lastState(flight)
-		return ok && s.State == conformance.StateConforming && s.VerticalKnown != nil && !*s.VerticalKnown && s.HeightOverM == nil
+		return ok && s.Judged && s.State == conformance.StateUnknown && s.Reason != nil && *s.Reason == conformance.UnknownVerticalNotEvaluated &&
+			s.VerticalKnown != nil && !*s.VerticalKnown && s.HeightOverM == nil
 	})
 	t.Logf("judged %v after the intent_active entry appeared (the next sample)", time.Since(put))
 	f.halt()

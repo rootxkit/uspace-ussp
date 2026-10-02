@@ -43,6 +43,10 @@ const (
 	// UnknownAuthorisationInvalid: the authorisation does not read or
 	// refuses the judgement (no thresholds, a zero threshold: E-15).
 	UnknownAuthorisationInvalid = "authorisation_invalid"
+	// UnknownVerticalNotEvaluated: every judgement so far was
+	// undetermined (no altitude, or alt_source none): the flight was
+	// never shown inside its band, so it is not conforming (SC-22).
+	UnknownVerticalNotEvaluated = "vertical_not_evaluated"
 )
 
 // Alert kinds (spec 04 §3.3).
@@ -547,10 +551,11 @@ func (t *Tracker) apply(ev *Events, v Verdict, placed, wall time.Time, cfg Confi
 	case Undetermined:
 		// The horizontal and the window ran and hold it; the vertical did
 		// not. It neither refreshes nor clears (C-09); a flight with no
-		// judgement yet reads conforming with vertical_known false.
+		// complete judgement yet stays unknown, never conforming by
+		// default (SC-22, E-15).
 		t.change(ev, placed, func() {
 			if t.base == StateUnknown {
-				t.base, t.reason = StateConforming, ""
+				t.unknownBy = UnknownVerticalNotEvaluated
 			}
 		})
 	case Outside:
