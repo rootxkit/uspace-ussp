@@ -70,6 +70,8 @@ type Config struct {
 	DSSBaseURL              string   `env:"USSP_DSS_BASE_URL" by:"api,rid-sp,dss-sync" kind:"url" help:"InterUSS DSS base URL; its host is the outgoing aud"`
 	CISPBaseURL             string   `env:"USSP_CISP_BASE_URL" by:"api" kind:"url" help:"CISP base URL (F3 pull)"`
 	CISBBox                 string   `env:"USSP_CIS_BBOX" by:"api" help:"box of the CIS change subscription as min_lng,min_lat,max_lng,max_lat in WGS84 degrees; empty is everywhere"`
+	CISPublisherKeys        []string `env:"USSP_CIS_PUBLISHER_KEYS" by:"api" kind:"issuers" help:"JWKS of the CIS publishers as authority=jwks_url,ansp=jwks_url: a dataset version is used only when its X-Publisher-Signature verifies with its publisher's key (the authority for zones, uspace_airspace and ussp_list, the ANSP for restrictions); otherwise it is held"`
+	CISPublisherSigMaxAgeS  int      `env:"USSP_CIS_PUBLISHER_SIG_MAX_AGE_S" default:"31622400" by:"api" min:"300" max:"315360000" unit:"s" help:"how old the iat of a publisher signature may be when this USSP first reads its version; the CISP forwards the signature made at publication, so it is as old as the version (default 366 days)"`
 	CISReconcileS           int      `env:"USSP_CIS_RECONCILE_S" default:"60" by:"api" min:"5" max:"60" unit:"s" help:"period of the conditional pull of every CIS dataset that bounds what a missed change notification costs (spec 02 F3: at most 60 s)"`
 	AuthorityBaseURL        string   `env:"USSP_AUTHORITY_BASE_URL" by:"api" kind:"url" help:"authority base URL (F8 registry, occurrences, status)"`
 	ANSPBaseURL             string   `env:"USSP_ANSP_BASE_URL" by:"api" kind:"url" help:"ANSP base URL (Annex V coordination notices)"`

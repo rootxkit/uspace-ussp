@@ -37,6 +37,14 @@ additively within `/v1`.
   unknown, stale, refused, not pulled) and `cis_notify_keys`; fakes of
   the CISP and the ANSP in `internal/testfakes`. An up dependency now
   keeps the detail its probe gives.
+- WP-4 provenance: a CIS version is used only when its publisher's
+  `X-Publisher-Signature` (read from `GET /v1/{dataset}/versions/{v}`)
+  verifies with the authority's or the ANSP's keys
+  (`USSP_CIS_PUBLISHER_KEYS`, iat bound
+  `USSP_CIS_PUBLISHER_SIG_MAX_AGE_S`, default 366 days); otherwise it is
+  held (stored with `signature_ok` false, never used or warm-loaded),
+  `/readyz` `cis` degraded and `cis_publisher_untrusted` counted;
+  `/readyz` entry `cis_publisher_keys`.
 
 - WP-3 standards code generation: the F3411-22a and F3548-21 OpenAPI
   files pinned byte for byte in `api/standards/` with `SOURCE` (the

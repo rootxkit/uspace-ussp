@@ -54,12 +54,14 @@ const sweepInterval = 10 * time.Minute
 type Store interface {
 	// SaveVersion stores v and its features once (a second save of the
 	// same version is a no-op) and keeps only the current and the
-	// previous version of the dataset.
+	// previous version of the dataset, and the newest trusted one
+	// (SignatureOK) when it is older.
 	SaveVersion(ctx context.Context, v *Version, es []*Entry) error
 	// TouchVersion records that the CISP confirmed the version.
 	TouchVersion(ctx context.Context, d Dataset, version int64) error
-	// LoadCurrent returns the newest stored version of every dataset,
-	// with its age on the database clock.
+	// LoadCurrent returns the newest stored trusted version
+	// (SignatureOK) of every dataset, with its age on the database
+	// clock; a held version is never loaded.
 	LoadCurrent(ctx context.Context) ([]StoredVersion, error)
 	// MarkPulled marks d's notifications up to version as pulled.
 	MarkPulled(ctx context.Context, d Dataset, version int64) error
@@ -90,12 +92,16 @@ type Hint struct {
 type CacheConfig struct {
 	// Client is nil when no CISP is configured: the cache serves what
 	// the database holds and says so.
-	Client    *Client
-	Store     Store
-	Evaluator *Evaluator
-	Projector Projector
-	Counters  *core.Counters
-	Logger    *slog.Logger
+	Client *Client
+	// Publishers verifies the publisher's signature of every version
+	// before it is used (USSP_CIS_PUBLISHER_KEYS); nil holds every new
+	// version, untrusted.
+	Publishers PublisherVerifier
+	Store      Store
+	Evaluator  *Evaluator
+	Projector  Projector
+	Counters   *core.Counters
+	Logger     *slog.Logger
 	// CallbackURL is USSP_USS_BASE_URL + /v1/cis/notifications; empty
 	// means no push subscription (the reconciliation alone).
 	CallbackURL string
@@ -122,6 +128,7 @@ type Cache struct {
 	hints       map[Dataset]*Hint
 	pending     map[Dataset]*Hint
 	refused     map[Dataset]*RefusalError
+	held        map[Dataset]*UntrustedError
 	pullErr     map[Dataset]string
 	projErr     string
 	subscribed  string
@@ -155,7 +162,7 @@ func NewCache(cfg CacheConfig) *Cache {
 	}
 	c := &Cache{
 		cfg: cfg, locks: map[Dataset]*sync.Mutex{}, kick: map[Dataset]chan struct{}{},
-		hints: map[Dataset]*Hint{}, pending: map[Dataset]*Hint{}, refused: map[Dataset]*RefusalError{},
+		hints: map[Dataset]*Hint{}, pending: map[Dataset]*Hint{}, refused: map[Dataset]*RefusalError{}, held: map[Dataset]*UntrustedError{},
 		pullErr: map[Dataset]string{}, unpersisted: map[Dataset]int64{},
 	}
 	for _, d := range AllDatasets {
@@ -349,7 +356,9 @@ func (c *Cache) pullDelta(ctx context.Context, d Dataset, cur *Version, h *Hint)
 	return v, true
 }
 
-// accept installs v when it is newer than cur.
+// accept installs v when it is newer than cur and its publisher's
+// signature verifies; a version whose signature is missing or does not
+// verify is held (stored, never used) and cur stays active.
 func (c *Cache) accept(ctx context.Context, v, cur *Version, reconcile bool) error {
 	now := c.cfg.Now()
 	if cur != nil && v.Number <= cur.Number {
@@ -371,10 +380,21 @@ func (c *Cache) accept(ctx context.Context, v, cur *Version, reconcile bool) err
 			return c.refuse(v.Dataset, rf)
 		}
 	}
+	if err := c.provenance(ctx, v); err != nil {
+		var ue *UntrustedError
+		if errors.As(err, &ue) {
+			return c.hold(ctx, v, es, ue)
+		}
+		return c.failPull(v.Dataset, err)
+	}
+	v.SignatureOK = true
 	c.cfg.Evaluator.install(v, es, now)
 	c.mu.Lock()
 	delete(c.refused, v.Dataset)
 	delete(c.pullErr, v.Dataset)
+	if h := c.held[v.Dataset]; h != nil && h.Version <= v.Number {
+		delete(c.held, v.Dataset)
+	}
 	c.mu.Unlock()
 	if reconcile {
 		c.cfg.Counters.Inc(CounterReconcileCatchups)
@@ -426,6 +446,28 @@ func (c *Cache) persistTouch(ctx context.Context, d Dataset, version int64) {
 		c.cfg.Counters.Inc(CounterStoreFailed)
 		c.cfg.Logger.Warn("CIS confirmation not stored", slog.String("dataset", string(d)), obs.Err(err))
 	}
+}
+
+// hold stores v as untrusted (signature_ok false: a warm start never
+// loads it) without using it, and says so on /readyz until a version
+// whose signature verifies replaces it. A pull that finds the same
+// version again checks it again (the keys may have been fetched since),
+// logging only a change.
+func (c *Cache) hold(ctx context.Context, v *Version, es []*Entry, ue *UntrustedError) error {
+	c.cfg.Counters.Inc(CounterUntrusted)
+	v.SignatureOK = false
+	c.mu.Lock()
+	prev := c.held[v.Dataset]
+	c.held[v.Dataset] = ue
+	delete(c.pullErr, v.Dataset)
+	c.mu.Unlock()
+	if prev == nil || prev.Version != ue.Version || prev.Reason != ue.Reason {
+		c.cfg.Logger.Error("CIS version held: its publisher's signature is not verified; the previous version is kept",
+			slog.String("dataset", string(v.Dataset)), slog.Int64("version", v.Number), slog.String("reason", ue.Reason))
+	}
+	c.clearPending(v.Dataset, v.Number)
+	c.persist(ctx, v, es)
+	return ue
 }
 
 func (c *Cache) refuse(d Dataset, rf *RefusalError) error {
@@ -524,9 +566,10 @@ func (c *Cache) sweepLoop(ctx context.Context) {
 	}
 }
 
-// Probe is the readiness of the cache (the /readyz entry cis):
-// unknown with no version loaded, degraded when a publication was
-// refused, a dataset is stale, a notification is not pulled yet, the
+// Probe is the readiness of the cache (the /readyz entry cis, also on
+// the E-09 status line): unknown with no version loaded, degraded when
+// a publication was refused, a version is held untrusted (or no
+// publisher keys are configured), a dataset is stale, a notification is not pulled yet, the
 // projection or the subscription failed; up otherwise, with the
 // versions and the age.
 func (c *Cache) Probe(context.Context) (obs.State, string) {
@@ -535,9 +578,17 @@ func (c *Cache) Probe(context.Context) (obs.State, string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var problems []string
+	if c.cfg.Client != nil && c.cfg.Publishers == nil {
+		problems = append(problems, errNoPublisherKeys+": every new version is held")
+	}
 	for _, d := range AllDatasets {
 		if rf := c.refused[d]; rf != nil {
 			problems = append(problems, fmt.Sprintf("last publication refused: %s %s", d, rf.First))
+		}
+	}
+	for _, d := range AllDatasets {
+		if h := c.held[d]; h != nil {
+			problems = append(problems, h.Error())
 		}
 	}
 	for _, d := range AllDatasets {

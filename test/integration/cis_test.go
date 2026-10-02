@@ -45,6 +45,7 @@ func withCIS(t *testing.T, vars map[string]string) *cisp.Fake {
 	vars["USSP_CISP_BASE_URL"] = fake.URL()
 	vars["USSP_USS_BASE_URL"] = "https://" + testHost
 	vars["USSP_CIS_NOTIFY_ISSUERS"] = fake.Signer.Issuer + "=" + fake.URL() + "/.well-known/jwks.json"
+	vars["USSP_CIS_PUBLISHER_KEYS"] = fake.PublisherKeysEnv()
 	return fake
 }
 
@@ -125,7 +126,11 @@ func newCISRig(t *testing.T, reconcile time.Duration) *cisRig {
 	g.srv = httptest.NewServer(g.receiverHandler())
 	t.Cleanup(g.srv.Close)
 	g.callback = g.srv.URL + cis.NotificationsPath
-	g.cache = cis.NewCache(cis.CacheConfig{Client: client, Store: g.store, Evaluator: g.eval, Projector: g.proj, Counters: g.counters,
+	pubs, err := coreauth.NewDetachedVerifier(context.Background(), coreauth.DetachedConfig{Publishers: g.fake.PublisherKeys(), MaxAge: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.cache = cis.NewCache(cis.CacheConfig{Client: client, Publishers: pubs, Store: g.store, Evaluator: g.eval, Projector: g.proj, Counters: g.counters,
 		Logger: logger, CallbackURL: g.callback, ReconcileInterval: reconcile})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -292,6 +297,55 @@ func TestIntegrationCISWebhookDeltaReconcileRefusal(t *testing.T) {
 	}
 	if ver, age, _ := eval.Age(); !strings.HasPrefix(ver, "zones:5") || age > 60 {
 		t.Fatalf("warm age: %q %v", ver, age)
+	}
+}
+
+// Provenance on the real database (WP-4 review): a version whose
+// publisher signature is missing is held, stored with signature_ok
+// false and never used; two held versions do not prune the trusted one
+// in use, and a restart loads the trusted one; a signed version then
+// replaces it and clears the hold.
+func TestIntegrationCISUntrustedVersionHeld(t *testing.T) {
+	g := newCISRig(t, time.Hour)
+	ctx := context.Background()
+	trusted := func(v int64) int64 {
+		return g.dbCount("SELECT count(*) FROM cis_datasets WHERE dataset = 'zones' AND version = $1 AND signature_ok", v)
+	}
+	held := func(v int64) int64 {
+		return g.dbCount("SELECT count(*) FROM cis_datasets WHERE dataset = 'zones' AND version = $1 AND NOT signature_ok", v)
+	}
+
+	g.fake.Deliver(ctx, g.fake.Publish("zones", zone("TZP001", 120)))
+	g.waitFor("v1", 5*time.Second, func() bool { return g.version(cis.Zones) == 1 && trusted(1) == 1 })
+
+	for _, v := range []int64{2, 3} {
+		ch := g.fake.Publish("zones", zone("TZP001", 120), zone("TZP00"+strconv.FormatInt(v, 10), 60))
+		g.fake.SetPublisherSignature("zones", v, "", "")
+		g.fake.Deliver(ctx, ch)
+		g.waitFor("v"+strconv.FormatInt(v, 10)+" held", 5*time.Second, func() bool { return held(v) == 1 })
+	}
+	if g.version(cis.Zones) != 1 || trusted(1) != 1 || g.counters.Get(cis.CounterUntrusted) != 2 {
+		t.Fatalf("active %d, v1 stored %d, %v", g.version(cis.Zones), trusted(1), g.counters.Snapshot())
+	}
+	st, detail := g.cache.Probe(ctx)
+	t.Logf("readyz cis with v3 held: %s (%s)", st, detail)
+	if st != obs.StateDegraded || !strings.Contains(detail, "zones version 3 held, not used: no X-Publisher-Signature") {
+		t.Fatalf("probe: %s %q", st, detail)
+	}
+
+	eval := cis.NewEvaluator(cis.EvaluatorConfig{StaleS: func() float64 { return 300 }})
+	cis.NewCache(cis.CacheConfig{Store: g.store, Evaluator: eval}).Warm(ctx)
+	if v := eval.Snapshot().Version(cis.Zones); v == nil || v.Number != 1 || !v.SignatureOK {
+		t.Fatalf("warm loaded %+v, want the trusted v1", v)
+	}
+
+	g.fake.Deliver(ctx, g.fake.Publish("zones", zone("TZP001", 120), zone("TZP004", 90)))
+	g.waitFor("v4", 5*time.Second, func() bool { return g.version(cis.Zones) == 4 && trusted(4) == 1 })
+	if st, detail := g.cache.Probe(ctx); st != obs.StateUp || strings.Contains(detail, "held") {
+		t.Fatalf("after v4: %s %q", st, detail)
+	}
+	if n := g.dbCount("SELECT count(*) FROM cis_datasets WHERE dataset = 'zones'"); n != 2 || held(3) != 1 {
+		t.Fatalf("after v4: %d versions stored, v3 held %d", n, held(3))
 	}
 }
 

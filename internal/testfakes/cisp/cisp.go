@@ -5,8 +5,14 @@
 // /v1/{dataset}/versions/{v}, GET /v1/changes, POST and GET
 // /v1/subscriptions, GET /.well-known/jwks.json), publishes versions,
 // and delivers signed cis/change/v1 notifications (a compact JWS, as the
-// CISP's deliver does) to the subscribed callbacks. Down makes every
-// request answer 503; Requests counts what was asked.
+// CISP's deliver does) to the subscribed callbacks. Every version
+// carries its publisher's detached signature on GET
+// /v1/{dataset}/versions/{v} (X-Publisher-Signature, X-Publisher-Kid),
+// made at publication by a fake authority (zones, uspace_airspace,
+// ussp_list) or a fake ANSP (restrictions) whose JWKS the fake serves at
+// /publishers/{authority|ansp}/jwks.json (the real ones are the
+// publishers' own); SetPublisherSignature replaces or removes one. Down
+// makes every request answer 503; Requests counts what was asked.
 package cisp
 
 import (
@@ -36,6 +42,24 @@ type version struct {
 	features []json.RawMessage // nil for a raw publication
 	raw      []byte
 	at       time.Time
+	// pubSig and pubKID are X-Publisher-Signature and X-Publisher-Kid
+	// ("" sends neither).
+	pubSig, pubKID string
+}
+
+// The publishers of the datasets (the CISP's auth.PublisherOf).
+const (
+	PublisherAuthority = "authority"
+	PublisherANSP      = "ansp"
+)
+
+// PublisherOf is the publisher of dataset: the ANSP for restrictions,
+// the authority for the others.
+func PublisherOf(dataset string) string {
+	if dataset == "restrictions" {
+		return PublisherANSP
+	}
+	return PublisherAuthority
 }
 
 // Subscription is one subscription the fake holds.
@@ -68,7 +92,10 @@ type Change struct {
 // Fake is a running fake CISP.
 type Fake struct {
 	Signer *signer.Signer
-	srv    *httptest.Server
+	// Publishers sign the versions, by publisher (PublisherAuthority,
+	// PublisherANSP).
+	Publishers map[string]*signer.Signer
+	srv        *httptest.Server
 	// HTTPClient delivers the notifications.
 	HTTPClient *http.Client
 
@@ -109,6 +136,13 @@ func start(serve func(http.Handler) *httptest.Server) (*Fake, error) {
 		return nil, err
 	}
 	f.Signer = s
+	f.Publishers = map[string]*signer.Signer{}
+	for _, p := range []string{PublisherAuthority, PublisherANSP} {
+		if f.Publishers[p], err = signer.New(p, "fake-"+p+"-1"); err != nil {
+			f.srv.Close()
+			return nil, err
+		}
+	}
 	return f, nil
 }
 
@@ -131,6 +165,49 @@ func (f *Fake) Host() string { u, _ := url.Parse(f.srv.URL); return u.Hostname()
 
 // IssuerConfig is the static key set of its signing key.
 func (f *Fake) IssuerConfig() coreauth.IssuerConfig { return f.Signer.IssuerConfig() }
+
+// PublisherKeys are the publishers' static key sets, by publisher.
+func (f *Fake) PublisherKeys() map[string]coreauth.IssuerConfig {
+	out := make(map[string]coreauth.IssuerConfig, len(f.Publishers))
+	for p, s := range f.Publishers {
+		out[p] = s.IssuerConfig()
+	}
+	return out
+}
+
+// PublisherKeysEnv is USSP_CIS_PUBLISHER_KEYS naming the JWKS URLs the
+// fake serves for its publishers.
+func (f *Fake) PublisherKeysEnv() string {
+	return PublisherAuthority + "=" + f.srv.URL + "/publishers/" + PublisherAuthority + "/jwks.json," +
+		PublisherANSP + "=" + f.srv.URL + "/publishers/" + PublisherANSP + "/jwks.json"
+}
+
+// SetPublisherSignature replaces the publisher signature of version v of
+// dataset; an empty sig removes it (and the kid).
+func (f *Fake) SetPublisherSignature(dataset string, v int64, sig, kid string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	vs := f.versions[dataset]
+	if v < 1 || v > int64(len(vs)) {
+		return
+	}
+	if sig == "" {
+		kid = ""
+	}
+	vs[v-1].pubSig, vs[v-1].pubKID = sig, kid
+}
+
+// VersionBody is the bytes the fake serves for version v of dataset
+// (what its publisher signed).
+func (f *Fake) VersionBody(dataset string, v int64) []byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	vs := f.versions[dataset]
+	if v < 1 || v > int64(len(vs)) {
+		return nil
+	}
+	return served(dataset, vs[v-1])
+}
 
 // Down makes every request answer 503 until Up.
 func (f *Fake) Down() { f.mu.Lock(); f.down = true; f.mu.Unlock() }
@@ -180,6 +257,10 @@ func (f *Fake) publishLocked(dataset string, v *version) Change {
 	vs := f.versions[dataset]
 	v.n = int64(len(vs) + 1)
 	v.at = time.Now().UTC()
+	pub := PublisherOf(dataset)
+	if sig, err := f.Publishers[pub].SignDetached(served(dataset, v), v.at); err == nil {
+		v.pubSig, v.pubKID = sig, "fake-"+pub+"-1"
+	}
 	f.versions[dataset] = append(vs, v)
 	ids, removed := []string{}, []string{}
 	if len(vs) > 0 && v.features != nil && vs[len(vs)-1].features != nil {
@@ -293,6 +374,12 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	if path == "/.well-known/jwks.json" {
 		f.Signer.JWKSHandler(w, r)
 		return
+	}
+	if p, ok := strings.CutPrefix(path, "/publishers/"); ok {
+		if s := f.Publishers[strings.TrimSuffix(p, "/jwks.json")]; s != nil && strings.HasSuffix(p, "/jwks.json") {
+			s.JWKSHandler(w, r)
+			return
+		}
 	}
 	if r.Header.Get("Authorization") != "Bearer "+Token {
 		problem(w, http.StatusUnauthorized, "unauthenticated", "no or wrong bearer")
@@ -504,10 +591,20 @@ func (f *Fake) getVersion(w http.ResponseWriter, dataset string, n int64) {
 		problem(w, http.StatusNotFound, "not_found", "no such version")
 		return
 	}
+	f.mu.Lock()
+	v := vs[n-1]
+	sig, kid := v.pubSig, v.pubKID
+	f.mu.Unlock()
 	w.Header().Set("ETag", etag(dataset, n))
 	w.Header().Set("X-CIS-Version", strconv.FormatInt(n, 10))
 	w.Header().Set("Content-Type", "application/geo+json")
-	_, _ = w.Write(served(dataset, vs[n-1]))
+	if sig != "" {
+		w.Header().Set("X-Publisher-Signature", sig)
+	}
+	if kid != "" {
+		w.Header().Set("X-Publisher-Kid", kid)
+	}
+	_, _ = w.Write(served(dataset, v))
 }
 
 // Tokens is a cis.TokenSource-shaped source that hands out Token.

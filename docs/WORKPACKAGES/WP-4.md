@@ -157,10 +157,50 @@ choice; each is in the PR body as well.
   `GET /v1/restrictions/{id}`) is not followed: the ANSP's OpenAPI is not
   pinned here yet (ANSP WP-8). Spec gap; while the CISP is down the
   notified version stays on `/readyz` as "notified ... not pulled yet".
-- `signature_ok` is false: the CISP's `X-CIS-Signature` is not verified.
-  The CISP signs a version once, at its first serve, and keeps that
-  signature, while core's `DetachedVerifier` bounds iat to 5 min. The
-  pull is over TLS with a `cis.read` token. Spec gap for core or the CISP.
+- Provenance: a new version is used only when its publisher's signature
+  verifies. Once its bytes parse and build, `GET
+  /v1/{dataset}/versions/{v}` is read and its `X-Publisher-Signature`
+  (the detached JWS the authority or the ANSP sent with the
+  publication, forwarded by the CISP as received, with
+  `X-Publisher-Kid`) is verified over those bytes with core's
+  `DetachedVerifier` as the dataset's publisher: the authority for
+  `zones`, `uspace_airspace` and `ussp_list`, the ANSP for
+  `restrictions` (the CISP's `auth.PublisherOf`). The keys are
+  `USSP_CIS_PUBLISHER_KEYS` (`authority=jwks_url,ansp=jwks_url`): the
+  CISP does not serve the publishers' keys, its `/.well-known/jwks.json`
+  holds its own signing keys only. A missing signature, one that does
+  not verify, an `X-Publisher-Kid` that is not the signature's kid, or
+  no keys (not configured, not fetched yet) holds the version: stored
+  with `signature_ok` false, never used, never loaded by a warm start,
+  never pruning the trusted version in use; `/readyz` `cis` is degraded
+  with "... held, not used: <reason>" (so is the E-09 status line) and
+  `cis_publisher_untrusted` counts it. The next pull checks it again; a
+  version that cannot be read as published is a pull failure, not a
+  hold. `/readyz` `cis_publisher_keys` says whether the keys are
+  fetched.
+- The signature age. Core's `DetachedConfig.MaxAge` is configurable
+  (`DefaultDetachedMaxAge`, 5 min, applies only when it is zero). The
+  publisher's iat is the publication time, and the CISP forwards that
+  signature unchanged for the life of the version (what it caches per
+  version is its own `X-CIS-Signature`, made at the first serve), so a
+  signature is as old as its version. A USSP normally reads a version
+  seconds after its publication, but a new installation or a lost
+  database reads the current version however old it is.
+  `USSP_CIS_PUBLISHER_SIG_MAX_AGE_S` defaults to 366 days (31 622 400 s;
+  300 s to 10 years): a dataset left unpublished for a whole year (more
+  than 13 AIRAC cycles) still verifies; an older one is held, visibly,
+  and the bound can be raised. The iat bound is not the replay guard
+  here: versions only move forward (one at or below the version held is
+  never installed) and the CISP checks `body_sha256` before serving.
+- What the signature does not cover (spec gap, for the CISP): the
+  collection read from `GET /v1/{dataset}` is built by the CISP from its
+  stored rows and is not compared with the signed bytes (for
+  `restrictions` the signed bytes are the ANSP's request, not a
+  collection). A version the CISP makes itself (a restriction expiring:
+  publisher `system`) carries no publisher signature and is held until
+  the ANSP's next signed version. The CISP's `X-CIS-Signature` is not
+  verified: it is over the same version bytes. The pull is over TLS with
+  a `cis.read` token.
 - A `pull_url` is followed only when it is https with the scheme, host
   and port of `USSP_CISP_BASE_URL` (a missing port is the scheme's
   default) and carries no user information (`cis.Client.GetURL`).

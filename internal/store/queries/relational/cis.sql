@@ -38,11 +38,15 @@ SELECT sqlc.arg(dataset), sqlc.arg(version), sqlc.arg(feature_id), sqlc.arg(feat
 
 -- name: PruneCISVersions :execrows
 -- Keeps the current and the previous version of a dataset (history is
--- the CISP's); the features go with their version (ON DELETE CASCADE).
+-- the CISP's), and the newest one whose publisher signature verified
+-- (signature_ok): versions held untrusted never push out the one in
+-- use. The features go with their version (ON DELETE CASCADE).
 DELETE FROM cis_datasets d
  WHERE d.dataset = sqlc.arg(dataset)
    AND d.version < (SELECT min(k.version) FROM (
-           SELECT version FROM cis_datasets WHERE dataset = sqlc.arg(dataset) ORDER BY version DESC LIMIT 2) AS k);
+           SELECT version FROM cis_datasets WHERE dataset = sqlc.arg(dataset) ORDER BY version DESC LIMIT 2) AS k)
+   AND d.version IS DISTINCT FROM (SELECT max(t.version) FROM cis_datasets t
+                                    WHERE t.dataset = sqlc.arg(dataset) AND t.signature_ok);
 
 -- name: TouchCISDataset :one
 -- The CISP confirmed this version is current (a 304, or the same
@@ -52,11 +56,13 @@ UPDATE cis_datasets SET fetched_at = now()
 RETURNING fetched_at;
 
 -- name: CurrentCISDatasets :many
--- The newest stored version of every dataset, with its age on the
--- database clock.
+-- The newest stored version of every dataset whose publisher signature
+-- verified (a held one is never loaded), with its age on the database
+-- clock.
 SELECT DISTINCT ON (dataset) dataset, version, etag, fetched_at, metadata, signature_ok,
        extract(epoch FROM now() - fetched_at)::float8 AS age_s
   FROM cis_datasets
+ WHERE signature_ok
  ORDER BY dataset, version DESC;
 
 -- name: CISFeatures :many

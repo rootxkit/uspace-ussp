@@ -142,6 +142,14 @@ func statusError(resp *http.Response) error {
 	return e
 }
 
+// The headers of GET /v1/{dataset}/versions/{v} that carry the
+// publisher's detached JWS over the version's bytes, as the CISP
+// received it (the pinned api/clients/cisp.yaml).
+const (
+	HeaderPublisherSignature = "X-Publisher-Signature"
+	HeaderPublisherKID       = "X-Publisher-Kid"
+)
+
 // Fetched is one answer to a dataset read.
 type Fetched struct {
 	// Status is 200, 304 (If-None-Match named the current version) or
@@ -152,6 +160,10 @@ type Fetched struct {
 	Version     int64
 	ContentType string
 	Body        []byte
+	// PublisherSignature and PublisherKID are X-Publisher-Signature and
+	// X-Publisher-Kid ("" when absent; only a version read sends them).
+	PublisherSignature string
+	PublisherKID       string
 }
 
 // GetDataset is GET /v1/{dataset}, unfiltered, with If-None-Match etag
@@ -246,7 +258,8 @@ func (c *Client) GetURL(ctx context.Context, raw string) (Fetched, error) {
 
 func (c *Client) read(resp *http.Response) (Fetched, error) {
 	defer func() { _ = resp.Body.Close() }()
-	f := Fetched{Status: resp.StatusCode, ETag: resp.Header.Get("ETag"), ContentType: resp.Header.Get("Content-Type")}
+	f := Fetched{Status: resp.StatusCode, ETag: resp.Header.Get("ETag"), ContentType: resp.Header.Get("Content-Type"),
+		PublisherSignature: resp.Header.Get(HeaderPublisherSignature), PublisherKID: resp.Header.Get(HeaderPublisherKID)}
 	if v := resp.Header.Get("X-CIS-Version"); v != "" {
 		n, err := strconv.ParseInt(v, 10, 64)
 		if err != nil || n < 0 {

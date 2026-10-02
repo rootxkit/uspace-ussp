@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	coreauth "github.com/rootxkit/uspace-core/auth"
+
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 	"github.com/rootxkit/uspace-ussp/internal/testfakes/cisp"
 )
@@ -34,7 +36,11 @@ func newCacheRig(t *testing.T, callback string) *cacheRig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g.cache = NewCache(CacheConfig{Client: client, Store: g.store, Evaluator: g.eval, Projector: g.proj,
+	pubs, err := coreauth.NewDetachedVerifier(t.Context(), coreauth.DetachedConfig{Publishers: fake.PublisherKeys(), MaxAge: 366 * 24 * time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.cache = NewCache(CacheConfig{Client: client, Publishers: pubs, Store: g.store, Evaluator: g.eval, Projector: g.proj,
 		CallbackURL: callback, Now: g.clk.Now, SubscribeRetry: 10 * time.Millisecond})
 	return g
 }

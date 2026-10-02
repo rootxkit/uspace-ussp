@@ -139,7 +139,8 @@ func (p Store) TouchVersion(ctx context.Context, d cis.Dataset, version int64) e
 	return err
 }
 
-// LoadCurrent reads the newest version of every dataset back and parses
+// LoadCurrent reads the newest trusted version (signature_ok) of every
+// dataset back and parses
 // it as a served body (its features, and the cis_* members from its
 // metadata), so a stored version is judged exactly like a pulled one.
 func (p Store) LoadCurrent(ctx context.Context) ([]cis.StoredVersion, error) {

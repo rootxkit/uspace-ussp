@@ -91,10 +91,10 @@ type Version struct {
 	// USSPList is the parsed list (nil for the ED-318 datasets).
 	USSPList *cispclient.UsspList
 	Meta     Metadata
-	// SignatureOK is whether a signature over the bytes was verified.
-	// WP-4 verifies none: see docs/WORKPACKAGES/WP-4.md and the PR
-	// (the CISP's X-CIS-Signature is kept per version with the iat of
-	// its first serve, which core's detached verifier bounds to 5 min).
+	// SignatureOK is whether the publisher's signature of the version
+	// (X-Publisher-Signature over GET /v1/{dataset}/versions/{v}) was
+	// verified: only such a version is used or loaded at a warm start;
+	// one without is stored held (Cache.hold).
 	SignatureOK bool
 }
 

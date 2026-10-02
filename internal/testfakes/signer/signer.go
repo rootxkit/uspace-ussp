@@ -1,7 +1,8 @@
 // Package signer is the compact-JWS signer the fake CISP and the fake
 // ANSP sign their change notifications with: uspace-core's
-// KeyRing.SignCompact, as the real ones do (CISP WP-6, ANSP WP-8), with
-// a fresh RSA key per fake. Tests only.
+// KeyRing.SignCompact, as the real ones do (CISP WP-6, ANSP WP-8), and
+// the detached signer of the fake publishers (KeyRing.SignDetached),
+// with a fresh RSA key per signer. Tests only.
 package signer
 
 import (
@@ -65,6 +66,13 @@ func (s *Signer) Sign(callback, sub, jti string, body json.RawMessage, now time.
 // SignFor signs body with an explicit audience.
 func (s *Signer) SignFor(aud, sub, jti string, body json.RawMessage, now time.Time) (string, error) {
 	return s.ring.SignCompact(coreauth.CompactClaims{Issuer: s.Issuer, Audience: aud, Subject: sub, JTI: jti}, body, now)
+}
+
+// SignDetached is the detached JWS (RFC 7797, b64 false) over payload
+// with iat now, as a publisher sends X-JWS-Signature and the CISP
+// forwards it as X-Publisher-Signature.
+func (s *Signer) SignDetached(payload []byte, now time.Time) (string, error) {
+	return s.ring.SignDetached(payload, now)
 }
 
 // NewID is a random delivery id.

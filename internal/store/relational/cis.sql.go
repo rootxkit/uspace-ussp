@@ -50,6 +50,7 @@ const currentCISDatasets = `-- name: CurrentCISDatasets :many
 SELECT DISTINCT ON (dataset) dataset, version, etag, fetched_at, metadata, signature_ok,
        extract(epoch FROM now() - fetched_at)::float8 AS age_s
   FROM cis_datasets
+ WHERE signature_ok
  ORDER BY dataset, version DESC
 `
 
@@ -63,8 +64,9 @@ type CurrentCISDatasetsRow struct {
 	AgeS        float64   `json:"age_s"`
 }
 
-// The newest stored version of every dataset, with its age on the
-// database clock.
+// The newest stored version of every dataset whose publisher signature
+// verified (a held one is never loaded), with its age on the database
+// clock.
 func (q *Queries) CurrentCISDatasets(ctx context.Context) ([]CurrentCISDatasetsRow, error) {
 	rows, err := q.db.Query(ctx, currentCISDatasets)
 	if err != nil {
@@ -253,10 +255,14 @@ DELETE FROM cis_datasets d
  WHERE d.dataset = $1
    AND d.version < (SELECT min(k.version) FROM (
            SELECT version FROM cis_datasets WHERE dataset = $1 ORDER BY version DESC LIMIT 2) AS k)
+   AND d.version IS DISTINCT FROM (SELECT max(t.version) FROM cis_datasets t
+                                    WHERE t.dataset = $1 AND t.signature_ok)
 `
 
 // Keeps the current and the previous version of a dataset (history is
-// the CISP's); the features go with their version (ON DELETE CASCADE).
+// the CISP's), and the newest one whose publisher signature verified
+// (signature_ok): versions held untrusted never push out the one in
+// use. The features go with their version (ON DELETE CASCADE).
 func (q *Queries) PruneCISVersions(ctx context.Context, dataset string) (int64, error) {
 	result, err := q.db.Exec(ctx, pruneCISVersions, dataset)
 	if err != nil {

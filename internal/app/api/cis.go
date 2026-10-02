@@ -22,8 +22,9 @@ import (
 
 // Readiness dependencies of the CIS cache.
 const (
-	DepCIS           = "cis"
-	DepCISNotifyKeys = "cis_notify_keys"
+	DepCIS              = "cis"
+	DepCISNotifyKeys    = "cis_notify_keys"
+	DepCISPublisherKeys = "cis_publisher_keys"
 )
 
 // CIS is what the api process holds of the CIS cache: the evaluator
@@ -77,8 +78,26 @@ func startCIS(ctx context.Context, rt *proc.Runtime, current func() policy.Value
 	if rt.Store != nil && rt.Store.Rel != nil {
 		st = pgstore.Store{S: rt.Store}
 	}
+	// Without USSP_CIS_PUBLISHER_KEYS the cache holds every new version
+	// and says so on /readyz.
+	var publishers cis.PublisherVerifier
+	if len(cfg.CISPublisherKeys) > 0 {
+		pc, err := cfg.PublisherConfig()
+		if err != nil {
+			return nil, err
+		}
+		keys := cis.NewLazyPublisherVerifier(pc, 0)
+		rt.Health.Register(DepCISPublisherKeys, false, keys.Probe)
+		rt.Go(ctx, func(ctx context.Context) {
+			keys.Run(ctx)
+			if c := keys.Counters(); c != nil {
+				proc.Publish(rt, "cis_publisher_jws", c)
+			}
+		})
+		publishers = keys
+	}
 	cache := cis.NewCache(cis.CacheConfig{
-		Client: client, Store: st, Evaluator: eval, Counters: counters, Logger: rt.Logger.With("component", "cis"),
+		Client: client, Publishers: publishers, Store: st, Evaluator: eval, Counters: counters, Logger: rt.Logger.With("component", "cis"),
 		CallbackURL: callback, BBox: bbox, ReconcileInterval: time.Duration(cfg.CISReconcileS) * time.Second,
 		RetentionDays: func() int { return current().RecordRetentionDays },
 	})

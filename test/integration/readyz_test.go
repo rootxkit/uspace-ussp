@@ -172,7 +172,7 @@ func TestIntegrationAPIReadyWithEveryDependencyUp(t *testing.T) {
 	wantStates(t, body, map[string]client.DependencyState{
 		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateUp,
 		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
-		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp,
+		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
 	})
 }
 
@@ -219,7 +219,7 @@ func TestIntegrationAPINotReadyWithoutNATS(t *testing.T) {
 	wantStates(t, body, map[string]client.DependencyState{
 		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateDown,
 		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
-		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp,
+		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
 	})
 }
 
@@ -330,7 +330,7 @@ func TestIntegrationAPIFollowsNATSAwayAndBack(t *testing.T) {
 	wantStates(t, body, map[string]client.DependencyState{
 		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateDown,
 		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
-		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp,
+		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
 	})
 	if d := body.Dependencies["nats"]; d.AgeS == nil || *d.AgeS <= 0 {
 		t.Errorf("nats down without the age of its last good state: %+v", d)
