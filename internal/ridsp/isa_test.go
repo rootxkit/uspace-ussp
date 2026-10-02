@@ -870,3 +870,52 @@ func TestNotificationsDoNotBlockISAWrites(t *testing.T) {
 		t.Fatal("a hanging subscriber counted notified")
 	}
 }
+
+// badSubscribers answers every successful ISA put and delete of the DSS
+// with a subscriber list that cannot be notified (a relative url).
+type badSubscribers struct{}
+
+func (badSubscribers) RoundTrip(req *http.Request) (*http.Response, error) {
+	res, err := http.DefaultTransport.RoundTrip(req)
+	if err != nil || res.StatusCode != http.StatusOK || req.Method == http.MethodGet ||
+		!strings.Contains(req.URL.Path, "/dss/identification_service_areas/") {
+		return res, err
+	}
+	b, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	var ans map[string]any
+	if err := json.Unmarshal(b, &ans); err != nil {
+		return nil, err
+	}
+	ans["subscribers"] = []any{map[string]any{"url": "/relative", "subscriptions": []any{map[string]any{"subscription_id": "s"}}}}
+	b, _ = json.Marshal(ans)
+	res.Body, res.ContentLength = io.NopCloser(strings.NewReader(string(b))), int64(len(b))
+	res.Header.Del("Content-Length")
+	return res, nil
+}
+
+// A DSS answer whose subscriber list is refused after a successful put
+// or delete still records what the DSS holds: the item is done at the
+// first attempt (no create -> 409 -> refresh loop), the ISA's version or
+// deletion is recorded, nothing is notified and the refusal is counted.
+func TestWorkerBadSubscribersRecordsFirst(t *testing.T) {
+	r := newWorkerRig(t)
+	r.w.HTTP = &http.Client{Transport: badSubscribers{}, Timeout: DefaultCallTimeout}
+	id := r.start(t, 1)
+	r.once(t)
+	isa, ok := r.d.ISAs()[id]
+	if !ok || r.m.isas[id].Version == nil || *r.m.isas[id].Version != isa.Version || len(r.m.pending()) != 0 {
+		t.Fatalf("put not recorded at the first attempt: version %v pending %d", r.m.isas[id].Version, len(r.m.pending()))
+	}
+	r.m.ended[flightN(1)] = true
+	if err := r.p.Plan(context.Background(), r.m, flights.Body{FlightID: flightN(1), Event: flights.EventEnded}); err != nil {
+		t.Fatal(err)
+	}
+	r.once(t)
+	if _, ok := r.d.ISAs()[id]; ok || r.m.isas[id].DeletedAt == nil || len(r.m.pending()) != 0 {
+		t.Fatalf("delete not recorded at the first attempt: deleted %v pending %d", r.m.isas[id].DeletedAt, len(r.m.pending()))
+	}
+	if r.w.Counters.Get(CounterSubscribersRefused) != 2 || len(r.m.notes()) != 0 || r.w.Counters.Get(CounterISAFailed) != 0 {
+		t.Fatalf("%v notes %d", r.w.Counters.Snapshot(), len(r.m.notes()))
+	}
+}

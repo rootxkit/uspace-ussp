@@ -469,14 +469,14 @@ func (w *ISAWorker) put(ctx context.Context, p ISAPut) error {
 	if err := checkArea(ans.ServiceArea, p.ISAID); err != nil {
 		return err
 	}
-	subs, err := checkSubscribers(ans.Subscribers)
-	if err != nil {
-		return err
-	}
 	raw, err := json.Marshal(ext)
 	if err != nil {
 		return err
 	}
+	// The DSS holds the ISA at this version whatever it says of the
+	// subscribers: record it first, or the next attempt creates it again,
+	// meets 409 and loops.
+	subs, serr := checkSubscribers(ans.Subscribers)
 	v := ans.ServiceArea.Version
 	sa := ans.ServiceArea
 	notes := notifications(p.ISAID, subs, &sa, &ext)
@@ -486,7 +486,20 @@ func (w *ISAWorker) put(ctx context.Context, p ISAPut) error {
 	w.count(CounterISAWrites)
 	w.logger().LogAttrs(ctx, slog.LevelInfo, "ISA written in the DSS", slog.String("isa_id", p.ISAID),
 		slog.String("flight_id", p.FlightID), slog.Int("subscribers", len(subs)))
+	w.subscribersRefused(ctx, p.ISAID, serr)
 	return nil
+}
+
+// subscribersRefused counts and logs a subscriber list of a DSS answer
+// that was refused (checkSubscribers): the ISA write is recorded, and no
+// subscriber is notified of it.
+func (w *ISAWorker) subscribersRefused(ctx context.Context, isaID string, err error) {
+	if err == nil {
+		return
+	}
+	w.count(CounterSubscribersRefused)
+	w.logger().LogAttrs(ctx, slog.LevelWarn, "the DSS listed subscribers that cannot be notified; the ISA write is recorded and none is notified",
+		slog.String("isa_id", isaID), obs.Err(err))
 }
 
 // refreshVersion reads the ISA the DSS holds after a 409 and records its
@@ -563,10 +576,9 @@ func (w *ISAWorker) delete(ctx context.Context, d ISADelete) error {
 	if err := json.Unmarshal(body, &ans); err != nil {
 		return core.Fieldf("answer", "not a DeleteIdentificationServiceAreaResponse")
 	}
-	subs, err := checkSubscribers(ans.Subscribers)
-	if err != nil {
-		return err
-	}
+	// The DSS no longer holds the ISA whatever it says of the
+	// subscribers: record that first.
+	subs, serr := checkSubscribers(ans.Subscribers)
 	// A deletion is notified without service_area and extents (the file:
 	// "If this field is not populated, the ISA was deleted").
 	if err := w.Store.Deleted(ctx, d.ISAID, notifications(d.ISAID, subs, nil, nil)); err != nil {
@@ -575,6 +587,7 @@ func (w *ISAWorker) delete(ctx context.Context, d ISADelete) error {
 	w.count(CounterISADeletes)
 	w.logger().LogAttrs(ctx, slog.LevelInfo, "ISA deleted from the DSS", slog.String("isa_id", d.ISAID),
 		slog.String("flight_id", d.FlightID), slog.Int("subscribers", len(subs)))
+	w.subscribersRefused(ctx, d.ISAID, serr)
 	return nil
 }
 
