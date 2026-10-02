@@ -672,3 +672,54 @@ func jsonEqual(t *testing.T, a, b []byte) bool {
 	jb, _ := json.Marshal(y)
 	return bytes.Equal(ja, jb)
 }
+
+// Conformance monitoring moves an activated intent: nonconforming, back
+// to activated, nonconforming, contingent; contingent never returns, a
+// repeat moves nothing, and an accepted intent is not moved (E-01 pairs).
+func TestSetConformance(t *testing.T) {
+	s, st, pr := newService(newRig())
+	d, _, err := submit(t, s, baseRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved, err := s.SetConformance(context.Background(), d.IntentID, ConformanceNonconforming, "threshold_exceeded"); err != nil || moved {
+		t.Fatalf("an accepted intent moved: %v %v", moved, err)
+	}
+	st.now = t0.Add(-5 * time.Minute)
+	if _, err := patch(t, s, d.IntentID, map[string]any{"action": "activate"}); err != nil {
+		t.Fatal(err)
+	}
+	step := func(state, wantLocal, wantDSS string, wantMoved bool) {
+		t.Helper()
+		moved, err := s.SetConformance(context.Background(), d.IntentID, state, "outside_volume_h")
+		if err != nil || moved != wantMoved {
+			t.Fatalf("%s: moved %v err %v", state, moved, err)
+		}
+		r, _ := st.Get(context.Background(), d.IntentID)
+		if r.LocalState != wantLocal || r.Decision.DSSState == nil || *r.Decision.DSSState != wantDSS || pr.kv[d.IntentID].LocalState != wantLocal {
+			t.Fatalf("%s: %s %v", state, r.LocalState, r.Decision.DSSState)
+		}
+	}
+	step(ConformanceNonconforming, StateNonconforming, "Nonconforming", true)
+	step(ConformanceNonconforming, StateNonconforming, "Nonconforming", false)
+	step(ConformanceConforming, StateActivated, "Activated", true)
+	step(ConformanceConforming, StateActivated, "Activated", false)
+	step(ConformanceNonconforming, StateNonconforming, "Nonconforming", true)
+	step(ConformanceContingent, StateContingent, "Contingent", true)
+	step(ConformanceConforming, StateContingent, "Contingent", false)
+	r, _ := st.Get(context.Background(), d.IntentID)
+	if r.Decision.ChangeReason == nil || *r.Decision.ChangeReason != "conformance monitoring: contingent (outside_volume_h)" {
+		t.Fatalf("change reason %v", r.Decision.ChangeReason)
+	}
+	if pr.last() != "intent.v1.contingent."+d.IntentID {
+		t.Fatalf("not published: %v", pr.subjects)
+	}
+	// An unknown or malformed intent moves nothing and is not an error
+	// the consumer retries forever.
+	if moved, err := s.SetConformance(context.Background(), "8d0e7b51-3c1e-4a5f-9a43-0b6f4c2a7eff", ConformanceNonconforming, ""); err != nil || moved {
+		t.Fatalf("unknown intent: %v %v", moved, err)
+	}
+	if _, err := s.SetConformance(context.Background(), "x", ConformanceNonconforming, ""); err == nil {
+		t.Fatal("malformed id accepted")
+	}
+}
