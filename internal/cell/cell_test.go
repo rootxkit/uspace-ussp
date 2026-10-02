@@ -266,13 +266,24 @@ func TestOwnership(t *testing.T) {
 
 // The cell is internal (spec 05 §3, brief WP-6 safety note): no
 // property named cell, cell3 or cell5 in the published OpenAPI file or
-// in any schema under schemas/. The twin below shows the scan finds one.
+// in any schema under schemas/ this repository owns. The pinned copies
+// of uspace-lab's shared shapes (schemas/CONSUMED) are the lab's; the
+// shared track/telemetry/v1 allows an optional cell for systems that
+// partition, and this system leaves it out (internal/telemetry). The
+// twin below shows the scan finds one.
 func TestNoCellOnAnExternalInterface(t *testing.T) {
 	root := filepath.Join("..", "..")
 	files := []string{filepath.Join(root, "api", "openapi.yaml")}
+	consumed := consumedSchemas(t, root)
+	if len(consumed) == 0 {
+		t.Fatal("schemas/CONSUMED lists no copy")
+	}
 	err := filepath.WalkDir(filepath.Join(root, "schemas"), func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if rel, rerr := filepath.Rel(filepath.Join(root, "schemas"), p); rerr == nil && d.IsDir() && consumed[filepath.ToSlash(rel)] {
+			return filepath.SkipDir
 		}
 		if !d.IsDir() && (strings.HasSuffix(p, ".json") || strings.HasSuffix(p, ".yaml")) {
 			files = append(files, p)
@@ -292,6 +303,23 @@ func TestNoCellOnAnExternalInterface(t *testing.T) {
 		}
 	}
 	t.Logf("scanned %d files", len(files))
+}
+
+// consumedSchemas reads the copied schema names of schemas/CONSUMED
+// (the indented lines under "copied").
+func consumedSchemas(t *testing.T, root string) map[string]bool {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(root, "schemas", "CONSUMED"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]bool{}
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			out[strings.TrimSpace(line)] = true
+		}
+	}
+	return out
 }
 
 func TestCellPropertyScanFindsOne(t *testing.T) {

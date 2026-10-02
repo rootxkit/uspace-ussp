@@ -7,5 +7,12 @@
 // is uspace-lab's schemas/ (spec 04 §1: $id
 // https://schemas.uspace.ge/<name>/v<major>.json, title <name>/v<major>),
 // so the lab mirrors this directory byte for byte. The Go types
-// round-trip the valid examples in their own packages (internal/intent).
+// round-trip the valid examples in their own packages (internal/intent,
+// internal/telemetry, internal/flights).
+//
+// Owned (D8, M14): intent/*, telemetry/v1, ident/change/v1,
+// flight/event/v1. Consumed: the pinned copies of uspace-lab's shared
+// shapes listed in CONSUMED (envelope/v1, track/telemetry/v1,
+// source/status/v1, console/status/v1), byte for byte with their
+// examples, never redefined here.
 package schemas

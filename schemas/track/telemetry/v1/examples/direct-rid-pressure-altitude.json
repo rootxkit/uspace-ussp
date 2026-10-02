@@ -1,0 +1,45 @@
+{
+  "schema": "track/telemetry/v1",
+  "msg_id": "01K63E28JT97KB6CQ643DZVMXX",
+  "producer": "authority-1/rid-ingest-2",
+  "ts": "2026-10-02T09:15:04.000Z",
+  "rx_ts": "2026-10-02T09:15:04.410Z",
+  "captured_at": "2026-10-02T09:15:04.000Z",
+  "time_source": "broadcast",
+  "backlog": false,
+  "body": {
+    "track_id": "authority-1:rid:4A:7C:91:0E:22:B5",
+    "trust": "broadcast",
+    "source": "direct_rid",
+    "source_instance": "rx-kut-03",
+    "position": {
+      "lat": 42.2679,
+      "lng": 42.6946
+    },
+    "alt_wgs84_m": null,
+    "alt_amsl_m": null,
+    "alt_source": "pressure",
+    "alt_pressure_m": 241.5,
+    "height_m": null,
+    "height_ref": null,
+    "speed_ms": 11.25,
+    "track_deg": 0,
+    "vspeed_ms": null,
+    "accuracy_h_m": 10.0,
+    "accuracy_v_m": null,
+    "status": "Airborne",
+    "emergency": false,
+    "identification": {
+      "status": "unknown_operator",
+      "reason": "operator_absent",
+      "serial": "1581F5FJD239C00DW1B5",
+      "operator_reg": null,
+      "registered_operator_reg": null,
+      "mismatch": false,
+      "basis": "as_broadcast"
+    },
+    "flight_id": null,
+    "intent_id": null,
+    "cell": "c5:1322:2226"
+  }
+}

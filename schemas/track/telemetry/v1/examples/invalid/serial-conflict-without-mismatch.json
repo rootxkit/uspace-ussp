@@ -1,0 +1,44 @@
+{
+  "schema": "track/telemetry/v1",
+  "msg_id": "01K6QKFBF5KZNWJ47TAN9ZT24M",
+  "producer": "authority/detect",
+  "rx_ts": "2026-10-02T09:16:10.002Z",
+  "captured_at": "2026-10-02T09:16:10.002Z",
+  "time_source": "system",
+  "backlog": true,
+  "body": {
+    "track_id": "authority:rid:1581F5FJD239C00DW1B5",
+    "trust": "broadcast",
+    "source": "direct_rid",
+    "source_instance": "rx-tbs-01",
+    "position": {
+      "lat": 41.7302,
+      "lng": 44.7905
+    },
+    "alt_wgs84_m": 612.0,
+    "alt_amsl_m": 583.4,
+    "alt_source": "geodetic",
+    "alt_pressure_m": null,
+    "height_m": 95.0,
+    "height_ref": "GroundLevel",
+    "speed_ms": null,
+    "track_deg": null,
+    "vspeed_ms": null,
+    "accuracy_h_m": null,
+    "accuracy_v_m": null,
+    "status": null,
+    "emergency": false,
+    "identification": {
+      "status": "registered",
+      "reason": "serial_conflict",
+      "serial": "1581F5FJD239C00DW1B5",
+      "operator_reg": "GEOrx8mtw5ivq3pd",
+      "registered_operator_reg": "GEO7kq2mzt3hpa1c",
+      "mismatch": false,
+      "registry_uas_id": null,
+      "basis": "as_broadcast"
+    },
+    "flight_id": null,
+    "intent_id": null
+  }
+}

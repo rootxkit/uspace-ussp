@@ -1,0 +1,24 @@
+{
+  "ts": "2026-10-02T09:15:03.120Z",
+  "serial": "TEST1596A7B2C3D4E5F6",
+  "seq": 1022,
+  "intent_id": null,
+  "position": {
+    "lat": 41.7151,
+    "lng": 44.8271
+  },
+  "alt_wgs84_m": 594.3,
+  "alt_pressure_m": null,
+  "height_m": 0.0,
+  "height_ref": "TakeoffLocation",
+  "speed_ms": 0.0,
+  "track_deg": 128.0,
+  "vspeed_ms": 0.3,
+  "status": "Ground",
+  "emergency": false,
+  "operator_position": null,
+  "accuracy_h": "HA3m",
+  "accuracy_v": "VA10m",
+  "timestamp_accuracy_s": 0.1,
+  "end": true
+}

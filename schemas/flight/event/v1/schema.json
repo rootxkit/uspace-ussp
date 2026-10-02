@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/flight/event/v1.json",
+  "title": "flight/event/v1",
+  "description": "A flight's lifecycle fact, from telemetry-ingest to api on flight.v1.<event>.<flight_id> (docs/PLAN.md \u00a73.2: flight start and end cross from the hot path to the control plane on JetStream; api records the flights row). started: the first accepted sample of a flight; telemetry_lost: telemetry_lost_s of silence (the flight goes on, 04 \u00a73.1); telemetry_resumed: a sample after that; ended: flight_end_after_s of silence (end_reason telemetry_lost), the operator's end (operator_ended) or the end of the intent it flew (intent_ended). at is when the fact happened, on the ingest's clock; started_at the flight's first captured_at.",
+  "allOf": [
+    {
+      "$ref": "https://schemas.uspace.ge/envelope/v1.json"
+    }
+  ],
+  "properties": {
+    "schema": {
+      "const": "flight/event/v1"
+    },
+    "body": {
+      "$ref": "#/$defs/body"
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "body": {
+      "type": "object",
+      "required": [
+        "flight_id",
+        "event",
+        "at",
+        "started_at",
+        "client_id",
+        "uas_serial",
+        "intent_id",
+        "authorisation_number",
+        "operator_reg",
+        "end_reason"
+      ],
+      "properties": {
+        "flight_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "event": {
+          "enum": [
+            "started",
+            "telemetry_lost",
+            "telemetry_resumed",
+            "ended"
+          ]
+        },
+        "at": {
+          "$ref": "https://schemas.uspace.ge/envelope/v1.json#/$defs/timestamp"
+        },
+        "started_at": {
+          "$ref": "https://schemas.uspace.ge/envelope/v1.json#/$defs/timestamp"
+        },
+        "client_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uas_serial": {
+          "type": "string",
+          "minLength": 1
+        },
+        "intent_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authorisation_number": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "operator_reg": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "end_reason": {
+          "enum": [
+            "landed",
+            "telemetry_lost",
+            "intent_ended",
+            "operator_ended",
+            null
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "event": {
+            "const": "ended"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "end_reason": {
+            "enum": [
+              "landed",
+              "telemetry_lost",
+              "intent_ended",
+              "operator_ended"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "end_reason": {
+            "const": null
+          }
+        }
+      }
+    }
+  }
+}

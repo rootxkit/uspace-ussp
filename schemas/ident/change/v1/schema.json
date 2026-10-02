@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/ident/change/v1.json",
+  "title": "ident/change/v1",
+  "description": "An identification change of a track (spec 04 \u00a73.2), published on ident.v1.<track_id> when the status, the reason or the mismatch flag of the identification a track carries differs from the last one published for it: the block now carried and the one it replaces (null for the track's first). The envelope's times are those of the track message that carried the change.",
+  "allOf": [
+    {
+      "$ref": "https://schemas.uspace.ge/envelope/v1.json"
+    }
+  ],
+  "properties": {
+    "schema": {
+      "const": "ident/change/v1"
+    },
+    "body": {
+      "$ref": "#/$defs/body"
+    }
+  },
+  "$defs": {
+    "body": {
+      "type": "object",
+      "required": [
+        "track_id",
+        "flight_id",
+        "trust",
+        "source",
+        "source_instance",
+        "identification",
+        "previous"
+      ],
+      "properties": {
+        "track_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "flight_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trust": {
+          "$ref": "https://schemas.uspace.ge/envelope/v1.json#/$defs/trust"
+        },
+        "source": {
+          "$ref": "https://schemas.uspace.ge/envelope/v1.json#/$defs/source"
+        },
+        "source_instance": {
+          "type": "string",
+          "minLength": 1
+        },
+        "identification": {
+          "$ref": "https://schemas.uspace.ge/track/telemetry/v1.json#/$defs/identification"
+        },
+        "previous": {
+          "oneOf": [
+            {
+              "$ref": "https://schemas.uspace.ge/track/telemetry/v1.json#/$defs/identification"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

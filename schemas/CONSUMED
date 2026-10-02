@@ -1,0 +1,11 @@
+# Consumed schemas, pinned copies (docs/PLAN.md D8, reconciliation M14):
+# shapes several systems produce live in uspace-lab schemas/common/ and
+# are copied here byte for byte, schema and examples, never redefined.
+# Bump them in a build: commit, never inside a feature change.
+repository: https://github.com/rootxkit/uspace-lab
+commit: e62f076c3e7dea7b6150d145b03960340b4a1d78
+copied (schemas/common/<name> -> schemas/<name>):
+  envelope/v1
+  track/telemetry/v1
+  source/status/v1
+  console/status/v1

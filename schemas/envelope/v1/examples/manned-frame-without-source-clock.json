@@ -1,0 +1,13 @@
+{
+  "schema": "track/manned/v1",
+  "msg_id": "01K6N5SXS5AA819X9YP981068V",
+  "producer": "ansp-1/manned-feed-1",
+  "ts": null,
+  "rx_ts": "2026-10-02T09:15:04.410Z",
+  "captured_at": "2026-10-02T09:15:04.000Z",
+  "time_source": "receiver",
+  "backlog": false,
+  "body": {
+    "icao24": "4ca7b5"
+  }
+}

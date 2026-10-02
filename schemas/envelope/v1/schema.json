@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/envelope/v1.json",
+  "title": "envelope/v1",
+  "description": "The common envelope of spec 04 §2 carried by every 04 message, every WebSocket frame (decision record M12, M29, Appendix C) and every NATS subject that carries an 04 message (M30). `body` is the message itself; its shape is named by `schema`. Unknown fields are ignored within a major (04 §4); every enumeration is closed.",
+  "type": "object",
+  "required": ["schema", "msg_id", "producer", "rx_ts", "captured_at", "time_source", "backlog", "body"],
+  "properties": {
+    "schema": {
+      "description": "`family/name/vN` (04 §2); the name of the body's schema without the `$id` prefix and `.json` suffix.",
+      "$ref": "#/$defs/schema_name"
+    },
+    "msg_id": {
+      "description": "ULID, unique per message; the dedupe key (04 §2).",
+      "$ref": "#/$defs/ulid"
+    },
+    "producer": {
+      "description": "System and process that produced the message: `<system>/<process>` or `<system>-<n>/<process>-<n>` (04 §2 example `ussp-1/ingest-3`).",
+      "$ref": "#/$defs/producer"
+    },
+    "ts": {
+      "description": "Capture time on the source's clock. Absent or null when the record carried none (LESSONS T-12: do not order within the source).",
+      "oneOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }]
+    },
+    "rx_ts": {
+      "description": "When this system received the record, on its own clock.",
+      "$ref": "#/$defs/timestamp"
+    },
+    "captured_at": {
+      "description": "Where the record sits in time on this system's clock; all geometry-time reasoning uses it.",
+      "$ref": "#/$defs/timestamp"
+    },
+    "time_source": {
+      "description": "Which rule produced `captured_at`. Pinned to uspace-core `core.TimeSource`.",
+      "$ref": "#/$defs/time_source"
+    },
+    "backlog": {
+      "description": "True when the record is history (queued before the delivering session, or delivered during a drain); never raises a live alert.",
+      "type": "boolean"
+    },
+    "body": {
+      "description": "The message named by `schema`.",
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "schema_name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*/v[1-9][0-9]*$"
+    },
+    "ulid": {
+      "description": "Crockford base32, 26 characters, first character 0-7 (48-bit time).",
+      "type": "string",
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+    },
+    "producer": {
+      "type": "string",
+      "pattern": "^(authority|cisp|ussp|ansp|lab)(/[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*|-[0-9]+/[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*-[0-9]+)$"
+    },
+    "timestamp": {
+      "description": "RFC 3339 UTC with `Z`, millisecond precision (02 §1).",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "time_source": {
+      "enum": ["source_clock", "broadcast", "receiver", "provider", "system"]
+    },
+    "trust": {
+      "description": "Trust class on every track-like message (04 §2). Pinned to uspace-core `core.Trust`.",
+      "enum": ["authenticated", "provider", "surveillance", "broadcast", "sensor", "simulated"]
+    },
+    "source": {
+      "description": "Adapter type (04 §2).",
+      "enum": ["operator_ws", "network_rid", "direct_rid", "ansp_feed", "adsb_rx", "sitl"]
+    }
+  }
+}

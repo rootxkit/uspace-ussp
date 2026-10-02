@@ -1,0 +1,51 @@
+{
+  "schema": "feed/status/v1",
+  "msg_id": "01K6B9Y73MY63FCH26W14WMCHW",
+  "producer": "authority/picture-ws",
+  "ts": "2026-10-02T09:15:06.000Z",
+  "rx_ts": "2026-10-02T09:15:06.000Z",
+  "captured_at": "2026-10-02T09:15:06.000Z",
+  "time_source": "system",
+  "backlog": false,
+  "body": {
+    "connection_id": "c-7f3a91",
+    "server_ts": "2026-10-02T09:15:06.000Z",
+    "policy_version": "demo-2026-10-01",
+    "stale_after_s": 5,
+    "live_max_age_s": 2,
+    "dropped_frames": 0,
+    "degraded": [],
+    "sources": [
+      {
+        "source": "direct_rid",
+        "source_instance": "rx-tbs-01",
+        "state": "live",
+        "since": "2026-10-02T06:00:12.000Z",
+        "age_s": 0.4,
+        "disabled_by": null,
+        "counters": {
+          "accepted": 182344,
+          "refused": 12,
+          "dropped_backlog": 0
+        }
+      },
+      {
+        "source": "network_rid",
+        "source_instance": "ussp-peer-ge-02",
+        "state": "disabled",
+        "since": "2026-10-02T08:41:00.517Z",
+        "age_s": 2054.1,
+        "disabled_by": "instance",
+        "disabled_by_who": "admin:n.beridze",
+        "counters": {
+          "accepted": 5521,
+          "refused": 340
+        }
+      }
+    ],
+    "projection_age_s": 1.2,
+    "cis_age_s": 14.0,
+    "nats": "connected",
+    "dp_state": "polling"
+  }
+}
