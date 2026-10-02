@@ -555,13 +555,15 @@ func (f *flakySink) Publish(context.Context, string, bus.Enveloped) error {
 func TestEngineStateHeartbeat(t *testing.T) {
 	g := newRig(t, true)
 	a := ptr(intentA)
-	for i := range 30 {
+	// Each sample judged before the clock moves on: a worker behind the
+	// clock (under -race) would refuse a sample as late.
+	for i := range uint64(30) {
 		if i > 0 {
 			g.clk.Add(time.Second)
 		}
 		g.offer(flightA, a, origin, "Airborne")
+		waitFor(t, "the sample judged", func() bool { return g.eng.Counters.Get(conformance.CounterJudged) == i+1 })
 	}
-	waitFor(t, "the samples judged", func() bool { return g.eng.Counters.Get(conformance.CounterJudged) == 30 })
 	if n := len(g.sink.states(flightA)); n != 3 {
 		t.Fatalf("%d states for 30 samples over 29 s, want 3", n)
 	}
