@@ -284,9 +284,12 @@ func TestIntegrationCISWebhookDeltaReconcileRefusal(t *testing.T) {
 		return g.dbCount("SELECT count(*) FROM cis_datasets WHERE dataset = 'zones'") == 2 &&
 			g.dbCount("SELECT max(version) FROM cis_datasets WHERE dataset = 'zones'") == 5
 	})
-	if n := g.dbCount("SELECT count(*) FROM cis_notifications WHERE dataset = 'zones' AND pulled_at IS NULL AND version <= 5 AND version <> 4"); n != 0 {
-		t.Fatalf("%d pulled notifications not marked", n)
-	}
+	// The cache marks the notifications after the version is stored
+	// (persist: SaveVersion, then MarkPulled), so "stored" above does not
+	// yet mean "marked": wait for the marking as well.
+	g.waitFor("the pulled notifications marked", 5*time.Second, func() bool {
+		return g.dbCount("SELECT count(*) FROM cis_notifications WHERE dataset = 'zones' AND pulled_at IS NULL AND version <= 5 AND version <> 4") == 0
+	})
 
 	// A restart serves the stored version, judged as a pulled one.
 	eval := cis.NewEvaluator(cis.EvaluatorConfig{StaleS: func() float64 { return 300 }})
