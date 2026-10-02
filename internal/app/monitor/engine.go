@@ -458,9 +458,12 @@ func (w *worker) tick(ctx context.Context) {
 		if w.e.Sources != nil && f.instance != "" {
 			inst := f.instance
 			if !w.e.Sources.Query(telemetry.SourceOperatorWS, &inst).Enabled {
-				ev := f.tr.Disable(now)
-				w.publishState(ctx, f.tr, ev, systemTimes(now), cfg.PolicyVersion)
-				w.publishAlerts(ctx, ev.Alerts, now)
+				// Published once, when it changes the flight: a flight
+				// already disabled has nothing new to say.
+				if ev := f.tr.Disable(now); len(ev.Transitions) > 0 || len(ev.Alerts) > 0 {
+					w.publishState(ctx, f.tr, ev, systemTimes(now), cfg.PolicyVersion)
+					w.publishAlerts(ctx, ev.Alerts, now)
+				}
 			}
 		}
 		ev := f.tr.Tick(cfg, now)

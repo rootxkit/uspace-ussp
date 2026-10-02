@@ -451,3 +451,28 @@ func TestTableKeepsFlyingOnUndeclared(t *testing.T) {
 		t.Fatal("a ground sample left the flight flying")
 	}
 }
+
+// B-11: switching a source off publishes the flight's source_disabled
+// state once, on the tick that sees it; the ticks after it, the flight
+// already disabled, publish nothing more for it (E-01 pair).
+func TestEngineDisabledPublishesOnce(t *testing.T) {
+	g := newRig(t, true)
+	g.offer(flightA, ptr(intentA), origin, "Airborne")
+	waitFor(t, "conforming", func() bool { return len(g.sink.states(flightA)) == 1 })
+	g.gate.off.Store(true)
+	disabled := func() int {
+		n := 0
+		for _, s := range g.sink.states(flightA) {
+			if s.Reason != nil && *s.Reason == conformance.UnknownSourceDisabled {
+				n++
+			}
+		}
+		return n
+	}
+	waitFor(t, "source_disabled", func() bool { return disabled() > 0 })
+	ticks := g.eng.Counters.Get(CounterTicks)
+	waitFor(t, "ten more ticks", func() bool { return g.eng.Counters.Get(CounterTicks) >= ticks+10 })
+	if n := disabled(); n != 1 {
+		t.Fatalf("%d source_disabled states for one switch-off", n)
+	}
+}
