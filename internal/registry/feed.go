@@ -144,7 +144,7 @@ func (f *Feed) poll(ctx context.Context) error {
 				fold, _ = operatorKey(ch.PublicKey)
 			case EntityUAS:
 				_, fold = serialKey(ch.PublicKey)
-			default:
+			case EntityPilot:
 				fold = pilotKey(ch.PublicKey)
 			}
 			if fold == "" {

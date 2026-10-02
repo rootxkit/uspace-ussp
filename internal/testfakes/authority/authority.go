@@ -27,7 +27,7 @@ import (
 )
 
 // Token is the bearer the fake accepts.
-const Token = "fake-authority-token" //nolint:gosec // a test fake's fixed bearer, never a credential
+const Token = "fake-authority-token"
 
 // Tokens hands out Token for any audience and scope.
 type Tokens struct{}

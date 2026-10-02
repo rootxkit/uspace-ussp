@@ -72,7 +72,8 @@ func (m *memStore) Save(ctx context.Context, es []Entry, since int64, project fu
 		return nil, m.failWrite
 	}
 	var written []Entry
-	for _, e := range es {
+	for i := range es {
+		e := es[i]
 		if in, ok := m.inv[Key{e.Entity, e.KeyFold}]; ok && in.seq > since {
 			continue
 		}
@@ -82,8 +83,8 @@ func (m *memStore) Save(ctx context.Context, es []Entry, since int64, project fu
 	if err := project(ctx, written); err != nil {
 		return nil, err
 	}
-	for _, e := range written {
-		m.rows[e.Key] = e
+	for i := range written {
+		m.rows[written[i].Key] = written[i]
 	}
 	return written, nil
 }
@@ -96,8 +97,8 @@ func (m *memStore) Invalidate(ctx context.Context, inv []Invalidation, next int6
 	}
 	var deleted []Key
 	for _, in := range inv {
-		for k, e := range m.rows {
-			if k.Entity == in.Entity && e.KeyFold == in.KeyFold {
+		for k := range m.rows {
+			if k.Entity == in.Entity && m.rows[k].KeyFold == in.KeyFold {
 				deleted = append(deleted, k)
 			}
 		}
@@ -144,8 +145,8 @@ func (m *memStore) All(_ context.Context, limit int) ([]Cached, error) {
 		return nil, m.failRead
 	}
 	var out []Cached
-	for _, e := range m.rows {
-		out = append(out, Cached{Entry: e, AgeS: m.clock.Now().Sub(e.FetchedAt).Seconds()})
+	for k := range m.rows {
+		out = append(out, Cached{Entry: m.rows[k], AgeS: m.clock.Now().Sub(m.rows[k].FetchedAt).Seconds()})
 	}
 	slices.SortFunc(out, func(a, b Cached) int { return b.FetchedAt.Compare(a.FetchedAt) })
 	if len(out) > limit {

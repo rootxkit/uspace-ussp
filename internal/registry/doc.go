@@ -41,5 +41,6 @@
 // Keys are compared the way uspace-core compares them: an operator
 // number by regnum.CompareKey (its public part, case-insensitive; the
 // secret part is never sent, stored or echoed, G-04) and a serial by
-// serial.Normalize, with folded matches left to identify.Snapshot (G-05).
+// uspace-core's serial normalisation, with folded matches left to
+// identify.Snapshot (G-05).
 package registry

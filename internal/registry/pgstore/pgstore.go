@@ -44,7 +44,8 @@ func (p Store) Entries(ctx context.Context, keys []registry.Key) ([]registry.Cac
 		return nil, 0, fmt.Errorf("registry_validity: %w", err)
 	}
 	out := make([]registry.Cached, 0, len(rows))
-	for _, r := range rows {
+	for i := range rows {
+		r := &rows[i]
 		c, err := cached(r.EntityType, r.Key, r.KeyFold, r.Status, r.ValidUntil, r.ClassLabel, r.MtomBand, r.Competencies, r.FetchedAt, r.AgeS)
 		if err != nil {
 			return nil, 0, err
@@ -59,12 +60,13 @@ func (p Store) All(ctx context.Context, limit int) ([]registry.Cached, error) {
 	if limit <= 0 || limit > 1_000_000 {
 		limit = 1_000_000
 	}
-	rows, err := p.S.Queries().RegistryValidityAll(ctx, int32(limit)) //nolint:gosec // bounded above
+	rows, err := p.S.Queries().RegistryValidityAll(ctx, int32(limit))
 	if err != nil {
 		return nil, fmt.Errorf("registry_validity: %w", err)
 	}
 	out := make([]registry.Cached, 0, len(rows))
-	for _, r := range rows {
+	for i := range rows {
+		r := &rows[i]
 		c, err := cached(r.EntityType, r.Key, r.KeyFold, r.Status, r.ValidUntil, r.ClassLabel, r.MtomBand, r.Competencies, r.FetchedAt, r.AgeS)
 		if err != nil {
 			return nil, err
@@ -105,7 +107,8 @@ func (p Store) Save(ctx context.Context, es []registry.Entry, since int64, proje
 	var written []registry.Entry
 	err := p.S.Tx(ctx, func(q *relational.Queries) error {
 		written = written[:0]
-		for _, e := range es {
+		for i := range es {
+			e := es[i]
 			var comps []byte
 			if e.Entity == registry.EntityPilot {
 				c := e.Competencies

@@ -1,3 +1,4 @@
+//nolint:misspell // serial.Normalize is uspace-core's API name (Go spelling)
 package registry
 
 import (
@@ -87,7 +88,8 @@ var _ identify.Lookup = (*Lookup)(nil)
 func NewLookup(f Fleet, cached []Cached, loaded bool, ttl TTL) *Lookup {
 	l := &Lookup{available: loaded, missingUAS: map[string]bool{}, missingOp: map[string]bool{}}
 	fresh := make(map[Key]Entry, len(cached))
-	for _, c := range cached {
+	for i := range cached {
+		c := &cached[i]
 		if c.AgeS >= 0 && time.Duration(c.AgeS*float64(time.Second)) < ttl.For(c.Entry) {
 			fresh[c.Key] = c.Entry
 		}
@@ -131,8 +133,8 @@ func FromProjection(f Fleet, src ProjectionSource, ttl TTL, now time.Time) *Look
 	}
 	es, loaded := src.Snapshot()
 	cs := make([]Cached, 0, len(es))
-	for _, e := range es {
-		cs = append(cs, Cached{Entry: e, AgeS: now.Sub(e.FetchedAt).Seconds()})
+	for i := range es {
+		cs = append(cs, Cached{Entry: es[i], AgeS: now.Sub(es[i].FetchedAt).Seconds()})
 	}
 	return NewLookup(f, cs, loaded, ttl)
 }

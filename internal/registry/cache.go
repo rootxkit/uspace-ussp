@@ -112,9 +112,10 @@ func (c *Cache) Validate(ctx context.Context, qs []Query, p Purpose) ([]Result, 
 			canWrite = false
 		}
 		since = s
-		for _, r := range rows {
+		for i := range rows {
+			r := &rows[i]
 			if r.AgeS >= 0 && time.Duration(r.AgeS*float64(time.Second)) < ttl.For(r.Entry) {
-				fresh[r.Key] = r
+				fresh[r.Key] = *r
 			}
 		}
 	}
@@ -149,8 +150,8 @@ func (c *Cache) Validate(ctx context.Context, qs []Query, p Purpose) ([]Result, 
 	failed := map[Key]string{}
 	if len(ask) > 0 {
 		entries, reasons := c.fetch(ctx, p, ask)
-		for _, e := range entries {
-			got[e.Key] = e
+		for i := range entries {
+			got[entries[i].Key] = entries[i]
 		}
 		for k := range asked {
 			if _, ok := got[k]; ok {

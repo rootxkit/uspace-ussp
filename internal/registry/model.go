@@ -1,3 +1,4 @@
+//nolint:misspell // serial.Normalize is uspace-core's API name (Go spelling)
 package registry
 
 import (
@@ -107,8 +108,8 @@ type Query struct {
 }
 
 // Key is one cached entity: its type and the key it is stored under
-// (an operator's regnum.CompareKey, a serial as serial.Normalize leaves
-// it, a pilot's id).
+// (an operator's regnum.CompareKey, a serial as uspace-core's serial
+// package normalises it, a pilot's id).
 type Key struct {
 	Entity EntityType `json:"entity_type"`
 	Key    string     `json:"key"`

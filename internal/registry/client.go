@@ -1,3 +1,4 @@
+//nolint:misspell // serial.Normalize is uspace-core's API name (Go spelling)
 package registry
 
 import (

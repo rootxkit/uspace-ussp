@@ -99,7 +99,8 @@ func (m *MemoryProjector) ProjectRegistry(_ context.Context, put []Entry, del []
 	for _, k := range del {
 		delete(m.entries, k)
 	}
-	for _, e := range put {
+	for i := range put {
+		e := put[i]
 		e.Competencies = slices.Clone(e.Competencies)
 		m.entries[e.Key] = e
 	}
@@ -112,8 +113,8 @@ func (m *MemoryProjector) Snapshot() ([]Entry, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	out := make([]Entry, 0, len(m.entries))
-	for _, e := range m.entries {
-		out = append(out, e)
+	for k := range m.entries {
+		out = append(out, m.entries[k])
 	}
 	return out, m.loaded
 }
