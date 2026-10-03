@@ -428,7 +428,9 @@ func TestIntegrationRIDSPDSSDownAtFlightStart(t *testing.T) {
 		return false
 	})
 	t.Logf("ISA created %v after the DSS came back (down %v)", time.Since(up).Round(time.Millisecond), up.Sub(down).Round(time.Second))
-	within(t, 30*time.Second, func() bool { s, d := r.readyzDSS(); return s == "up" && d == "" })
+	// Up, and no F3411 part left in the detail (WP-13: the entry also
+	// names this USSP's F3548 availability).
+	within(t, 30*time.Second, func() bool { s, d := r.readyzDSS(); return s == "up" && !strings.Contains(d, "f3411") })
 	if v := count(t, relOwner(t), "SELECT count(*) FROM dss_outbox WHERE kind IN ('isa_put','isa_delete') AND done_at IS NULL AND entity_id IN (SELECT isa_id FROM dss_isas WHERE flight_id = $1)", id); v != 0 {
 		t.Errorf("outbox not empty: %d", v)
 	}
