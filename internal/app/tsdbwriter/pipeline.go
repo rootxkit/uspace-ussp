@@ -140,9 +140,11 @@ type Pipeline struct {
 	failedAt time.Time
 	posKnown bool
 	floor    uint64
-	started  bool
-	wake     chan struct{}
-	once     sync.Once
+	// lastKeepAlive is when keepAliveDue last ran keepAlive.
+	lastKeepAlive time.Time
+	started       bool
+	wake          chan struct{}
+	once          sync.Once
 
 	// seen is the in-memory dedupe window (the pull loop's only).
 	seen      map[string]time.Time
@@ -650,6 +652,11 @@ func (p *Pipeline) write(ctx context.Context) {
 			}
 			checked, retry = true, p.Config.RetryMin
 		}
+		// Every held message is kept alive while it waits, whether the
+		// writes fail or succeed slowly: a queue deeper than AckWait of
+		// writes would otherwise be redelivered from its tail, and every
+		// fetch would bring messages already held (audit S4).
+		p.keepAliveDue()
 		if !p.ready(p.now()) {
 			select {
 			case <-ctx.Done():
@@ -813,6 +820,22 @@ func (p *Pipeline) failed(err error) {
 	p.mu.Unlock()
 	p.warnLimited("write failed; the batch is retried and nothing is acknowledged", slog.Int("queue_rows", rows),
 		slog.String("error", err.Error()))
+}
+
+// keepAliveDue runs keepAlive at most every AckWait/4: a message is
+// then kept in progress between AckWait/2 and 3/4 AckWait after it was
+// last touched, before the stream delivers it again.
+func (p *Pipeline) keepAliveDue() {
+	now := p.now()
+	p.mu.Lock()
+	due := now.Sub(p.lastKeepAlive) >= p.Config.AckWait/4
+	if due {
+		p.lastKeepAlive = now
+	}
+	p.mu.Unlock()
+	if due {
+		p.keepAlive()
+	}
 }
 
 // keepAlive keeps held messages from redelivery while they wait.

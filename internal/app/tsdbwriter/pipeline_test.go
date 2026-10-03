@@ -37,6 +37,14 @@ func (m *fakeMsg) Ack() error        { m.src.event("ack", m.seq); return nil }
 func (m *fakeMsg) Nak() error        { m.src.event("nak", m.seq); return nil }
 func (m *fakeMsg) InProgress() error { m.src.event("progress", m.seq); return nil }
 
+// touch records a delivery or an in-progress of seq (s.mu held).
+func (s *fakeSource) touch(seq uint64) {
+	if s.touched == nil {
+		s.touched = map[uint64]time.Time{}
+	}
+	s.touched[seq] = time.Now()
+}
+
 // fakeSource is a stream: published messages by sequence, a first
 // sequence (what the limits removed below it) and a consumer cursor.
 type fakeSource struct {
@@ -51,6 +59,11 @@ type fakeSource struct {
 	holesErr error
 	fetchErr error
 	fetched  int
+	// ackWait, when set, makes Fetch deliver again every message neither
+	// acknowledged nor kept in progress for ackWait, as JetStream does;
+	// touched is when each was last delivered or kept in progress.
+	ackWait time.Duration
+	touched map[uint64]time.Time
 }
 
 func newSource() *fakeSource {
@@ -69,6 +82,9 @@ func (s *fakeSource) event(kind string, seq uint64) {
 	}
 	if kind == "nak" && seq < s.next {
 		s.next = seq
+	}
+	if kind == "progress" {
+		s.touch(seq)
 	}
 }
 
@@ -98,9 +114,18 @@ func (s *fakeSource) Fetch(ctx context.Context, n int, wait time.Duration) ([]bu
 		return nil, err
 	}
 	var out []bus.Msg
+	if s.ackWait > 0 {
+		for q := s.floor + 1; q < s.next && len(out) < n; q++ {
+			if m, ok := s.msgs[q]; ok && !s.acked[q] && time.Since(s.touched[q]) > s.ackWait {
+				out = append(out, m)
+				s.touch(q)
+			}
+		}
+	}
 	for s.next <= s.last && len(out) < n {
 		if m, ok := s.msgs[s.next]; ok && !s.acked[s.next] {
 			out = append(out, m)
+			s.touch(s.next)
 		}
 		s.next++
 	}
@@ -655,3 +680,40 @@ func TestWriterLogsNothingOnASuccessfulRun(t *testing.T) {
 }
 
 var errCheckViolation = errors.New("check violation")
+
+// slowStore is a store whose every write succeeds after delay.
+type slowStore struct {
+	*fakeStore
+	delay time.Duration
+}
+
+func (s slowStore) Write(ctx context.Context, b store.WriteBatch) (store.Written, error) {
+	time.Sleep(s.delay)
+	return s.fakeStore.Write(ctx, b)
+}
+
+// A drain that succeeds but slowly keeps every held message alive: the
+// tail of a queue deeper than AckWait of writes is never redelivered,
+// so each fetch brings new messages, not the ones already held (audit
+// S4). The database never failed here; keep-alives were sent anyway.
+func TestPipelineKeepsHeldMessagesAliveWhileWritesSucceed(t *testing.T) {
+	cfg := testConfig()
+	cfg.AckWait, cfg.BatchMaxRows, cfg.BatchMaxWait = 200*time.Millisecond, 5, time.Millisecond
+	r := newRig(t, cfg, func(src *fakeSource, _ *fakeStore) { src.ackWait = cfg.AckWait }, func(p *Pipeline) {
+		p.Store = slowStore{fakeStore: p.Store.(*fakeStore), delay: 10 * time.Millisecond}
+	})
+	publishTracks(t, r.src, 300) // 60 batches of 10 ms: 600 ms, three AckWaits
+	eventually(t, "written", func() bool { return r.st.count("telemetry") == 300 })
+	if n := r.counter(CounterRedelivered); n != 0 {
+		t.Fatalf("%d held messages redelivered while writes succeeded", n)
+	}
+	if r.counter(CounterWriteFailed) != 0 {
+		t.Fatal("a write failed")
+	}
+	r.src.mu.Lock()
+	progress := slices.ContainsFunc(r.src.events, func(e string) bool { return strings.HasPrefix(e, "progress ") })
+	r.src.mu.Unlock()
+	if !progress {
+		t.Fatal("no held message was kept in progress")
+	}
+}
