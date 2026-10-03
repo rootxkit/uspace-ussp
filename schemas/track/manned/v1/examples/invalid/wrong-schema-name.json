@@ -1,0 +1,36 @@
+{
+  "schema": "feed/status/v1",
+  "msg_id": "01K6N5SXS5AA819X9YP981068V",
+  "producer": "ansp/manned-feed",
+  "ts": "2026-10-02T12:00:00.000Z",
+  "rx_ts": "2026-10-02T12:00:00.180Z",
+  "captured_at": "2026-10-02T12:00:00.000Z",
+  "time_source": "receiver",
+  "backlog": false,
+  "body": {
+    "icao24": "4ca7b5",
+    "callsign": "TST123",
+    "position": {
+      "lat": 41.721,
+      "lng": 44.793
+    },
+    "alt_pressure_m": 1524,
+    "alt_wgs84_m": 1561,
+    "gs_ms": 72.5,
+    "track_deg": 134,
+    "vrate_ms": -2.5,
+    "emergency": false,
+    "squawk": "4521",
+    "source_class": "ads_b",
+    "quality": {
+      "nic": 8,
+      "nacp": 9
+    },
+    "trust": "surveillance",
+    "source": "ansp_feed",
+    "source_instance": "adsb-tbs",
+    "state": "live",
+    "relevant": true,
+    "policy_version": "1"
+  }
+}

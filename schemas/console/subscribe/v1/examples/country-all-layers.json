@@ -1,0 +1,18 @@
+{
+  "schema": "console/subscribe/v1",
+  "msg_id": "01K6MZ9J92V81E5128Q6RW31FZ",
+  "body": {
+    "bbox": [
+      40.0,
+      41.0,
+      46.7,
+      43.6
+    ],
+    "layers": [
+      "tracks",
+      "manned",
+      "alerts",
+      "zones"
+    ]
+  }
+}

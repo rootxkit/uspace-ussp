@@ -1,0 +1,80 @@
+{
+  "schema": "console/snapshot/v1",
+  "msg_id": "01K6RJFJ2XBAHW0GQNMF2KDPB0",
+  "producer": "ussp/traffic-ws",
+  "ts": "2026-10-02T09:15:06.100Z",
+  "rx_ts": "2026-10-02T09:15:06.100Z",
+  "captured_at": "2026-10-02T09:15:06.100Z",
+  "time_source": "system",
+  "backlog": false,
+  "body": {
+    "tracks": [
+      {
+        "schema": "track/telemetry/v1",
+        "msg_id": "01K6M9S346Q3D25VT4F5V37E3S",
+        "producer": "ussp-1/telemetry-ingest-1",
+        "ts": "2026-10-02T09:15:03.120Z",
+        "rx_ts": "2026-10-02T09:15:03.245Z",
+        "captured_at": "2026-10-02T09:15:03.214Z",
+        "time_source": "source_clock",
+        "backlog": false,
+        "body": {
+          "track_id": "ussp-1:FL-2026-000417",
+          "trust": "authenticated",
+          "source": "operator_ws",
+          "source_instance": "op-client-0042",
+          "position": {
+            "lat": 41.7151,
+            "lng": 44.8271
+          },
+          "alt_wgs84_m": 594.3,
+          "alt_amsl_m": 565.1,
+          "alt_source": "geodetic",
+          "alt_pressure_m": null,
+          "height_m": 82.0,
+          "height_ref": "TakeoffLocation",
+          "speed_ms": 7.4,
+          "track_deg": 128.0,
+          "vspeed_ms": 0.3,
+          "accuracy_h_m": 3.0,
+          "accuracy_v_m": 4.5,
+          "status": "Airborne",
+          "emergency": false,
+          "identification": {
+            "status": "registered",
+            "reason": "session_binding",
+            "serial": "1596A7B2C3D4E5F6G7H8",
+            "operator_reg": "GEOrx8mtw5ivq3pd",
+            "registered_operator_reg": null,
+            "mismatch": false,
+            "registry_uas_id": "uas-000731",
+            "basis": "authenticated"
+          },
+          "flight_id": "FL-2026-000417",
+          "intent_id": "8c1f3f2e-7d0e-4a8b-9a51-0e4b7d6f2c11",
+          "cell": "c5:1317:2248"
+        }
+      }
+    ],
+    "alerts": [
+      {
+        "schema": "incident/v1",
+        "msg_id": "01K61RNJ47E65GH2BH8VGS9ZM5",
+        "producer": "ussp/monitor",
+        "ts": "2026-10-02T09:15:03.214Z",
+        "rx_ts": "2026-10-02T09:15:03.300Z",
+        "captured_at": "2026-10-02T09:15:03.214Z",
+        "time_source": "system",
+        "backlog": false,
+        "body": {
+          "alert_id": "al-000912",
+          "kind": "proximity",
+          "severity": "warning",
+          "state": "raised"
+        }
+      }
+    ],
+    "manned": [],
+    "zones_version": "zones-2026-10-02-0007"
+  }
+}

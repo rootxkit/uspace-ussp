@@ -9,3 +9,14 @@ copied (schemas/common/<name> -> schemas/<name>):
   track/telemetry/v1
   source/status/v1
   console/status/v1
+  console/snapshot/v1
+  console/subscribe/v1
+
+# The ANSP owns track/manned/v1 (D8: its stream carries it). Its file
+# schemas/track/manned/v1.json is copied byte for byte to
+# schemas/track/manned/v1/schema.json and its examples from
+# schemas/examples/track/manned/v1/ to schemas/track/manned/v1/examples/.
+repository: https://github.com/rootxkit/uspace-ansp
+commit: 790781fb69f1a33985bf74a7c8630255e586d568
+copied:
+  track/manned/v1

@@ -1,0 +1,16 @@
+{
+  "schema": "console/snapshot/v1",
+  "msg_id": "01K6NR5YHCF05G59S2S1KKE59R",
+  "producer": "cisp/api",
+  "ts": "2026-10-02T09:15:06.100Z",
+  "rx_ts": "2026-10-02T09:15:06.100Z",
+  "captured_at": "2026-10-02T09:15:06.100Z",
+  "time_source": "system",
+  "backlog": false,
+  "body": {
+    "tracks": [],
+    "alerts": [],
+    "manned": [],
+    "zones_version": null
+  }
+}

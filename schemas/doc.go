@@ -13,6 +13,7 @@
 // Owned (D8, M14): intent/*, telemetry/v1, ident/change/v1,
 // flight/event/v1, authority/flight/v1. Consumed: the pinned copies of uspace-lab's shared
 // shapes listed in CONSUMED (envelope/v1, track/telemetry/v1,
-// source/status/v1, console/status/v1), byte for byte with their
+// source/status/v1, console/status/v1, console/snapshot/v1,
+// console/subscribe/v1) and the ANSP's track/manned/v1, byte for byte with their
 // examples, never redefined here.
 package schemas

@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/track/manned/v1.json",
+  "title": "track/manned/v1",
+  "description": "One manned aircraft as the ANSP hands it to U-space (spec 04 §3.1, 02 F4; Reg. (EU) 2021/665 ATS.OR.127(a)), in the common envelope (04 §2): on the internal subject man.v1.<adapter>.<icao24> and as a frame of GET /v1/manned-traffic/stream. Owned by uspace-ansp (decision record M14); field names are those of 04 §3.1 in the E-13 order (§15 gap 14: alt_pressure_m, not pressure_alt_m). alt_pressure_m is pressure altitude (ISA 1013.25 hPa), never AMSL; alt_wgs84_m is geometric height above the WGS84 ellipsoid when known. state says how the aircraft ages: live, stale (no sample within the policy's stale_after_s) or source_disabled (its adapter was switched off); an aircraft is never dropped silently (CLAUDE.md rule 4). The members of the body mirror the MannedTrack component of api/openapi.yaml; a test holds them equal.",
+  "allOf": [{ "$ref": "https://schemas.uspace.ge/envelope/v1.json" }],
+  "properties": {
+    "schema": { "const": "track/manned/v1" },
+    "body": { "$ref": "#/$defs/body" }
+  },
+  "$defs": {
+    "nullable_number": { "type": ["number", "null"] },
+    "body": {
+      "type": "object",
+      "required": [
+        "icao24", "position", "alt_pressure_m", "alt_wgs84_m", "gs_ms", "track_deg",
+        "vrate_ms", "source_class", "trust", "source", "source_instance", "state"
+      ],
+      "properties": {
+        "icao24": {
+          "description": "ICAO 24-bit address, six lower-case hex digits.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{6}$"
+        },
+        "callsign": {
+          "description": "As broadcast, trimmed; null when unknown.",
+          "type": ["string", "null"],
+          "maxLength": 8
+        },
+        "position": {
+          "description": "WGS84 decimal degrees (02 §1).",
+          "type": "object",
+          "required": ["lat", "lng"],
+          "properties": {
+            "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+            "lng": { "type": "number", "minimum": -180, "maximum": 180 }
+          }
+        },
+        "alt_pressure_m": {
+          "description": "Pressure altitude in metres, ISA 1013.25 hPa; not AMSL (04 §3.1).",
+          "$ref": "#/$defs/nullable_number"
+        },
+        "alt_wgs84_m": {
+          "description": "Geometric altitude above the WGS84 ellipsoid in metres; null when the source gives none.",
+          "$ref": "#/$defs/nullable_number"
+        },
+        "gs_ms": {
+          "description": "Ground speed in metres per second.",
+          "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+        },
+        "track_deg": {
+          "description": "Track over ground, degrees true, [0, 360).",
+          "oneOf": [{ "type": "number", "minimum": 0, "exclusiveMaximum": 360 }, { "type": "null" }]
+        },
+        "vrate_ms": {
+          "description": "Vertical rate in metres per second, positive up.",
+          "$ref": "#/$defs/nullable_number"
+        },
+        "emergency": {
+          "description": "Emergency flag when the source carries one (Art. 10(10), 11(3)(a)); null when unknown.",
+          "type": ["boolean", "null"]
+        },
+        "spi": {
+          "description": "Special position identification when known.",
+          "type": ["boolean", "null"]
+        },
+        "squawk": {
+          "description": "Mode A code, four octal digits; null when unknown.",
+          "oneOf": [{ "type": "string", "pattern": "^[0-7]{4}$" }, { "type": "null" }]
+        },
+        "source_class": {
+          "description": "The surveillance source class (02 F4).",
+          "enum": ["ads_b", "mode_s", "ssr", "atm_feed", "ads_l"]
+        },
+        "quality": {
+          "description": "NIC/NACp, or the adapter's quality block as received.",
+          "type": "object"
+        },
+        "trust": {
+          "description": "ATS surveillance via the ANSP (04 §2).",
+          "const": "surveillance"
+        },
+        "source": {
+          "description": "The adapter type (04 §2).",
+          "const": "ansp_feed"
+        },
+        "source_instance": {
+          "description": "The adapter instance id.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+          "maxLength": 64
+        },
+        "state": {
+          "enum": ["live", "stale", "source_disabled"]
+        },
+        "relevant": {
+          "description": "Inside a U-space volume of the CIS plus the policy margin at capture.",
+          "type": "boolean"
+        },
+        "policy_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "age_s": {
+          "description": "Seconds since captured_at when manned-feed wrote the frame (LESSONS B-13: an age is shown, never hidden); absent on the adapter's internal subject.",
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}
