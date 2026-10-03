@@ -322,9 +322,18 @@ func TestTopologyShape(t *testing.T) {
 			t.Errorf("%s: %+v", b.Bucket, b)
 		}
 		if (b.TTL != 0) != (b.Bucket == BucketRegistryValidity || b.Bucket == BucketTelemetrySeen || b.Bucket == BucketISANotifications ||
-			b.Bucket == BucketConformanceState) {
-			t.Errorf("%s TTL %v: only registry_validity, telemetry_seen, rid_isa_notifications and conformance_state have one", b.Bucket, b.TTL)
+			b.Bucket == BucketConformanceState || b.Bucket == BucketProximityState) {
+			t.Errorf("%s TTL %v: only registry_validity, telemetry_seen, rid_isa_notifications, conformance_state and proximity_state have one", b.Bucket, b.TTL)
 		}
+	}
+	// The streams and the bucket WP-11 owns are bounded in size too.
+	for name, want := range map[string]int64{StreamALRT: ALRTMaxBytes, StreamTRAFFIC: TRAFFICMaxBytes} {
+		if s, _ := top.Stream(name); s.MaxBytes != want || s.MaxAge <= 0 {
+			t.Errorf("%s: max_bytes %d, max_age %v", name, s.MaxBytes, s.MaxAge)
+		}
+	}
+	if b, _ := top.Bucket(BucketProximityState); b.MaxBytes != ProximityStateMaxBytes || b.TTL != ProximityStateTTL {
+		t.Errorf("proximity_state %+v", b)
 	}
 	if _, ok := top.Bucket(BucketIntentActive); !ok {
 		t.Error("intent_active missing")

@@ -191,11 +191,20 @@ func Src(sourceType, instance string) (string, error) {
 
 // TrkCell3 is the filter of every trk subject of one cell3 (a monitor's
 // owned cell).
-func TrkCell3(cell3 string) (string, error) {
+func TrkCell3(cell3 string) (string, error) { return Cell3Filter(KindTrk, cell3) }
+
+// Cell3Filter is the filter of every subject of one cell3 of a located
+// kind (trk, man, peer).
+func Cell3Filter(kind, cell3 string) (string, error) {
+	switch kind {
+	case KindTrk, KindMan, KindPeer:
+	default:
+		return "", core.Fieldf("kind", "%q is not a located kind", kind)
+	}
 	if _, err := cell.Parse3(cell3); err != nil {
 		return "", err
 	}
-	return "trk.v1." + cell3 + ".>", nil
+	return kind + ".v1." + cell3 + ".>", nil
 }
 
 // Parse reads a subject of docs/PLAN.md §7. A subject of an unknown
