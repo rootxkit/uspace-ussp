@@ -8,7 +8,9 @@
 // the subscribers to notify and their notification indexes, as the
 // pinned standard file (api/standards/f3411-v22a.yaml) and core's f3411
 // types shape them. WP-13 adds the F3548 side to the same fake (one
-// fake, not two).
+// fake, not two) under /dss/v1: operational intent references with ovn
+// and key semantics, constraint references, subscriptions with their
+// notification indexes, and the USS availability (f3548.go).
 //
 // It checks only what a test needs it to check: a bearer token on every
 // call (recorded for the test to read), the version on an update or a
@@ -79,17 +81,20 @@ type DSS struct {
 	subs  map[string]*sub
 	calls []Call
 	seq   int
+	// utm is the F3548 side (f3548.go); conflicts counts its 409s.
+	utm       *utm
+	conflicts int
 }
 
 // New starts the fake on a local port.
 func New() *DSS {
-	d := &DSS{Owner: "ussp-test", isas: map[string]*isa{}, subs: map[string]*sub{}}
+	d := &DSS{Owner: "ussp-test", isas: map[string]*isa{}, subs: map[string]*sub{}, utm: newUTM()}
 	d.srv = httptest.NewServer(http.HandlerFunc(d.serve))
 	return d
 }
 
 // URL is the DSS base URL (USSP_DSS_BASE_URL): the F3411 operations are
-// under /rid/v2.
+// under /rid/v2, the F3548 ones under /dss/v1.
 func (d *DSS) URL() string { return d.srv.URL }
 
 // Close stops the fake.
@@ -147,6 +152,8 @@ func (d *DSS) version() string {
 
 const prefix = "/rid/v2/dss"
 
+const prefix3548 = "/dss/v1"
+
 func write(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -182,6 +189,10 @@ func (d *DSS) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
 		fail(rec, http.StatusUnauthorized, "no bearer token")
+		return
+	}
+	if p, ok := strings.CutPrefix(r.URL.Path, prefix3548); ok {
+		d.serve3548(rec, r, p)
 		return
 	}
 	path, ok := strings.CutPrefix(r.URL.Path, prefix)
