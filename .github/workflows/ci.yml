@@ -131,7 +131,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       timescaledb:
         image: timescale/timescaledb-ha:pg16
