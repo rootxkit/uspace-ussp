@@ -466,3 +466,23 @@ func TestMountRefusesANilGuard(t *testing.T) {
 		}
 	}
 }
+
+// A standard-API body over the cap is 413 body_too_large, not a 400 as
+// if it were malformed JSON (audit N2); a body under it is decoded (501
+// from the stub).
+func TestOversizedBodyIs413(t *testing.T) {
+	e := newEcosystem(t)
+	mux := http.NewServeMux()
+	if err := stdapi.MountF3411(mux, stdapi.NotImplementedF3411{}, stdapi.Options{Guard: e.guard.Require}); err != nil {
+		t.Fatal(err)
+	}
+	h := httpx.BodyCap(64, &core.Counters{})(mux)
+	sp := e.token(t, stdapi.ScopeRIDServiceProvider)
+	big := `{"pad":"` + strings.Repeat("x", 200) + `"}`
+	if got := call(t, h, http.MethodPost, "/uss/identification_service_areas/x", sp, big); got.status != 413 || got.slug != httpx.SlugBodyTooLarge {
+		t.Fatalf("over the cap: %+v", got)
+	}
+	if got := call(t, h, http.MethodPost, "/uss/identification_service_areas/x", sp, "{}"); got.status != 501 {
+		t.Fatalf("under the cap: %+v", got)
+	}
+}

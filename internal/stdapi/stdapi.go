@@ -136,9 +136,15 @@ func (o Options) count(name string) {
 	}
 }
 
-// requestError answers a body the strict server could not decode.
-func (o Options) requestError(w http.ResponseWriter, r *http.Request, _ error) {
+// requestError answers a body the strict server could not decode; one
+// cut at the body cap is 413, not a malformed body (audit N2).
+func (o Options) requestError(w http.ResponseWriter, r *http.Request, err error) {
 	o.count(CounterRequestRefused)
+	var mbe *http.MaxBytesError
+	if errors.As(err, &mbe) {
+		httpx.WriteError(w, r, err)
+		return
+	}
 	httpx.NewProblem(http.StatusBadRequest, httpx.SlugValidation, "", "the request body is not the operation's JSON",
 		core.Fieldf("body", "not the expected JSON object")).Write(w, r)
 }
