@@ -54,7 +54,7 @@ type Options struct {
 	// Streams overrides Streams (tests use streams of their own).
 	Streams []Stream
 	// Topology holds the streams' configurations (default
-	// bus.DefaultTopology()).
+	// proc.TopologyOf(rt.Config)).
 	Topology *bus.Topology
 	// Config overrides the pipeline configuration built from the
 	// process configuration.
@@ -101,7 +101,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	if streams == nil {
 		streams = Streams
 	}
-	top := bus.DefaultTopology()
+	top := proc.TopologyOf(rt.Config)
 	if o.Topology != nil {
 		top = *o.Topology
 	}

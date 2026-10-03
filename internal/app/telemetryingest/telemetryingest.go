@@ -232,7 +232,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	status := &telemetry.Status{Ingest: ing, Pub: pub, Sources: src, Policy: current, Counters: statusCounters, Logger: logger}
 	drainCounters := &core.Counters{}
 	proc.Publish(rt, "telemetry_drain", drainCounters)
-	top := bus.DefaultTopology()
+	top := proc.TopologyOf(rt.Config)
 	drain := &telemetry.Drain{
 		Source: &bus.StreamSource{Open: bus.PullOpener(js, top, bus.StreamINGEST, bus.PullSpec{
 			Durable: DrainConsumer, FilterSubject: bus.SubjectIngestAll, MaxAckPending: 1024,

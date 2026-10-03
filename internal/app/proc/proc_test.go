@@ -6,10 +6,16 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/config"
@@ -339,5 +345,117 @@ func TestClientAddressProbe(t *testing.T) {
 	now = now.Add(11 * time.Minute)
 	if st, _ := probe(context.Background()); st != obs.StateUp {
 		t.Fatalf("ten minutes later: %s", st)
+	}
+}
+
+// fileStore is the JetStream file store the configured topology must
+// fit: USSP_TEST_NATS_MAX_FILE_STORE (bytes) when set, so a deployment
+// checks its own profile, otherwise max_file_store of
+// deploy/compose/nats.conf, the store the shipped deployment grants.
+func fileStore(t *testing.T) int64 {
+	t.Helper()
+	if v := os.Getenv("USSP_TEST_NATS_MAX_FILE_STORE"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n <= 0 {
+			t.Fatalf("USSP_TEST_NATS_MAX_FILE_STORE %q: not a byte count", v)
+		}
+		return n
+	}
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "deploy", "compose", "nats.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?m)^\s*max_file_store:\s*(\d+)(GB|MB)\s*$`).FindStringSubmatch(string(b))
+	if m == nil {
+		t.Fatal("deploy/compose/nats.conf has no max_file_store in GB or MB")
+	}
+	n, _ := strconv.ParseInt(m[1], 10, 64)
+	if m[2] == "GB" {
+		return n << 30
+	}
+	return n << 20
+}
+
+// fits is why top does not fit a file store of store bytes, or nil:
+// every stream and bucket bounded in size, the hot-path captures
+// discarding their oldest, and the sum within the store.
+func fits(top bus.Topology, store int64) []string {
+	var why []string
+	for _, s := range top.Streams {
+		if s.MaxBytes <= 0 {
+			why = append(why, "stream "+s.Name+": unbounded")
+		}
+	}
+	for _, b := range top.Buckets {
+		if b.MaxBytes <= 0 {
+			why = append(why, "bucket "+b.Bucket+": unbounded")
+		}
+	}
+	for _, n := range []string{bus.StreamTRK, bus.StreamMAN, bus.StreamPEER} {
+		if s, _ := top.Stream(n); s.Discard != jetstream.DiscardOld {
+			why = append(why, n+": does not discard its oldest")
+		}
+	}
+	if sum := top.MaxBytes(); sum <= 0 || sum > store {
+		why = append(why, "the streams and buckets may hold "+strconv.FormatInt(sum, 10)+" bytes, the file store is "+strconv.FormatInt(store, 10))
+	}
+	return why
+}
+
+// Every stream and bucket is bounded in size (audit B1), and the sum of
+// the bounds this environment configures (the defaults when nothing is
+// set) fits the account's file store: a stream that may grow until the
+// store is full makes JetStream refuse every publish in the account,
+// ALRT, FLIGHT, INTENT and CONF included, while the hot path's core
+// publish of trk still looks sent. The hot-path captures discard their
+// oldest messages when full; INGEST refuses new ones.
+func TestTopologyFitsTheFileStore(t *testing.T) {
+	cfg, err := config.LoadFrom(os.LookupEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	top, store := TopologyOf(cfg), fileStore(t)
+	if why := fits(top, store); len(why) > 0 {
+		t.Fatalf("the configured topology does not fit: %v", why)
+	}
+	t.Logf("the configured streams and buckets hold at most %d of %d bytes", top.MaxBytes(), store)
+}
+
+// The check refuses what does not fit, and every bound can be brought
+// under a small store through the environment: a 3 GiB store refuses
+// the defaults (about 12.6 GiB) and takes a profile that lowers them.
+func TestTopologyFitsRefusesAndConfigures(t *testing.T) {
+	const store = int64(3) << 30
+	def, err := config.LoadFrom(func(string) (string, bool) { return "", false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if why := fits(TopologyOf(def), store); len(why) != 1 || !strings.Contains(why[0], "the file store is 3221225472") {
+		t.Fatalf("the defaults against 3 GiB: %v", why)
+	}
+	small := map[string]string{}
+	for _, s := range bus.DefaultTopology().Streams {
+		small["USSP_"+s.Name+"_STREAM_MAX_BYTES"] = strconv.Itoa(64 << 20)
+	}
+	for _, b := range bus.DefaultTopology().Buckets {
+		small["USSP_"+strings.ToUpper(b.Bucket)+"_BUCKET_MAX_BYTES"] = strconv.Itoa(32 << 20)
+	}
+	cfg, err := config.LoadFrom(func(k string) (string, bool) { v, ok := small[k]; return v, ok })
+	if err != nil {
+		t.Fatal(err)
+	}
+	top := TopologyOf(cfg)
+	for _, s := range top.Streams {
+		if s.MaxBytes != 64<<20 {
+			t.Errorf("stream %s: %d, the environment says %d", s.Name, s.MaxBytes, 64<<20)
+		}
+	}
+	for _, b := range top.Buckets {
+		if b.MaxBytes != 32<<20 {
+			t.Errorf("bucket %s: %d, the environment says %d", b.Bucket, b.MaxBytes, 32<<20)
+		}
+	}
+	if why := fits(top, store); len(why) != 0 {
+		t.Fatalf("a lowered profile against 3 GiB: %v", why)
 	}
 }

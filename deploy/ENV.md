@@ -40,6 +40,37 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_NATS_CREDS` | `all` |  |  |  | path of the NATS credentials file of this process; empty uses the URL's userinfo |
 | `USSP_CONF_STREAM_MAX_AGE_S` | `all` |  | `172800` | s | how long the CONF stream keeps a conformance state when every process ensures the topology; the record is TimescaleDB's conformance_samples |
 | `USSP_CONF_STREAM_MAX_BYTES` | `all` |  | `4294967296` | bytes | size bound of the CONF stream, the oldest message discarded beyond it |
+| `USSP_TRK_STREAM_MAX_AGE_S` | `all` |  | `3600` | s | how long the TRK (the hot path's tracks: restart replay, rid-sp, tsdb-writer) stream keeps a message, the oldest discarded beyond it |
+| `USSP_TRK_STREAM_MAX_BYTES` | `all` |  | `2147483648` | bytes | size bound of the TRK stream, reserved in the JetStream file store |
+| `USSP_MAN_STREAM_MAX_AGE_S` | `all` |  | `3600` | s | how long the MAN (manned tracks for tsdb-writer) stream keeps a message, the oldest discarded beyond it |
+| `USSP_MAN_STREAM_MAX_BYTES` | `all` |  | `536870912` | bytes | size bound of the MAN stream, reserved in the JetStream file store |
+| `USSP_PEER_STREAM_MAX_AGE_S` | `all` |  | `3600` | s | how long the PEER (peer flights for tsdb-writer) stream keeps a message, the oldest discarded beyond it |
+| `USSP_PEER_STREAM_MAX_BYTES` | `all` |  | `536870912` | bytes | size bound of the PEER stream, reserved in the JetStream file store |
+| `USSP_ALRT_STREAM_MAX_AGE_S` | `all` |  | `604800` | s | how long the ALRT (alerts: the hand-over to api and traffic-ws; the record is api's alerts table) stream keeps a message, the oldest discarded beyond it |
+| `USSP_ALRT_STREAM_MAX_BYTES` | `all` |  | `1073741824` | bytes | size bound of the ALRT stream, reserved in the JetStream file store |
+| `USSP_IDENT_STREAM_MAX_AGE_S` | `all` |  | `86400` | s | how long the IDENT (identification changes) stream keeps a message, the oldest discarded beyond it |
+| `USSP_IDENT_STREAM_MAX_BYTES` | `all` |  | `268435456` | bytes | size bound of the IDENT stream, reserved in the JetStream file store |
+| `USSP_INTENT_STREAM_MAX_AGE_S` | `all` |  | `2592000` | s | how long the INTENT (intent states) stream keeps a message, the oldest discarded beyond it |
+| `USSP_INTENT_STREAM_MAX_BYTES` | `all` |  | `536870912` | bytes | size bound of the INTENT stream, reserved in the JetStream file store |
+| `USSP_CIS_STREAM_MAX_AGE_S` | `all` |  | `2592000` | s | how long the CIS (CIS changes) stream keeps a message, the oldest discarded beyond it |
+| `USSP_CIS_STREAM_MAX_BYTES` | `all` |  | `268435456` | bytes | size bound of the CIS stream, reserved in the JetStream file store |
+| `USSP_TRAFFIC_STREAM_MAX_AGE_S` | `all` |  | `86400` | s | how long the TRAFFIC (traffic products for tsdb-writer) stream keeps a message, the oldest discarded beyond it |
+| `USSP_TRAFFIC_STREAM_MAX_BYTES` | `all` |  | `536870912` | bytes | size bound of the TRAFFIC stream, reserved in the JetStream file store |
+| `USSP_INGEST_STREAM_MAX_AGE_S` | `all` |  | `600` | s | how long the INGEST (telemetry-ingest's work queue; full refuses new messages) stream keeps a message, the oldest discarded beyond it |
+| `USSP_INGEST_STREAM_MAX_BYTES` | `all` |  | `268435456` | bytes | size bound of the INGEST stream, reserved in the JetStream file store |
+| `USSP_FLIGHT_STREAM_MAX_AGE_S` | `all` |  | `2592000` | s | how long the FLIGHT (flight facts from telemetry-ingest to api) stream keeps a message, the oldest discarded beyond it |
+| `USSP_FLIGHT_STREAM_MAX_BYTES` | `all` |  | `268435456` | bytes | size bound of the FLIGHT stream, reserved in the JetStream file store |
+| `USSP_CIS_CURRENT_BUCKET_MAX_BYTES` | `all` |  | `268435456` | bytes | size bound of the cis_current bucket, reserved in the JetStream file store; a full bucket refuses puts |
+| `USSP_POLICY_BUCKET_MAX_BYTES` | `all` |  | `8388608` | bytes | size bound of the policy bucket, reserved in the JetStream file store; a full bucket refuses puts |
+| `USSP_SOURCE_CONTROL_BUCKET_MAX_BYTES` | `all` |  | `16777216` | bytes | size bound of the source_control bucket, reserved in the JetStream file store; a full bucket refuses puts |
+| `USSP_REGISTRY_VALIDITY_BUCKET_MAX_BYTES` | `all` |  | `268435456` | bytes | size bound of the registry_validity bucket, reserved in the JetStream file store; a full bucket refuses puts |
+| `USSP_CLIENT_BINDINGS_BUCKET_MAX_BYTES` | `all` |  | `67108864` | bytes | size bound of the client_bindings bucket, reserved in the JetStream file store; a full bucket refuses puts |
+| `USSP_INTENT_ACTIVE_BUCKET_MAX_BYTES` | `all` |  | `268435456` | bytes | size bound of the intent_active bucket, reserved in the JetStream file store; a full bucket refuses puts |
+| `USSP_TELEMETRY_SEEN_BUCKET_MAX_BYTES` | `all` |  | `1073741824` | bytes | size bound of the telemetry_seen bucket, reserved in the JetStream file store; a full bucket refuses puts |
+| `USSP_RID_ISA_NOTIFICATIONS_BUCKET_MAX_BYTES` | `all` |  | `134217728` | bytes | size bound of the rid_isa_notifications bucket, reserved in the JetStream file store; a full bucket refuses puts |
+| `USSP_CONFORMANCE_STATE_BUCKET_MAX_BYTES` | `all` |  | `536870912` | bytes | size bound of the conformance_state bucket, reserved in the JetStream file store; a full bucket refuses puts |
+| `USSP_PROXIMITY_STATE_BUCKET_MAX_BYTES` | `all` |  | `67108864` | bytes | size bound of the proximity_state bucket, reserved in the JetStream file store; a full bucket refuses puts |
+| `USSP_SESSIONS_LIVE_BUCKET_MAX_BYTES` | `all` |  | `67108864` | bytes | size bound of the sessions_live bucket, reserved in the JetStream file store; a full bucket refuses puts |
 | `USSP_SYSTEM_ID` | `api,rid-sp,dss-sync` |  | `USSP-DEV` |  | the USSP code from the authority's certificate (M8); never an audience |
 | `USSP_AUDIENCES` | `api,telemetry-ingest,rid-sp,traffic-ws` |  |  |  | hosts accepted as JWT aud, comma-separated: the public host and a lab alias (M18) |
 | `USSP_TOKEN_ISSUERS` | `api,telemetry-ingest,rid-sp,traffic-ws` |  |  |  | allow-listed token issuers as iss=jwks_url, comma-separated; the first is the token service for outgoing calls |

@@ -115,7 +115,8 @@ const (
 
 // The size bounds of the other streams (audit B1). Every stream and
 // bucket is bounded so that together they fit the account's JetStream
-// file store (16 GiB in deploy/compose/nats.conf, checked by test):
+// file store (16 GiB in deploy/compose/nats.conf, checked by test in
+// internal/app/proc against the configured bounds, TopologyOptions):
 // when the store is full JetStream refuses every publish of the
 // account, ALRT, FLIGHT and INTENT included. The hot-path captures
 // discard their oldest messages: TRK keeps about an hour of 1000 drones
@@ -168,11 +169,24 @@ const (
 	DefaultConfMaxBytes = int64(4 << 30)
 )
 
-// TopologyOptions are the configurable bounds of the topology; a zero
-// field keeps its default.
+// StreamBounds are a stream's configurable bounds; a zero field keeps
+// the stream's default.
+type StreamBounds struct {
+	MaxAge   time.Duration
+	MaxBytes int64
+}
+
+// TopologyOptions are the configurable bounds of the topology, so that a
+// deployment with a smaller JetStream file store than the 16 GiB the
+// defaults are sized for can fit every stream and bucket into it. A
+// missing entry or a zero field keeps its default. A bucket's TTL is
+// not configurable: each one is what its readers rely on (registry
+// answers, the replay window, session lifetimes).
 type TopologyOptions struct {
-	ConfMaxAge   time.Duration
-	ConfMaxBytes int64
+	// Streams are the stream bounds by stream name.
+	Streams map[string]StreamBounds
+	// BucketMaxBytes are the bucket size bounds by bucket name.
+	BucketMaxBytes map[string]int64
 }
 
 // DuplicateWindow is every stream's dedupe window: a durable publish
@@ -192,12 +206,26 @@ func DefaultTopology() Topology { return TopologyWith(TopologyOptions{}) }
 
 // TopologyWith is docs/PLAN.md §7 with the bounds of o.
 func TopologyWith(o TopologyOptions) Topology {
-	if o.ConfMaxAge <= 0 {
-		o.ConfMaxAge = DefaultConfMaxAge
+	t := defaultTopology()
+	for i := range t.Streams {
+		b := o.Streams[t.Streams[i].Name]
+		if b.MaxAge > 0 {
+			t.Streams[i].MaxAge = b.MaxAge
+		}
+		if b.MaxBytes > 0 {
+			t.Streams[i].MaxBytes = b.MaxBytes
+		}
 	}
-	if o.ConfMaxBytes <= 0 {
-		o.ConfMaxBytes = DefaultConfMaxBytes
+	for i := range t.Buckets {
+		if n := o.BucketMaxBytes[t.Buckets[i].Bucket]; n > 0 {
+			t.Buckets[i].MaxBytes = n
+		}
 	}
+	return t
+}
+
+// defaultTopology is docs/PLAN.md §7 with the default bounds.
+func defaultTopology() Topology {
 	stream := func(name, subject, desc string, age time.Duration, maxMsg int32, maxBytes int64) jetstream.StreamConfig {
 		return jetstream.StreamConfig{
 			Name: name, Description: desc, Subjects: []string{subject}, Retention: jetstream.LimitsPolicy,
@@ -206,13 +234,13 @@ func TopologyWith(o TopologyOptions) Topology {
 		}
 	}
 	ingest := stream(StreamINGEST, SubjectIngestAll,
-		"telemetry-ingest work queue under backpressure (10 min); full refuses new messages, counted by the producer",
+		"telemetry-ingest work queue under backpressure; full refuses new messages, counted by the producer",
 		10*time.Minute, TrackMsgBytes, IngestMaxBytes)
 	ingest.Retention, ingest.Discard = jetstream.WorkQueuePolicy, jetstream.DiscardNew
 	conf := stream(StreamCONF, SubjectConfAll, "conformance transitions and heartbeats: the hand-over to api and tsdb-writer (the record is conformance_samples)",
-		o.ConfMaxAge, 256<<10, o.ConfMaxBytes)
-	alrt := stream(StreamALRT, SubjectAlrtAll, "alerts raised, refreshed and cleared (7 d, 1 GiB)", 7*24*time.Hour, 256<<10, ALRTMaxBytes)
-	trafficStream := stream(StreamTRAFFIC, SubjectTrafficAll, "traffic products sampled for the record (1 d, 512 MiB)", 24*time.Hour, 512<<10, TRAFFICMaxBytes)
+		DefaultConfMaxAge, 256<<10, DefaultConfMaxBytes)
+	alrt := stream(StreamALRT, SubjectAlrtAll, "alerts raised, refreshed and cleared", 7*24*time.Hour, 256<<10, ALRTMaxBytes)
+	trafficStream := stream(StreamTRAFFIC, SubjectTrafficAll, "traffic products sampled for the record", 24*time.Hour, 512<<10, TRAFFICMaxBytes)
 	bucket := func(name, desc string, maxValue int32, ttl time.Duration, maxBytes int64) jetstream.KeyValueConfig {
 		return jetstream.KeyValueConfig{
 			Bucket: name, Description: desc, History: 1, TTL: ttl, MaxValueSize: maxValue, MaxBytes: maxBytes,
@@ -221,17 +249,17 @@ func TopologyWith(o TopologyOptions) Topology {
 	}
 	return Topology{
 		Streams: []jetstream.StreamConfig{
-			stream(StreamTRK, SubjectTrkAll, "tracks of the hot path (1 h, 2 GiB): restart replay and tsdb-writer", time.Hour, TrackMsgBytes, TRKMaxBytes),
-			stream(StreamMAN, SubjectManAll, "manned tracks (1 h, 512 MiB): tsdb-writer", time.Hour, TrackMsgBytes, MANMaxBytes),
-			stream(StreamPEER, SubjectPeerAll, "peer flights (1 h, 512 MiB): tsdb-writer", time.Hour, TrackMsgBytes, PEERMaxBytes),
+			stream(StreamTRK, SubjectTrkAll, "tracks of the hot path: restart replay and tsdb-writer", time.Hour, TrackMsgBytes, TRKMaxBytes),
+			stream(StreamMAN, SubjectManAll, "manned tracks: tsdb-writer", time.Hour, TrackMsgBytes, MANMaxBytes),
+			stream(StreamPEER, SubjectPeerAll, "peer flights: tsdb-writer", time.Hour, TrackMsgBytes, PEERMaxBytes),
 			alrt,
 			conf,
-			stream(StreamIDENT, SubjectIdentAll, "identification changes (24 h)", 24*time.Hour, 64<<10, IDENTMaxBytes),
-			stream(StreamINTENT, SubjectIntentAll, "intent states (30 d)", 30*24*time.Hour, 256<<10, INTENTMaxBytes),
-			stream(StreamCIS, SubjectCISAll, "CIS changes (30 d)", 30*24*time.Hour, 256<<10, CISMaxBytes),
+			stream(StreamIDENT, SubjectIdentAll, "identification changes", 24*time.Hour, 64<<10, IDENTMaxBytes),
+			stream(StreamINTENT, SubjectIntentAll, "intent states", 30*24*time.Hour, 256<<10, INTENTMaxBytes),
+			stream(StreamCIS, SubjectCISAll, "CIS changes", 30*24*time.Hour, 256<<10, CISMaxBytes),
 			trafficStream,
 			ingest,
-			stream(StreamFLIGHT, SubjectFlightAll, "flight starts, telemetry losses and ends from telemetry-ingest to api (30 d)", 30*24*time.Hour, 64<<10, FLIGHTMaxBytes),
+			stream(StreamFLIGHT, SubjectFlightAll, "flight starts, telemetry losses and ends from telemetry-ingest to api", 30*24*time.Hour, 64<<10, FLIGHTMaxBytes),
 		},
 		Buckets: []jetstream.KeyValueConfig{
 			bucket(BucketCISCurrent, "CIS zones per cell5 and the large-zone entry", MaxPayloadBytes, 0, CISCurrentMaxBytes),
