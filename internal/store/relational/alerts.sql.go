@@ -207,6 +207,82 @@ func (q *Queries) GetAlert(ctx context.Context, id pgtype.UUID) (Alert, error) {
 	return i, err
 }
 
+const openIntentNotices = `-- name: OpenIntentNotices :many
+SELECT a.id, a.kind, a.flight_id, a.intent_id, a.authorisation_number, a.severity, a.state, a.raised_at, a.updated_at,
+       a.cleared_at, a.clear_reason, a.detail, a.captured_at, a.policy_version, a.acked_at, a.acked_by, a.escalated_at, a.cell5
+FROM alerts a
+JOIN operational_intents oi ON oi.id = a.intent_id
+WHERE a.kind = 'restriction_activated' AND a.cleared_at IS NULL
+  AND oi.local_state <> 'ended' AND oi.time_end >= now()
+ORDER BY a.raised_at
+LIMIT $1
+`
+
+type OpenIntentNoticesRow struct {
+	ID                  pgtype.UUID `json:"id"`
+	Kind                string      `json:"kind"`
+	FlightID            pgtype.UUID `json:"flight_id"`
+	IntentID            pgtype.UUID `json:"intent_id"`
+	AuthorisationNumber *string     `json:"authorisation_number"`
+	Severity            string      `json:"severity"`
+	State               string      `json:"state"`
+	RaisedAt            time.Time   `json:"raised_at"`
+	UpdatedAt           time.Time   `json:"updated_at"`
+	ClearedAt           *time.Time  `json:"cleared_at"`
+	ClearReason         *string     `json:"clear_reason"`
+	Detail              []byte      `json:"detail"`
+	CapturedAt          *time.Time  `json:"captured_at"`
+	PolicyVersion       int64       `json:"policy_version"`
+	AckedAt             *time.Time  `json:"acked_at"`
+	AckedBy             *string     `json:"acked_by"`
+	EscalatedAt         *time.Time  `json:"escalated_at"`
+	Cell5               *string     `json:"cell5"`
+}
+
+// The open restriction_activated alerts (WP-12) whose intent is not
+// over: api republishes them from the record, so a traffic-ws that
+// restarted holds them again (they are published once by the intent's
+// projection, and no monitor republishes them). At most max_rows,
+// oldest first.
+func (q *Queries) OpenIntentNotices(ctx context.Context, maxRows int32) ([]OpenIntentNoticesRow, error) {
+	rows, err := q.db.Query(ctx, openIntentNotices, maxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OpenIntentNoticesRow
+	for rows.Next() {
+		var i OpenIntentNoticesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.FlightID,
+			&i.IntentID,
+			&i.AuthorisationNumber,
+			&i.Severity,
+			&i.State,
+			&i.RaisedAt,
+			&i.UpdatedAt,
+			&i.ClearedAt,
+			&i.ClearReason,
+			&i.Detail,
+			&i.CapturedAt,
+			&i.PolicyVersion,
+			&i.AckedAt,
+			&i.AckedBy,
+			&i.EscalatedAt,
+			&i.Cell5,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const openIntentNoticesEnded = `-- name: OpenIntentNoticesEnded :many
 SELECT a.id, a.kind, a.flight_id, a.intent_id, a.authorisation_number, a.severity, a.state, a.raised_at, a.updated_at,
        a.cleared_at, a.clear_reason, a.detail, a.captured_at, a.policy_version, a.acked_at, a.acked_by, a.escalated_at, a.cell5

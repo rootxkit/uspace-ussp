@@ -853,3 +853,32 @@ func TestGeoChangeAndNoticeReachTheSubscriber(t *testing.T) {
 		t.Fatalf("%s %v", f.Body, err)
 	}
 }
+
+// An open restriction_activated notice is api's (republished from its
+// record), not the monitor's: it never makes the monitor input
+// degraded, however long since it was heard. Twin: a monitor alert not
+// republished does (E-01 pair).
+func TestOpenNoticeDoesNotDegradeTheMonitor(t *testing.T) {
+	r := newRig(t)
+	now := time.Now()
+	at := now.UTC()
+	n := &intent.Notice{Cause: intent.CauseRestriction, Ref: "TRS001", Decision: intent.RecheckWithdrawn, Withdrawn: true,
+		AffectedIntents: []string{intentA}, ChangeReason: "restriction TRS001", Version: 2, At: at,
+		AlertID: "4d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7e82", Conflicts: []intent.Conflict{}}
+	m, err := geo.NoticeMessageOf(&intent.Record{ID: intentA}, n, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(m)
+	r.hub.TakeAlert("alrt.v1.restriction_activated.c5:1317:2248."+n.AlertID, raw)
+	if len(r.hub.Book.Active(nil)) != 1 {
+		t.Fatal("notice not in the book")
+	}
+	if d, ok := r.hub.Degraded(now.Add(time.Minute))["monitor"]; ok {
+		t.Fatalf("an open notice degraded the monitor: %+v", d)
+	}
+	r.alert(traffic.AlertRaised, false, now)
+	if _, ok := r.hub.Degraded(now.Add(time.Minute))["monitor"]; !ok {
+		t.Fatal("a monitor alert not republished did not degrade the monitor")
+	}
+}

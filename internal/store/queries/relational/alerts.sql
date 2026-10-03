@@ -113,3 +113,18 @@ WHERE a.kind = 'restriction_activated' AND a.cleared_at IS NULL
   AND (oi.local_state = 'ended' OR oi.time_end < now())
 ORDER BY a.raised_at
 LIMIT sqlc.arg(max_rows);
+
+-- name: OpenIntentNotices :many
+-- The open restriction_activated alerts (WP-12) whose intent is not
+-- over: api republishes them from the record, so a traffic-ws that
+-- restarted holds them again (they are published once by the intent's
+-- projection, and no monitor republishes them). At most max_rows,
+-- oldest first.
+SELECT a.id, a.kind, a.flight_id, a.intent_id, a.authorisation_number, a.severity, a.state, a.raised_at, a.updated_at,
+       a.cleared_at, a.clear_reason, a.detail, a.captured_at, a.policy_version, a.acked_at, a.acked_by, a.escalated_at, a.cell5
+FROM alerts a
+JOIN operational_intents oi ON oi.id = a.intent_id
+WHERE a.kind = 'restriction_activated' AND a.cleared_at IS NULL
+  AND oi.local_state <> 'ended' AND oi.time_end >= now()
+ORDER BY a.raised_at
+LIMIT sqlc.arg(max_rows);

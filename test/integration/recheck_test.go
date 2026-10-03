@@ -171,4 +171,15 @@ func TestIntegrationRestrictionRecheck(t *testing.T) {
 	if ga := g.stack.call("GET", "/v1/intents/"+a.str("intent_id"), nil, bearer(token)); ga.str("state") != "withdrawn" {
 		t.Fatalf("A after the end: %s", ga.raw)
 	}
+	// A traffic-ws that restarted holds the open notices again: api
+	// republishes them from its record (both intents are not over), and
+	// the closing pass leaves them open.
+	svc := &alerts.Service{Store: alertstore.Store{S: appStore(t)}, Bus: pub, Logger: quiet()}
+	if n, err := svc.RepublishOpenNotices(ctx); err != nil || n < 2 {
+		t.Fatalf("republished %d: %v", n, err)
+	}
+	within(t, 10*time.Second, func() bool { return len(log.of(a.str("intent_id"))) == 2 && len(log.of(c.str("intent_id"))) == 2 })
+	if again := log.of(a.str("intent_id"))[1]; again.Body.AlertID != na.Body.AlertID || again.Body.State != geo.StateRaised {
+		t.Fatalf("A's notice republished as %+v", again.Body)
+	}
 }

@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -150,6 +152,17 @@ func (m *memStore) Escalate(context.Context, float64, int) ([]Stored, error) {
 		out = append(out, Stored{Body: r.Body, Cell5: r.Cell5})
 	}
 	return out, nil
+}
+
+// OpenNotices are the open notices (the memory store does not model the
+// intent; a test sets the rows), at most maxRows.
+func (m *memStore) OpenNotices(ctx context.Context, maxRows int) ([]Stored, error) {
+	out, err := m.EndedNotices(ctx, maxRows)
+	slices.SortFunc(out, func(a, b Stored) int { return strings.Compare(a.AlertID, b.AlertID) })
+	if len(out) > maxRows {
+		out = out[:maxRows]
+	}
+	return out, err
 }
 
 func (m *memStore) EndedNotices(context.Context, int) ([]Stored, error) {
@@ -577,6 +590,54 @@ func TestClearEndedNotices(t *testing.T) {
 	}
 	st.fail = errors.New("down")
 	if _, err := svc.ClearEndedNotices(t.Context()); err == nil {
+		t.Fatal("a failed store not reported")
+	}
+}
+
+// An open notice is republished from the record, unchanged (its own
+// updated_at), so a traffic-ws that restarted holds it again; a cleared
+// one and a monitor alert are not (E-01 pair). Past MaxNoticeRepublish
+// the rest wait and are counted (E-10); a store that fails is an error.
+func TestRepublishOpenNotices(t *testing.T) {
+	st := newMem()
+	intentID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	b := body(StateRaised, t0)
+	b.AlertID, b.Kind, b.FlightID, b.IntentID = "4d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7e82", KindRestrictionActivated, "", &intentID
+	st.rows[b.AlertID] = Record{Body: b, Cell5: cellA}
+	gone := b
+	gone.AlertID, gone.State = "4d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7e83", StateCleared
+	st.rows[gone.AlertID] = Record{Body: gone, Cell5: cellA}
+	st.rows[alertA] = Record{Body: body(StateRaised, t0), Cell5: cellA}
+	bus := &pub{}
+	svc := &Service{Store: st, Bus: bus, Now: func() time.Time { return t0.Add(time.Hour) }}
+	n, err := svc.RepublishOpenNotices(t.Context())
+	if err != nil || n != 1 {
+		t.Fatalf("%d %v", n, err)
+	}
+	bus.mu.Lock()
+	ms := slices.Clone(bus.msgs)
+	bus.mu.Unlock()
+	if len(ms) != 1 {
+		t.Fatalf("published %d", len(ms))
+	}
+	raw, err := json.Marshal(&ms[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := Decode(raw)
+	if err != nil || m.Body.AlertID != b.AlertID || m.Body.State != StateRaised || !m.Body.UpdatedAt.Equal(t0) {
+		t.Fatalf("%+v %v", m.Body, err)
+	}
+	for i := range MaxNoticeRepublish + 1 {
+		x := b
+		x.AlertID = fmt.Sprintf("5d6f0f7e-8d7c-4c1a-9e2b-%012d", i)
+		st.rows[x.AlertID] = Record{Body: x, Cell5: cellA}
+	}
+	if n, err := svc.RepublishOpenNotices(t.Context()); err != nil || n != MaxNoticeRepublish || svc.counters().Get(CounterNoticeRepublishOverBound) != 1 {
+		t.Fatalf("over bound: %d %v %d", n, err, svc.counters().Get(CounterNoticeRepublishOverBound))
+	}
+	st.fail = errors.New("down")
+	if _, err := svc.RepublishOpenNotices(t.Context()); err == nil {
 		t.Fatal("a failed store not reported")
 	}
 }

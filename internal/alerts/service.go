@@ -40,6 +40,9 @@ type FactStore interface {
 	// intent is over (ended, or past its time_end), at most maxRows
 	// (WP-12).
 	EndedNotices(ctx context.Context, maxRows int) ([]Stored, error)
+	// OpenNotices are the open restriction_activated alerts whose intent
+	// is not over, oldest first, at most maxRows (WP-12).
+	OpenNotices(ctx context.Context, maxRows int) ([]Stored, error)
 }
 
 // Publisher is the bus (bus.Publisher).
@@ -199,15 +202,57 @@ func (s *Service) ClearEndedNotices(ctx context.Context) (int, error) {
 	return len(rows), nil
 }
 
-// RunEscalation escalates every period until ctx ends, and clears the
-// notices of intents that are over; a failed pass (the database down)
-// is logged and tried at the next one.
+// Notice republishing (WP-12).
+const (
+	// CounterNoticesRepublished counts the open notices republished from
+	// the record.
+	CounterNoticesRepublished = "alerts_notices_republished"
+	// CounterNoticeRepublishOverBound counts the passes that found more
+	// open notices than MaxNoticeRepublish (the oldest are republished,
+	// the rest at a later pass once some are cleared).
+	CounterNoticeRepublishOverBound = "alerts_notices_republish_over_bound"
+	// MaxNoticeRepublish bounds the notices one pass republishes (E-10).
+	MaxNoticeRepublish = DefaultEscalateMaxRows
+	// NoticeRepublishEvery is how often the open notices are republished:
+	// the longest a traffic-ws that restarted goes without one.
+	NoticeRepublishEvery = 10 * time.Second
+)
+
+// RepublishOpenNotices republishes, unchanged, the open
+// restriction_activated alerts whose intent is not over (WP-12). The
+// intent's projection publishes a notice once and no monitor republishes
+// it, so without this a traffic-ws that restarted would never hold it
+// again. A republish that fails is counted and comes again at the next
+// pass.
+func (s *Service) RepublishOpenNotices(ctx context.Context) (int, error) {
+	rows, err := s.Store.OpenNotices(ctx, MaxNoticeRepublish+1)
+	if err != nil {
+		return 0, err
+	}
+	if len(rows) > MaxNoticeRepublish {
+		s.counters().Inc(CounterNoticeRepublishOverBound)
+		s.logger().LogAttrs(ctx, slog.LevelError, "more open notices than one pass republishes; the oldest are republished",
+			slog.Int("bound", MaxNoticeRepublish))
+		rows = rows[:MaxNoticeRepublish]
+	}
+	for i := range rows {
+		s.counters().Inc(CounterNoticesRepublished)
+		s.republish(ctx, rows[i])
+	}
+	return len(rows), nil
+}
+
+// RunEscalation escalates every period until ctx ends, clears the
+// notices of intents that are over, and republishes the open ones every
+// NoticeRepublishEvery (the first at the first period); a failed pass
+// (the database down) is logged and tried at the next one.
 func (s *Service) RunEscalation(ctx context.Context, every time.Duration) {
 	if every <= 0 {
 		every = DefaultEscalateEvery
 	}
 	t := time.NewTicker(every)
 	defer t.Stop()
+	var republished time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -218,6 +263,12 @@ func (s *Service) RunEscalation(ctx context.Context, every time.Duration) {
 			}
 			if _, err := s.ClearEndedNotices(ctx); err != nil && ctx.Err() == nil {
 				s.logger().LogAttrs(ctx, slog.LevelError, "notice clearing pass failed; tried again at the next", obs.Err(err))
+			}
+			if now := s.now(); republished.IsZero() || now.Sub(republished) >= NoticeRepublishEvery {
+				republished = now
+				if _, err := s.RepublishOpenNotices(ctx); err != nil && ctx.Err() == nil {
+					s.logger().LogAttrs(ctx, slog.LevelError, "notice republish pass failed; tried again at the next", obs.Err(err))
+				}
 			}
 		}
 	}

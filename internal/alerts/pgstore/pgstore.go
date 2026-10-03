@@ -164,3 +164,16 @@ func (p Store) EndedNotices(ctx context.Context, maxRows int) ([]alerts.Stored, 
 	}
 	return out, nil
 }
+
+// OpenNotices implements alerts.FactStore.
+func (p Store) OpenNotices(ctx context.Context, maxRows int) ([]alerts.Stored, error) {
+	rs, err := p.S.Queries().OpenIntentNotices(ctx, int32(min(maxRows, 10_000)))
+	if err != nil {
+		return nil, fmt.Errorf("open notices: %w", err)
+	}
+	out := make([]alerts.Stored, 0, len(rs))
+	for i := range rs {
+		out = append(out, row(rs[i]).stored())
+	}
+	return out, nil
+}
