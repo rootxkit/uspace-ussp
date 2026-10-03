@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"sync"
@@ -334,8 +335,13 @@ type memStore struct {
 	flags    map[string]string
 	versions map[string][]Record
 	peers    []PeerIntent
-	failNow  error
-	failTx   error
+	// constraints, held and outbox are WP-13's: the F3548 constraints,
+	// what the DSS holds of each intent and the outbox items queued.
+	constraints []PeerIntent
+	held        map[string]*DSSHeld
+	outbox      []OutboxSpec
+	failNow     error
+	failTx      error
 	// failCommit fails a transaction after fn succeeded (the commit).
 	failCommit error
 	// projected is the version of each intent last projected.
@@ -355,7 +361,7 @@ func newMemStore() *memStore {
 		}},
 		bound: map[string]bool{testClient + "/" + serial.FoldKey(testSerial): true},
 		byID:  map[string]*Record{}, flags: map[string]string{}, versions: map[string][]Record{},
-		projected: map[string]int{},
+		projected: map[string]int{}, held: map[string]*DSSHeld{},
 	}
 }
 
@@ -437,6 +443,8 @@ func (m *memStore) InTx(ctx context.Context, fn func(ctx context.Context, tx Tx)
 	for k, v := range m.byID {
 		saved[k] = clone(v)
 	}
+	savedHeld := maps.Clone(m.held)
+	savedOutbox := slices.Clone(m.outbox)
 	savedFlags := map[string]string{}
 	for k, v := range m.flags {
 		savedFlags[k] = v
@@ -446,7 +454,7 @@ func (m *memStore) InTx(ctx context.Context, fn func(ctx context.Context, tx Tx)
 		err = fmt.Errorf("commit: %w", m.failCommit)
 	}
 	if err != nil {
-		m.byID, m.flags = saved, savedFlags
+		m.byID, m.flags, m.held, m.outbox = saved, savedFlags, savedHeld, savedOutbox
 		return err
 	}
 	return nil
@@ -489,7 +497,7 @@ func (t memTx) Now(context.Context) (time.Time, error) { return t.m.now, nil }
 func (t memTx) Overlapping(_ context.Context, _ []geodesy.BBox, _ float64, from, to time.Time, excludeID string, limit int) ([]Record, error) {
 	var out []Record
 	for _, r := range t.m.byID {
-		if r.ID == excludeID || r.Exempt || !slices.Contains(ActiveStates, r.LocalState) || r.TimeStart.After(to) || r.TimeEnd.Before(from) {
+		if r.ID == excludeID || r.Exempt || (!slices.Contains(ActiveStates, r.LocalState) && r.LocalState != StatePendingDSS) || r.TimeStart.After(to) || r.TimeEnd.Before(from) {
 			continue
 		}
 		out = append(out, *clone(r))
@@ -573,6 +581,64 @@ func (t memTx) DueToEnd(_ context.Context, now time.Time, limit int) ([]Record, 
 		}
 	}
 	return out, nil
+}
+
+func (m *memStore) Held(_ context.Context, id string) (*DSSHeld, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if h, ok := m.held[id]; ok {
+		c := *h
+		return &c, nil
+	}
+	return nil, nil
+}
+
+func (t memTx) ConstraintsOverlapping(_ context.Context, _, _, _ time.Time, limit int) ([]PeerIntent, error) {
+	if len(t.m.constraints) > limit+1 {
+		return t.m.constraints[:limit+1], nil
+	}
+	return t.m.constraints, nil
+}
+
+func (t memTx) QueueDSS(_ context.Context, id string, version int, managed bool) error {
+	if !managed && t.m.held[id] == nil {
+		return nil
+	}
+	for _, o := range t.m.outbox {
+		if o.Kind == OutboxOIR && o.EntityID == id && o.Version == int64(version) {
+			return nil
+		}
+	}
+	t.m.outbox = append(t.m.outbox, OutboxSpec{Kind: OutboxOIR, EntityID: id, Version: int64(version), Payload: DSSWorkload{IntentID: id, Version: version}})
+	return nil
+}
+
+func (t memTx) SetHeld(_ context.Context, id string, h *DSSHeld) error {
+	if _, ok := t.m.byID[id]; !ok {
+		return ErrNotFound
+	}
+	if h == nil {
+		delete(t.m.held, id)
+		return nil
+	}
+	c := *h
+	t.m.held[id] = &c
+	return nil
+}
+
+func (t memTx) Enqueue(_ context.Context, kind, entityID string, version int64, payload any) error {
+	t.m.outbox = append(t.m.outbox, OutboxSpec{Kind: kind, EntityID: entityID, Version: version, Payload: payload})
+	return nil
+}
+
+func (t memTx) PreviousNumber(_ context.Context, id string) (string, error) {
+	vs := t.m.versions[id]
+	for i := len(vs) - 1; i >= 0; i-- {
+		if n := vs[i].Decision.AuthorisationNumber; n != nil {
+			return *n, nil
+		}
+	}
+	return "", nil
 }
 
 // memProjector records the KV and the subjects; err fails it.

@@ -45,6 +45,8 @@ const (
 // transaction-scoped lock on one entity (LockEntity).
 const (
 	LockClassISA int32 = 0x75737301 // one F3411 ISA: its put or delete in the DSS
+	LockClassOIR int32 = 0x75737302 // one F3548 operational intent reference: its write to the DSS
+	LockClassSub int32 = 0x75737303 // one F3548 subscription of an area of interest: its put in the DSS
 )
 
 // LockEntity takes the transaction-scoped advisory lock of entityID in
