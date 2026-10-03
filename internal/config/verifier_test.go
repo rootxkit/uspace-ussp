@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -131,6 +132,7 @@ func TestVerifierConfigRefusesMalformedSessionClaims(t *testing.T) {
 func TestCompactConfig(t *testing.T) {
 	c, err := LoadFrom(env(map[string]string{
 		"USSP_AUDIENCES":          "ussp.example,ussp.lab",
+		"USSP_USS_BASE_URL":       "https://USSP.example/",
 		"USSP_CIS_NOTIFY_ISSUERS": "https://cisp.example=https://cisp.example/.well-known/jwks.json,https://ansp.example=https://ansp.example/.well-known/jwks.json",
 	}))
 	if err != nil {
@@ -149,9 +151,33 @@ func TestCompactConfig(t *testing.T) {
 	if _, err := c.CompactConfig(); !slices.Equal(fieldNames(err), []string{"USSP_AUDIENCES"}) {
 		t.Fatalf("no audience: %v", err)
 	}
-	c = Config{Audiences: []string{"ussp.example"}, CISNotifyIssuers: []string{"https://cisp.example"}}
+	c = Config{Audiences: []string{"ussp.example"}, USSBaseURL: "https://ussp.example", CISNotifyIssuers: []string{"https://cisp.example"}}
 	if _, err := c.CompactConfig(); !slices.Equal(fieldNames(err), []string{"USSP_CIS_NOTIFY_ISSUERS"}) {
 		t.Fatalf("no JWKS URL: %v", err)
+	}
+}
+
+// The CISP signs a notification's aud as the host of the callback_url
+// this USSP registers (USSP_USS_BASE_URL + /v1/cis/notifications). A
+// receiver whose USSP_AUDIENCES lacks that host would refuse every
+// notification as aud while the subscription shows active, so the start
+// is refused; the host in the list (any case) is accepted (E-01 pair in
+// TestCompactConfig).
+func TestCompactConfigCallbackHostIsAnAudience(t *testing.T) {
+	issuers := "https://cisp.example=https://cisp.example/.well-known/jwks.json"
+	c, err := LoadFrom(env(map[string]string{
+		"USSP_AUDIENCES": "ussp", "USSP_USS_BASE_URL": "https://ussp.example", "USSP_CIS_NOTIFY_ISSUERS": issuers,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.CompactConfig()
+	if !slices.Equal(fieldNames(err), []string{"USSP_AUDIENCES"}) || !strings.Contains(err.Error(), "ussp.example") {
+		t.Fatalf("callback host not an audience: %v", err)
+	}
+	c, _ = LoadFrom(env(map[string]string{"USSP_AUDIENCES": "ussp.example", "USSP_CIS_NOTIFY_ISSUERS": issuers}))
+	if _, err := c.CompactConfig(); !slices.Equal(fieldNames(err), []string{"USSP_USS_BASE_URL"}) {
+		t.Fatalf("no callback base: %v", err)
 	}
 }
 

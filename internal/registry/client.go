@@ -188,6 +188,23 @@ func decodeStrict(body []byte, v any) error {
 	return nil
 }
 
+// transport is a call's transport error without the request's URL: a
+// *url.Error prints the whole URL, whose query holds the operator, the
+// serial and the pilot id asked, and the error reaches the log and the
+// public readiness detail (audit S2). The operation and the authority's
+// host stay; any other error is returned as it is.
+func (c *Client) transport(err error) error {
+	var ue *url.Error
+	if !errors.As(err, &ue) {
+		return err
+	}
+	host := c.cfg.BaseURL
+	if u, perr := url.Parse(c.cfg.BaseURL); perr == nil {
+		host = u.Host
+	}
+	return fmt.Errorf("%s %s: %w", ue.Op, host, ue.Err)
+}
+
 // Validate asks the authority about the queries: one GET for a single
 // query, else one POST batch (at most MaxQueries). The answers are in
 // the order of qs and each one is checked against what was asked
@@ -205,7 +222,7 @@ func (c *Client) Validate(ctx context.Context, p Purpose, qs []normalised) ([]au
 		params := &authclient.ValidateRegistryParams{Purpose: purpose, Operator: opt(q.operatorPublic), Serial: opt(q.serial), Pilot: opt(q.pilot)}
 		resp, err := c.gen.ValidateRegistry(ctx, params)
 		if err != nil {
-			return nil, err
+			return nil, c.transport(err)
 		}
 		var v authclient.RegistryValidity
 		if err := c.decode(resp, &v); err != nil {
@@ -219,7 +236,7 @@ func (c *Client) Validate(ctx context.Context, p Purpose, qs []normalised) ([]au
 		}
 		resp, err := c.gen.ValidateRegistryBatch(ctx, &authclient.ValidateRegistryBatchParams{Purpose: purpose}, body)
 		if err != nil {
-			return nil, err
+			return nil, c.transport(err)
 		}
 		var list authclient.RegistryValidityList
 		if err := c.decode(resp, &list); err != nil {
@@ -230,8 +247,11 @@ func (c *Client) Validate(ctx context.Context, p Purpose, qs []normalised) ([]au
 		}
 		out = list.Results
 	}
-	for i := range out {
-		if err := checkAnswer(qs[i], out[i]); err != nil {
+	for i, q := range qs {
+		if i >= len(out) {
+			return nil, refusedAnswer("%d answers to %d queries", len(out), len(qs))
+		}
+		if err := checkAnswer(q, out[i]); err != nil {
 			return nil, err
 		}
 	}
@@ -328,7 +348,7 @@ func (c *Client) Changes(ctx context.Context, since int64, limit int, etag strin
 	}
 	resp, err := c.gen.ListRegistryChanges(ctx, p)
 	if err != nil {
-		return ChangesPage{}, err
+		return ChangesPage{}, c.transport(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	out := ChangesPage{ETag: resp.Header.Get("ETag")}

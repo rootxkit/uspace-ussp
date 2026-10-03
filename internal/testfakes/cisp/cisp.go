@@ -45,6 +45,10 @@ type version struct {
 	// pubSig and pubKID are X-Publisher-Signature and X-Publisher-Kid
 	// ("" sends neither).
 	pubSig, pubKID string
+	// signed is what GET /v1/{dataset}/versions/{v} serves and the
+	// publisher signed, when it is not the served body (PublishSigned,
+	// Tamper); nil serves the dataset's body there too.
+	signed []byte
 }
 
 // The publishers of the datasets (the CISP's auth.PublisherOf).
@@ -198,7 +202,7 @@ func (f *Fake) SetPublisherSignature(dataset string, v int64, sig, kid string) {
 }
 
 // VersionBody is the bytes the fake serves for version v of dataset
-// (what its publisher signed).
+// on GET /v1/{dataset}/versions/{v} (what its publisher signed).
 func (f *Fake) VersionBody(dataset string, v int64) []byte {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -206,7 +210,7 @@ func (f *Fake) VersionBody(dataset string, v int64) []byte {
 	if v < 1 || v > int64(len(vs)) {
 		return nil
 	}
-	return served(dataset, vs[v-1])
+	return signedBody(dataset, vs[v-1])
 }
 
 // Down makes every request answer 503 until Up.
@@ -253,12 +257,49 @@ func (f *Fake) PublishRaw(dataset string, body []byte) Change {
 	return f.publishLocked(dataset, &version{raw: body})
 }
 
+// PublishSigned makes features the next version of dataset as the CISP
+// serves it, while the publisher signed signed (what a real CISP
+// stores: the publisher's bytes, without the cis_* members it adds, or
+// for restrictions the ANSP's request), served on
+// GET /v1/{dataset}/versions/{v}.
+func (f *Fake) PublishSigned(dataset string, signed []byte, features ...json.RawMessage) Change {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.publishLocked(dataset, &version{features: append([]json.RawMessage{}, features...), signed: bytes.Clone(signed)})
+}
+
+// PublishRawSigned makes body (served as is) the next version of
+// dataset while the publisher signed signed, served on
+// GET /v1/{dataset}/versions/{v}.
+func (f *Fake) PublishRawSigned(dataset string, signed, body []byte) Change {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.publishLocked(dataset, &version{raw: bytes.Clone(body), signed: bytes.Clone(signed)})
+}
+
+// Tamper replaces the features GET /v1/{dataset} and its deltas serve
+// for version v of dataset, while GET /v1/{dataset}/versions/{v} keeps
+// serving the bytes the publisher signed, with their signature: a CISP
+// (or a proxy) that alters one path and not the other.
+func (f *Fake) Tamper(dataset string, v int64, features ...json.RawMessage) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	vs := f.versions[dataset]
+	if v < 1 || v > int64(len(vs)) {
+		return
+	}
+	if vs[v-1].signed == nil {
+		vs[v-1].signed = served(dataset, vs[v-1])
+	}
+	vs[v-1].features = append([]json.RawMessage{}, features...)
+}
+
 func (f *Fake) publishLocked(dataset string, v *version) Change {
 	vs := f.versions[dataset]
 	v.n = int64(len(vs) + 1)
 	v.at = time.Now().UTC()
 	pub := PublisherOf(dataset)
-	if sig, err := f.Publishers[pub].SignDetached(served(dataset, v), v.at); err == nil {
+	if sig, err := f.Publishers[pub].SignDetached(signedBody(dataset, v), v.at); err == nil {
 		v.pubSig, v.pubKID = sig, "fake-"+pub+"-1"
 	}
 	f.versions[dataset] = append(vs, v)
@@ -503,6 +544,15 @@ func (f *Fake) listChanges(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"changes": out, "next": len(f.changes)})
 }
 
+// signedBody is the body of version v of dataset as its publisher
+// signed it.
+func signedBody(dataset string, v *version) []byte {
+	if v.signed != nil {
+		return v.signed
+	}
+	return served(dataset, v)
+}
+
 // served is the body of version v of dataset as the CISP serves it.
 func served(dataset string, v *version) []byte {
 	if v.raw != nil {
@@ -594,6 +644,7 @@ func (f *Fake) getVersion(w http.ResponseWriter, dataset string, n int64) {
 	f.mu.Lock()
 	v := vs[n-1]
 	sig, kid := v.pubSig, v.pubKID
+	body := signedBody(dataset, v)
 	f.mu.Unlock()
 	w.Header().Set("ETag", etag(dataset, n))
 	w.Header().Set("X-CIS-Version", strconv.FormatInt(n, 10))
@@ -604,7 +655,7 @@ func (f *Fake) getVersion(w http.ResponseWriter, dataset string, n int64) {
 	if kid != "" {
 		w.Header().Set("X-Publisher-Kid", kid)
 	}
-	_, _ = w.Write(served(dataset, v))
+	_, _ = w.Write(body) //nolint:gosec // G705: a test fake serving the bytes it was given
 }
 
 // Tokens is a cis.TokenSource-shaped source that hands out Token.

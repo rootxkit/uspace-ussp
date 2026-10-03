@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/f3411"
 
 	"github.com/rootxkit/uspace-ussp/internal/obs"
@@ -45,6 +46,10 @@ const (
 	BucketIntentActive     = "intent_active"
 	BucketTelemetrySeen    = "telemetry_seen"
 	BucketISANotifications = "rid_isa_notifications"
+	// BucketSessionsLive holds every live session by jti (KeyToken),
+	// written by api in the session's transaction and read by traffic-ws,
+	// which has no relational database (audit B2).
+	BucketSessionsLive = "sessions_live"
 	// BucketConformanceState holds each tracked flight's conformance
 	// state machine, written by the monitor instance that owns the
 	// flight, so a restart or a handover continues it (WP-10).
@@ -108,6 +113,51 @@ const (
 	TRAFFICMaxBytes = int64(512 << 20)
 )
 
+// The size bounds of the other streams (audit B1). Every stream and
+// bucket is bounded so that together they fit the account's JetStream
+// file store (16 GiB in deploy/compose/nats.conf, checked by test):
+// when the store is full JetStream refuses every publish of the
+// account, ALRT, FLIGHT and INTENT included. The hot-path captures
+// discard their oldest messages: TRK keeps about an hour of 1000 drones
+// at 1 Hz (about 600 bytes each is 2.1 GB/h) in 2 GiB, MAN and PEER
+// 512 MiB each; tsdb-writer records what aged out before it read it as
+// a hole. The durable streams discard their oldest too, far beyond
+// their usual volume.
+const (
+	TRKMaxBytes    = int64(2 << 30)
+	MANMaxBytes    = int64(512 << 20)
+	PEERMaxBytes   = int64(512 << 20)
+	IDENTMaxBytes  = int64(256 << 20)
+	INTENTMaxBytes = int64(512 << 20)
+	CISMaxBytes    = int64(256 << 20)
+	FLIGHTMaxBytes = int64(256 << 20)
+)
+
+// The buckets' size bounds. A bucket refuses a put once full (the
+// writer's projection fails and says so, B-09), so the bounds are well
+// above what the design load holds: telemetry_seen keeps one key per
+// sample for SeenTTL (3.6 M keys an hour at 1000 Hz, about 0.5 GB).
+const (
+	CISCurrentMaxBytes       = int64(256 << 20)
+	PolicyMaxBytes           = int64(8 << 20)
+	SourceControlMaxBytes    = int64(16 << 20)
+	RegistryValidityMaxBytes = int64(256 << 20)
+	ClientBindingsMaxBytes   = int64(64 << 20)
+	IntentActiveMaxBytes     = int64(256 << 20)
+	TelemetrySeenMaxBytes    = int64(1 << 30)
+	ISANotificationsMaxBytes = int64(128 << 20)
+	ConformanceStateMaxBytes = int64(512 << 20)
+	SessionsLiveMaxBytes     = int64(64 << 20)
+)
+
+// The live sessions' bounds: a session lives at most 12 h
+// (USSP_SESSION_TTL_S), so a key an hour older belongs to no live
+// session; a value is a subject, a realm and two times.
+const (
+	SessionsLiveTTL   = 13 * time.Hour
+	SessionsLiveBytes = 1 << 10
+)
+
 // CONF's bounds: the monitor publishes the transitions and a heartbeat
 // of at most 0.1 Hz per flight; tsdb-writer copies every message into
 // conformance_samples (compressed after 7 days, kept 90), which is the
@@ -148,59 +198,76 @@ func TopologyWith(o TopologyOptions) Topology {
 	if o.ConfMaxBytes <= 0 {
 		o.ConfMaxBytes = DefaultConfMaxBytes
 	}
-	stream := func(name, subject, desc string, age time.Duration, maxMsg int32) jetstream.StreamConfig {
+	stream := func(name, subject, desc string, age time.Duration, maxMsg int32, maxBytes int64) jetstream.StreamConfig {
 		return jetstream.StreamConfig{
 			Name: name, Description: desc, Subjects: []string{subject}, Retention: jetstream.LimitsPolicy,
-			MaxAge: age, MaxMsgs: -1, MaxBytes: -1, MaxMsgSize: maxMsg, Storage: jetstream.FileStorage,
+			MaxAge: age, MaxMsgs: -1, MaxBytes: maxBytes, MaxMsgSize: maxMsg, Storage: jetstream.FileStorage,
 			Discard: jetstream.DiscardOld, Duplicates: DuplicateWindow, Replicas: 1,
 		}
 	}
 	ingest := stream(StreamINGEST, SubjectIngestAll,
 		"telemetry-ingest work queue under backpressure (10 min); full refuses new messages, counted by the producer",
-		10*time.Minute, TrackMsgBytes)
-	ingest.Retention, ingest.Discard, ingest.MaxBytes = jetstream.WorkQueuePolicy, jetstream.DiscardNew, IngestMaxBytes
+		10*time.Minute, TrackMsgBytes, IngestMaxBytes)
+	ingest.Retention, ingest.Discard = jetstream.WorkQueuePolicy, jetstream.DiscardNew
 	conf := stream(StreamCONF, SubjectConfAll, "conformance transitions and heartbeats: the hand-over to api and tsdb-writer (the record is conformance_samples)",
-		o.ConfMaxAge, 256<<10)
-	conf.MaxBytes = o.ConfMaxBytes
-	alrt := stream(StreamALRT, SubjectAlrtAll, "alerts raised, refreshed and cleared (7 d, 1 GiB)", 7*24*time.Hour, 256<<10)
-	alrt.MaxBytes = ALRTMaxBytes
-	trafficStream := stream(StreamTRAFFIC, SubjectTrafficAll, "traffic products sampled for the record (1 d, 512 MiB)", 24*time.Hour, 512<<10)
-	trafficStream.MaxBytes = TRAFFICMaxBytes
-	bucket := func(name, desc string, maxValue int32, ttl time.Duration) jetstream.KeyValueConfig {
+		o.ConfMaxAge, 256<<10, o.ConfMaxBytes)
+	alrt := stream(StreamALRT, SubjectAlrtAll, "alerts raised, refreshed and cleared (7 d, 1 GiB)", 7*24*time.Hour, 256<<10, ALRTMaxBytes)
+	trafficStream := stream(StreamTRAFFIC, SubjectTrafficAll, "traffic products sampled for the record (1 d, 512 MiB)", 24*time.Hour, 512<<10, TRAFFICMaxBytes)
+	bucket := func(name, desc string, maxValue int32, ttl time.Duration, maxBytes int64) jetstream.KeyValueConfig {
 		return jetstream.KeyValueConfig{
-			Bucket: name, Description: desc, History: 1, TTL: ttl, MaxValueSize: maxValue, MaxBytes: -1,
+			Bucket: name, Description: desc, History: 1, TTL: ttl, MaxValueSize: maxValue, MaxBytes: maxBytes,
 			Storage: jetstream.FileStorage, Replicas: 1,
 		}
 	}
-	proximity := bucket(BucketProximityState, "each active proximity alert, by pair (monitor)", ProximityStateBytes, ProximityStateTTL)
-	proximity.MaxBytes = ProximityStateMaxBytes
 	return Topology{
 		Streams: []jetstream.StreamConfig{
-			stream(StreamTRK, SubjectTrkAll, "tracks of the hot path (1 h): restart replay and tsdb-writer", time.Hour, TrackMsgBytes),
-			stream(StreamMAN, SubjectManAll, "manned tracks (1 h): tsdb-writer", time.Hour, TrackMsgBytes),
-			stream(StreamPEER, SubjectPeerAll, "peer flights (1 h): tsdb-writer", time.Hour, TrackMsgBytes),
+			stream(StreamTRK, SubjectTrkAll, "tracks of the hot path (1 h, 2 GiB): restart replay and tsdb-writer", time.Hour, TrackMsgBytes, TRKMaxBytes),
+			stream(StreamMAN, SubjectManAll, "manned tracks (1 h, 512 MiB): tsdb-writer", time.Hour, TrackMsgBytes, MANMaxBytes),
+			stream(StreamPEER, SubjectPeerAll, "peer flights (1 h, 512 MiB): tsdb-writer", time.Hour, TrackMsgBytes, PEERMaxBytes),
 			alrt,
 			conf,
-			stream(StreamIDENT, SubjectIdentAll, "identification changes (24 h)", 24*time.Hour, 64<<10),
-			stream(StreamINTENT, SubjectIntentAll, "intent states (30 d)", 30*24*time.Hour, 256<<10),
-			stream(StreamCIS, SubjectCISAll, "CIS changes (30 d)", 30*24*time.Hour, 256<<10),
+			stream(StreamIDENT, SubjectIdentAll, "identification changes (24 h)", 24*time.Hour, 64<<10, IDENTMaxBytes),
+			stream(StreamINTENT, SubjectIntentAll, "intent states (30 d)", 30*24*time.Hour, 256<<10, INTENTMaxBytes),
+			stream(StreamCIS, SubjectCISAll, "CIS changes (30 d)", 30*24*time.Hour, 256<<10, CISMaxBytes),
 			trafficStream,
 			ingest,
-			stream(StreamFLIGHT, SubjectFlightAll, "flight starts, telemetry losses and ends from telemetry-ingest to api (30 d)", 30*24*time.Hour, 64<<10),
+			stream(StreamFLIGHT, SubjectFlightAll, "flight starts, telemetry losses and ends from telemetry-ingest to api (30 d)", 30*24*time.Hour, 64<<10, FLIGHTMaxBytes),
 		},
 		Buckets: []jetstream.KeyValueConfig{
-			bucket(BucketCISCurrent, "CIS zones per cell5 and the large-zone entry", MaxPayloadBytes, 0),
-			bucket(BucketPolicy, "the current policy version", 64<<10, 0),
-			bucket(BucketSourceControl, "the source-control state (B-09)", 256<<10, 0),
-			bucket(BucketRegistryValidity, "F8 answers by entity and key, statuses only", 16<<10, RegistryTTL),
-			bucket(BucketClientBindings, "client id -> bound serial fold keys", 64<<10, 0),
-			bucket(BucketIntentActive, "active intents: volumes AMSL, thresholds, flight, cells", 256<<10, 0),
-			bucket(BucketTelemetrySeen, "telemetry replay window: samples published, by client, serial, epoch and seq (telemetry-ingest)", SeenValueBytes, SeenTTL),
-			bucket(BucketISANotifications, "F3411 ISA notifications from peer Service Providers, by ISA id (rid-sp)", ISANotificationBytes, ISANotificationTTL),
-			bucket(BucketConformanceState, "each tracked flight's conformance state machine, by flight id (monitor)", ConformanceStateBytes, ConformanceStateTTL),
-			proximity,
+			bucket(BucketCISCurrent, "CIS zones per cell5 and the large-zone entry", MaxPayloadBytes, 0, CISCurrentMaxBytes),
+			bucket(BucketPolicy, "the current policy version", 64<<10, 0, PolicyMaxBytes),
+			bucket(BucketSourceControl, "the source-control state (B-09)", 256<<10, 0, SourceControlMaxBytes),
+			bucket(BucketRegistryValidity, "F8 answers by entity and key, statuses only", 16<<10, RegistryTTL, RegistryValidityMaxBytes),
+			bucket(BucketClientBindings, "client id -> bound serial fold keys", 64<<10, 0, ClientBindingsMaxBytes),
+			bucket(BucketIntentActive, "active intents: volumes AMSL, thresholds, flight, cells", 256<<10, 0, IntentActiveMaxBytes),
+			bucket(BucketTelemetrySeen, "telemetry replay window: samples published, by client, serial, epoch and seq (telemetry-ingest)", SeenValueBytes, SeenTTL, TelemetrySeenMaxBytes),
+			bucket(BucketISANotifications, "F3411 ISA notifications from peer Service Providers, by ISA id (rid-sp)", ISANotificationBytes, ISANotificationTTL, ISANotificationsMaxBytes),
+			bucket(BucketConformanceState, "each tracked flight's conformance state machine, by flight id (monitor)", ConformanceStateBytes, ConformanceStateTTL, ConformanceStateMaxBytes),
+			bucket(BucketProximityState, "each active proximity alert, by pair (monitor)", ProximityStateBytes, ProximityStateTTL, ProximityStateMaxBytes),
+			bucket(BucketSessionsLive, "live sessions by jti: subject, realm, expiry and idle end (api)", SessionsLiveBytes, SessionsLiveTTL, SessionsLiveMaxBytes),
 		},
 	}
+}
+
+// MaxBytes is the most the streams and buckets of t may hold together,
+// or -1 when one of them is unbounded. It must stay within the
+// account's JetStream file store (deploy/compose/nats.conf): when that
+// is full, JetStream refuses every publish of the account.
+func (t Topology) MaxBytes() int64 {
+	var sum int64
+	for i := range t.Streams {
+		if t.Streams[i].MaxBytes <= 0 {
+			return -1
+		}
+		sum += t.Streams[i].MaxBytes
+	}
+	for i := range t.Buckets {
+		if t.Buckets[i].MaxBytes <= 0 {
+			return -1
+		}
+		sum += t.Buckets[i].MaxBytes
+	}
+	return sum
 }
 
 // Stream is the configuration of the stream name.
@@ -314,6 +381,9 @@ func bucketDrift(have jetstream.StreamConfig, want jetstream.KeyValueConfig) []s
 	if have.Storage != want.Storage {
 		d = append(d, "storage")
 	}
+	if norm(have.MaxBytes) != norm(want.MaxBytes) {
+		d = append(d, "max_bytes")
+	}
 	return d
 }
 
@@ -376,6 +446,58 @@ type Maintainer struct {
 	sem   chan struct{} // one check at a time; never held by readers
 	mu    sync.Mutex
 	state TopologyState
+	// counters holds captured_<kind>; lastSeq is each capture's last
+	// sequence at the previous check (absent before the first).
+	counters *core.Counters
+	lastSeq  map[string]uint64
+}
+
+// CounterCapturedPrefix names the maintainer's counters
+// captured_trk, captured_man and captured_peer: how far the last
+// sequence of TRK, MAN and PEER grew between its checks. The hot path
+// publishes those subjects on core NATS, which cannot see the stream
+// refuse a message (a full store, a missing stream), so published_trk
+// alone never shows a lost capture; the two side by side do (audit B1,
+// N6).
+const CounterCapturedPrefix = "captured_"
+
+// captures are the streams whose growth the maintainer counts, by kind.
+var captures = []struct{ stream, kind string }{
+	{StreamTRK, KindTrk}, {StreamMAN, KindMan}, {StreamPEER, KindPeer},
+}
+
+// Counters is captured_trk, captured_man and captured_peer.
+func (m *Maintainer) Counters() *core.Counters {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.counters == nil {
+		m.counters = &core.Counters{}
+	}
+	return m.counters
+}
+
+// countCaptures adds each capture's growth since the previous check. A
+// stream that went backwards (purged or re-created) restarts its
+// baseline; one that cannot be read is skipped until the next check.
+func (m *Maintainer) countCaptures(ctx context.Context) {
+	c := m.Counters()
+	for _, cp := range captures {
+		s, err := m.JS.Stream(ctx, cp.stream)
+		if err != nil {
+			continue
+		}
+		seq := s.CachedInfo().State.LastSeq
+		m.mu.Lock()
+		if m.lastSeq == nil {
+			m.lastSeq = map[string]uint64{}
+		}
+		prev, seen := m.lastSeq[cp.stream]
+		m.lastSeq[cp.stream] = seq
+		m.mu.Unlock()
+		if seen && seq > prev {
+			c.Add(CounterCapturedPrefix+cp.kind, seq-prev)
+		}
+	}
 }
 
 // acquire takes the one-check-at-a-time slot, or fails when ctx ends
@@ -427,6 +549,7 @@ func (m *Maintainer) check(ctx context.Context) (TopologyState, error) {
 	if err != nil {
 		return m.State(), err
 	}
+	m.countCaptures(ctx)
 	st := TopologyState{Checked: true, At: time.Now(), Drift: drift, Created: created}
 	m.mu.Lock()
 	prev := m.state

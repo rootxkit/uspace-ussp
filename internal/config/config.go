@@ -94,6 +94,7 @@ type Config struct {
 	LoginLockoutS           int      `env:"USSP_LOGIN_LOCKOUT_S" default:"900" by:"api" min:"60" max:"86400" unit:"s" help:"how long a locked username stays locked"`
 	LoginRatePerMin         int      `env:"USSP_LOGIN_RATE_PER_MIN" default:"30" by:"api" min:"1" max:"10000" unit:"1/min" help:"sign-in and self-registration attempts per client address per minute (per process)"`
 	TokenRatePerMin         int      `env:"USSP_TOKEN_RATE_PER_MIN" default:"60" by:"api" min:"1" max:"10000" unit:"1/min" help:"POST /oauth/token requests per client id and per client address per minute (per process)"`
+	RegistryRatePerMin      int      `env:"USSP_REGISTRY_RATE_PER_MIN" default:"60" by:"api" min:"1" max:"10000" unit:"1/min" help:"GET /v1/registry/validate lookups per operator client per minute (per process)"`
 	TrustedProxies          []string `env:"USSP_TRUSTED_PROXIES" by:"api,telemetry-ingest,rid-sp,traffic-ws" kind:"cidrs" help:"CIDRs or addresses of the reverse proxies whose X-Forwarded-For is believed, comma-separated; the client is the rightmost hop that is not one of them; empty: the peer is the client"`
 	TokenClientSecretFile   string   `env:"USSP_TOKEN_CLIENT_SECRET_FILE" by:"api,rid-sp,monitor,dss-sync" secret:"true" help:"file holding the client secret of this USSP's client ussp-<code>-01 at the first USSP_TOKEN_ISSUERS entry, for outgoing calls"`
 	GeoidFile               string   `env:"USSP_GEOID_FILE" by:"api,telemetry-ingest,monitor" help:"geoid grid file for AMSL"`

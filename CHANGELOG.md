@@ -67,6 +67,30 @@ additively within `/v1`.
 
 ### Changed
 
+- Retro-audit fixes (Fable audit of WP-3, WP-5, WP-6, and the CI and
+  system findings). Every stream and bucket has a `max_bytes`, together
+  within the compose file store, now 16 GB (existing streams report the
+  new bounds as drift on `/readyz`); a new bucket `sessions_live`, which
+  api writes in the session transaction and traffic-ws reads, so a
+  session signed out, ended or idle in api is refused there and its
+  sockets close with 4401. The CIS cache installs a version only when
+  its features are the ones its publisher signed. The receiver refuses
+  to start unless `USSP_AUDIENCES` holds the host of
+  `USSP_USS_BASE_URL`. `GET /v1/registry/validate` answers the caller's
+  own keys in full and every other key, and every pilot, status only,
+  limited per client by `USSP_REGISTRY_RATE_PER_MIN` (60). The registry
+  feed deletes projected answers the table has no row for, and a lookup
+  error never carries its URL. tsdb-writer records a `position_unknown`
+  gap (timeseries migration 00004), keeps held messages alive while
+  writes succeed, coalesces malformed and rejected gaps and their log
+  lines, and never acknowledges a rejection whose gap was refused. api
+  reports `client_address` degraded while an untrusted peer sends
+  `X-Forwarded-For`. Counters `captured_trk`, `captured_man`,
+  `captured_peer`, `hole_undercounted`, `registry_feed_orphans_deleted`,
+  `registry_lookup_cancelled`, `xff_from_untrusted_peer`. CI pins every
+  action to a commit SHA, builds pull-request images without write
+  permissions, runs gitleaks from a checksummed binary and runs the Go
+  jobs for testdata, schemas and fixtures.
 - WP-11: ALRT is bounded at 1 GiB and TRAFFIC at 512 MiB (existing
   streams report the drift on `/readyz` until an operator updates them).
   tsdb-writer reads the `traffic/product/v1` record sample (`for`,

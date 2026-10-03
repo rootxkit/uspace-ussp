@@ -13,6 +13,7 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/auth"
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
+	"github.com/rootxkit/uspace-ussp/internal/policy"
 	"github.com/rootxkit/uspace-ussp/internal/store"
 	"github.com/rootxkit/uspace-ussp/internal/store/relational"
 )
@@ -282,6 +283,10 @@ func (s *Service) startSession(ctx context.Context, realm string, acc account, m
 			IssuedAt: now.Truncate(time.Second), ExpiresAt: exp, RemoteIp: ip}); err != nil {
 			return err
 		}
+		if err := s.projectSession(ctx, jti, auth.LiveSession{Subject: acc.id, Realm: realm, ExpiresAt: exp,
+			IdleUntil: now.Add(s.Config.SessionIdle)}); err != nil {
+			return err
+		}
 		return s.audit(ctx, q, loginEvent(realm, acc.username, acc.id, EventLoginSucceeded, map[string]any{
 			"session": jti, "roles": roles, "exp": exp, "kid": s.Issuer.Keys().Current.KID, "mfa": mfaStep > 0, "remote_ip": ip}))
 	})
@@ -297,6 +302,30 @@ func (s *Service) startSession(ctx context.Context, realm string, acc account, m
 	s.count(CounterLoginSucceeded)
 	return SessionResult{Token: token, CSRF: csrf, AccountID: acc.id, Realm: realm, Roles: roles, OperatorID: acc.operatorID,
 		ExpiresAt: exp, IdleExpiresAt: earlier(exp, now.Add(s.Config.SessionIdle))}, nil
+}
+
+// projectSession writes the session to sessions_live; a failure is a
+// *policy.ProjectionError, which rolls the transaction back (B-09).
+func (s *Service) projectSession(ctx context.Context, jti string, ls auth.LiveSession) error {
+	if s.LiveSessions == nil {
+		return nil
+	}
+	if err := s.LiveSessions.ProjectSession(ctx, jti, ls); err != nil {
+		return &policy.ProjectionError{Bucket: auth.BucketSessionsLive, Err: err}
+	}
+	return nil
+}
+
+// endSession removes the session from sessions_live; a failure is a
+// *policy.ProjectionError, which rolls the transaction back (B-09).
+func (s *Service) endSession(ctx context.Context, jti string) error {
+	if s.LiveSessions == nil {
+		return nil
+	}
+	if err := s.LiveSessions.EndSession(ctx, jti); err != nil {
+		return &policy.ProjectionError{Bucket: auth.BucketSessionsLive, Err: err}
+	}
+	return nil
 }
 
 // errCodeReplayed is a TOTP step already accepted, found under the row
@@ -331,6 +360,9 @@ func (s *Service) CheckSession(ctx context.Context, jti, sub string) error {
 			if _, err := q.RevokeSession(ctx, relational.RevokeSessionParams{At: &now, Reason: strPtr("idle"), Jti: jti}); err != nil {
 				return err
 			}
+			if err := s.endSession(ctx, jti); err != nil {
+				return err
+			}
 			return s.audit(ctx, q, store.Event{ActorType: store.ActorSystem, ActorID: "session-idle", EntityType: "session", EntityID: jti,
 				EventType: EventSessionIdleEnded, Payload: map[string]any{"account_id": sub, "idle_s": int64(s.Config.SessionIdle / time.Second)}})
 		})
@@ -342,6 +374,14 @@ func (s *Service) CheckSession(ctx context.Context, jti, sub string) error {
 	if now.Sub(sess.LastSeenAt) >= touchEvery {
 		if err := s.Store.Queries().TouchSession(ctx, relational.TouchSessionParams{At: now, Jti: jti}); err != nil {
 			return err
+		}
+		// The use moves the idle end in sessions_live too. A failure
+		// leaves the earlier end there: traffic-ws may then close the
+		// session's sockets early (sign in again), never late.
+		if err := s.projectSession(ctx, jti, auth.LiveSession{Subject: sub, Realm: sess.Realm, ExpiresAt: sess.ExpiresAt,
+			IdleUntil: now.Add(s.Config.SessionIdle)}); err != nil {
+			s.count(CounterSessionProjectionFailed)
+			obs.Error(ctx, s.logger(), "session use not projected; its idle end in sessions_live is the earlier one", err)
 		}
 	}
 	return nil
@@ -364,6 +404,9 @@ func (s *Service) Logout(ctx context.Context, p auth.Principal) error {
 	now := s.now()
 	return s.Store.Tx(ctx, func(q *relational.Queries) error {
 		if _, err := q.RevokeSession(ctx, relational.RevokeSessionParams{At: &now, Reason: strPtr("logout"), Jti: p.Claims.JTI}); err != nil {
+			return err
+		}
+		if err := s.endSession(ctx, p.Claims.JTI); err != nil {
 			return err
 		}
 		actor := auth.ActorPortalUser

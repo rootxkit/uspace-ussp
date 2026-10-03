@@ -151,6 +151,9 @@ func Run(ctx context.Context, cfg config.Config, spec Spec, opts Options) error 
 	workCtx, stopWork := context.WithCancel(context.WithoutCancel(ctx))
 	defer func() { stopWork(); rt.work.Wait() }()
 	if rt.topology != nil {
+		// captured_trk/man/peer beside every process's published_trk
+		// (audit B1, N6): a core publish cannot see a capture refused.
+		Publish(rt, "bus_capture", rt.topology.Counters())
 		rt.Go(workCtx, func(ctx context.Context) { rt.topology.Run(ctx, topologyCheckTimeout) })
 	}
 	mux := http.NewServeMux()
@@ -167,10 +170,15 @@ func Run(ctx context.Context, cfg config.Config, spec Spec, opts Options) error 
 	if err != nil {
 		return fmt.Errorf("USSP_TRUSTED_PROXIES: %w", err)
 	}
+	watch := &httpx.ProxyWatch{Counters: rt.Counters, Logger: logger}
+	if spec.Process == config.ProcessAPI {
+		// The sign-in limits and the audit rows are api's (audit S7).
+		rt.Health.Register(DepClientAddress, false, ClientAddressProbe(watch, time.Now))
+	}
 	srv := httpx.NewServer(httpx.ServerOptions{
 		Name: spec.Process, Addr: cfg.Addr(spec.Process), Logger: logger,
 		Handler: httpx.Baseline(mux, logger, httpx.BaselineDeps{Counters: rt.Counters, MaxBodyBytes: int64(cfg.MaxBodyBytes),
-			TrustedProxies: proxies}),
+			TrustedProxies: proxies, ProxyWatch: watch}),
 		ReadHeaderTimeout: time.Duration(cfg.ReadHeaderTimeoutS) * time.Second,
 	})
 	ln, err := srv.Listen()
@@ -310,4 +318,29 @@ func TopologyOf(cfg config.Config) bus.Topology {
 		ConfMaxAge:   time.Duration(cfg.ConfStreamMaxAgeS) * time.Second,
 		ConfMaxBytes: int64(cfg.ConfStreamMaxBytes),
 	})
+}
+
+// DepClientAddress is api's readiness entry of the client address
+// behind the reverse proxy (audit S7).
+const DepClientAddress = "client_address"
+
+// clientAddressRecent is how long an X-Forwarded-For from an untrusted
+// peer keeps client_address degraded.
+const clientAddressRecent = 10 * time.Minute
+
+// ClientAddressProbe is degraded while a peer that is not a trusted
+// proxy sent X-Forwarded-For within the last ten minutes: behind a
+// reverse proxy with USSP_TRUSTED_PROXIES unset every client is keyed on
+// the proxy, so 31 sign-ins a minute from anyone lock every user out and
+// every audit row names the proxy. Up otherwise.
+func ClientAddressProbe(w *httpx.ProxyWatch, now func() time.Time) obs.Probe {
+	return func(context.Context) (obs.State, string) {
+		peer, at, n := w.Last()
+		if at.IsZero() || now().Sub(at) > clientAddressRecent {
+			return obs.StateUp, ""
+		}
+		return obs.StateDegraded, fmt.Sprintf("%d requests since start carried X-Forwarded-For from %s, which is not a trusted proxy "+
+			"(last %.0f s ago): every client behind it shares its address for rate limits and audit rows; set USSP_TRUSTED_PROXIES",
+			n, peer, max(now().Sub(at).Seconds(), 0))
+	}
 }

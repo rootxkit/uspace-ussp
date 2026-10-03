@@ -113,7 +113,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	js := rt.Bus.JetStream()
 	pipes := make([]*Pipeline, 0, len(streams))
 	for _, s := range streams {
-		src := &bus.StreamSource{MaxDeletedDetails: 100_000, Open: bus.PullOpener(js, top, s.Name, bus.PullSpec{
+		src := &bus.StreamSource{MaxDeletedDetails: 100_000, Counters: counters, Open: bus.PullOpener(js, top, s.Name, bus.PullSpec{
 			Durable: ConsumerPrefix + s.Name, FilterSubject: s.Subject,
 			MaxAckPending: pcfg.HoldMaxRows + pcfg.FetchMax, AckWait: pcfg.AckWait,
 		})}

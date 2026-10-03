@@ -330,7 +330,8 @@ func DecodeTraffic(data []byte) (Decoded, error) {
 	case 0:
 	case 4:
 		bb := b.For.BBox
-		if bb[1] < -90 || bb[3] > 90 || bb[1] > bb[3] || bb[0] < -180 || bb[2] > 180 {
+		lon := func(v float64) bool { return v >= -180 && v <= 180 }
+		if bb[1] < -90 || bb[3] > 90 || bb[1] > bb[3] || !lon(bb[0]) || !lon(bb[2]) {
 			return Decoded{}, core.Fieldf("bbox", "not a box: %v", bb)
 		}
 		for i := range bb {

@@ -3,12 +3,78 @@ package httpx
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
 	"slices"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/rootxkit/uspace-core/core"
 )
+
+// CounterXFFUntrusted counts requests that carried X-Forwarded-For from
+// a peer that is not a trusted proxy (audit S7).
+const CounterXFFUntrusted = "xff_from_untrusted_peer"
+
+// proxyWarnEvery is the shortest interval between two warnings of a
+// ProxyWatch.
+const proxyWarnEvery = 10 * time.Minute
+
+// ProxyWatch notices X-Forwarded-For sent by a peer that is not a
+// trusted proxy. The header is not believed (the peer is the client),
+// which is right; but behind a reverse proxy with USSP_TRUSTED_PROXIES
+// unset it means every client is keyed on the proxy's address: one
+// address carries every sign-in's rate limit and every audit row's
+// remote_ip. A ProxyWatch counts it, warns once per period and keeps
+// the last peer for the readiness probe. Safe for concurrent use.
+type ProxyWatch struct {
+	Counters *core.Counters
+	Logger   *slog.Logger
+
+	mu       sync.Mutex
+	lastPeer string
+	lastAt   time.Time
+	lastWarn time.Time
+	n        uint64
+}
+
+func (w *ProxyWatch) saw(peer string) {
+	if w == nil {
+		return
+	}
+	now := time.Now()
+	w.mu.Lock()
+	w.lastPeer, w.lastAt = peer, now
+	w.n++
+	warn := now.Sub(w.lastWarn) >= proxyWarnEvery
+	if warn {
+		w.lastWarn = now
+	}
+	n := w.n
+	w.mu.Unlock()
+	if w.Counters != nil {
+		w.Counters.Inc(CounterXFFUntrusted)
+	}
+	if warn && w.Logger != nil {
+		w.Logger.Warn("X-Forwarded-For from a peer that is not a trusted proxy; the peer is taken as the client: "+
+			"behind a reverse proxy set USSP_TRUSTED_PROXIES, or every client shares its address for rate limits and audit rows",
+			slog.String("peer", peer), slog.Uint64("since_start", n))
+	}
+}
+
+// Last is the last peer that sent X-Forwarded-For untrusted, when, and
+// how many requests did since the start ("", zero, 0: none).
+func (w *ProxyWatch) Last() (peer string, at time.Time, n uint64) {
+	if w == nil {
+		return "", time.Time{}, 0
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.lastPeer, w.lastAt, w.n
+}
 
 // MaxForwardedHops bounds how many X-Forwarded-For entries are read: a
 // longer chain is cut to its rightmost entries, the ones the trusted
@@ -86,13 +152,38 @@ type clientIPKey struct{}
 // RealIP puts the client address (ClientIP) on the request for
 // RemoteIP: every rate limiter, every audit row and the access log read
 // it from there, never from r.RemoteAddr, which behind Caddy is Caddy.
-func RealIP(proxies []netip.Prefix) func(http.Handler) http.Handler {
+// watch (may be nil) is told of every X-Forwarded-For from a peer that
+// is not a trusted proxy.
+func RealIP(proxies []netip.Prefix, watch ...*ProxyWatch) func(http.Handler) http.Handler {
+	var pw *ProxyWatch
+	if len(watch) > 0 {
+		pw = watch[0]
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := ClientIP(r.RemoteAddr, r.Header.Values("X-Forwarded-For"), proxies)
+			xff := r.Header.Values("X-Forwarded-For")
+			ip := ClientIP(r.RemoteAddr, xff, proxies)
+			if len(xff) > 0 && pw != nil {
+				if peer, ok := untrustedPeer(r.RemoteAddr, proxies); ok {
+					pw.saw(peer)
+				}
+			}
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), clientIPKey{}, ip)))
 		})
 	}
+}
+
+// untrustedPeer is the host of peer when it is not a trusted proxy.
+func untrustedPeer(peer string, proxies []netip.Prefix) (string, bool) {
+	host, _, err := net.SplitHostPort(peer)
+	if err != nil {
+		host = peer
+	}
+	addr, err := netip.ParseAddr(host)
+	if err == nil && trusted(addr, proxies) {
+		return "", false
+	}
+	return host, true
 }
 
 // RemoteIP is the client address RealIP derived; outside RealIP (a

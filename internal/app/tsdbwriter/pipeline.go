@@ -99,6 +99,9 @@ type item struct {
 	gaps    []store.Gap
 	queued  time.Time
 	touched time.Time
+	// rejected is set once the database refused the item's rows and a
+	// rejected gap replaced them.
+	rejected bool
 }
 
 // Pipeline is one stream: a durable consumer over the whole stream, a
@@ -140,9 +143,11 @@ type Pipeline struct {
 	failedAt time.Time
 	posKnown bool
 	floor    uint64
-	started  bool
-	wake     chan struct{}
-	once     sync.Once
+	// lastKeepAlive is when keepAliveDue last ran keepAlive.
+	lastKeepAlive time.Time
+	started       bool
+	wake          chan struct{}
+	once          sync.Once
 
 	// seen is the in-memory dedupe window (the pull loop's only).
 	seen      map[string]time.Time
@@ -151,6 +156,8 @@ type Pipeline struct {
 	// logEvery).
 	logMu   sync.Mutex
 	lastLog map[string]time.Time
+	// suppressed counts each logCounted message since its last line.
+	suppressed map[string]uint64
 }
 
 // logEvery is the shortest interval between two repeated warnings.
@@ -251,6 +258,31 @@ func (p *Pipeline) warnLimited(msg string, attrs ...slog.Attr) {
 	p.lastLog[msg] = now
 	p.logMu.Unlock()
 	p.warn(msg, attrs...)
+}
+
+// logCounted logs msg at most once per logEvery, with the number of
+// times it happened since the line before (since_last): a stream whose
+// every message is malformed or refused is said once a period, never
+// once a message (E-09; audit S5).
+func (p *Pipeline) logCounted(level slog.Level, msg string, attrs ...slog.Attr) {
+	now := time.Now()
+	p.logMu.Lock()
+	if p.lastLog == nil {
+		p.lastLog = map[string]time.Time{}
+	}
+	if p.suppressed == nil {
+		p.suppressed = map[string]uint64{}
+	}
+	p.suppressed[msg]++
+	if now.Sub(p.lastLog[msg]) < logEvery {
+		p.logMu.Unlock()
+		return
+	}
+	n := p.suppressed[msg]
+	p.lastLog[msg], p.suppressed[msg] = now, 0
+	p.logMu.Unlock()
+	p.Logger.LogAttrs(context.Background(), level, msg,
+		append([]slog.Attr{slog.String("stream", p.Stream.Name), slog.Uint64("since_last", n)}, attrs...)...)
 }
 
 // start reads the consumer's ack floor: deliveries are measured from it.
@@ -478,6 +510,22 @@ func (p *Pipeline) removedGap(h bus.Hole, after, before *time.Time) store.Gap {
 	return g
 }
 
+// unknownPositionGap is the record of messages 1..floor that the
+// consumer acknowledged while the database holds no position for the
+// stream: counted in dropped_rows and logged at error.
+func (p *Pipeline) unknownPositionGap(floor uint64) store.Gap {
+	p.Counters.Add(CounterDroppedRows, floor)
+	p.Logger.LogAttrs(context.Background(), slog.LevelError,
+		"the consumer acknowledged messages the database records no position for; recorded in writer_gaps",
+		slog.String("stream", p.Stream.Name), slog.Uint64("ack_floor", floor), slog.Uint64("dropped_rows", floor))
+	return store.Gap{
+		DedupeKey: fmt.Sprintf("%s:%s:1-%d", store.CausePositionUnknown, p.Stream.Name, floor),
+		Stream:    p.Stream.Name, Subject: p.Stream.Subject, FromSeq: 1, ToSeq: floor, Cause: store.CausePositionUnknown,
+		Count: int64(floor), CountUnit: store.UnitRows,
+		Detail: fmt.Sprintf("the consumer acknowledged up to %d but the database records no position: a database restored or re-created under a running consumer", floor),
+	}
+}
+
 func utcPtr(t *time.Time) *time.Time {
 	if t == nil || t.IsZero() {
 		return nil
@@ -507,8 +555,8 @@ func (p *Pipeline) decode(m bus.Msg, seq uint64, now time.Time) *item {
 		if seq == 0 {
 			it.gaps[0].DedupeKey = fmt.Sprintf("%s:%s:unsequenced:%d", store.CauseMalformed, p.Stream.Name, now.UnixNano())
 		}
-		p.warn("message not readable; recorded in writer_gaps", slog.String("subject", m.Subject()), slog.Uint64("stream_seq", seq),
-			slog.String("error", err.Error()))
+		p.logCounted(slog.LevelWarn, "message not readable; recorded in writer_gaps", slog.String("subject", m.Subject()),
+			slog.Uint64("stream_seq", seq), slog.String("error", err.Error()))
 	case p.remember(it.dec.MsgID, now):
 		p.Counters.Inc(CounterDedupeHits)
 		it.dec.Rows = nil
@@ -534,7 +582,9 @@ func truncate(s string) string {
 // beyond what the writer wrote only when the stream removed messages
 // under it (a purge, its limits) while the writer was down: recorded as
 // a stream_removed gap with the position raised to the floor, in one
-// transaction. Until it is done nothing is written or pulled.
+// transaction. With no position at all and a floor above zero the
+// database lost what was acknowledged: a position_unknown gap from 1 to
+// the floor. Until it is done nothing is written or pulled.
 func (p *Pipeline) checkPosition(ctx context.Context) bool {
 	p.mu.Lock()
 	started, floor := p.started, p.floor
@@ -554,6 +604,20 @@ func (p *Pipeline) checkPosition(ctx context.Context) bool {
 	if known && floor > pos {
 		g := p.removedGap(bus.Hole{FromSeq: pos + 1, ToSeq: floor, Count: floor - pos}, nil, nil)
 		g.Detail = "the consumer's acknowledgement floor is beyond the position written: the stream removed these messages (a purge or its limits) while the writer was not reading"
+		wctx, cancel := context.WithTimeout(ctx, p.Config.WriteTimeout)
+		w, err := p.Store.Write(wctx, store.WriteBatch{Stream: p.Stream.Name, Gaps: []store.Gap{g}, Position: floor})
+		cancel()
+		if err != nil {
+			p.failed(err)
+			return false
+		}
+		p.Counters.Add(CounterGaps, uint64(w.Gaps))
+	}
+	if !known && floor > 0 {
+		// The consumer acknowledged messages the database records no
+		// position for (restored from an older backup, re-created): those
+		// rows are in no database. A hole, not a clean start (B-13).
+		g := p.unknownPositionGap(floor)
 		wctx, cancel := context.WithTimeout(ctx, p.Config.WriteTimeout)
 		w, err := p.Store.Write(wctx, store.WriteBatch{Stream: p.Stream.Name, Gaps: []store.Gap{g}, Position: floor})
 		cancel()
@@ -618,6 +682,11 @@ func (p *Pipeline) write(ctx context.Context) {
 			}
 			checked, retry = true, p.Config.RetryMin
 		}
+		// Every held message is kept alive while it waits, whether the
+		// writes fail or succeed slowly: a queue deeper than AckWait of
+		// writes would otherwise be redelivered from its tail, and every
+		// fetch would bring messages already held (audit S4).
+		p.keepAliveDue()
 		if !p.ready(p.now()) {
 			select {
 			case <-ctx.Done():
@@ -664,7 +733,8 @@ func (p *Pipeline) observe(batch []*item, d time.Duration) {
 }
 
 // batchOf is the transaction of a batch: rows by table, gaps, and the
-// highest sequence as the position.
+// highest sequence as the position. Malformed or rejected gaps of
+// consecutive sequences are one row (coalesce).
 func (p *Pipeline) batchOf(items []*item) store.WriteBatch {
 	b := store.WriteBatch{Stream: p.Stream.Name, Rows: map[*store.CopyTable][][]any{}}
 	for _, it := range items {
@@ -674,7 +744,46 @@ func (p *Pipeline) batchOf(items []*item) store.WriteBatch {
 		b.Gaps = append(b.Gaps, it.gaps...)
 		b.Position = max(b.Position, it.seq)
 	}
+	b.Gaps = p.coalesce(b.Gaps)
 	return b
+}
+
+// coalesce merges each run of malformed or rejected gaps of one cause
+// and unit whose sequences follow each other into one gap: from the
+// first to the last sequence, the counts summed, the first detail with
+// the number of others. A stream whose every message is malformed then
+// writes a row a batch, not a row a message (E-10; audit S5). Other
+// gaps, and an unsequenced message's, stay as they are.
+func (p *Pipeline) coalesce(gs []store.Gap) []store.Gap {
+	if len(gs) < 2 {
+		return gs
+	}
+	mergeable := func(g *store.Gap) bool {
+		return (g.Cause == store.CauseMalformed || g.Cause == store.CauseRejected) && g.FromSeq > 0 && g.FromSeq == g.ToSeq
+	}
+	out := make([]store.Gap, 0, len(gs))
+	runs := map[int]int{} // index in out -> gaps merged into it
+	for i := range gs {
+		g := gs[i]
+		if n := len(out); n > 0 && mergeable(&g) {
+			last := &out[n-1]
+			if (runs[n-1] > 0 || mergeable(last)) && last.Cause == g.Cause && last.CountUnit == g.CountUnit && g.FromSeq == last.ToSeq+1 {
+				last.ToSeq, last.Count = g.ToSeq, last.Count+g.Count
+				if last.Subject != g.Subject {
+					last.Subject = p.Stream.Subject
+				}
+				runs[n-1]++
+				continue
+			}
+		}
+		out = append(out, g)
+	}
+	for i, merged := range runs {
+		g := &out[i]
+		g.DedupeKey = fmt.Sprintf("%s:%s:%d-%d", g.Cause, p.Stream.Name, g.FromSeq, g.ToSeq)
+		g.Detail = truncate(fmt.Sprintf("%s (and %d more messages, sequences %d to %d)", g.Detail, merged, g.FromSeq, g.ToSeq))
+	}
+	return out
 }
 
 func (p *Pipeline) store(ctx context.Context, items []*item) (store.Written, error) {
@@ -686,7 +795,9 @@ func (p *Pipeline) store(ctx context.Context, items []*item) (store.Written, err
 // writeBatch writes batch in one transaction. When the database refuses
 // the data itself, each message is written alone, and a message refused
 // alone is replaced by a rejected gap carrying its count: one bad row
-// never holds the rest back and is never dropped unrecorded.
+// never holds the rest back and is never dropped unrecorded. When the
+// gap record is refused too, the batch is a failed write: nothing is
+// acknowledged and it is retried with the backoff (audit S8).
 func (p *Pipeline) writeBatch(ctx context.Context, batch []*item) error {
 	isData := p.DataError
 	if isData == nil {
@@ -700,7 +811,12 @@ func (p *Pipeline) writeBatch(ctx context.Context, batch []*item) error {
 	if !isData(err) {
 		return err
 	}
+	var rejected []*item
 	for _, it := range batch {
+		if it.rejected {
+			rejected = append(rejected, it)
+			continue
+		}
 		w, err := p.store(ctx, []*item{it})
 		if err == nil {
 			p.count(w)
@@ -709,16 +825,36 @@ func (p *Pipeline) writeBatch(ctx context.Context, batch []*item) error {
 		if !isData(err) {
 			return err
 		}
-		p.reject(ctx, it, err)
+		p.reject(it, err)
+		rejected = append(rejected, it)
 	}
+	if len(rejected) == 0 {
+		return nil
+	}
+	// The rejected gaps in one transaction, consecutive ones coalesced.
+	w, err = p.store(ctx, rejected)
+	if err != nil {
+		p.Counters.Add(CounterRejectedUnrecord, uint64(len(rejected)))
+		p.warnLimited("a rejected message's gap record was refused too; it is not acknowledged and is retried",
+			slog.Uint64("stream_seq", rejected[0].seq), slog.Int("messages", len(rejected)), slog.String("error", err.Error()))
+		return fmt.Errorf("the rejected gaps from stream sequence %d were refused: %w", rejected[0].seq, err)
+	}
+	p.count(w)
 	return nil
 }
 
-func (p *Pipeline) reject(ctx context.Context, it *item, cause error) {
+// reject replaces the item's rows by a rejected gap, once; the caller
+// writes it. A gap the database refuses too fails the batch: the message
+// is then neither acknowledged nor dropped and stays at the head of the
+// queue (audit S8).
+func (p *Pipeline) reject(it *item, cause error) {
+	if it.rejected {
+		return
+	}
+	it.rejected = true
 	p.Counters.Add(CounterRowsRejected, uint64(it.n))
-	p.Logger.LogAttrs(ctx, slog.LevelError, "the database refused a message's rows; recorded in writer_gaps",
-		slog.String("stream", p.Stream.Name), slog.String("subject", it.msg.Subject()), slog.Uint64("stream_seq", it.seq),
-		slog.String("error", cause.Error()))
+	p.logCounted(slog.LevelError, "the database refused a message's rows; recorded in writer_gaps",
+		slog.String("subject", it.msg.Subject()), slog.Uint64("stream_seq", it.seq), slog.String("error", cause.Error()))
 	count, unit := int64(it.n), store.UnitRows
 	if count == 0 {
 		count, unit = 1, store.UnitMessages
@@ -728,14 +864,6 @@ func (p *Pipeline) reject(ctx context.Context, it *item, cause error) {
 		DedupeKey: fmt.Sprintf("%s:%s:%d", store.CauseRejected, p.Stream.Name, it.seq), Stream: p.Stream.Name, Subject: it.msg.Subject(),
 		FromSeq: it.seq, ToSeq: it.seq, Cause: store.CauseRejected, Count: count, CountUnit: unit, Detail: truncate(cause.Error()),
 	})
-	w, err := p.store(ctx, []*item{it})
-	if err != nil {
-		p.Counters.Inc(CounterRejectedUnrecord)
-		p.Logger.LogAttrs(ctx, slog.LevelError, "a rejected message's gap record was refused too; counted as rejected_unrecorded",
-			slog.String("stream", p.Stream.Name), slog.Uint64("stream_seq", it.seq), slog.String("error", err.Error()))
-		return
-	}
-	p.count(w)
 }
 
 func (p *Pipeline) count(w store.Written) {
@@ -781,6 +909,22 @@ func (p *Pipeline) failed(err error) {
 	p.mu.Unlock()
 	p.warnLimited("write failed; the batch is retried and nothing is acknowledged", slog.Int("queue_rows", rows),
 		slog.String("error", err.Error()))
+}
+
+// keepAliveDue runs keepAlive at most every AckWait/4: a message is
+// then kept in progress between AckWait/2 and 3/4 AckWait after it was
+// last touched, before the stream delivers it again.
+func (p *Pipeline) keepAliveDue() {
+	now := p.now()
+	p.mu.Lock()
+	due := now.Sub(p.lastKeepAlive) >= p.Config.AckWait/4
+	if due {
+		p.lastKeepAlive = now
+	}
+	p.mu.Unlock()
+	if due {
+		p.keepAlive()
+	}
 }
 
 // keepAlive keeps held messages from redelivery while they wait.

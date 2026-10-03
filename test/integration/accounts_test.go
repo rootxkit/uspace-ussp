@@ -5,6 +5,8 @@ package integration
 import (
 	"context"
 	"encoding/base32"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -13,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	coreauth "github.com/rootxkit/uspace-core/auth"
 
 	"github.com/rootxkit/uspace-ussp/internal/accounts"
 	"github.com/rootxkit/uspace-ussp/internal/app/api"
@@ -531,5 +535,130 @@ func TestIntegrationAPIProcessAuth(t *testing.T) {
 	d := body.Dependencies["jwks"]
 	if code != 200 || d.State != client.DependencyStateDegraded || d.Detail == nil || !strings.Contains(*d.Detail, "cached, age") {
 		t.Fatalf("authority down: %d %+v", code, d)
+	}
+}
+
+// sessionOf reads a session token's claims (signature unchecked; the
+// stack issued it).
+func sessionOf(t *testing.T, token string) coreauth.Claims {
+	t.Helper()
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		t.Fatalf("not a JWT: %q", token)
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c struct {
+		Sub string `json:"sub"`
+		JTI string `json:"jti"`
+	}
+	if err := json.Unmarshal(raw, &c); err != nil {
+		t.Fatal(err)
+	}
+	return coreauth.Claims{Subject: c.Sub, JTI: c.JTI}
+}
+
+// sessions_live follows api's session rows (audit B2): a sign-in
+// projects the session, so traffic-ws's LiveSessions admits it; a
+// logout and an idle end remove it, so traffic-ws refuses it; a sign-in
+// whose projection fails is refused (503) and starts nothing (B-09).
+func TestIntegrationSessionsLiveFollowsTheRows(t *testing.T) {
+	c := newClock()
+	s := newStack(t, c, &logBuffer{})
+	live := auth.LiveSessions{Get: s.sessions.Get, Now: c.Now}
+	ctx := context.Background()
+	_, token, _ := s.operator(accounts.RegistryValid)
+	sc := sessionOf(t, token)
+	if err := live.CheckSession(ctx, sc.JTI, sc.Subject); err != nil {
+		t.Fatalf("a session just started is not live on traffic-ws: %v", err)
+	}
+	if r := s.call("POST", "/v1/accounts/logout", nil, bearer(token)); r.status != 204 {
+		t.Fatalf("logout: %d %s", r.status, r.raw)
+	}
+	if err := live.CheckSession(ctx, sc.JTI, sc.Subject); !errors.Is(err, auth.ErrSessionRefused) {
+		t.Fatalf("a signed-out session is live on traffic-ws: %v", err)
+	}
+
+	// Idle: api ends the session at its next use; traffic-ws has
+	// already passed its idle end and refuses it too.
+	_, token, _ = s.operator(accounts.RegistryValid)
+	sc = sessionOf(t, token)
+	c.Add(31 * time.Minute)
+	if err := live.CheckSession(ctx, sc.JTI, sc.Subject); !errors.Is(err, auth.ErrSessionRefused) {
+		t.Fatalf("an idle session is live on traffic-ws: %v", err)
+	}
+	if r := s.call("GET", "/v1/accounts/me", nil, bearer(token)); r.status != 401 {
+		t.Fatalf("idle in api: %d", r.status)
+	}
+	if _, found, _ := s.sessions.Get(sc.JTI); found {
+		t.Fatal("an idle-ended session is still in sessions_live")
+	}
+	c.Add(-31 * time.Minute)
+
+	// A use moves the idle end on traffic-ws as in api.
+	_, token, _ = s.operator(accounts.RegistryValid)
+	sc = sessionOf(t, token)
+	c.Add(20 * time.Minute)
+	if r := s.call("GET", "/v1/accounts/me", nil, bearer(token)); r.status != 200 {
+		t.Fatalf("me: %d", r.status)
+	}
+	c.Add(20 * time.Minute)
+	if err := live.CheckSession(ctx, sc.JTI, sc.Subject); err != nil {
+		t.Fatalf("a session used 20 min ago is not live on traffic-ws: %v", err)
+	}
+	c.Add(-40 * time.Minute)
+
+	// B-09: the projection fails, the sign-in is refused and no session
+	// row exists for it.
+	u := unique()
+	s.call("POST", "/v1/accounts/operators", map[string]any{"registration_number": "GEO-TEST-" + u, "display_name": "x",
+		"contact_email": "c" + u + "@example.test", "admin_username": "proj." + u, "admin_password": "proj-password-" + u}, nil)
+	before := s.sessions.Len()
+	s.sessions.Fail = errors.New("sessions_live unavailable")
+	r := s.login(auth.RealmPortal, "proj."+u, "proj-password-"+u, "")
+	s.sessions.Fail = nil
+	if r.status != 503 || s.sessions.Len() != before {
+		t.Fatalf("sign-in with sessions_live down: %d %s", r.status, r.raw)
+	}
+	if n := count(t, relOwner(t), "SELECT count(*) FROM sessions s JOIN portal_users u ON u.id = s.account_id WHERE u.username = 'proj."+u+"'"); n != 0 {
+		t.Fatalf("%d session rows for a refused sign-in", n)
+	}
+	if r := s.login(auth.RealmPortal, "proj."+u, "proj-password-"+u, ""); r.status != 200 {
+		t.Fatalf("sign-in with sessions_live back: %d %s", r.status, r.raw)
+	}
+}
+
+// RegistryScope (audit S6) is the client's operator's registration
+// number, on its compare key, and the serials live-bound to that client:
+// another client of the same operator has the number and none of the
+// first one's serials; an unknown client is an error, which the route
+// answers status only.
+func TestIntegrationRegistryScope(t *testing.T) {
+	s := newStack(t, newClock(), &logBuffer{})
+	opID, session, _ := s.operator(accounts.RegistryValid)
+	a, _ := s.client(opID, session, auth.ScopeIntents)
+	b, _ := s.client(opID, session, auth.ScopeIntents)
+	sn := "TEST" + unique()
+	if r := s.call("POST", "/v1/accounts/operators/"+opID+"/clients/"+a+"/serials", map[string]any{"serial": sn}, bearer(session)); r.status != 201 {
+		t.Fatalf("bind: %d %s", r.status, r.raw)
+	}
+	r := s.call("GET", "/v1/accounts/operators/"+opID, nil, bearer(session))
+	number := r.str("registration_number")
+	if r.status != 200 || number == "" {
+		t.Fatalf("operator: %d %s", r.status, r.raw)
+	}
+	ctx := context.Background()
+	scA, err := s.svc.RegistryScope(ctx, a)
+	if err != nil || scA.OperatorKey == "" || len(scA.SerialFolds) != 1 || scA.SerialFolds[0] != sn {
+		t.Fatalf("client A: %+v %v", scA, err)
+	}
+	scB, err := s.svc.RegistryScope(ctx, b)
+	if err != nil || scB.OperatorKey != scA.OperatorKey || len(scB.SerialFolds) != 0 {
+		t.Fatalf("client B: %+v %v", scB, err)
+	}
+	if _, err := s.svc.RegistryScope(ctx, "no-such-client"); err == nil {
+		t.Fatal("an unknown client has a scope")
 	}
 }

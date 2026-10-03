@@ -444,3 +444,49 @@ func TestMountRefusesAnUnknownScope(t *testing.T) {
 		t.Errorf("F3548 with the catalogue: %v", err)
 	}
 }
+
+// A mount without a guard is refused naming the field, not a panic at
+// the first registration (audit N1); with one it mounts (E-01, above).
+func TestMountRefusesANilGuard(t *testing.T) {
+	for name, mount := range map[string]func() error{
+		"F3411": func() error {
+			return stdapi.MountF3411(http.NewServeMux(), stdapi.NotImplementedF3411{}, stdapi.Options{})
+		},
+		"F3548": func() error {
+			return stdapi.MountF3548(http.NewServeMux(), stdapi.NotImplementedF3548{}, stdapi.Options{})
+		},
+	} {
+		var err error
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("%s panicked: %v", name, r)
+				}
+			}()
+			err = mount()
+		}()
+		if err == nil || !strings.Contains(err.Error(), "guard") {
+			t.Errorf("%s without a guard: %v", name, err)
+		}
+	}
+}
+
+// A standard-API body over the cap is 413 body_too_large, not a 400 as
+// if it were malformed JSON (audit N2); a body under it is decoded (501
+// from the stub).
+func TestOversizedBodyIs413(t *testing.T) {
+	e := newEcosystem(t)
+	mux := http.NewServeMux()
+	if err := stdapi.MountF3411(mux, stdapi.NotImplementedF3411{}, stdapi.Options{Guard: e.guard.Require}); err != nil {
+		t.Fatal(err)
+	}
+	h := httpx.BodyCap(64, &core.Counters{})(mux)
+	sp := e.token(t, stdapi.ScopeRIDServiceProvider)
+	big := `{"pad":"` + strings.Repeat("x", 200) + `"}`
+	if got := call(t, h, http.MethodPost, "/uss/identification_service_areas/x", sp, big); got.status != 413 || got.slug != httpx.SlugBodyTooLarge {
+		t.Fatalf("over the cap: %+v", got)
+	}
+	if got := call(t, h, http.MethodPost, "/uss/identification_service_areas/x", sp, "{}"); got.status != 501 {
+		t.Fatalf("under the cap: %+v", got)
+	}
+}

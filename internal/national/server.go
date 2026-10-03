@@ -14,9 +14,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/rootxkit/uspace-core/core"
+	"github.com/rootxkit/uspace-core/regnum"
+	"github.com/rootxkit/uspace-core/serial"
 
 	"github.com/rootxkit/uspace-ussp/internal/accounts"
 	"github.com/rootxkit/uspace-ussp/internal/auth"
@@ -47,6 +50,12 @@ type Server struct {
 	// Registry answers GET /v1/registry/validate (internal/registry's
 	// Cache); nil answers 503 registry_unavailable.
 	Registry RegistryValidator
+	// RegistryScope says which keys are the calling client's own: those
+	// are answered in full, every other key status only (audit S6). nil
+	// answers every key status only.
+	RegistryScope RegistryScoper
+	// RegistryLimiter bounds the lookups per client (nil: unbounded).
+	RegistryLimiter *httpx.RateLimiter
 	// Intents serves /v1/intents (internal/intent.Service); nil answers
 	// 503 intents_unavailable.
 	Intents Intents
@@ -63,6 +72,12 @@ type Server struct {
 // (internal/registry.Cache).
 type RegistryValidator interface {
 	ValidateAudited(ctx context.Context, actorType, actorID string, qs []registry.Query, p registry.Purpose) ([]registry.Result, error)
+}
+
+// RegistryScoper reads a client's own registry keys
+// (internal/accounts.Service).
+type RegistryScoper interface {
+	RegistryScope(ctx context.Context, clientID string) (accounts.RegistryScope, error)
 }
 
 var _ gen.ServerInterface = (*Server)(nil)
@@ -209,11 +224,24 @@ func (s *Server) ReceiveCISNotification(w http.ResponseWriter, r *http.Request) 
 }
 
 // ValidateRegistry is GET /v1/registry/validate: the cached F8 answer,
-// status only, recorded with the client and the purpose.
+// recorded with the client and the purpose. A key of the caller's own
+// (its operator, its bound serials) is answered with its detail; any
+// other key status only, so an operator client cannot read another
+// operator's registration or a pilot's competencies (audit S6). The
+// lookups are bounded per client.
 func (s *Server) ValidateRegistry(w http.ResponseWriter, r *http.Request, params gen.ValidateRegistryParams) {
 	if s.Registry == nil {
 		httpx.NewProblem(http.StatusServiceUnavailable, registry.ReasonRegistryUnavailable, "", "the registry lookup is not configured on this process").Write(w, r)
 		return
+	}
+	client := principal(r).Claims.Subject
+	if s.RegistryLimiter != nil {
+		if ok, wait := s.RegistryLimiter.Allow("client:" + client); !ok {
+			httpx.RetryAfter(w, wait)
+			httpx.NewProblem(http.StatusTooManyRequests, httpx.SlugRateLimited, "Too many requests",
+				"the registry lookup budget of this client is spent; wait and try again").Write(w, r)
+			return
+		}
 	}
 	deref := func(p *string) string {
 		if p == nil {
@@ -222,23 +250,48 @@ func (s *Server) ValidateRegistry(w http.ResponseWriter, r *http.Request, params
 		return *p
 	}
 	q := registry.Query{Operator: deref(params.Operator), Serial: deref(params.Serial), Pilot: deref(params.Pilot)}
-	rs, err := s.Registry.ValidateAudited(r.Context(), store.ActorClient, principal(r).Claims.Subject, []registry.Query{q}, registry.Purpose(params.Purpose))
+	rs, err := s.Registry.ValidateAudited(r.Context(), store.ActorClient, client, []registry.Query{q}, registry.Purpose(params.Purpose))
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, gen.RegistryValidation{Operator: registryAnswer(rs[0].Operator), Uas: registryAnswer(rs[0].UAS), Pilot: registryAnswer(rs[0].Pilot)})
+	sc := s.scopeOf(r.Context(), client)
+	_, askedOperator := regnum.Public(q.Operator)
+	ownOperator := q.Operator != "" && sc.OperatorKey != "" && askedOperator == sc.OperatorKey
+	ownSerial := q.Serial != "" && slices.Contains(sc.SerialFolds, serial.FoldKey(q.Serial))
+	writeJSON(w, http.StatusOK, gen.RegistryValidation{
+		Operator: registryAnswer(rs[0].Operator, ownOperator), Uas: registryAnswer(rs[0].UAS, ownSerial), Pilot: registryAnswer(rs[0].Pilot, false)})
 }
 
-func registryAnswer(a *registry.Answer) *gen.RegistryAnswer {
+// scopeOf is the client's own keys; none when they cannot be read (the
+// answer is then status only, never more).
+func (s *Server) scopeOf(ctx context.Context, client string) accounts.RegistryScope {
+	if s.RegistryScope == nil {
+		return accounts.RegistryScope{}
+	}
+	sc, err := s.RegistryScope.RegistryScope(ctx, client)
+	if err != nil {
+		obs.Error(ctx, s.logger(), "the client's own registry keys could not be read; answering status only", err)
+		return accounts.RegistryScope{}
+	}
+	return sc
+}
+
+// registryAnswer is a's wire form: with its detail (validity, class,
+// band, competencies) when full, its status alone otherwise.
+func registryAnswer(a *registry.Answer, full bool) *gen.RegistryAnswer {
 	if a == nil {
 		return nil
 	}
-	out := &gen.RegistryAnswer{Key: a.Key, Status: gen.RegistryStatus(a.Status), ValidUntil: a.ValidUntil, CacheAgeS: a.CacheAgeS}
+	out := &gen.RegistryAnswer{Key: a.Key, Status: gen.RegistryStatus(a.Status), CacheAgeS: a.CacheAgeS}
 	if a.Reason != "" {
 		reason := gen.RegistryAnswerReason(a.Reason)
 		out.Reason = &reason
 	}
+	if !full {
+		return out
+	}
+	out.ValidUntil = a.ValidUntil
 	if a.ClassLabel != "" {
 		out.ClassLabel = &a.ClassLabel
 	}

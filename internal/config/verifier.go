@@ -1,6 +1,9 @@
 package config
 
 import (
+	"net/url"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/rootxkit/uspace-core/auth"
@@ -41,13 +44,23 @@ func (c Config) VerifierConfig() (auth.Config, error) {
 // notification receiver (POST /v1/cis/notifications): the issuers of
 // USSP_CIS_NOTIFY_ISSUERS (the CISP and, on its degraded direct path,
 // the ANSP; M5) with their JWKS URLs, and the audiences USSP_AUDIENCES
-// (aud is this host, M19).
+// (aud is this host, M19), which must hold the host of
+// USSP_USS_BASE_URL: the CISP signs aud as the host of the callback_url
+// this system registers there, so a list without it would refuse every
+// notification while the subscription shows active (system audit F-5).
 func (c Config) CompactConfig() (auth.CompactConfig, error) {
 	if len(c.CISNotifyIssuers) == 0 {
 		return auth.CompactConfig{}, &core.FieldError{Field: "USSP_CIS_NOTIFY_ISSUERS", Reason: "required to receive CIS notifications"}
 	}
 	if len(c.Audiences) == 0 {
 		return auth.CompactConfig{}, &core.FieldError{Field: "USSP_AUDIENCES", Reason: "required to receive CIS notifications"}
+	}
+	u, err := url.Parse(c.USSBaseURL)
+	if err != nil || u.Hostname() == "" {
+		return auth.CompactConfig{}, core.Fieldf("USSP_USS_BASE_URL", "required to receive CIS notifications (the callback_url base)")
+	}
+	if !slices.ContainsFunc(c.Audiences, func(a string) bool { return strings.EqualFold(a, u.Hostname()) }) {
+		return auth.CompactConfig{}, core.Fieldf("USSP_AUDIENCES", "does not hold %s, the host of USSP_USS_BASE_URL the CISP signs as aud", u.Hostname())
 	}
 	issuers, err := ParseIssuers(c.CISNotifyIssuers)
 	if err != nil {

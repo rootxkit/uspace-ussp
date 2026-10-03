@@ -71,6 +71,10 @@ func newRIDRig(t *testing.T) *ridRig {
 	t.Cleanup(r.dss.Close)
 	vars["USSP_DSS_BASE_URL"] = r.dss.URL()
 	vars["USSP_USS_BASE_URL"] = r.sp // what a Display Provider finds in the ISA
+	// The CIS signs a notification's aud as the host of the callback
+	// built from USSP_USS_BASE_URL, so api refuses to start unless that
+	// host is an audience (system audit F-5).
+	vars["USSP_AUDIENCES"] += ",127.0.0.1"
 	r.api = run(t, api.Spec, vars)
 	var err error
 	if r.dpToken, err = r.a.iss.Issue("authority-dp", testHost, []string{string(f3411.ScopeDisplayProvider)}, time.Hour, time.Now()); err != nil {

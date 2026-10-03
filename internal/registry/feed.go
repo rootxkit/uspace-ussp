@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -172,7 +173,21 @@ func (f *Feed) poll(ctx context.Context) error {
 
 func (f *Feed) apply(ctx context.Context, inv []Invalidation, next int64, etag string) ([]Key, error) {
 	return f.cfg.Store.Invalidate(ctx, inv, next, etag, InvalidationKeep, func(ctx context.Context, del []Key) error {
-		if f.cfg.Projector == nil || len(del) == 0 {
+		if f.cfg.Projector == nil {
+			return nil
+		}
+		// Every projected answer the invalidations name goes, not only
+		// those the table had a row for (audit S1).
+		if fd, ok := f.cfg.Projector.(FoldDeleter); ok && len(inv) > 0 {
+			projected, err := fd.DeleteFolds(ctx, inv)
+			if err != nil {
+				return &policy.ProjectionError{Bucket: BucketRegistryValidity, Err: err}
+			}
+			if n := countOrphans(projected, del); n > 0 {
+				f.cfg.Counters.Add(CounterFeedOrphansDeleted, uint64(n))
+			}
+		}
+		if len(del) == 0 {
 			return nil
 		}
 		if err := f.cfg.Projector.ProjectRegistry(ctx, nil, del); err != nil {
@@ -180,6 +195,17 @@ func (f *Feed) apply(ctx context.Context, inv []Invalidation, next int64, etag s
 		}
 		return nil
 	})
+}
+
+// countOrphans is how many of projected have no row in rows.
+func countOrphans(projected, rows []Key) int {
+	n := 0
+	for _, k := range projected {
+		if !slices.Contains(rows, k) {
+			n++
+		}
+	}
+	return n
 }
 
 // status is the feed's state for the readiness entry: up while it has

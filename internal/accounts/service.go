@@ -75,6 +75,9 @@ const (
 	CounterRegistryFailed  = "registry_check_failed"
 	CounterRefusalNotSaved = "login_refusal_not_audited"
 	CounterBindingRefused  = "serial_binding_refused"
+	// CounterSessionProjectionFailed counts a session use whose new idle
+	// end could not be written to sessions_live.
+	CounterSessionProjectionFailed = "session_projection_failed"
 )
 
 // RegistryChecker asks the authority's registry (F8) about an operator
@@ -120,6 +123,11 @@ type Service struct {
 	Issuer   *auth.Issuer // nil: no session can start
 	Registry RegistryChecker
 	Bindings auth.BindingsProjector
+	// LiveSessions projects every session started and ended to
+	// sessions_live, inside the session's transaction, for the processes
+	// that cannot read the session rows (traffic-ws; audit B2). nil
+	// projects nothing (a process with no reader of it).
+	LiveSessions auth.SessionsProjector
 	// Policy is the current policy (client_secret_overlap_s).
 	Policy func() policy.Values
 	// MFA seals staff TOTP secrets; nil: a staff admin cannot sign in.
@@ -800,3 +808,35 @@ func roleOK(realm, role string) bool { return slices.Contains(auth.RealmRoles[re
 
 // String renders an operator for logs (never the email).
 func (o Operator) String() string { return fmt.Sprintf("operator %s (%s)", o.ID, o.Status) }
+
+// ---- what an operator client may see of the registry ----
+
+// RegistryScope is what of the registry is an operator client's own:
+// its operator's registration number (the compare key of its public
+// part, regnum.Public) and the
+// serial fold keys live-bound to it. GET /v1/registry/validate answers
+// its own keys in full and every other key status only (audit S6).
+// Pilots belong to no operator yet (WP-7), so no pilot is in it.
+type RegistryScope struct {
+	OperatorKey string
+	SerialFolds []string
+}
+
+// RegistryScope reads clientID's RegistryScope.
+func (s *Service) RegistryScope(ctx context.Context, clientID string) (RegistryScope, error) {
+	q := s.Store.Queries()
+	c, err := q.ClientByID(ctx, clientID)
+	if err != nil {
+		return RegistryScope{}, notFoundOr(err)
+	}
+	op, err := q.OperatorByID(ctx, c.OperatorID)
+	if err != nil {
+		return RegistryScope{}, notFoundOr(err)
+	}
+	folds, err := q.LiveFoldsOfClient(ctx, clientID)
+	if err != nil {
+		return RegistryScope{}, err
+	}
+	_, key := regnum.Public(op.AuthorityRegistrationNumber)
+	return RegistryScope{OperatorKey: key, SerialFolds: folds}, nil
+}

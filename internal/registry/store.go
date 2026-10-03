@@ -68,6 +68,26 @@ type Projector interface {
 	ProjectRegistry(ctx context.Context, put []Entry, del []Key) error
 }
 
+// FoldDeleter is a Projector that also deletes every projected answer
+// an invalidation's fold key names, whether or not registry_validity
+// holds a row for it: a put reaches the projection before the commit,
+// so a commit that failed after it leaves an answer the table lacks,
+// which deleting the table's rows alone would never remove (audit S1).
+// It returns the keys it deleted.
+type FoldDeleter interface {
+	DeleteFolds(ctx context.Context, inv []Invalidation) ([]Key, error)
+}
+
+// invalidates says whether one of inv names k.
+func invalidates(inv []Invalidation, k Key) bool {
+	for _, in := range inv {
+		if in.Entity == k.Entity && in.KeyFold == entryKeyFold(k.Entity, k.Key) {
+			return true
+		}
+	}
+	return false
+}
+
 // MemoryProjector is the registry_validity projection in one process
 // until WP-6's KV projector exists: a Projector, and the source of the
 // hot path's Lookup (Snapshot). Safe for concurrent use.
@@ -105,6 +125,23 @@ func (m *MemoryProjector) ProjectRegistry(_ context.Context, put []Entry, del []
 		m.entries[e.Key] = e
 	}
 	return nil
+}
+
+// DeleteFolds implements FoldDeleter.
+func (m *MemoryProjector) DeleteFolds(_ context.Context, inv []Invalidation) ([]Key, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.Fail != nil {
+		return nil, m.Fail
+	}
+	var out []Key
+	for k := range m.entries {
+		if invalidates(inv, k) {
+			delete(m.entries, k)
+			out = append(out, k)
+		}
+	}
+	return out, nil
 }
 
 // Snapshot is every entry and whether the projection exists; a zero

@@ -37,6 +37,14 @@ func (m *fakeMsg) Ack() error        { m.src.event("ack", m.seq); return nil }
 func (m *fakeMsg) Nak() error        { m.src.event("nak", m.seq); return nil }
 func (m *fakeMsg) InProgress() error { m.src.event("progress", m.seq); return nil }
 
+// touch records a delivery or an in-progress of seq (s.mu held).
+func (s *fakeSource) touch(seq uint64) {
+	if s.touched == nil {
+		s.touched = map[uint64]time.Time{}
+	}
+	s.touched[seq] = time.Now()
+}
+
 // fakeSource is a stream: published messages by sequence, a first
 // sequence (what the limits removed below it) and a consumer cursor.
 type fakeSource struct {
@@ -51,6 +59,11 @@ type fakeSource struct {
 	holesErr error
 	fetchErr error
 	fetched  int
+	// ackWait, when set, makes Fetch deliver again every message neither
+	// acknowledged nor kept in progress for ackWait, as JetStream does;
+	// touched is when each was last delivered or kept in progress.
+	ackWait time.Duration
+	touched map[uint64]time.Time
 }
 
 func newSource() *fakeSource {
@@ -69,6 +82,9 @@ func (s *fakeSource) event(kind string, seq uint64) {
 	}
 	if kind == "nak" && seq < s.next {
 		s.next = seq
+	}
+	if kind == "progress" {
+		s.touch(seq)
 	}
 }
 
@@ -98,9 +114,18 @@ func (s *fakeSource) Fetch(ctx context.Context, n int, wait time.Duration) ([]bu
 		return nil, err
 	}
 	var out []bus.Msg
+	if s.ackWait > 0 {
+		for q := s.floor + 1; q < s.next && len(out) < n; q++ {
+			if m, ok := s.msgs[q]; ok && !s.acked[q] && time.Since(s.touched[q]) > s.ackWait {
+				out = append(out, m)
+				s.touch(q)
+			}
+		}
+	}
 	for s.next <= s.last && len(out) < n {
 		if m, ok := s.msgs[s.next]; ok && !s.acked[s.next] {
 			out = append(out, m)
+			s.touch(s.next)
 		}
 		s.next++
 	}
@@ -547,7 +572,10 @@ func TestPipelineRejected(t *testing.T) {
 // At start, an ack floor beyond the written position is messages the
 // stream removed while the writer was not reading: recorded before
 // anything is pulled. A floor at the position records nothing (a quiet
-// stream after a restart), and so does a position never written.
+// stream after a restart), nor does a new consumer on a database that
+// never wrote. A consumer that acknowledged messages the database
+// records no position for (restored from an older backup, re-created)
+// lost them: a position_unknown gap from 1 to the floor (audit S3).
 func TestPipelineStartPosition(t *testing.T) {
 	for _, c := range []struct {
 		name        string
@@ -556,11 +584,13 @@ func TestPipelineStartPosition(t *testing.T) {
 		wantGap     bool
 		wantFrom    uint64
 		wantRemoved uint64
+		wantCause   string
 	}{
-		{"purged while down", 40, 25, true, true, 26, 15},
-		{"quiet stream", 25, 25, true, false, 0, 0},
-		{"written past the floor", 20, 25, true, false, 0, 0},
-		{"never written", 40, 0, false, false, 0, 0},
+		{"purged while down", 40, 25, true, true, 26, 15, store.CauseStreamRemoved},
+		{"quiet stream", 25, 25, true, false, 0, 0, ""},
+		{"written past the floor", 20, 25, true, false, 0, 0, ""},
+		{"new consumer, never written", 0, 0, false, false, 0, 0, ""},
+		{"acknowledged, no position written", 40, 0, false, true, 1, 40, store.CausePositionUnknown},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			r := newRig(t, testConfig(), func(src *fakeSource, st *fakeStore) {
@@ -573,7 +603,7 @@ func TestPipelineStartPosition(t *testing.T) {
 			eventually(t, "written", func() bool { return r.st.count("telemetry") == 1 })
 			gaps := r.st.gapList()
 			if c.wantGap != (len(gaps) == 1) || (c.wantGap && (gaps[0].FromSeq != c.wantFrom || gaps[0].ToSeq != c.floor ||
-				uint64(gaps[0].Count) != c.wantRemoved)) || r.counter(CounterDroppedRows) != c.wantRemoved {
+				uint64(gaps[0].Count) != c.wantRemoved || gaps[0].Cause != c.wantCause)) || r.counter(CounterDroppedRows) != c.wantRemoved {
 				t.Fatalf("gaps %+v counters %v", gaps, r.p.Counters.Snapshot())
 			}
 		})
@@ -650,3 +680,164 @@ func TestWriterLogsNothingOnASuccessfulRun(t *testing.T) {
 }
 
 var errCheckViolation = errors.New("check violation")
+
+// slowStore is a store whose every write succeeds after delay.
+type slowStore struct {
+	*fakeStore
+	delay time.Duration
+}
+
+func (s slowStore) Write(ctx context.Context, b store.WriteBatch) (store.Written, error) {
+	time.Sleep(s.delay)
+	return s.fakeStore.Write(ctx, b)
+}
+
+// A drain that succeeds but slowly keeps every held message alive: the
+// tail of a queue deeper than AckWait of writes is never redelivered,
+// so each fetch brings new messages, not the ones already held (audit
+// S4). The database never failed here; keep-alives were sent anyway.
+func TestPipelineKeepsHeldMessagesAliveWhileWritesSucceed(t *testing.T) {
+	cfg := testConfig()
+	cfg.AckWait, cfg.BatchMaxRows, cfg.BatchMaxWait = 200*time.Millisecond, 5, time.Millisecond
+	r := newRig(t, cfg, func(src *fakeSource, _ *fakeStore) { src.ackWait = cfg.AckWait }, func(p *Pipeline) {
+		p.Store = slowStore{fakeStore: p.Store.(*fakeStore), delay: 10 * time.Millisecond}
+	})
+	publishTracks(t, r.src, 300) // 60 batches of 10 ms: 600 ms, three AckWaits
+	eventually(t, "written", func() bool { return r.st.count("telemetry") == 300 })
+	if n := r.counter(CounterRedelivered); n != 0 {
+		t.Fatalf("%d held messages redelivered while writes succeeded", n)
+	}
+	if r.counter(CounterWriteFailed) != 0 {
+		t.Fatal("a write failed")
+	}
+	r.src.mu.Lock()
+	progress := slices.ContainsFunc(r.src.events, func(e string) bool { return strings.HasPrefix(e, "progress ") })
+	r.src.mu.Unlock()
+	if !progress {
+		t.Fatal("no held message was kept in progress")
+	}
+}
+
+// A rejected message whose gap record the database refuses too is not
+// acknowledged: it stays at the head of the queue with the failing-write
+// backoff, counted in rejected_unrecorded, and nothing after it is
+// acknowledged past it; once the gap can be recorded it is, and the
+// message is acknowledged (audit S8).
+func TestPipelineRejectedUnrecordedIsNotAcknowledged(t *testing.T) {
+	const badID = "7ZZZZZZZZZZZZZZZZZZZZZZZZZ"
+	var gapsRefused sync.Mutex
+	refuseGaps := true
+	r := newRig(t, testConfig(), func(_ *fakeSource, st *fakeStore) {
+		st.refuse = func(b store.WriteBatch) error {
+			for _, rows := range b.Rows {
+				for _, row := range rows {
+					if row[0] == "BAD" {
+						return errCheckViolation
+					}
+				}
+			}
+			gapsRefused.Lock()
+			defer gapsRefused.Unlock()
+			if refuseGaps && len(b.Gaps) > 0 {
+				return errCheckViolation
+			}
+			return nil
+		}
+	}, func(p *Pipeline) {
+		p.DataError = func(err error) bool { return errors.Is(err, errCheckViolation) }
+		p.Stream.Decode = func(data []byte) (Decoded, error) {
+			d, err := DecodeTelemetry(data)
+			if err == nil && d.MsgID == badID {
+				d.Rows[0].Values[0] = "BAD"
+			}
+			return d, err
+		}
+	})
+	publishTracks(t, r.src, 1)
+	bad := message(t, "track/telemetry/v1", time.Now(), trackBodyOf(flightID))
+	d, _ := DecodeTelemetry(bad)
+	r.src.publish([]byte(strings.Replace(string(bad), d.MsgID, badID, 1)))
+	publishTracks(t, r.src, 1)
+	eventually(t, "counted", func() bool { return r.counter(CounterRejectedUnrecord) >= 1 })
+	time.Sleep(100 * time.Millisecond) // several retries of the backoff
+	if r.counter(CounterRejectedUnrecord) < 2 {
+		t.Fatalf("the refused gap was not tried again: %v", r.p.Counters.Snapshot())
+	}
+	if f, _ := r.src.AckFloor(context.Background()); f >= 2 {
+		t.Fatalf("ack floor %d: the message whose gap was refused was acknowledged", f)
+	}
+	if r.p.Snapshot().State != StateWriteFailing {
+		t.Fatalf("%+v", r.p.Snapshot())
+	}
+	gapsRefused.Lock()
+	refuseGaps = false
+	gapsRefused.Unlock()
+	eventually(t, "acked", func() bool { f, _ := r.src.AckFloor(context.Background()); return f == 3 })
+	gaps := r.st.gapList()
+	if len(gaps) != 1 || gaps[0].Cause != store.CauseRejected || gaps[0].FromSeq != 2 || r.st.count("telemetry") != 2 {
+		t.Fatalf("gaps %+v rows %d", gaps, r.st.count("telemetry"))
+	}
+}
+
+// A stream whose every message is malformed (a producer renamed a body
+// field) writes a few coalesced writer_gaps rows and a few log lines,
+// not one of each per message; the count is exact (audit S5). A
+// malformed message between good ones is still its own row
+// (TestPipelineMalformed).
+func TestPipelineMalformedFloodIsBounded(t *testing.T) {
+	r := newRig(t, testConfig(), nil)
+	const n = 5000
+	for range n {
+		r.src.publish([]byte(`{"schema":"track/telemetry/v1"}`))
+	}
+	eventually(t, "acked", func() bool { f, _ := r.src.AckFloor(context.Background()); return f == n })
+	gaps := r.st.gapList()
+	var counted int64
+	for _, g := range gaps {
+		if g.Cause != store.CauseMalformed || g.CountUnit != store.UnitMessages || g.Count != int64(g.ToSeq-g.FromSeq+1) {
+			t.Fatalf("gap %+v", g)
+		}
+		counted += g.Count
+	}
+	if counted != n || len(gaps) > 50 {
+		t.Fatalf("%d gap rows counting %d messages", len(gaps), counted)
+	}
+	if lines := strings.Count(r.logText(), "message not readable"); lines == 0 || lines > 10 {
+		t.Fatalf("%d log lines for %d malformed messages", lines, n)
+	}
+	if r.counter(CounterMessagesMalformed) != n {
+		t.Fatal(r.p.Counters.Snapshot())
+	}
+}
+
+// coalesce merges runs of one cause and unit over consecutive sequences
+// only: another cause, a sequence step, another unit or an unsequenced
+// message starts a new row; a lone gap keeps its key and detail.
+func TestCoalesceRuns(t *testing.T) {
+	p := &Pipeline{Stream: Stream{Name: "TRK", Subject: bus.SubjectTrkAll}}
+	one := func(cause string, seq uint64, unit string, subject string) store.Gap {
+		return store.Gap{DedupeKey: fmt.Sprintf("%s:TRK:%d", cause, seq), Stream: "TRK", Subject: subject, FromSeq: seq, ToSeq: seq,
+			Cause: cause, Count: 1, CountUnit: unit, Detail: "bad"}
+	}
+	in := []store.Gap{
+		one(store.CauseMalformed, 5, store.UnitMessages, "trk.v1.a"), one(store.CauseMalformed, 6, store.UnitMessages, "trk.v1.b"),
+		{DedupeKey: "stream_removed:TRK:7-9", Stream: "TRK", FromSeq: 7, ToSeq: 9, Cause: store.CauseStreamRemoved, Count: 3, CountUnit: store.UnitRows},
+		one(store.CauseMalformed, 10, store.UnitMessages, "trk.v1.a"),
+		one(store.CauseRejected, 11, store.UnitRows, "trk.v1.a"), one(store.CauseRejected, 12, store.UnitRows, "trk.v1.a"),
+		one(store.CauseRejected, 13, store.UnitMessages, "trk.v1.a"), one(store.CauseRejected, 15, store.UnitRows, "trk.v1.a"),
+		{DedupeKey: "malformed:TRK:unsequenced:1", Stream: "TRK", Cause: store.CauseMalformed, Count: 1, CountUnit: store.UnitMessages},
+	}
+	got := p.coalesce(in)
+	var keys []string
+	for _, g := range got {
+		keys = append(keys, fmt.Sprintf("%s %d", g.DedupeKey, g.Count))
+	}
+	want := []string{"malformed:TRK:5-6 2", "stream_removed:TRK:7-9 3", "malformed:TRK:10 1", "rejected:TRK:11-12 2",
+		"rejected:TRK:13 1", "rejected:TRK:15 1", "malformed:TRK:unsequenced:1 1"}
+	if !slices.Equal(keys, want) {
+		t.Fatalf("got %v", keys)
+	}
+	if got[0].Subject != bus.SubjectTrkAll || !strings.Contains(got[0].Detail, "1 more") || got[2].Detail != "bad" {
+		t.Fatalf("%+v", got[:3])
+	}
+}

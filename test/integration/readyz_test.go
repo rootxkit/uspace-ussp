@@ -195,6 +195,7 @@ func TestIntegrationAPIReadyWithEveryDependencyUp(t *testing.T) {
 		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
 		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
 		"registry": client.DependencyStateUp, "geoid": client.DependencyStateUp, "dss": client.DependencyStateUp,
+		"client_address": client.DependencyStateUp,
 	})
 }
 
@@ -218,6 +219,7 @@ func TestIntegrationAPIDegradedWithoutAuthConfiguration(t *testing.T) {
 		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateUp,
 		"issuer": client.DependencyStateDown, "jwks": client.DependencyStateDown, "cis": client.DependencyStateUnknown,
 		"registry": client.DependencyStateDown, "geoid": client.DependencyStateDown, "dss": client.DependencyStateDown,
+		"client_address": client.DependencyStateUp,
 	})
 	if d := body.Dependencies["geoid"].Detail; d == nil || !strings.Contains(*d, "USSP_GEOID_FILE is not set") {
 		t.Fatalf("geoid detail %v", d)
@@ -257,6 +259,7 @@ func TestIntegrationAPINotReadyWithoutNATS(t *testing.T) {
 		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
 		"cis": client.DependencyStateDegraded, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
 		"registry": client.DependencyStateUp, "geoid": client.DependencyStateUp, "dss": client.DependencyStateUp,
+		"client_address": client.DependencyStateUp,
 	})
 	if d := body.Dependencies["cis"].Detail; d == nil || !strings.Contains(*d, "projection: ") || !strings.Contains(*d, "cis_current") {
 		t.Fatalf("cis detail %v", d)
@@ -372,6 +375,7 @@ func TestIntegrationAPIFollowsNATSAwayAndBack(t *testing.T) {
 		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
 		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
 		"registry": client.DependencyStateUp, "geoid": client.DependencyStateUp, "dss": client.DependencyStateUp,
+		"client_address": client.DependencyStateUp,
 	})
 	if d := body.Dependencies["nats"]; d.AgeS == nil || *d.AgeS <= 0 {
 		t.Errorf("nats down without the age of its last good state: %+v", d)

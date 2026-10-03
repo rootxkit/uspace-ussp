@@ -8,6 +8,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/rootxkit/uspace-core/core"
 )
 
 // Msg is what a consumer of a stream needs of a delivered message, so
@@ -66,8 +67,11 @@ type StreamSource struct {
 	// Open returns the stream and the consumer.
 	Open func(ctx context.Context) (jetstream.Stream, jetstream.Consumer, error)
 	// MaxDeletedDetails bounds the interior deletes read to count a hole
-	// (E-10); beyond it a hole counts the head losses only.
+	// (E-10); beyond it a hole counts the head losses only, and that is
+	// counted as hole_undercounted (audit N5).
 	MaxDeletedDetails int
+	// Counters receives CounterHoleUndercounted; nil counts nothing.
+	Counters *core.Counters
 
 	mu       sync.Mutex
 	stream   jetstream.Stream
@@ -133,6 +137,10 @@ func (s *StreamSource) AckFloor(ctx context.Context) (uint64, error) {
 	return info.AckFloor.Stream, nil
 }
 
+// CounterHoleUndercounted counts hole checks that did not read the
+// stream's interior deletes (more than MaxDeletedDetails).
+const CounterHoleUndercounted = "hole_undercounted"
+
 // Holes implements Source: limits and purges remove messages from the
 // stream's head, so every sequence of a jump below the stream's first
 // sequence is gone; interior deletes are read from the stream's deleted
@@ -149,6 +157,11 @@ func (s *StreamSource) Holes(ctx context.Context, jumps []Jump) ([]Hole, error) 
 	}
 	first := info.State.FirstSeq
 	var deleted []uint64
+	if info.State.NumDeleted > 0 && s.MaxDeletedDetails > 0 && info.State.NumDeleted > s.MaxDeletedDetails && s.Counters != nil {
+		// The interior deletes are not read: a hole across them is
+		// counted short, and that is said.
+		s.Counters.Inc(CounterHoleUndercounted)
+	}
 	if info.State.NumDeleted > 0 && (s.MaxDeletedDetails <= 0 || info.State.NumDeleted <= s.MaxDeletedDetails) {
 		di, err := st.Info(ctx, jetstream.WithDeletedDetails(true))
 		if err != nil {

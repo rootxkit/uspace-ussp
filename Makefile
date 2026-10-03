@@ -17,7 +17,7 @@ PKGS  ?= ./...
 GOLANGCI_LINT_VERSION ?= v2.14.0
 STATICCHECK_VERSION   ?= v0.8.1
 GOVULNCHECK_VERSION   ?= v1.8.0
-# The gitleaks version gitleaks-action runs in CI (GITLEAKS_VERSION there).
+# The gitleaks version CI runs (GITLEAKS_VERSION in ci.yml's gitleaks job).
 GITLEAKS_VERSION      ?= v8.24.3
 
 COMPOSE_FILE = deploy/compose/docker-compose.yml

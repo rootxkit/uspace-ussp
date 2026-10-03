@@ -53,7 +53,7 @@ func router(t *testing.T) (http.Handler, *auth.Issuer) {
 }
 
 // routerWith is router with reg as the registry lookup.
-func routerWith(t *testing.T, reg RegistryValidator) (http.Handler, *auth.Issuer) {
+func routerWith(t *testing.T, reg RegistryValidator, with ...func(*Server)) (http.Handler, *auth.Issuer) {
 	t.Helper()
 	keyOnce.Do(func() {
 		var err error
@@ -85,7 +85,11 @@ func routerWith(t *testing.T, reg RegistryValidator) (http.Handler, *auth.Issuer
 	guard := &auth.Guard{Verifier: v, OwnIssuer: iss.URL, Counters: &core.Counters{}}
 	token := &auth.TokenEndpoint{Issuer: iss, Clients: noClients{}, Hasher: hasher, Audit: noAudit{}, TTL: func() time.Duration { return time.Hour }}
 	mux := http.NewServeMux()
-	if err := Register(mux, &Server{Health: health{}, Token: token, Issuer: iss, Registry: reg}, guard.Require); err != nil {
+	srv := &Server{Health: health{}, Token: token, Issuer: iss, Registry: reg}
+	for _, f := range with {
+		f(srv)
+	}
+	if err := Register(mux, srv, guard.Require); err != nil {
 		t.Fatalf("the access table does not cover the routes: %v", err)
 	}
 	mux.HandleFunc("/", httpx.NotFound)

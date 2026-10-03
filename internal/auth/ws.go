@@ -91,6 +91,13 @@ func (a *WSAuth) AcceptWS(w http.ResponseWriter, r *http.Request, access httpx.A
 	if ref != nil {
 		g.count(CounterWSRefused)
 		g.record(r, ref)
+		if ref.status == http.StatusServiceUnavailable {
+			// The credential could not be judged now (the session store
+			// or its projection is not available): try again, not sign in
+			// again.
+			_ = conn.Close(websocket.StatusTryAgainLater, "the session cannot be checked now; retry later")
+			return nil, Principal{}, ErrWSRefused
+		}
 		_ = conn.Close(CloseRelogin, "sign in again")
 		return nil, Principal{}, ErrWSRefused
 	}

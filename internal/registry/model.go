@@ -60,10 +60,13 @@ const (
 // Counters of the cache and the feed (CLAUDE.md engineering rules: a
 // stable snake_case name for everything refused, dropped or degraded).
 const (
-	CounterCacheHit         = "registry_cache_hit"          // an entity answered from the cache within its TTL
-	CounterCacheMiss        = "registry_cache_miss"         // an entity not cached, or cached beyond its TTL
-	CounterFetched          = "registry_fetched"            // an entity the authority answered
-	CounterUnavailable      = "registry_unavailable"        // an entity answered unknown because the authority could not be asked
+	CounterCacheHit    = "registry_cache_hit"   // an entity answered from the cache within its TTL
+	CounterCacheMiss   = "registry_cache_miss"  // an entity not cached, or cached beyond its TTL
+	CounterFetched     = "registry_fetched"     // an entity the authority answered
+	CounterUnavailable = "registry_unavailable" // an entity answered unknown because the authority could not be asked
+	// CounterLookupCancelled counts lookups the caller gave up on before
+	// the authority answered (not a failure of the authority; audit N4).
+	CounterLookupCancelled  = "registry_lookup_cancelled"
 	CounterPIIRefused       = "registry_pii_refused"        // an answer refused for a field F8 does not define, or an echoed secret part
 	CounterAnswerRefused    = "registry_answer_refused"     // an answer refused for not answering what was asked
 	CounterCacheReadFailed  = "registry_cache_read_failed"  // the table could not be read: every key asked of the authority
@@ -72,8 +75,12 @@ const (
 	CounterFeedPolled       = "registry_feed_polled"        // a change page applied
 	CounterFeedNotModified  = "registry_feed_not_modified"  // the feed answered 304
 	CounterFeedInvalidated  = "registry_feed_invalidated"   // a cached entry deleted by a change
-	CounterFeedFailed       = "registry_feed_failed"        // a poll that did not complete
-	CounterFeedRefused      = "registry_feed_refused"       // a change page refused (out of order, malformed)
+	// CounterFeedOrphansDeleted counts projected answers a change named
+	// that registry_validity held no row for (a commit that failed after
+	// the projection's put; audit S1).
+	CounterFeedOrphansDeleted = "registry_feed_orphans_deleted"
+	CounterFeedFailed         = "registry_feed_failed"  // a poll that did not complete
+	CounterFeedRefused        = "registry_feed_refused" // a change page refused (out of order, malformed)
 )
 
 // EntityType is what a key names.

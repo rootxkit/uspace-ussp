@@ -59,6 +59,7 @@ const (
 	CounterAlertsSent       = "traffic_ws_alerts_sent"
 	CounterAlertsRepeated   = "traffic_ws_alerts_repeated"
 	CounterExpired          = "traffic_ws_credential_expired"
+	CounterSessionEnded     = "traffic_ws_session_ended"
 	CounterGeoChanges       = "traffic_ws_geo_changes_sent"
 )
 
@@ -96,6 +97,10 @@ type Server struct {
 	Health
 	Hub *Hub
 	WS  *auth.WSAuth
+	// Sessions re-checks a console session's socket on every status
+	// frame: one ended in api closes with 4401 (audit B2). nil checks
+	// sessions only at the upgrade (the guard's).
+	Sessions auth.SessionChecker
 	// Ctx ends every open socket when the process stops.
 	Ctx context.Context
 	// ProductEvery, StatusEvery and RecordEvery override the periods
@@ -265,7 +270,7 @@ func (s *Server) OpenTrafficStream(w http.ResponseWriter, r *http.Request, param
 	if err != nil {
 		return
 	}
-	s.serve(r.Context(), conn, sub, p.Claims.ExpiresAt, false)
+	s.serve(r.Context(), conn, sub, p, false)
 }
 
 // OpenAlertStream implements gen.ServerInterface: the alert stream.
@@ -285,7 +290,7 @@ func (s *Server) OpenAlertStream(w http.ResponseWriter, r *http.Request, params 
 	if err != nil {
 		return
 	}
-	s.serve(r.Context(), conn, sub, p.Claims.ExpiresAt, true)
+	s.serve(r.Context(), conn, sub, p, true)
 }
 
 func (s *Server) period(d, def time.Duration) time.Duration {
@@ -299,9 +304,11 @@ func (s *Server) period(d, def time.Duration) time.Duration {
 // from staff), the status frames, the snapshot and the products (the
 // traffic stream) or the alerts and their repeats (the alert stream).
 // The socket closes with 4401 (sign in again) when the credential it
-// was opened with expires: this process cannot read the session rows,
-// so a session lives here no longer than its token.
-func (s *Server) serve(rctx context.Context, conn *websocket.Conn, sub *Sub, exp time.Time, alertsOnly bool) {
+// was opened with expires, and, for a session, at the first status
+// frame after api ended it (sessions_live no longer holds it: signed
+// out, ended or idle).
+func (s *Server) serve(rctx context.Context, conn *websocket.Conn, sub *Sub, p auth.Principal, alertsOnly bool) {
+	exp := p.Claims.ExpiresAt
 	s.count(CounterConnections)
 	conn.SetReadLimit(MaxClientFrameBytes)
 	ctx, cancel := context.WithCancel(rctx)
@@ -371,6 +378,14 @@ func (s *Server) serve(rctx context.Context, conn *websocket.Conn, sub *Sub, exp
 				s.count(CounterGeoChanges)
 			}
 		case <-status.C:
+			if p.Session && s.Sessions != nil {
+				if err := s.Sessions.CheckSession(ctx, p.Claims.JTI, p.Claims.Subject); errors.Is(err, auth.ErrSessionRefused) {
+					s.count(CounterSessionEnded)
+					_ = conn.Close(auth.CloseRelogin, "the session has ended: sign in again")
+					cancel()
+					return
+				}
+			}
 			s.enqueue(c, s.status(c))
 		case <-product.C:
 			tick++
