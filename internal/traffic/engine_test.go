@@ -847,3 +847,47 @@ func TestHandoverOldOwnerClearsUntilTransferred(t *testing.T) {
 
 // liveOwner is the engine's liveOwnerAfter at the default heartbeat.
 const liveOwner = 3 * DefaultHeartbeat
+
+// A carried alert is reconfirmed only on samples core admitted: samples
+// core refuses (here placed ahead of their receipt, a clock ahead) are
+// heard by nobody, so they never end the alert not_reconfirmed, however
+// long they last; the same aircraft admitted end it after the
+// hysteresis (the twin).
+func TestCarriedNotReconfirmedOnlyByAdmittedSamples(t *testing.T) {
+	store := newMemStore()
+	k := "conflict:trk:" + flightA + ":trk:" + flightB
+	_ = store.Put(context.Background(), Saved{Owner: "m1", SavedAt: t0, Key: k, RaisedAt: t0.Add(-time.Minute), Severity: core.SeverityCritical,
+		Aircraft: [2]SavedAircraft{
+			{ID: NSTrack + ":" + flightA, TrackID: flightA, Trust: core.TrustAuthenticated, Source: telemetry.SourceOperatorWS, Instance: "client-1111", FlightID: flightA, Cell5: mustCell(origin)},
+			{ID: NSTrack + ":" + flightB, TrackID: flightB, Trust: core.TrustAuthenticated, Source: telemetry.SourceOperatorWS, Instance: "client-2222", FlightID: flightB, Cell5: mustCell(origin)},
+		}})
+	r := newRig(t, store, "m1")
+	r.e.restore(context.Background())
+	far := geodesy.Destination(origin, 90, 3000)
+	ahead := func(in *Input) *Input {
+		in.Times.CapturedAt = in.Times.RxTS.Add(5 * time.Second)
+		return in
+	}
+	// Inside the stale time, longer than the hysteresis.
+	for range int(r.pv.CPAClearAfterS) + 4 {
+		r.feed(ahead(r.own(flightA, origin, 0, 0)))
+		r.feed(ahead(r.own(flightB, far, 0, 0)))
+		r.tick()
+		r.clk.add(time.Second)
+	}
+	if cl := r.of(flightA, AlertCleared); len(cl) != 0 {
+		t.Fatalf("refused samples ended the carried alert: %+v", cl)
+	}
+	if r.e.mon.Counters().Get(alerting.CounterRejectedPlacedAhead) == 0 {
+		t.Fatal("core did not refuse the samples")
+	}
+	for range int(r.pv.CPAClearAfterS) + 2 {
+		r.feed(r.own(flightA, origin, 0, 0))
+		r.feed(r.own(flightB, far, 0, 0))
+		r.tick()
+		r.clk.add(time.Second)
+	}
+	if cl := r.of(flightA, AlertCleared); len(cl) != 1 || *cl[0].ClearReason != ClearNotReconfirmed {
+		t.Fatalf("admitted samples: cleared %+v", cl)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -86,10 +87,13 @@ type item struct {
 }
 
 // trackInfo is what the engine keeps of one aircraft it fed: the last
-// input (without its identification) and when it was last fed.
+// input (without its identification), when it was last fed, and when
+// core last admitted a live sample of it (heardAt: what a carried
+// alert's silence is measured by, as core measures its own).
 type trackInfo struct {
-	in     Input
-	lastAt time.Time
+	in      Input
+	lastAt  time.Time
+	heardAt time.Time
 }
 
 // pairState is one conflict the engine holds: active in core, or carried
@@ -562,11 +566,45 @@ func (e *Engine) feed(ctx context.Context, in *Input, now time.Time) {
 	} else if in.Flying != nil && !*in.Flying {
 		e.grid.Remove(in.ID)
 	}
+	// A carried pair is judged by samples core admitted only: a refused
+	// one (late, placed ahead, out of order, a disabled source, over the
+	// capacity) is heard by nobody. Admission shows in core's rejected_
+	// counters, read only for the aircraft of a carried pair.
+	watch := live && e.inCarried(in.ID)
+	var refused uint64
+	if watch {
+		refused = e.coreRefusals()
+	}
 	ev := e.mon.Observe(tr, wall)
 	e.handle(ctx, ev, now)
-	if live {
+	if watch && e.coreRefusals() == refused {
+		if info != nil {
+			info.heardAt = now
+		}
 		e.carriedHeard(ctx, in, now)
 	}
+}
+
+// inCarried reports whether id is an aircraft of a carried pair.
+func (e *Engine) inCarried(id string) bool {
+	for _, p := range e.pairs {
+		if p.carried && (p.aircraft[0].ID == id || p.aircraft[1].ID == id) {
+			return true
+		}
+	}
+	return false
+}
+
+// coreRefusals is the sum of core's rejected_ counters: it grows with
+// every sample core refuses (some refusals count under two names).
+func (e *Engine) coreRefusals() uint64 {
+	var n uint64
+	for name, v := range e.mon.Counters().Snapshot() {
+		if strings.HasPrefix(name, "rejected_") {
+			n += v
+		}
+	}
+	return n
 }
 
 // drop ends an aircraft: core clears its alerts with flight_ended, and
@@ -797,7 +835,7 @@ func (e *Engine) carriedHeard(ctx context.Context, in *Input, now time.Time) {
 			switch {
 			case in.Flying != nil && !*in.Flying:
 				e.clearCarried(ctx, p, string(alerting.ClearLanded), now, nil)
-			case in.Flying != nil && *in.Flying && p.heard[i].IsZero():
+			case in.Flying != nil && *in.Flying && in.Position.Valid() && p.heard[i].IsZero():
 				p.heard[i] = now
 			}
 		}
@@ -828,7 +866,8 @@ func (e *Engine) carriedSwitched(ctx context.Context, st coresources.State, now 
 }
 
 // carriedTick ends the carried pairs the evidence ends: an aircraft not
-// heard for the stale time since it was last fed or carried (stale);
+// heard (admitted by core) for the stale time since it was carried
+// (stale);
 // both heard flying for longer than the hysteresis with core not
 // raising the pair (not_reconfirmed).
 func (e *Engine) carriedTick(ctx context.Context, now time.Time) {
@@ -842,8 +881,8 @@ func (e *Engine) carriedTick(ctx context.Context, now time.Time) {
 		gone := false
 		for i := range p.aircraft {
 			last := p.carriedAt
-			if info := e.tracks[p.aircraft[i].ID]; info != nil && info.lastAt.After(last) {
-				last = info.lastAt
+			if info := e.tracks[p.aircraft[i].ID]; info != nil && info.heardAt.After(last) {
+				last = info.heardAt
 			}
 			if now.Sub(last) > stale {
 				gone = true
