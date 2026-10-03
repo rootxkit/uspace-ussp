@@ -7,6 +7,15 @@ additively within `/v1`.
 
 ## [Unreleased]
 
+### Fixed
+
+- This USSP's client id at the authority keeps the case of its code
+  (`ussp-ABC1-01`, not `ussp-abc1-01`). The authority's token service
+  registers only `ussp-<code>-<nn>` with an upper-case code (M8), and the
+  lab issuer lists `ussp-USSP-DEV-01`, so the lower-cased id could never
+  be registered and every outgoing call (the CIS) had no token. Found at
+  the first staging deploy: `POST /v1/oauth/clients` refused it.
+
 ### Added
 
 - Every NATS stream's age and size bound and every bucket's size bound

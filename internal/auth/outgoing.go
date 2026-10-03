@@ -55,8 +55,12 @@ type OutgoingConfig struct {
 }
 
 // ClientIDFor is this USSP's client id at the authority for the USSP
-// code (USSP_SYSTEM_ID): "ussp-" + lower-case code + "-01" (M24).
-func ClientIDFor(systemID string) string { return "ussp-" + strings.ToLower(systemID) + "-01" }
+// code (USSP_SYSTEM_ID): "ussp-" + code + "-01" (M24), the code as the
+// certificate has it (M8: upper-case alphanumerics). The authority's
+// token service registers only that form (^ussp-[A-Z0-9]{1,8}-[0-9]{2}$,
+// its migration 00004_tokens) and the lab issuer lists ussp-USSP-DEV-01,
+// so a lower-cased code names a client no issuer can hold.
+func ClientIDFor(systemID string) string { return "ussp-" + systemID + "-01" }
 
 // Outgoing is the token client for the calls this USSP makes (the CISP,
 // the authority, the ANSP, the DSS, a peer USSP): it asks the token
