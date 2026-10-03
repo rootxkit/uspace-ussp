@@ -267,16 +267,21 @@ func (t *Tracker) Observe(tr alerting.Track, ref Ref, wallS float64, now time.Ti
 	flying := tr.Flying != nil && *tr.Flying
 	landed := tr.Flying != nil && !*tr.Flying
 	clearAfter := t.mon.Config().ClearAfterS
+	// Without a loaded zone set core judges no zone: its silence is no
+	// evidence against a carried zone alert (an unknown CIS is not an
+	// empty sky, SC-22).
+	zonesKnown := t.set != nil && t.set.Loaded
 	for _, k := range slices.Sorted(maps.Keys(t.carried)) {
 		a := t.alerts[k]
 		if a == nil || a.FlightID != ref.FlightID || !admitted {
 			continue
 		}
 		c := t.carried[k]
+		mismatch := a.Kind == KindIdentificationMismatch
 		switch {
-		case landed && a.Kind != KindIdentificationMismatch:
+		case landed && !mismatch:
 			out = append(out, t.end(k, string(alerting.ClearLanded), nil, now))
-		case flying || a.Kind == KindIdentificationMismatch && tr.Identification != nil:
+		case flying && !mismatch && zonesKnown, mismatch && tr.Identification != nil:
 			placed := math.Min(tr.CapturedAtS, wallS)
 			if !c.judgedFlights {
 				c.judgedSinceS, c.judgedFlights = placed, true

@@ -196,6 +196,28 @@ func TestRebuildCarriesAndWithdrawn(t *testing.T) {
 	if evs := g2.tr.Configure(&ZoneSet{}, g2.pol, g2.clk); len(evs) != 0 || len(g2.tr.Active()) != 1 {
 		t.Fatalf("an unloaded set cleared %s", states(evs))
 	}
+	// Nor does flying on while it is unloaded: core judges no zone, so
+	// its silence is no evidence; the alert stays carried until the CIS
+	// is known again (then the hysteresis of evidence runs).
+	for range 10 {
+		if evs := g2.sample(eastOut, 300); len(evs) != 0 {
+			t.Fatalf("flying with an unloaded set cleared %s", states(evs))
+		}
+	}
+	if a := g2.tr.Active(); len(a) != 1 || a[0].CarriedSince == nil {
+		t.Fatalf("not carried: %+v", a)
+	}
+	g2.tr.Configure(setOf(t, "zones:2", at.Add(time.Minute), map[string][]feat{"zones": {z}}), g2.pol, g2.clk)
+	cleared := false
+	for range 6 {
+		evs := g2.sample(eastOut, 300)
+		for i := range evs {
+			cleared = cleared || evs[i].ClearReason == ClearNotReconfirmed
+		}
+	}
+	if !cleared {
+		t.Fatal("not ended on evidence once the CIS was known")
+	}
 }
 
 // A carried alert core does not judge true again ends not_reconfirmed
