@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,6 +37,9 @@ type memStore struct {
 	failAudit error
 	failLock  error
 	purged    PurgeCounts
+	// inLock counts the Lock calls running now (a write that holds a
+	// transaction).
+	inLock atomic.Int32
 }
 
 func newMemStore() *memStore {
@@ -69,6 +73,8 @@ func (m *memStore) Lock(_ context.Context, class int32, id string, fn func() err
 	m.mu.Unlock()
 	l.Lock()
 	defer l.Unlock()
+	m.inLock.Add(1)
+	defer m.inLock.Add(-1)
 	return fn()
 }
 

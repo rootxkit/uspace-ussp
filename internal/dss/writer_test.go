@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -244,7 +245,7 @@ func TestWriterPeerDown(t *testing.T) {
 	}
 	// The peer answers again: the mark is cleared at the next read.
 	g.peer.Down(false)
-	if _, ok := g.w.peerOVN(ctx, f3548.OperationalIntentReference{Id: peerID, Manager: peerManager, UssBaseUrl: g.peer.URL(), Version: ref.Version}); !ok {
+	if _, ok := g.w.peerOVN(ctx, f3548.OperationalIntentReference{Id: peerID, Manager: peerManager, UssBaseUrl: g.peer.URL(), Version: ref.Version}, nil); !ok {
 		t.Fatal("peer read refused")
 	}
 	if p, _ := g.st.PeerIntent(ctx, peerID); p.PeerUnavailable {
@@ -584,18 +585,18 @@ func TestWriterConstraintsInTheKey(t *testing.T) {
 	}
 	// The stored copy serves when the manager is down again.
 	g.peer.Down(true)
-	if ovn, ok := g.w.constraintOVN(ctx, cref); !ok || ovn != *cref.Ovn {
+	if ovn, ok := g.w.constraintOVN(ctx, cref, nil); !ok || ovn != *cref.Ovn {
 		t.Fatalf("stored copy not used: %q %v", ovn, ok)
 	}
 	// A manager that names another manager is refused.
 	g.peer.Down(false)
 	other := cref
 	other.Manager = "someone-else"
-	if _, ok := g.w.constraintOVN(ctx, other); ok {
+	if _, ok := g.w.constraintOVN(ctx, other, nil); ok {
 		t.Fatal("a constraint from another manager accepted")
 	}
 	pref := f3548.OperationalIntentReference{Id: cid, Manager: "someone-else", UssBaseUrl: g.peer.URL()}
-	if _, ok := g.w.peerOVN(ctx, pref); ok {
+	if _, ok := g.w.peerOVN(ctx, pref, nil); ok {
 		t.Fatal("an intent from another manager accepted")
 	}
 }
@@ -670,5 +671,83 @@ func TestWriterFailures(t *testing.T) {
 	}
 	if g.w.logger() == nil || g.w.now().IsZero() {
 		t.Fatal("defaults")
+	}
+}
+
+// lockWatch hands out the rig's tokens and counts the ones asked for a
+// peer while a mirror holds its transaction.
+type lockWatch struct {
+	TokenSource
+	st       *memStore
+	peerBase string
+	mu       sync.Mutex
+	inLock   int
+	outside  int
+}
+
+func (l *lockWatch) Token(ctx context.Context, base string, scopes ...string) (string, error) {
+	if base == l.peerBase {
+		l.mu.Lock()
+		if l.st.inLock.Load() > 0 {
+			l.inLock++
+		} else {
+			l.outside++
+		}
+		l.mu.Unlock()
+	}
+	return l.TokenSource.Token(ctx, base, scopes...)
+}
+
+// A peer whose manager takes every request and never answers: the mirror
+// of an intent that meets its intents is bounded by MirrorTimeout, asks
+// the dead manager once (not once per intent of it), never while it
+// holds its transaction, and the write of another intent, queued after
+// it in the same batch, is made (E-01: the peer that answers is the
+// first test of this file).
+func TestWriterADeadPeerDoesNotStallOtherWrites(t *testing.T) {
+	g := newRig(t)
+	ctx := context.Background()
+	for _, id := range []string{peerID, peer2ID, "44444444-4444-4444-8444-444444444444"} {
+		if _, err := g.peer.File(ctx, peeruss.Spec{ID: id, Volumes: []f3548.Volume4D{volume(41.7, 44.8)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	watch := &lockWatch{TokenSource: g.c.Tokens, st: g.st, peerBase: g.peer.URL()}
+	g.c.Tokens = watch
+	g.c.CallTimeout = time.Second
+	g.w.MirrorTimeout = 2 * time.Second
+	g.peer.Slow(time.Hour)
+	const otherID = "55555555-5555-4555-8555-555555555555"
+	g.in.put(pending(oursID, volume(41.7, 44.8)))
+	g.in.put(pending(otherID, volume(42.5, 45.5)))
+	g.st.enqueue(store.OutboxOIRPut, oursID, 1, intent.DSSWorkload{IntentID: oursID, Version: 1})
+	g.st.enqueue(store.OutboxOIRPut, otherID, 1, intent.DSSWorkload{IntentID: otherID, Version: 1})
+	start := time.Now()
+	done := make(chan error, 1)
+	go func() { _, err := g.w.Once(ctx); done <- err }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatalf("one dead peer held the DSS writes for more than 4 s (mirror bound %s)", g.w.MirrorTimeout)
+	}
+	if took := time.Since(start); took > g.w.MirrorTimeout+time.Second {
+		t.Fatalf("the batch took %s", took)
+	}
+	mustState(t, g.in, otherID, f3548.Accepted)
+	mustState(t, g.in, oursID, "")
+	if r := g.in.get(oursID); r.LocalState != intent.StatePendingDSS {
+		t.Fatalf("the intent meeting the dead peer is %s", r.LocalState)
+	}
+	watch.mu.Lock()
+	inLock, outside := watch.inLock, watch.outside
+	watch.mu.Unlock()
+	if inLock != 0 {
+		t.Fatalf("%d peer requests made while the mirror held its transaction", inLock)
+	}
+	if attempts := g.c.attempts(); outside > attempts {
+		t.Fatalf("the dead manager was asked %d times; one call is %d attempts", outside, attempts)
 	}
 }

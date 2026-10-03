@@ -74,6 +74,11 @@ const (
 	// maxMirrorSteps bounds the writes one mirror makes before the intent
 	// and the DSS agree (a create, an update, a delete and a re-read).
 	maxMirrorSteps = 4
+	// DefaultMirrorTimeout bounds one mirror of one intent, the peers'
+	// reads before its lock and the writes under it: the outbox is worked
+	// one item after another, so an unbounded mirror would hold every
+	// other intent's DSS write behind one manager that does not answer.
+	DefaultMirrorTimeout = 20 * time.Second
 )
 
 // errWaiting is a write that cannot be made now; the item is retried.
@@ -114,6 +119,9 @@ type Writer struct {
 	Every        time.Duration
 	MaxBackoff   time.Duration
 	NotifyBudget time.Duration
+	// MirrorTimeout bounds one mirror (DefaultMirrorTimeout); half of it
+	// at most goes to reading the peers before the lock is taken.
+	MirrorTimeout time.Duration
 
 	once sync.Once
 	kick chan struct{}
@@ -254,13 +262,82 @@ func (w *Writer) backoff(attempts int32) time.Duration {
 // right after its commit).
 func (w *Writer) WriteNow(ctx context.Context, id string) error { return w.Mirror(ctx, id) }
 
-// Mirror makes the DSS hold what the intent asks for, holding the
-// intent's lock: at most maxMirrorSteps writes, each re-reading the
-// intent and what the DSS holds of it.
+func (w *Writer) mirrorTimeout() time.Duration {
+	if w.MirrorTimeout <= 0 {
+		return DefaultMirrorTimeout
+	}
+	return w.MirrorTimeout
+}
+
+// pass is what one mirror learnt of the peers: the managers that did not
+// answer (not asked again in the same mirror: their stored copies stand
+// in) and the peers' intents and constraints read before the lock was
+// taken (not read again under it while the DSS names the same version).
+type pass struct {
+	down map[string]bool
+	read map[string]seenRef
+}
+
+// seenRef is a peer's entity as its manager gave it in this mirror.
+type seenRef struct {
+	version int64
+	manager string
+	ovn     string
+}
+
+// constraintKey keeps a constraint's id apart from an operational
+// intent's in what one mirror has read.
+const constraintKey = "constraint/"
+
+func (p *pass) isDown(base string) bool {
+	return p != nil && p.down[strings.TrimRight(base, "/")]
+}
+
+func (p *pass) markDown(base string) {
+	if p == nil {
+		return
+	}
+	if p.down == nil {
+		p.down = map[string]bool{}
+	}
+	p.down[strings.TrimRight(base, "/")] = true
+}
+
+// seen is the ovn read in this mirror of the entity at the version and
+// manager the DSS names.
+func (p *pass) seen(id string, version int64, manager string) (string, bool) {
+	if p == nil {
+		return "", false
+	}
+	s, ok := p.read[id]
+	if !ok || s.version != version || s.manager != manager || s.ovn == "" {
+		return "", false
+	}
+	return s.ovn, true
+}
+
+func (p *pass) remember(id string, version int64, manager, ovn string) {
+	if p == nil {
+		return
+	}
+	if p.read == nil {
+		p.read = map[string]seenRef{}
+	}
+	p.read[id] = seenRef{version: version, manager: manager, ovn: ovn}
+}
+
+// Mirror makes the DSS hold what the intent asks for within
+// MirrorTimeout: the peers the DSS names are read first, outside any
+// transaction, then, holding the intent's lock, at most maxMirrorSteps
+// writes, each re-reading the intent and what the DSS holds of it.
 func (w *Writer) Mirror(ctx context.Context, id string) error {
+	ctx, cancel := context.WithTimeout(ctx, w.mirrorTimeout())
+	defer cancel()
+	p := &pass{}
+	w.prefetch(ctx, id, p)
 	return w.Store.Lock(ctx, store.LockClassOIR, id, func() error {
 		for range maxMirrorSteps {
-			done, err := w.step(ctx, id)
+			done, err := w.step(ctx, id, p)
 			if err != nil || done {
 				return err
 			}
@@ -270,8 +347,51 @@ func (w *Writer) Mirror(ctx context.Context, id string) error {
 	})
 }
 
+// prefetch reads, before the lock, the peers' intents and constraints
+// the next write's survey will name, within half of the mirror's time:
+// the reads under the lock then take what was read here, and a manager
+// that did not answer here is not asked again. Nothing is judged or
+// written to the DSS here; whatever fails is met again under the lock.
+func (w *Writer) prefetch(ctx context.Context, id string, p *pass) {
+	r, err := w.Intents.Record(ctx, id)
+	if err != nil || r == nil {
+		return
+	}
+	held, err := w.Intents.Held(ctx, id)
+	if err != nil {
+		return
+	}
+	ext, ok := surveyed(r, held, w.ForAll)
+	if !ok {
+		return
+	}
+	pctx, cancel := context.WithTimeout(ctx, w.mirrorTimeout()/2)
+	defer cancel()
+	_, _ = w.survey(pctx, id, ext, p)
+}
+
+// surveyed are the extents the next step's write surveys, false when it
+// makes none (no write, a delete, or a state that needs no key).
+func surveyed(r *intent.Record, held *intent.DSSHeld, forAll bool) ([]f3548.Volume4D, bool) {
+	want, write := intent.DSSDesired(r, forAll)
+	switch {
+	case !write:
+		return nil, false
+	case r.LocalState == intent.StatePendingDSS || held == nil:
+		return extentsOf(r), true
+	case held.State == want:
+		return nil, false
+	case want == f3548.Accepted || want == f3548.Activated:
+		if len(held.Extents) > 0 {
+			return held.Extents, true
+		}
+		return extentsOf(r), true
+	}
+	return nil, false
+}
+
 // step makes one write towards agreement; done when none is needed.
-func (w *Writer) step(ctx context.Context, id string) (bool, error) {
+func (w *Writer) step(ctx context.Context, id string, p *pass) (bool, error) {
 	r, err := w.Intents.Record(ctx, id)
 	if err != nil || r == nil {
 		return true, err
@@ -287,16 +407,16 @@ func (w *Writer) step(ctx context.Context, id string) (bool, error) {
 	case !write:
 		return false, w.delete(ctx, r, held)
 	case r.LocalState == intent.StatePendingDSS:
-		return false, w.plan(ctx, r, held)
+		return false, w.plan(ctx, r, held, p)
 	case held != nil && held.State == want:
 		return true, nil
 	case held == nil:
 		// An authorisation the DSS lost (a 404 to an update): it is
 		// written again, Accepted first (the only state a reference is
 		// created in), then moved on.
-		return false, w.recreate(ctx, r)
+		return false, w.recreate(ctx, r, p)
 	}
-	return false, w.update(ctx, r, held, want)
+	return false, w.update(ctx, r, held, want, p)
 }
 
 // extentsOf are the volumes written for r: its volumes as authorised.
@@ -390,7 +510,7 @@ func (k *keyOf) add(ovn string) {
 // (scdmodels.NoOvnPhrase at the pinned DSS commit).
 const noOVN = "Available from USS"
 
-func (w *Writer) gather(ctx context.Context, self string, refs []f3548.OperationalIntentReference, cons []f3548.ConstraintReference, k *keyOf) {
+func (w *Writer) gather(ctx context.Context, self string, refs []f3548.OperationalIntentReference, cons []f3548.ConstraintReference, k *keyOf, p *pass) {
 	for i := range refs {
 		ref := &refs[i]
 		if ref.Id == self {
@@ -400,14 +520,14 @@ func (w *Writer) gather(ctx context.Context, self string, refs []f3548.Operation
 			k.add(*ref.Ovn)
 			continue
 		}
-		if ovn, ok := w.peerOVN(ctx, *ref); ok {
+		if ovn, ok := w.peerOVN(ctx, *ref, p); ok {
 			k.add(ovn)
 		} else {
 			k.missing = append(k.missing, intent.PeerPrefix+ref.Id)
 		}
 	}
 	for i := range cons {
-		if ovn, ok := w.constraintOVN(ctx, cons[i]); ok {
+		if ovn, ok := w.constraintOVN(ctx, cons[i], p); ok {
 			k.add(ovn)
 		} else {
 			k.missing = append(k.missing, intent.ConstraintPrefix+cons[i].Id)
@@ -418,8 +538,16 @@ func (w *Writer) gather(ctx context.Context, self string, refs []f3548.Operation
 // peerOVN fetches a peer's intent from its manager, stores it, and
 // returns its ovn; a manager that does not answer marks its stored
 // intents peer_unavailable and the stored copy of this one is used when
-// it is of the version and the manager the DSS names.
-func (w *Writer) peerOVN(ctx context.Context, ref f3548.OperationalIntentReference) (string, bool) {
+// it is of the version and the manager the DSS names. What this mirror
+// (p) read of the version the DSS names is taken as it is; a manager that
+// did not answer in it is not asked again.
+func (w *Writer) peerOVN(ctx context.Context, ref f3548.OperationalIntentReference, p *pass) (string, bool) {
+	if ovn, ok := p.seen(ref.Id, int64(ref.Version), ref.Manager); ok {
+		return ovn, true
+	}
+	if p.isDown(ref.UssBaseUrl) {
+		return w.storedPeerOVN(ctx, ref, p)
+	}
 	oi, err := w.Client.PeerDetails(ctx, ref.UssBaseUrl, ref.Id)
 	if err == nil && oi.Reference.Manager != ref.Manager {
 		err = &RefusedError{Msg: "the manager's answer names another manager than the DSS"}
@@ -435,21 +563,30 @@ func (w *Writer) peerOVN(ctx context.Context, ref f3548.OperationalIntentReferen
 		}
 		_, _ = w.Store.MarkPeerUnavailable(ctx, ref.UssBaseUrl, false)
 		w.count(CounterPeerDetails)
+		p.remember(ref.Id, int64(oi.Reference.Version), oi.Reference.Manager, *oi.Reference.Ovn)
 		return *oi.Reference.Ovn, true
 	}
 	w.count(CounterPeerDetailsFailed)
 	if errors.Is(err, ErrDSSDown) {
+		p.markDown(ref.UssBaseUrl)
 		if n, merr := w.Store.MarkPeerUnavailable(ctx, ref.UssBaseUrl, true); merr == nil && n > 0 {
 			w.count(CounterPeerUnavailable)
 		}
 	}
 	w.logger().LogAttrs(ctx, slog.LevelWarn, "peer intent details not read", slog.String("peer_intent_id", ref.Id),
 		slog.String("uss_base_url", ref.UssBaseUrl), obs.Err(err))
+	return w.storedPeerOVN(ctx, ref, p)
+}
+
+// storedPeerOVN is the ovn of the stored copy of a peer's intent when it
+// is of the version and the manager the DSS names.
+func (w *Writer) storedPeerOVN(ctx context.Context, ref f3548.OperationalIntentReference, p *pass) (string, bool) {
 	stored, serr := w.Store.PeerIntent(ctx, ref.Id)
 	if serr != nil || stored == nil || stored.OVN == "" || stored.Version != int64(ref.Version) || stored.Manager != ref.Manager {
 		return "", false
 	}
 	w.count(CounterPeerStoredUsed)
+	p.remember(ref.Id, stored.Version, stored.Manager, stored.OVN)
 	return stored.OVN, true
 }
 
@@ -471,8 +608,15 @@ func peerRecordOf(oi *f3548.OperationalIntent, base string) (PeerRecord, error) 
 }
 
 // constraintOVN fetches a constraint from its manager, stores it, and
-// returns its ovn, or the stored copy's of the version the DSS names.
-func (w *Writer) constraintOVN(ctx context.Context, ref f3548.ConstraintReference) (string, bool) {
+// returns its ovn, or the stored copy's of the version the DSS names; as
+// peerOVN, once per mirror and never at a manager found down in it.
+func (w *Writer) constraintOVN(ctx context.Context, ref f3548.ConstraintReference, p *pass) (string, bool) {
+	if ovn, ok := p.seen(constraintKey+ref.Id, int64(ref.Version), ref.Manager); ok {
+		return ovn, true
+	}
+	if p.isDown(ref.UssBaseUrl) {
+		return w.storedConstraintOVN(ctx, ref, p)
+	}
 	c, err := w.Client.PeerConstraint(ctx, ref.UssBaseUrl, ref.Id)
 	if err == nil && c.Reference.Manager != ref.Manager {
 		err = &RefusedError{Msg: "the manager's answer names another manager than the DSS"}
@@ -484,16 +628,27 @@ func (w *Writer) constraintOVN(ctx context.Context, ref f3548.ConstraintReferenc
 		}
 		if rerr == nil {
 			w.count(CounterConstraintDetails)
+			p.remember(constraintKey+ref.Id, rec.Version, rec.Manager, rec.OVN)
 			return rec.OVN, true
 		}
 		err = rerr
 	}
 	w.count(CounterConstraintFailed)
+	if errors.Is(err, ErrDSSDown) {
+		p.markDown(ref.UssBaseUrl)
+	}
 	w.logger().LogAttrs(ctx, slog.LevelWarn, "constraint details not read", slog.String("constraint_id", ref.Id), obs.Err(err))
+	return w.storedConstraintOVN(ctx, ref, p)
+}
+
+// storedConstraintOVN is the stored copy's ovn of the version the DSS
+// names.
+func (w *Writer) storedConstraintOVN(ctx context.Context, ref f3548.ConstraintReference, p *pass) (string, bool) {
 	stored, serr := w.Store.Constraint(ctx, ref.Id)
 	if serr != nil || stored == nil || stored.OVN == "" || stored.Version != int64(ref.Version) || stored.Manager != ref.Manager {
 		return "", false
 	}
+	p.remember(constraintKey+ref.Id, stored.Version, stored.Manager, stored.OVN)
 	return stored.OVN, true
 }
 
@@ -514,7 +669,7 @@ func constraintRecordOf(c *f3548.Constraint, base string) (ConstraintRecord, err
 }
 
 // survey queries the DSS for what the extents meet and gathers the key.
-func (w *Writer) survey(ctx context.Context, self string, ext []f3548.Volume4D) (*keyOf, error) {
+func (w *Writer) survey(ctx context.Context, self string, ext []f3548.Volume4D, p *pass) (*keyOf, error) {
 	aoi, err := areaOfInterest(ext)
 	if err != nil {
 		return nil, err
@@ -528,7 +683,7 @@ func (w *Writer) survey(ctx context.Context, self string, ext []f3548.Volume4D) 
 		return nil, err
 	}
 	k := &keyOf{}
-	w.gather(ctx, self, refs, cons, k)
+	w.gather(ctx, self, refs, cons, k, p)
 	return k, nil
 }
 
@@ -561,13 +716,13 @@ func (w *Writer) holdFor(ctx context.Context, r *intent.Record, err error) error
 // modification, held the reference the DSS already has): the survey,
 // intent.PeerCheck, the PUT with the key (once more after a 409 with the
 // missing ovns fetched and judged), and the authorisation.
-func (w *Writer) plan(ctx context.Context, r *intent.Record, held *intent.DSSHeld) error {
+func (w *Writer) plan(ctx context.Context, r *intent.Record, held *intent.DSSHeld, p *pass) error {
 	if w.Availability != nil && w.Availability.Down() {
 		w.count(CounterHeldAvailability)
 		return w.hold(ctx, r, intent.ReasonUSSAvailabilityDown, intent.ReasonUSSAvailabilityDown+": the authority set this USSP's availability Down in the DSS; no new DSS write is made")
 	}
 	ext := extentsOf(r)
-	k, err := w.survey(ctx, r.ID, ext)
+	k, err := w.survey(ctx, r.ID, ext, p)
 	if err != nil {
 		return w.holdFor(ctx, r, err)
 	}
@@ -580,7 +735,7 @@ func (w *Writer) plan(ctx context.Context, r *intent.Record, held *intent.DSSHel
 		// 409: someone wrote in the extents after the survey. The ovns it
 		// names are fetched, judged and the write is made once more.
 		w.count(CounterKeyConflict)
-		w.gather(ctx, r.ID, ce.MissingOperationalIntents, ce.MissingConstraints, k)
+		w.gather(ctx, r.ID, ce.MissingOperationalIntents, ce.MissingConstraints, k, p)
 		if len(k.missing) > 0 {
 			return w.hold(ctx, r, intent.ReasonPeerUnavailable, "the details of "+strings.Join(k.missing, ", ")+" could not be read from their manager and no copy of them is held")
 		}
@@ -705,9 +860,9 @@ func heldOf(ref f3548.OperationalIntentReference, ext []f3548.Volume4D) intent.D
 }
 
 // recreate writes again an authorised intent the DSS no longer holds.
-func (w *Writer) recreate(ctx context.Context, r *intent.Record) error {
+func (w *Writer) recreate(ctx context.Context, r *intent.Record, p *pass) error {
 	ext := extentsOf(r)
-	k, err := w.survey(ctx, r.ID, ext)
+	k, err := w.survey(ctx, r.ID, ext, p)
 	if err != nil {
 		return err
 	}
@@ -729,7 +884,7 @@ func (w *Writer) recreate(ctx context.Context, r *intent.Record) error {
 
 // update moves the reference to state (activation, nonconformance,
 // contingency, back to Activated), with the key the state needs.
-func (w *Writer) update(ctx context.Context, r *intent.Record, held *intent.DSSHeld, state f3548.OperationalIntentState) error {
+func (w *Writer) update(ctx context.Context, r *intent.Record, held *intent.DSSHeld, state f3548.OperationalIntentState, p *pass) error {
 	ext := held.Extents
 	if len(ext) == 0 {
 		ext = extentsOf(r)
@@ -738,7 +893,7 @@ func (w *Writer) update(ctx context.Context, r *intent.Record, held *intent.DSSH
 	k := &keyOf{}
 	if state == f3548.Accepted || state == f3548.Activated {
 		var err error
-		if k, err = w.survey(ctx, r.ID, ext); err != nil {
+		if k, err = w.survey(ctx, r.ID, ext, p); err != nil {
 			return err
 		}
 		key = k.ovns
@@ -747,7 +902,7 @@ func (w *Writer) update(ctx context.Context, r *intent.Record, held *intent.DSSH
 	var ce *ConflictError
 	if errors.As(err, &ce) {
 		w.count(CounterKeyConflict)
-		w.gather(ctx, r.ID, ce.MissingOperationalIntents, ce.MissingConstraints, k)
+		w.gather(ctx, r.ID, ce.MissingOperationalIntents, ce.MissingConstraints, k, p)
 		if res, err = w.put(ctx, r.ID, held, state, ext, k.ovns); err == nil {
 			w.count(CounterKeyConflictResolved)
 		}
