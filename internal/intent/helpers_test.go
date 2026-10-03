@@ -141,6 +141,12 @@ type fakeCIS struct {
 	calls    int
 }
 
+func (c *fakeCIS) Age() (string, float64, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.basis.CISVersion, c.basis.CISAgeS, c.basis.Stale
+}
+
 func (c *fakeCIS) ZonesFor(geodesy.BBox, time.Time, time.Time) cis.ZonesResult {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -334,6 +340,10 @@ type memStore struct {
 	failCommit error
 	// projected is the version of each intent last projected.
 	projected map[string]int
+	// beforeTx, when set, runs before each transaction's fn, outside the
+	// store's lock (a test installs a CIS version between an assessment
+	// and its commit there).
+	beforeTx func()
 }
 
 func newMemStore() *memStore {
@@ -415,6 +425,9 @@ func (m *memStore) List(_ context.Context, operatorID string, f ListFilter) ([]R
 }
 
 func (m *memStore) InTx(ctx context.Context, fn func(ctx context.Context, tx Tx) error) error {
+	if m.beforeTx != nil {
+		m.beforeTx()
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.failTx != nil {

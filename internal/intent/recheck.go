@@ -229,6 +229,53 @@ func (d *Decider) windowOf(n *Normalised, ref string) *Window {
 	return nil
 }
 
+// cisFinding is WP-7's CIS judgement re-applied to a stored intent.
+type cisFinding struct {
+	// found are the conflicts that withdraw the authorisation.
+	found []Conflict
+	n     *Normalised
+	// version is the CIS version judged.
+	version string
+	// notJudged says why the CIS could not be judged ("" when it was);
+	// unreadable that the stored volumes could not be read.
+	notJudged  string
+	unreadable bool
+}
+
+// cisFindings re-applies WP-7's CIS steps to r's stored volumes on the
+// CIS as the cache holds it now: the conflicts that withdraw its
+// authorisation, or why it was not judged.
+func (s *Service) cisFindings(r *Record, pol policy.Record, now time.Time) cisFinding {
+	var out cisFinding
+	n, err := normalisedOf(r)
+	if err != nil {
+		out.notJudged, out.unreadable = reasonOf(err), true
+		return out
+	}
+	out.n = n
+	a := s.Decider.assessCIS(n, pol, now)
+	if a.d.CISVersionChecked != nil {
+		out.version = *a.d.CISVersionChecked
+	}
+	if why, bad := notJudged(a.d.Conflicts); bad {
+		out.notJudged = why
+		return out
+	}
+	out.found = affecting(a.d.Conflicts)
+	if a.d.InUSpaceAirspace && !r.Decision.InUSpaceAirspace {
+		// A U-space airspace published after the authorisation now holds
+		// the volumes: its Art. 3(4) requirements and the deconfliction
+		// through the DSS apply, which the authorisation did not rest on.
+		ref := ""
+		if len(a.d.USpaceAirspaceIDs) > 0 {
+			ref = a.d.USpaceAirspaceIDs[0]
+		}
+		out.found = append(out.found, Conflict{Kind: KindAirspace, Reason: ReasonAirspaceEntered, Effect: EffectHolds, Ref: ref, Item: ptr(5),
+			Detail: "the volumes are now inside a U-space airspace published after the authorisation: its Art. 3(4) requirements and the deconfliction through the DSS apply, which the authorisation did not rest on"})
+	}
+	return out
+}
+
 // Recheck re-checks one intent (Art. 10(10); brief WP-12): WP-7's CIS
 // steps re-applied on its stored volumes, or for a priority cause the
 // precedence the deconfliction already found. No conflict after the
@@ -265,40 +312,23 @@ func (s *Service) Recheck(ctx context.Context, intentID string, cause Cause) (Re
 		found = []Conflict{{Kind: KindIntent, Reason: ReasonIntentPriority, Effect: EffectRejects, Ref: cause.Ref,
 			Detail: "a later intent with precedence overlaps this authorisation (Art. 10(10))"}}
 	} else {
-		n, err := normalisedOf(cur)
-		if err != nil {
+		f := s.cisFindings(cur, pol, now)
+		cisVersion = f.version
+		switch {
+		case f.unreadable:
 			s.count("recheck_unreadable")
-			out.Outcome, out.Detail = RecheckNotJudged, reasonOf(err)
+			out.Outcome, out.Detail = RecheckNotJudged, f.notJudged
 			return out, nil
-		}
-		a := s.Decider.assessCIS(n, pol, now)
-		if a.d.CISVersionChecked != nil {
-			cisVersion = *a.d.CISVersionChecked
-		}
-		if why, bad := notJudged(a.d.Conflicts); bad {
+		case f.notJudged != "":
 			s.count("recheck_not_judged")
-			out.Outcome, out.Detail = RecheckNotJudged, why
+			out.Outcome, out.Detail = RecheckNotJudged, f.notJudged
 			return out, nil
-		}
-		found = affecting(a.d.Conflicts)
-		if a.d.InUSpaceAirspace && !cur.Decision.InUSpaceAirspace {
-			// A U-space airspace published after the authorisation now
-			// holds the volumes: its Art. 3(4) requirements and the
-			// deconfliction through the DSS apply, which the
-			// authorisation did not rest on.
-			ref := ""
-			if len(a.d.USpaceAirspaceIDs) > 0 {
-				ref = a.d.USpaceAirspaceIDs[0]
-			}
-			found = append(found, Conflict{Kind: KindAirspace, Reason: ReasonAirspaceEntered, Effect: EffectHolds, Ref: ref, Item: ptr(5),
-				Detail: "the volumes are now inside a U-space airspace published after the authorisation: its Art. 3(4) requirements and the deconfliction through the DSS apply, which the authorisation did not rest on"})
-		}
-		if len(found) == 0 {
+		case len(f.found) == 0:
 			s.count("recheck_untouched")
 			out.Outcome = RecheckUntouched
 			return out, nil
 		}
-		norm = n
+		found, norm = f.found, f.n
 	}
 	if cisVersion == "" {
 		cisVersion = cause.CISVersion

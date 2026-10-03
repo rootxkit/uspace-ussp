@@ -2,6 +2,8 @@ package intent
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -252,5 +254,120 @@ func TestRecheckTellsASecondConflictWhileTheFirstStillApplies(t *testing.T) {
 	g.cis.features = []cis.ZoneCandidate{g.cis.features[len(g.cis.features)-1]}
 	if after, err := s.Recheck(t.Context(), d.IntentID, Cause{Kind: CauseSweep}); err != nil || after.Outcome != RecheckAlreadyMarked || st.byID[d.IntentID].Version != 4 {
 		t.Fatalf("A ended: %+v %v", after, err)
+	}
+}
+
+// installRestrictionOnce installs a CIS version carrying restriction id
+// before the next transaction only: between an assessment and its
+// commit.
+func installRestrictionOnce(t *testing.T, g *rig, st *memStore, id string) {
+	t.Helper()
+	c := restriction(t, id, "active").candidate(t)
+	st.beforeTx = func() {
+		st.beforeTx = nil
+		g.cis.mu.Lock()
+		defer g.cis.mu.Unlock()
+		g.cis.features = append(g.cis.features, c)
+		g.cis.basis.CISVersion = "zones:1,uspace_airspace:1,restrictions:2"
+	}
+}
+
+// A CIS version installed between the assessment and the commit is not
+// granted past: the version judged is compared with the cache's at the
+// commit and the request is assessed again, here refused by the new
+// restriction. Twin: without a new version the same request is granted.
+func TestSubmitReassessesWhenTheCISChangesBeforeTheCommit(t *testing.T) {
+	g := newRig()
+	s, st, _ := newService(g)
+	far := wireVolumeJSON(squareWire(41.75, 44.80, 0.01), 500, 550, t0, t1)
+	if d, _, err := submit(t, s, with(baseRequest(), "client_ref", "twin", "volumes", []any{far})); err != nil || d.State != StateAccepted {
+		t.Fatalf("twin: %v %+v", err, d)
+	}
+	installRestrictionOnce(t, g, st, "TRSRACE")
+	d, _, err := submit(t, s, with(baseRequest(), "client_ref", "raced"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.State != StateRejected || d.CISVersionChecked == nil || *d.CISVersionChecked != "zones:1,uspace_airspace:1,restrictions:2" ||
+		!slices.ContainsFunc(d.Conflicts, func(c Conflict) bool { return c.Ref == "TRSRACE" }) {
+		t.Fatalf("granted past a newer CIS: %s %v %+v", d.State, d.CISVersionChecked, d.Conflicts)
+	}
+	if g.counters.Get("intent_cis_changed_during_decision") != 1 {
+		t.Fatalf("counter %d", g.counters.Get("intent_cis_changed_during_decision"))
+	}
+}
+
+// The same for a modification.
+func TestModifyReassessesWhenTheCISChangesBeforeTheCommit(t *testing.T) {
+	g := newRig()
+	s, st, _ := newService(g)
+	d, _, err := submit(t, s, baseRequest())
+	if err != nil || d.State != StateAccepted {
+		t.Fatalf("%v %+v", err, d)
+	}
+	installRestrictionOnce(t, g, st, "TRSRACE")
+	vol := wireVolumeJSON(squareWire(41.70, 44.80, 0.01), 500, 560, t0, t1)
+	m, err := patch(t, s, d.IntentID, map[string]any{"action": "modify", "volumes": []any{vol}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.State != StateRejected || !slices.ContainsFunc(m.Conflicts, func(c Conflict) bool { return c.Ref == "TRSRACE" }) {
+		t.Fatalf("modified past a newer CIS: %s %+v", m.State, m.Conflicts)
+	}
+}
+
+// An activation is judged against the CIS as it is now: a restriction
+// the standing re-check has not reached yet refuses it, and the re-check
+// it runs withdraws the authorisation with its notice. Twin: the same
+// intent activates on the CIS it was granted on.
+func TestActivationRecheckedAgainstTheCurrentCIS(t *testing.T) {
+	g := newRig()
+	s, st, _ := newService(g)
+	ok, _, err := submit(t, s, with(baseRequest(), "client_ref", "ok"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.now = t0.Add(-5 * time.Minute)
+	if a, err := patch(t, s, ok.IntentID, map[string]any{"action": "activate"}); err != nil || a.State != StateActivated {
+		t.Fatalf("twin: %v %+v", err, a)
+	}
+	st.now = testNow
+	d, _, err := submit(t, s, with(baseRequest(), "client_ref", "late", "volumes", []any{wireVolumeJSON(squareWire(41.75, 44.80, 0.01), 500, 550, t0, t1)}))
+	if err != nil || d.State != StateAccepted {
+		t.Fatalf("%v %+v", err, d)
+	}
+	late := restriction(t, "TRSLATE", "active")
+	late.Polygon = [][2]float64{{41.749, 44.799}, {41.749, 44.812}, {41.762, 44.812}, {41.762, 44.799}}
+	g.cis.features = append(g.cis.features, late.candidate(t))
+	st.now = t0.Add(-5 * time.Minute)
+	_, err = patch(t, s, d.IntentID, map[string]any{"action": "activate"})
+	var e *Error
+	if !errors.As(err, &e) || e.Status != 409 || e.Slug != "authorisation_withdrawn" {
+		t.Fatalf("activated over a restriction: %v", err)
+	}
+	r := st.byID[d.IntentID]
+	if n := NoticeOf(r); r.LocalState != StateWithdrawn || n == nil || n.RestrictionID != "TRSLATE" {
+		t.Fatalf("not withdrawn: %s %+v", r.LocalState, NoticeOf(r))
+	}
+}
+
+// E-10: a CIS that changes before every commit is assessed MaxAssess
+// times and the request is refused with 503 cis_changed; nothing is
+// written.
+func TestSubmitRefusedWhileTheCISKeepsChanging(t *testing.T) {
+	g := newRig()
+	s, st, _ := newService(g)
+	n := 1
+	st.beforeTx = func() {
+		g.cis.mu.Lock()
+		defer g.cis.mu.Unlock()
+		n++
+		g.cis.basis.CISVersion = fmt.Sprintf("zones:1,uspace_airspace:1,restrictions:%d", n)
+	}
+	_, _, err := submit(t, s, baseRequest())
+	var e *Error
+	if !errors.As(err, &e) || e.Status != 503 || e.Slug != "cis_changed" || len(st.byID) != 0 ||
+		g.counters.Get("intent_cis_changed_during_decision") != MaxAssess {
+		t.Fatalf("%v, %d written, counter %d", err, len(st.byID), g.counters.Get("intent_cis_changed_during_decision"))
 	}
 }

@@ -25,9 +25,12 @@ import (
 
 // CIS is what the decision reads of the CIS cache: the zones, U-space
 // airspaces and restrictions whose boxes overlap a volume in its window
-// (internal/cis.Evaluator.ZonesFor), with the basis they rest on.
+// (internal/cis.Evaluator.ZonesFor), with the basis they rest on, and
+// the version the cache holds now (internal/cis.Evaluator.Age), which a
+// decision compares at its commit with the version it judged.
 type CIS interface {
 	ZonesFor(envelope geodesy.BBox, from, to time.Time) cis.ZonesResult
+	Age() (version string, ageS float64, stale bool)
 }
 
 // CISIntegrity says why the versions in use are known not to be the

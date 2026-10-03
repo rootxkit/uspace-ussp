@@ -358,47 +358,13 @@ func (s *Service) Submit(ctx context.Context, clientID string, raw []byte) (Deci
 	if err != nil {
 		return Decision{}, false, err
 	}
-	a := s.Decider.Assess(ctx, n, pol, now)
 	id := newID()
 	var out Decision
 	var displaced []string
-	err = s.Store.InTx(ctx, func(ctx context.Context, tx Tx) error {
-		displaced = nil
-		open, err := tx.CountOpen(ctx, o.OperatorID)
-		if err != nil {
-			return err
-		}
-		if open >= pol.Values.IntentOpenMaxCount {
-			s.count("open_bound_reached")
-			return refuse(http.StatusTooManyRequests, "intent_bound_reached", "the operator holds %d open intents, the most the policy allows", open)
-		}
-		at, err := tx.Now(ctx)
-		if err != nil {
-			return err
-		}
-		others, err := s.others(ctx, tx, n, id)
-		if err != nil {
-			return err
-		}
-		d, flagged := s.Decider.Finish(a, id, at, others)
-		r := &Record{
-			ID: id, OperatorID: o.OperatorID, ClientID: clientID, ClientRef: req.ClientRef, RequestHash: hash,
-			Request: req, Decision: d, Version: 1, LocalState: d.State, Exempt: n.Exempt, Priority: n.Priority,
-			TimeStart: n.TimeStart, TimeEnd: n.TimeEnd, FiledAt: at, CreatedAt: at,
-			VolumesAMSL: d.VolumesAMSL, Cells: n.Cells, Envelope: envelopeOf(n), Actor: clientID, ChangeReason: "submitted",
-		}
-		r.Decision.Version = 1
-		if err := tx.Insert(ctx, r); err != nil {
-			return err
-		}
-		if len(flagged) > 0 {
-			if err := tx.FlagUpdate(ctx, flagged, id, at); err != nil {
-				return err
-			}
-			displaced = flagged
-		}
-		out = r.Decision
-		return nil
+	err = s.withCurrentCIS(ctx, n, pol, now, func(a *Assessment) error {
+		return s.Store.InTx(ctx, func(ctx context.Context, tx Tx) error {
+			return s.submitTx(ctx, tx, a, o, req, hash, id, &out, &displaced)
+		})
 	})
 	if errors.Is(err, ErrDuplicate) {
 		// A concurrent request with the same client_ref committed first.
@@ -413,6 +379,92 @@ func (s *Service) Submit(ctx context.Context, clientID string, raw []byte) (Deci
 	s.projectCommitted(ctx, id)
 	s.recheckDisplaced(ctx, id, displaced)
 	return out, true, nil
+}
+
+// submitTx is Submit's transaction on the assessment a.
+func (s *Service) submitTx(ctx context.Context, tx Tx, a *Assessment, o Owner, req Request, hash, id string, out *Decision, displacedOut *[]string) error {
+	n, pol := a.n, a.pol
+	clientID := o.ClientID
+	*displacedOut = nil
+	open, err := tx.CountOpen(ctx, o.OperatorID)
+	if err != nil {
+		return err
+	}
+	if open >= pol.Values.IntentOpenMaxCount {
+		s.count("open_bound_reached")
+		return refuse(http.StatusTooManyRequests, "intent_bound_reached", "the operator holds %d open intents, the most the policy allows", open)
+	}
+	at, err := tx.Now(ctx)
+	if err != nil {
+		return err
+	}
+	others, err := s.others(ctx, tx, n, id)
+	if err != nil {
+		return err
+	}
+	d, flagged := s.Decider.Finish(a, id, at, others)
+	r := &Record{
+		ID: id, OperatorID: o.OperatorID, ClientID: clientID, ClientRef: req.ClientRef, RequestHash: hash,
+		Request: req, Decision: d, Version: 1, LocalState: d.State, Exempt: n.Exempt, Priority: n.Priority,
+		TimeStart: n.TimeStart, TimeEnd: n.TimeEnd, FiledAt: at, CreatedAt: at,
+		VolumesAMSL: d.VolumesAMSL, Cells: n.Cells, Envelope: envelopeOf(n), Actor: clientID, ChangeReason: "submitted",
+	}
+	r.Decision.Version = 1
+	if err := s.cisStillCurrent(a); err != nil {
+		return err
+	}
+	if err := tx.Insert(ctx, r); err != nil {
+		return err
+	}
+	if len(flagged) > 0 {
+		if err := tx.FlagUpdate(ctx, flagged, id, at); err != nil {
+			return err
+		}
+		*displacedOut = flagged
+	}
+	*out = r.Decision
+	return nil
+}
+
+// errCISMoved is a decision whose CIS version is no longer the cache's
+// at its commit: a version was installed between the assessment, which
+// reads the CIS outside the transaction, and the commit.
+var errCISMoved = errors.New("the CIS changed while the request was judged")
+
+// MaxAssess bounds the assessments of one request while the CIS keeps
+// changing under it (E-10); past it the request is refused with 503 and
+// nothing is decided.
+const MaxAssess = 3
+
+// cisStillCurrent compares the CIS version a judged with the version the
+// cache holds now: errCISMoved when they differ. An assessment that
+// judged no CIS (no cache, versions outdated) granted nothing on it.
+func (s *Service) cisStillCurrent(a *Assessment) error {
+	if a.d.CISVersionChecked == nil || s.Decider == nil || s.Decider.CIS == nil {
+		return nil
+	}
+	if now, _, _ := s.Decider.CIS.Age(); now != *a.d.CISVersionChecked {
+		return errCISMoved
+	}
+	return nil
+}
+
+// withCurrentCIS assesses n and runs commit on the assessment; when the
+// CIS version judged is no longer current at the commit (commit returns
+// errCISMoved, rolled back), n is assessed again on the new version, at
+// most MaxAssess times. A version installed after the commit is the
+// standing re-check's (its change, or the sweep within one period).
+func (s *Service) withCurrentCIS(ctx context.Context, n *Normalised, pol policy.Record, now time.Time, commit func(a *Assessment) error) error {
+	for attempt := 1; ; attempt++ {
+		err := commit(s.Decider.Assess(ctx, n, pol, now))
+		if !errors.Is(err, errCISMoved) {
+			return err
+		}
+		s.count("cis_changed_during_decision")
+		if attempt >= MaxAssess {
+			return refuse(http.StatusServiceUnavailable, "cis_changed", "the CIS changed %d times while the request was judged; nothing was decided, try again", MaxAssess)
+		}
+	}
 }
 
 // recheckDisplaced runs the standing re-check on the authorisations a
@@ -795,7 +847,9 @@ func (s *Service) Change(ctx context.Context, clientID, id string, raw []byte) (
 		return s.modify(ctx, o, cur, p)
 	}
 	var out Decision
+	var conflicted bool
 	err = s.Store.InTx(ctx, func(ctx context.Context, tx Tx) error {
+		conflicted = false
 		r, err := tx.Lock(ctx, id)
 		if err != nil {
 			return err
@@ -810,6 +864,9 @@ func (s *Service) Change(ctx context.Context, clientID, id string, raw []byte) (
 		event := EventActivated
 		if p.Action == ActionActivate {
 			if err := s.activatable(r, now); err != nil {
+				return err
+			}
+			if conflicted, err = s.activationCIS(r, now); err != nil {
 				return err
 			}
 			r.LocalState = StateActivated
@@ -838,6 +895,14 @@ func (s *Service) Change(ctx context.Context, clientID, id string, raw []byte) (
 		out = r.Decision
 		return nil
 	})
+	if conflicted {
+		// The activation found a conflict the standing re-check has not
+		// written yet: the re-check withdraws the authorisation now, with
+		// its notice, rather than at its next pass.
+		if _, rerr := s.Recheck(context.WithoutCancel(ctx), id, Cause{Kind: CauseSweep}); rerr != nil {
+			obs.Error(ctx, s.logger(), "activation refused on a CIS conflict; the re-check did not run, the sweep runs it", rerr, slog.String("intent_id", id))
+		}
+	}
 	if err != nil {
 		return Decision{}, s.txError(err)
 	}
@@ -877,6 +942,25 @@ func (s *Service) activatable(r *Record, now time.Time) error {
 	return nil
 }
 
+// activationCIS judges an activation on the CIS as the cache holds it
+// now, not as it was when the intent was granted (the standing re-check
+// may not have reached a change yet): a CIS that cannot be judged
+// refuses with 503, a conflict that withdraws the authorisation refuses
+// with 409 and conflicted true (the caller runs the re-check).
+func (s *Service) activationCIS(r *Record, now time.Time) (conflicted bool, err error) {
+	f := s.cisFindings(r, s.policy(), now)
+	if f.notJudged != "" {
+		s.count("activation_refused_cis_not_judged")
+		return false, &UnavailableError{Dependency: "cis", Detail: "the authorisation cannot be judged against the CIS now (" + f.notJudged + "); it is not activated"}
+	}
+	if len(f.found) == 0 {
+		return false, nil
+	}
+	s.count("activation_refused_cis_conflict")
+	c := f.found[0]
+	return true, refuse(http.StatusConflict, "authorisation_withdrawn", "%s %s now conflicts with this authorisation (%s, Art. 10(10)); it is withdrawn and not activated", c.Kind, c.Ref, c.Reason)
+}
+
 // advance moves r to its next version with the state set, mirrored in
 // its decision body.
 func (s *Service) advance(r *Record, now time.Time) {
@@ -905,57 +989,15 @@ func (s *Service) modify(ctx context.Context, o Owner, cur *Record, p Patch) (De
 	if err != nil {
 		return Decision{}, err
 	}
-	a := s.Decider.Assess(ctx, n, pol, now)
-	if cur.Decision.AuthorisationNumber != nil {
-		a.KeepNumber(*cur.Decision.AuthorisationNumber)
-	}
 	var out Decision
 	var displaced []string
-	err = s.Store.InTx(ctx, func(ctx context.Context, tx Tx) error {
-		displaced = nil
-		r, err := tx.Lock(ctx, cur.ID)
-		if err != nil {
-			return err
+	err = s.withCurrentCIS(ctx, n, pol, now, func(a *Assessment) error {
+		if cur.Decision.AuthorisationNumber != nil {
+			a.KeepNumber(*cur.Decision.AuthorisationNumber)
 		}
-		if r == nil || r.Version != cur.Version || r.LocalState != StateAccepted {
-			return refuse(http.StatusConflict, "modify_refused", "the intent changed while the modification was judged; read it and try again")
-		}
-		at, err := tx.Now(ctx)
-		if err != nil {
-			return err
-		}
-		others, err := s.others(ctx, tx, n, r.ID)
-		if err != nil {
-			return err
-		}
-		d, flagged := s.Decider.Finish(a, r.ID, at, others)
-		if d.Decision != DecisionAuthorised && d.Decision != DecisionAcceptedVoluntary {
-			d.AuthorisationNumber = nil
-		}
-		reason := "modified by the operator"
-		if p.ChangeReason != "" {
-			reason = p.ChangeReason
-		}
-		d.ClientRef = r.ClientRef
-		d.DecidedAt = r.Decision.DecidedAt
-		r.Request, r.Decision = req, d
-		r.LocalState = d.State
-		r.TimeStart, r.TimeEnd, r.FiledAt = n.TimeStart, n.TimeEnd, at
-		r.VolumesAMSL, r.Cells, r.Envelope = d.VolumesAMSL, n.Cells, envelopeOf(n)
-		r.Priority, r.Exempt = n.Priority, n.Exempt
-		r.ChangeReason, r.Actor = reason, o.ClientID
-		s.advance(r, at)
-		if err := tx.Update(ctx, r, EventModified); err != nil {
-			return err
-		}
-		if len(flagged) > 0 {
-			if err := tx.FlagUpdate(ctx, flagged, r.ID, at); err != nil {
-				return err
-			}
-			displaced = flagged
-		}
-		out = r.Decision
-		return nil
+		return s.Store.InTx(ctx, func(ctx context.Context, tx Tx) error {
+			return s.modifyTx(ctx, tx, a, o, cur, req, p, &out, &displaced)
+		})
 	})
 	if err != nil {
 		return Decision{}, s.txError(err)
@@ -964,6 +1006,58 @@ func (s *Service) modify(ctx context.Context, o Owner, cur *Record, p Patch) (De
 	s.projectCommitted(ctx, cur.ID)
 	s.recheckDisplaced(ctx, cur.ID, displaced)
 	return out, nil
+}
+
+// modifyTx is modify's transaction on the assessment a.
+func (s *Service) modifyTx(ctx context.Context, tx Tx, a *Assessment, o Owner, cur *Record, req Request, p Patch, out *Decision, displacedOut *[]string) error {
+	n := a.n
+	*displacedOut = nil
+	r, err := tx.Lock(ctx, cur.ID)
+	if err != nil {
+		return err
+	}
+	if r == nil || r.Version != cur.Version || r.LocalState != StateAccepted {
+		return refuse(http.StatusConflict, "modify_refused", "the intent changed while the modification was judged; read it and try again")
+	}
+	at, err := tx.Now(ctx)
+	if err != nil {
+		return err
+	}
+	others, err := s.others(ctx, tx, n, r.ID)
+	if err != nil {
+		return err
+	}
+	d, flagged := s.Decider.Finish(a, r.ID, at, others)
+	if d.Decision != DecisionAuthorised && d.Decision != DecisionAcceptedVoluntary {
+		d.AuthorisationNumber = nil
+	}
+	reason := "modified by the operator"
+	if p.ChangeReason != "" {
+		reason = p.ChangeReason
+	}
+	d.ClientRef = r.ClientRef
+	d.DecidedAt = r.Decision.DecidedAt
+	r.Request, r.Decision = req, d
+	r.LocalState = d.State
+	r.TimeStart, r.TimeEnd, r.FiledAt = n.TimeStart, n.TimeEnd, at
+	r.VolumesAMSL, r.Cells, r.Envelope = d.VolumesAMSL, n.Cells, envelopeOf(n)
+	r.Priority, r.Exempt = n.Priority, n.Exempt
+	r.ChangeReason, r.Actor = reason, o.ClientID
+	s.advance(r, at)
+	if err := s.cisStillCurrent(a); err != nil {
+		return err
+	}
+	if err := tx.Update(ctx, r, EventModified); err != nil {
+		return err
+	}
+	if len(flagged) > 0 {
+		if err := tx.FlagUpdate(ctx, flagged, r.ID, at); err != nil {
+			return err
+		}
+		*displacedOut = flagged
+	}
+	*out = r.Decision
+	return nil
 }
 
 // EndDue ends the open intents whose time_end has passed (on the
