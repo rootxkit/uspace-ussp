@@ -35,6 +35,7 @@ func TestBuilders(t *testing.T) {
 		{func() (string, error) { return Intent("accepted", "in-1") }, "intent.v1.accepted.in-1"},
 		{func() (string, error) { return CIS("zones") }, "cis.v1.zones"},
 		{func() (string, error) { return TrafficProduct("client-1") }, "traffic.product.v1.client-1"},
+		{func() (string, error) { return PeerIntent("oi-1") }, "peer.intent.v1.oi-1"},
 		{func() (string, error) { return Ingest("c3:131:224") }, "ingest.v1.c3:131:224"},
 		{func() (string, error) { return Src("operator_ws", "ti-1") }, "src.v1.operator_ws.ti-1"},
 		{func() (string, error) { return TrkCell3("c3:131:224") }, "trk.v1.c3:131:224.>"},
@@ -119,6 +120,9 @@ func TestParse(t *testing.T) {
 	if s, err = Parse("traffic.product.v1.c1"); err != nil || s.Kind != KindTraffic || s.ID != "c1" {
 		t.Fatalf("%+v %v", s, err)
 	}
+	if s, err = Parse("peer.intent.v1.oi-1"); err != nil || s.Kind != KindPeerIntent || s.ID != "oi-1" || Durable(s.Kind) {
+		t.Fatalf("%+v %v", s, err)
+	}
 	if s, err = Parse(CtlSources); err != nil || s.Kind != KindCtl || s.Sub != "sources" {
 		t.Fatalf("%+v %v", s, err)
 	}
@@ -128,6 +132,7 @@ func TestParse(t *testing.T) {
 		"trk.v2.c3:131:224.c5:1317:2248.a", "trk.v1.c3:131:225.c5:1317:2248.a", "trk.v1.c3:131:224.c5:x.a",
 		"alrt.v1.k.c5:x.a", "ingest.v1.c5:1317:2248", "nope.v1.a", "conf.v1..", "conf.v1.a.b", "conf.v1.*",
 		"flight.v1.started", "traffic.product.v1", "traffic.product.v1.a.b", "traffic.product.v1.*", "ctl.other", "x.v1.a",
+		"peer.intent.v1", "peer.intent.v1.a.b", "peer.intent.v1.*", "peer.intent.v2.a",
 		strings.Repeat("a.", MaxSubjectBytes),
 	} {
 		if s, err := Parse(bad); err == nil {

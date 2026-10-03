@@ -223,7 +223,9 @@ func (NotImplementedF3411) PostIdentificationServiceArea(context.Context, stdf34
 	return nil, ErrNotImplemented
 }
 
-// NotImplementedF3548 answers every F3548 USS operation 501 until WP-13.
+// NotImplementedF3548 answers every F3548 USS operation 501: WP-3's stub,
+// replaced in api by internal/dss.Server (WP-13) and kept for the tests
+// of the mount.
 type NotImplementedF3548 struct{}
 
 var _ stdf3548.StrictServerInterface = NotImplementedF3548{}
