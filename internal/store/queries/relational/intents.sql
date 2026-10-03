@@ -176,3 +176,27 @@ SELECT id
  WHERE projected_version < version
  ORDER BY updated_at, id
  LIMIT sqlc.arg(max_rows);
+
+-- name: IntentSetUpdateRequired :execrows
+-- A standing re-check's notice (WP-12, Art. 10(10)): what the operator
+-- was told, kept until the intent is filed anew; its activation stays
+-- refused meanwhile.
+UPDATE operational_intents
+   SET update_required = sqlc.arg(update_required)
+ WHERE id = sqlc.arg(id);
+
+-- name: IntentActiveIn :many
+-- The active intents, exempt ones too (WP-12: the standing re-check
+-- withdraws any authorisation a new zone, airspace or restriction
+-- conflicts with), whose envelope meets the envelope given (a
+-- MULTIPOLYGON in WKT, WGS84; NULL: everywhere) and whose window
+-- overlaps [from_at, to_at] (NULL ends: open); a prefilter, the
+-- judgement is internal/intent's.
+SELECT id
+  FROM operational_intents
+ WHERE local_state IN ('accepted', 'activated', 'nonconforming', 'contingent')
+   AND (sqlc.narg(envelope_wkt)::text IS NULL OR ST_Intersects(envelope_geom, ST_GeogFromText(sqlc.narg(envelope_wkt)::text)))
+   AND (sqlc.narg(from_at)::timestamptz IS NULL OR time_end >= sqlc.narg(from_at)::timestamptz)
+   AND (sqlc.narg(to_at)::timestamptz IS NULL OR time_start <= sqlc.narg(to_at)::timestamptz)
+ ORDER BY id
+ LIMIT sqlc.arg(max_rows);

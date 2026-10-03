@@ -23,9 +23,10 @@ const cisPublishTimeout = 5 * time.Second
 // startGeo wires geo-awareness (brief WP-12): GET /v1/geo* from the CIS
 // cache, the publish of every installed version on cis.v1.<dataset>
 // (after its projection and store: the monitor reloads its zones and
-// traffic-ws tells its subscribers to refetch). It returns the national
-// handlers.
-func startGeo(_ context.Context, rt *proc.Runtime, cisState *CIS, intents *intent.Service) *national.Geo {
+// traffic-ws tells its subscribers to refetch), and the standing
+// re-check of the active intents on every change and every sweep. It
+// returns the national handlers.
+func startGeo(ctx context.Context, rt *proc.Runtime, cisState *CIS, intents *intent.Service) *national.Geo {
 	counters := &core.Counters{}
 	proc.Publish(rt, "geo", counters)
 	pub := bus.NewPublisher(rt.Bus, counters)
@@ -46,5 +47,8 @@ func startGeo(_ context.Context, rt *proc.Runtime, cisState *CIS, intents *inten
 				slog.Int64("version", c.Version), obs.Err(err))
 		}
 	})
+	re := geo.NewRechecker(intents, cisState.Evaluator, counters, logger)
+	cisState.OnChange(re.Changed)
+	rt.Go(ctx, re.Run)
 	return &national.Geo{Service: &geo.Service{CIS: cisState.Evaluator, Counters: counters}, Intents: intents}
 }

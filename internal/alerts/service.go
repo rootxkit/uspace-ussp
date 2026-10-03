@@ -36,6 +36,10 @@ type FactStore interface {
 	// afterS after its raise as escalated, at most maxRows, and returns
 	// them.
 	Escalate(ctx context.Context, afterS float64, maxRows int) ([]Stored, error)
+	// EndedNotices are the open restriction_activated alerts whose
+	// intent is over (ended, or past its time_end), at most maxRows
+	// (WP-12).
+	EndedNotices(ctx context.Context, maxRows int) ([]Stored, error)
 }
 
 // Publisher is the bus (bus.Publisher).
@@ -169,8 +173,35 @@ func (s *Service) Escalate(ctx context.Context) (int, error) {
 	return len(rows), nil
 }
 
-// RunEscalation escalates every period until ctx ends; a failed pass
-// (the database down) is logged and tried at the next one.
+// CounterNoticesCleared counts the restriction_activated alerts cleared
+// once their intent was over.
+const CounterNoticesCleared = "alerts_notices_cleared"
+
+// ClearEndedNotices clears the restriction_activated alerts (WP-12)
+// whose intent is over: ended, or past its time_end (a withdrawn
+// intent's notice stands while the window it would have flown lasts).
+// The clear (flight_ended: the authorised flight is over) is published
+// on alrt.v1 and recorded from there like every alert; one that is not
+// published is found again by the next pass.
+func (s *Service) ClearEndedNotices(ctx context.Context) (int, error) {
+	rows, err := s.Store.EndedNotices(ctx, DefaultEscalateMaxRows)
+	if err != nil {
+		return 0, err
+	}
+	now := s.now().UTC()
+	reason := "flight_ended"
+	for i := range rows {
+		st := rows[i]
+		st.State, st.ClearReason, st.UpdatedAt = StateCleared, &reason, now
+		s.counters().Inc(CounterNoticesCleared)
+		s.republish(ctx, st)
+	}
+	return len(rows), nil
+}
+
+// RunEscalation escalates every period until ctx ends, and clears the
+// notices of intents that are over; a failed pass (the database down)
+// is logged and tried at the next one.
 func (s *Service) RunEscalation(ctx context.Context, every time.Duration) {
 	if every <= 0 {
 		every = DefaultEscalateEvery
@@ -184,6 +215,9 @@ func (s *Service) RunEscalation(ctx context.Context, every time.Duration) {
 		case <-t.C:
 			if _, err := s.Escalate(ctx); err != nil && ctx.Err() == nil {
 				s.logger().LogAttrs(ctx, slog.LevelError, "escalation pass failed; tried again at the next", obs.Err(err))
+			}
+			if _, err := s.ClearEndedNotices(ctx); err != nil && ctx.Err() == nil {
+				s.logger().LogAttrs(ctx, slog.LevelError, "notice clearing pass failed; tried again at the next", obs.Err(err))
 			}
 		}
 	}

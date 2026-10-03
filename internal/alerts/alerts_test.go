@@ -152,6 +152,21 @@ func (m *memStore) Escalate(context.Context, float64, int) ([]Stored, error) {
 	return out, nil
 }
 
+func (m *memStore) EndedNotices(context.Context, int) ([]Stored, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.fail != nil {
+		return nil, m.fail
+	}
+	var out []Stored
+	for id := range m.rows {
+		if r := m.rows[id]; r.Kind == KindRestrictionActivated && r.State != StateCleared {
+			out = append(out, Stored{Body: r.Body, Cell5: r.Cell5})
+		}
+	}
+	return out, nil
+}
+
 // The recorder writes a raise, a clear and the first republish, keeps
 // one refresh in RefreshEvery, never reopens a clear, and leaves a
 // message whose flight is not recorded yet in the stream (the presence
@@ -495,5 +510,73 @@ func TestDecodeRefusals(t *testing.T) {
 	}
 	if SchemaOf([]byte(`{`)) != "" {
 		t.Fatal("schema of garbage")
+	}
+}
+
+// A restriction_activated alert of an intent without a flight (WP-12)
+// reads, writes flight_id null and round-trips; any other kind without
+// a flight, or one with neither flight nor intent, is refused (E-01
+// pair).
+func TestFlightlessRestrictionAlert(t *testing.T) {
+	b := body(StateRaised, t0)
+	intentID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	b.Kind, b.FlightID, b.IntentID = KindRestrictionActivated, "", &intentID
+	b.Detail = json.RawMessage(`{"cause":"restriction","ref":"TRS001"}`)
+	m := alertMsg(t, b)
+	if !strings.Contains(string(m.data), `"flight_id":null`) {
+		t.Fatalf("flight_id not null: %s", m.data)
+	}
+	got, err := Decode(m.data)
+	if err != nil || got.Body.FlightID != "" || got.Body.IntentID == nil || *got.Body.IntentID != intentID {
+		t.Fatalf("decode %+v %v", got.Body, err)
+	}
+	b.IntentID = nil
+	if _, err := Decode(alertMsg(t, b).data); err == nil {
+		t.Fatal("a flightless alert without an intent accepted")
+	}
+	p := body(StateRaised, t0)
+	p.FlightID, p.IntentID = "", &intentID
+	if _, err := Decode(alertMsg(t, p).data); err == nil {
+		t.Fatal("a flightless proximity alert accepted")
+	}
+	// A flight's alert still writes its flight id.
+	if !strings.Contains(string(alertMsg(t, body(StateRaised, t0)).data), `"flight_id":"`+flightA+`"`) {
+		t.Fatal("flight id lost")
+	}
+}
+
+// A notice whose intent is over is cleared flight_ended on the bus; an
+// open notice of an intent still flying is left alone (E-01 pair); a
+// store that fails is an error.
+func TestClearEndedNotices(t *testing.T) {
+	st := newMem()
+	intentID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	b := body(StateRaised, t0)
+	b.AlertID, b.Kind, b.FlightID, b.IntentID = "4d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7e82", KindRestrictionActivated, "", &intentID
+	st.rows[b.AlertID] = Record{Body: b, Cell5: cellA}
+	st.rows[alertA] = Record{Body: body(StateRaised, t0), Cell5: cellA}
+	bus := &pub{}
+	svc := &Service{Store: st, Bus: bus, Now: func() time.Time { return t0.Add(time.Hour) }}
+	n, err := svc.ClearEndedNotices(t.Context())
+	if err != nil || n != 1 {
+		t.Fatalf("%d %v", n, err)
+	}
+	bus.mu.Lock()
+	ms := bus.msgs
+	bus.mu.Unlock()
+	if len(ms) != 1 {
+		t.Fatalf("published %d", len(ms))
+	}
+	raw, err := json.Marshal(&ms[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := Decode(raw)
+	if err != nil || m.Body.State != StateCleared || m.Body.ClearReason == nil || *m.Body.ClearReason != "flight_ended" || m.Body.AlertID != b.AlertID {
+		t.Fatalf("%+v %v", m.Body, err)
+	}
+	st.fail = errors.New("down")
+	if _, err := svc.ClearEndedNotices(t.Context()); err == nil {
+		t.Fatal("a failed store not reported")
 	}
 }

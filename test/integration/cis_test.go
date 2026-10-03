@@ -87,6 +87,9 @@ type cisRig struct {
 	srv      *httptest.Server
 	dead     atomic.Bool
 	callback string
+	// hook is told every installed version (the api process's
+	// cis.v1 publish and standing re-check, WP-12); nil: nobody.
+	hook atomic.Pointer[cis.ChangeHook]
 }
 
 // newCISRig runs the CIS cache against the fake CISP and the real
@@ -131,7 +134,12 @@ func newCISRig(t *testing.T, reconcile time.Duration) *cisRig {
 		t.Fatal(err)
 	}
 	g.cache = cis.NewCache(cis.CacheConfig{Client: client, Publishers: pubs, Store: g.store, Evaluator: g.eval, Projector: g.proj, Counters: g.counters,
-		Logger: logger, CallbackURL: g.callback, ReconcileInterval: reconcile})
+		Logger: logger, CallbackURL: g.callback, ReconcileInterval: reconcile,
+		OnChange: func(ctx context.Context, c cis.Change) {
+			if h := g.hook.Load(); h != nil {
+				(*h)(ctx, c)
+			}
+		}})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { defer close(done); g.cache.Run(ctx) }()

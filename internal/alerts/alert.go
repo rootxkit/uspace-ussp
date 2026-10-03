@@ -54,7 +54,13 @@ var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-
 var kinds = map[string]bool{
 	"proximity": true, "nonconformance": true, "nonconformance_nearby": true, "height_exceedance": true,
 	"zone_incursion": true, "lost_link": true, "restriction_activated": true, "emergency_nearby": true,
+	"identification": true, "identification_mismatch": true,
 }
+
+// KindRestrictionActivated is the one kind an alert of an intent
+// without a flight may have (WP-12: a restriction withdraws an
+// authorisation before its activation).
+const KindRestrictionActivated = "restriction_activated"
 
 var severities = map[core.Severity]bool{core.SeverityInfo: true, core.SeverityWarning: true, core.SeverityCritical: true}
 
@@ -83,6 +89,20 @@ type Body struct {
 	ClearingDetail      json.RawMessage `json:"clearing_detail,omitempty"`
 	AckedAt             *time.Time      `json:"acked_at,omitempty"`
 	EscalatedAt         *time.Time      `json:"escalated_at,omitempty"`
+}
+
+// MarshalJSON writes flight_id null for an alert without a flight
+// (FlightID empty: restriction_activated before the activation).
+func (b Body) MarshalJSON() ([]byte, error) {
+	type plain Body
+	w := struct {
+		plain
+		FlightID *string `json:"flight_id"`
+	}{plain: plain(b)}
+	if b.FlightID != "" {
+		w.FlightID = &b.FlightID
+	}
+	return json.Marshal(w)
 }
 
 // Message is one alert/v1 message.
@@ -136,7 +156,9 @@ func Decode(data []byte) (Message, error) {
 		return Message{}, core.Fieldf("body.clear_reason", "set exactly on a clear")
 	case b.ClearReason != nil && !clearReasons[*b.ClearReason]:
 		return Message{}, core.Fieldf("body.clear_reason", "unknown clear reason")
-	case !uuidRe.MatchString(b.FlightID):
+	case b.FlightID == "" && (b.Kind != KindRestrictionActivated || b.IntentID == nil):
+		return Message{}, core.Fieldf("body.flight_id", "null only for a restriction_activated alert of an intent")
+	case b.FlightID != "" && !uuidRe.MatchString(b.FlightID):
 		return Message{}, core.Fieldf("body.flight_id", "not a version 4 UUID")
 	case b.IntentID != nil && !uuidRe.MatchString(*b.IntentID):
 		return Message{}, core.Fieldf("body.intent_id", "not a version 4 UUID")

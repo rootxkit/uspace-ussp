@@ -129,3 +129,49 @@ func TestStateCarriesTheEUClassification(t *testing.T) {
 		t.Fatalf("class_label absent rather than null: %s", raw)
 	}
 }
+
+type fakeNotices struct {
+	err  error
+	sent []string
+}
+
+func (f *fakeNotices) PublishNotice(_ context.Context, r *Record, n *Notice) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.sent = append(f.sent, r.ID+"@"+n.AlertID)
+	return nil
+}
+
+// The version a re-check wrote publishes its notice before the
+// projection; a later version does not publish it again; a notice that
+// cannot be published leaves the version unprojected (a
+// ProjectionError, republished by the sweep) and changes no KV (E-01
+// pairs).
+func TestBusProjectorPublishesTheNoticeOfItsVersion(t *testing.T) {
+	n := Notice{Cause: CauseRestriction, Ref: "TRS001", Decision: RecheckWithdrawn, Version: 2, AlertID: "4d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7e82"}
+	raw, _ := json.Marshal(n)
+	r := &Record{ID: "8d0e7b51-3c1e-4a5f-9a43-0b6f4c2a7e01", Version: 2, LocalState: StateWithdrawn, UpdateRequired: raw}
+	kv, pub, notes := &fakeKV{}, &fakePub{}, &fakeNotices{}
+	p := BusProjector{KV: kv, Pub: pub, Notices: notes}
+	if err := p.Project(t.Context(), r); err != nil || len(notes.sent) != 1 || len(kv.dels) != 1 {
+		t.Fatalf("%v %v %v", err, notes.sent, kv.dels)
+	}
+	r.Version = 3
+	if err := p.Project(t.Context(), r); err != nil || len(notes.sent) != 1 {
+		t.Fatalf("a later version published the notice again: %v %v", err, notes.sent)
+	}
+	r.Version = 2
+	notes.err = errors.New("bus down")
+	kv2 := &fakeKV{}
+	err := BusProjector{KV: kv2, Pub: pub, Notices: notes}.Project(t.Context(), r)
+	var pe *policy.ProjectionError
+	if !errors.As(err, &pe) || pe.Bucket != "alrt.v1" || len(kv2.dels) != 0 {
+		t.Fatalf("%v %v", err, kv2.dels)
+	}
+	// A WP-7 flag carries no notice: nothing to publish.
+	r.UpdateRequired = json.RawMessage(`{"by_intent_id":"x"}`)
+	if NoticeOf(r) != nil {
+		t.Fatal("a flag read as a notice")
+	}
+}

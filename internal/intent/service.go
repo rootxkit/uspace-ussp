@@ -227,6 +227,9 @@ type Tx interface {
 	// DueToEnd are the open intents whose time_end is before now, at
 	// most limit, locked.
 	DueToEnd(ctx context.Context, now time.Time, limit int) ([]Record, error)
+	// SetNotice writes the intent's update_required (a re-check's
+	// notice, Art. 10(10)).
+	SetNotice(ctx context.Context, id string, notice json.RawMessage) error
 }
 
 // Projector writes an intent's state where the hot path and the other
@@ -358,7 +361,9 @@ func (s *Service) Submit(ctx context.Context, clientID string, raw []byte) (Deci
 	a := s.Decider.Assess(ctx, n, pol, now)
 	id := newID()
 	var out Decision
+	var displaced []string
 	err = s.Store.InTx(ctx, func(ctx context.Context, tx Tx) error {
+		displaced = nil
 		open, err := tx.CountOpen(ctx, o.OperatorID)
 		if err != nil {
 			return err
@@ -390,6 +395,7 @@ func (s *Service) Submit(ctx context.Context, clientID string, raw []byte) (Deci
 			if err := tx.FlagUpdate(ctx, flagged, id, at); err != nil {
 				return err
 			}
+			displaced = flagged
 		}
 		out = r.Decision
 		return nil
@@ -405,7 +411,23 @@ func (s *Service) Submit(ctx context.Context, clientID string, raw []byte) (Deci
 	}
 	s.count("submitted")
 	s.projectCommitted(ctx, id)
+	s.recheckDisplaced(ctx, id, displaced)
 	return out, true, nil
+}
+
+// recheckDisplaced runs the standing re-check on the authorisations a
+// committed intent with precedence displaced (WP-7 step 5; Art.
+// 10(10)): each is withdrawn or marked for its operator, with the
+// cause "priority <id>". A re-check that fails is logged; the flag set
+// in the transaction keeps the authorisation from being activated.
+func (s *Service) recheckDisplaced(ctx context.Context, by string, ids []string) {
+	ctx = context.WithoutCancel(ctx)
+	for _, other := range ids {
+		if _, err := s.Recheck(ctx, other, Cause{Kind: CausePriority, Ref: by}); err != nil {
+			obs.Error(ctx, s.logger(), "displaced authorisation not re-checked; its flag refuses its activation", err,
+				slog.String("intent_id", other), slog.String("by_intent_id", by))
+		}
+	}
 }
 
 func (s *Service) txError(err error) error {
@@ -888,7 +910,9 @@ func (s *Service) modify(ctx context.Context, o Owner, cur *Record, p Patch) (De
 		a.KeepNumber(*cur.Decision.AuthorisationNumber)
 	}
 	var out Decision
+	var displaced []string
 	err = s.Store.InTx(ctx, func(ctx context.Context, tx Tx) error {
+		displaced = nil
 		r, err := tx.Lock(ctx, cur.ID)
 		if err != nil {
 			return err
@@ -928,6 +952,7 @@ func (s *Service) modify(ctx context.Context, o Owner, cur *Record, p Patch) (De
 			if err := tx.FlagUpdate(ctx, flagged, r.ID, at); err != nil {
 				return err
 			}
+			displaced = flagged
 		}
 		out = r.Decision
 		return nil
@@ -937,6 +962,7 @@ func (s *Service) modify(ctx context.Context, o Owner, cur *Record, p Patch) (De
 	}
 	s.count("modified")
 	s.projectCommitted(ctx, cur.ID)
+	s.recheckDisplaced(ctx, cur.ID, displaced)
 	return out, nil
 }
 

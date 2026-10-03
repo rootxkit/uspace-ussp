@@ -545,6 +545,13 @@ func (t memTx) FlagUpdate(_ context.Context, ids []string, by string, _ time.Tim
 	return nil
 }
 
+func (t memTx) SetNotice(_ context.Context, id string, notice json.RawMessage) error {
+	if r, ok := t.m.byID[id]; ok {
+		r.UpdateRequired = slices.Clone(notice)
+	}
+	return nil
+}
+
 func (t memTx) DueToEnd(_ context.Context, now time.Time, limit int) ([]Record, error) {
 	var out []Record
 	for _, r := range t.m.byID {

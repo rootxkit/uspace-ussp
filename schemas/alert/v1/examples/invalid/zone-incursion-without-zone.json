@@ -1,0 +1,38 @@
+{
+  "schema": "alert/v1",
+  "msg_id": "01K6Q2A3B4C5D6E7F8G9H0J1K2",
+  "producer": "ussp/monitor",
+  "ts": "2026-10-03T12:00:05.000Z",
+  "rx_ts": "2026-10-03T12:00:05.000Z",
+  "captured_at": "2026-10-03T12:00:05.000Z",
+  "time_source": "system",
+  "backlog": false,
+  "body": {
+    "alert_id": "3c6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7e81",
+    "kind": "zone_incursion",
+    "severity": "warning",
+    "state": "raised",
+    "clear_reason": null,
+    "flight_id": "11111111-1111-4111-8111-111111111111",
+    "intent_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "authorisation_number": "USSP-DEV-20261003-0001",
+    "captured_at": "2026-10-03T12:00:04.812345678Z",
+    "raised_at": "2026-10-03T12:00:04.812345678Z",
+    "updated_at": "2026-10-03T12:00:04.900000000Z",
+    "policy_version": 3,
+    "detail": {
+      "identifier": "TZP001",
+      "restriction": "PROHIBITED",
+      "zone_part": "TZP001",
+      "zone_type": "PROHIBITED",
+      "dataset": "zones",
+      "zone_version": "zones:4",
+      "cis_version": "zones:4,uspace_airspace:2,restrictions:9",
+      "vertical_known": false,
+      "limit_not_judged": true,
+      "not_judged": [
+        "AGL"
+      ]
+    }
+  }
+}

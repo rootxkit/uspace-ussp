@@ -12,6 +12,55 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const intentActiveIn = `-- name: IntentActiveIn :many
+SELECT id
+  FROM operational_intents
+ WHERE local_state IN ('accepted', 'activated', 'nonconforming', 'contingent')
+   AND ($1::text IS NULL OR ST_Intersects(envelope_geom, ST_GeogFromText($1::text)))
+   AND ($2::timestamptz IS NULL OR time_end >= $2::timestamptz)
+   AND ($3::timestamptz IS NULL OR time_start <= $3::timestamptz)
+ ORDER BY id
+ LIMIT $4
+`
+
+type IntentActiveInParams struct {
+	EnvelopeWkt *string    `json:"envelope_wkt"`
+	FromAt      *time.Time `json:"from_at"`
+	ToAt        *time.Time `json:"to_at"`
+	MaxRows     int32      `json:"max_rows"`
+}
+
+// The active intents, exempt ones too (WP-12: the standing re-check
+// withdraws any authorisation a new zone, airspace or restriction
+// conflicts with), whose envelope meets the envelope given (a
+// MULTIPOLYGON in WKT, WGS84; NULL: everywhere) and whose window
+// overlaps [from_at, to_at] (NULL ends: open); a prefilter, the
+// judgement is internal/intent's.
+func (q *Queries) IntentActiveIn(ctx context.Context, arg IntentActiveInParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, intentActiveIn,
+		arg.EnvelopeWkt,
+		arg.FromAt,
+		arg.ToAt,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const intentByClientRef = `-- name: IntentByClientRef :one
 SELECT id, operator_id, client_id, client_ref, request_hash, request, decision_body, version, local_state,
        exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set,
@@ -775,6 +824,28 @@ func (q *Queries) IntentSerialBound(ctx context.Context, arg IntentSerialBoundPa
 	var bound bool
 	err := row.Scan(&bound)
 	return bound, err
+}
+
+const intentSetUpdateRequired = `-- name: IntentSetUpdateRequired :execrows
+UPDATE operational_intents
+   SET update_required = $1
+ WHERE id = $2
+`
+
+type IntentSetUpdateRequiredParams struct {
+	UpdateRequired []byte      `json:"update_required"`
+	ID             pgtype.UUID `json:"id"`
+}
+
+// A standing re-check's notice (WP-12, Art. 10(10)): what the operator
+// was told, kept until the intent is filed anew; its activation stays
+// refused meanwhile.
+func (q *Queries) IntentSetUpdateRequired(ctx context.Context, arg IntentSetUpdateRequiredParams) (int64, error) {
+	result, err := q.db.Exec(ctx, intentSetUpdateRequired, arg.UpdateRequired, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const intentUnprojected = `-- name: IntentUnprojected :many
