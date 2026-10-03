@@ -17,7 +17,9 @@ info:
     the CIS change-notification receiver. WP-5: the cached registry
     validity lookup. WP-7: operational intents and flight authorisation.
     WP-8: operator telemetry (served by telemetry-ingest). WP-9: the
-    optional authority flight push (served by rid-sp).
+    optional authority flight push (served by rid-sp). WP-11: traffic
+    information and the alert stream (served by traffic-ws), the alert
+    acknowledgement (api).
   license:
     name: Apache-2.0
 servers:
@@ -482,6 +484,180 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
 
+  /v1/traffic:
+    get:
+      operationId: openTrafficStream
+      tags: [traffic]
+      summary: Stream traffic information and proximity alerts (WebSocket)
+      description: |
+        A WebSocket upgrade (served by traffic-ws; Art. 11, spec 02 F5).
+        An operator machine client with a bearer token granting
+        ussp.traffic (issued by this USSP) subscribes with intent_id, an
+        intent whose aircraft is bound to the client; a console user
+        with a staff session (realm console) subscribes with bbox, or
+        with console/subscribe/v1 frames, on a same-origin upgrade with
+        the uspace_session cookie from an Origin on
+        USSP_WS_ALLOWED_ORIGINS. A refused upgrade is accepted and closed
+        with 4401 (sign in again, M22).
+
+        Server to client, every frame in the common envelope with a body
+        named by schema (M29): console/status/v1 on connect and every
+        2 s (connection_id, server_ts, policy_version, stale_after_s,
+        live_max_age_s, dropped_frames, degraded, sources, cis_version,
+        cis_age_s, evaluation_period_s and the CPA thresholds in force),
+        console/snapshot/v1 on connect and after every subscribe, then a
+        traffic/product/v1 every second (every track within
+        traffic_radius_m of the intent's envelope or in the bbox, with
+        trust, source, age and state; the subscriber's active proximity
+        alerts; the degraded inputs) and every alert/v1 of the
+        subscription as it comes. Above traffic_throttle_track_count
+        tracks each track is sent every other second and what is held
+        back is counted in dropped_frames.
+
+        Client to server (staff only): console/subscribe/v1 {bbox,
+        layers[]}; anything else is ignored. Nothing on this socket can
+        command an aircraft, and no frame carries resolution advice.
+      security:
+      - operatorToken: []
+      - session: []
+      parameters:
+      - name: intent_id
+        in: query
+        required: false
+        description: The operator's intent (operator clients).
+        schema: {type: string, format: uuid}
+      - name: bbox
+        in: query
+        required: false
+        description: west,south,east,north in WGS84 degrees (staff sessions).
+        schema: {type: string, maxLength: 128}
+      responses:
+        "101":
+          description: Switching protocols; the stream described above follows.
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/traffic/snapshot:
+    get:
+      operationId: getTrafficSnapshot
+      tags: [traffic]
+      summary: One traffic product
+      description: |
+        One traffic/product/v1 message (schemas/traffic/product/v1) for
+        intent_id (an operator token granting ussp.traffic, the intent's
+        aircraft bound to the client) or bbox (a staff session), as the
+        stream would send it now: the bootstrap of a client. Another
+        operator's intent is 404, never 403. 503 names the input that is
+        missing when the product cannot be assembled.
+      security:
+      - operatorToken: []
+      - session: []
+      parameters:
+      - name: intent_id
+        in: query
+        required: false
+        schema: {type: string, format: uuid}
+      - name: bbox
+        in: query
+        required: false
+        schema: {type: string, maxLength: 128}
+      responses:
+        "200":
+          description: The product, in the common envelope.
+          content:
+            application/json:
+              schema:
+                description: traffic/product/v1 (schemas/traffic/product/v1).
+                type: object
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/alerts:
+    get:
+      operationId: openAlertStream
+      tags: [traffic]
+      summary: Stream the alerts of one intent (WebSocket)
+      description: |
+        A WebSocket upgrade (served by traffic-ws; Art. 13, spec 02 F5)
+        for an operator machine client with a bearer token granting
+        ussp.traffic; intent_id must be an intent whose aircraft is bound
+        to the client. Server to client, in the common envelope:
+        console/status/v1 on connect and every 2 s, every alert/v1 of the
+        intent's flight as it comes (conformance and proximity alerts,
+        raised, updated and cleared, with the peer's track id and trust),
+        the active ones on connect, and every unacknowledged critical
+        alert repeated every escalation_repeat_s (10 s) until it is
+        acknowledged (POST /v1/alerts/{alert_id}/ack) or cleared. The
+        first send of each alert to the client is recorded (delivery).
+      security:
+      - operatorToken: []
+      parameters:
+      - name: intent_id
+        in: query
+        required: true
+        schema: {type: string, format: uuid}
+      responses:
+        "101":
+          description: Switching protocols; the stream described above follows.
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/alerts/{alert_id}/ack:
+    post:
+      operationId: ackAlert
+      tags: [alerts]
+      summary: Acknowledge an alert
+      description: |
+        Records, on the database clock, that the operator acknowledged an
+        alert of one of its flights (served by api; Art. 13, 02 F5): the
+        first acknowledgement is kept and a repeat answers it again. The
+        acknowledged alert is republished to traffic-ws, which stops
+        repeating it, and a critical alert acknowledged within
+        escalation_after_s (30 s) is not escalated. An alert of another
+        operator's flight is 404, never 403. No body.
+      security:
+      - operatorToken: []
+      parameters:
+      - $ref: "#/components/parameters/AlertID"
+      responses:
+        "200":
+          description: Acknowledged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertAck"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
   /oauth/token:
     post:
       operationId: requestToken
@@ -937,6 +1113,13 @@ components:
       schema:
         type: string
         format: uuid
+    AlertID:
+      name: alert_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
 
   responses:
     Problem:
@@ -954,6 +1137,19 @@ components:
             $ref: "#/components/schemas/OAuthProblem"
 
   schemas:
+    AlertAck:
+      type: object
+      description: An alert's acknowledgement as recorded.
+      required: [alert_id, acked_at, acked_by]
+      properties:
+        alert_id: {type: string, format: uuid}
+        acked_at:
+          type: string
+          format: date-time
+          description: When it was first acknowledged, on the database clock.
+        acked_by:
+          type: string
+          description: The client that first acknowledged it.
     Problem:
       type: object
       description: |

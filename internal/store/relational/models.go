@@ -30,6 +30,8 @@ type Alert struct {
 	AckedBy             *string     `json:"acked_by"`
 	EscalatedAt         *time.Time  `json:"escalated_at"`
 	Delivery            []byte      `json:"delivery"`
+	Cell5               *string     `json:"cell5"`
+	RecordedAt          time.Time   `json:"recorded_at"`
 }
 
 type CisDataset struct {
