@@ -96,7 +96,7 @@ func TestLabSM4(t *testing.T) {
 	wg.Go(func() { v.Run(rctx) })
 	guard := &auth.Guard{Verifier: v, Counters: counters, Logger: quiet()}
 	base := "http://" + self + listen
-	server := &dss.Server{Intents: g.svc, Store: st, Manager: clientID, USSBaseURL: base, Counters: counters, Logger: quiet()}
+	server := &dss.Server{Intents: g.svc, Store: st, Manager: clientID, USSBaseURL: base, Client: client, Counters: counters, Logger: quiet()}
 	mux := http.NewServeMux()
 	if err := stdapi.MountF3548(mux, server, stdapi.Options{Guard: exlog.Behind(guard.Require), Validate: auth.ValidateAccess}); err != nil {
 		t.Fatal(err)

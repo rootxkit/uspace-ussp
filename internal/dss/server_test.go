@@ -20,6 +20,49 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/testfakes/peeruss"
 )
 
+// A notification's uss_base_url is checked against the reference the
+// DSS holds: the DSS's is stored; one the DSS does not record (a peer
+// pointing us at another host) is refused and nothing stored; a
+// reference the DSS does not hold is refused; while the DSS does not
+// answer the intent is stored without one (E-01 all).
+func TestServerChecksAPeersBaseAgainstTheDSS(t *testing.T) {
+	g := newRig(t)
+	ctx := context.Background()
+	if _, err := g.peer.File(ctx, peeruss.Spec{ID: peerID, Volumes: []f3548.Volume4D{volume(41.7, 44.8)}}); err != nil {
+		t.Fatal(err)
+	}
+	oi, _ := g.peer.Intent(peerID)
+	forged := oi
+	forged.Reference.UssBaseUrl = "http://169.254.169.254/latest"
+	body := f3548.PutOperationalIntentDetailsParameters{OperationalIntentId: peerID, OperationalIntent: &forged, Subscriptions: []f3548.SubscriptionState{}}
+	if st, _ := g.call(http.MethodPost, "/uss/v1/operational_intents", peerManager, body); st != http.StatusForbidden || g.count(CounterPeerBaseMismatch) != 1 {
+		t.Fatalf("a uss_base_url the DSS does not record: %d %v", st, g.counters.Snapshot())
+	}
+	if p, _ := g.st.PeerIntent(ctx, peerID); p != nil {
+		t.Fatalf("stored with a uss_base_url the DSS does not record: %+v", p)
+	}
+	unknown := oi
+	unknown.Reference.Id = "88888888-8888-4888-8888-888888888888"
+	body = f3548.PutOperationalIntentDetailsParameters{OperationalIntentId: unknown.Reference.Id, OperationalIntent: &unknown, Subscriptions: []f3548.SubscriptionState{}}
+	if st, _ := g.call(http.MethodPost, "/uss/v1/operational_intents", peerManager, body); st != http.StatusBadRequest || g.count(CounterPeerBaseMismatch) != 2 {
+		t.Fatalf("a reference the DSS does not hold: %d %v", st, g.counters.Snapshot())
+	}
+	if st, err := g.peer.NotifyTo(ctx, g.us.URL, peerID, []f3548.SubscriptionState{}); err != nil || st != http.StatusNoContent {
+		t.Fatalf("%d %v", st, err)
+	}
+	if p, _ := g.st.PeerIntent(ctx, peerID); p == nil || p.USSBaseURL != g.peer.URL() {
+		t.Fatalf("stored %+v", p)
+	}
+	g.dss.Down(true)
+	g.c.Attempts = 1
+	if st, err := g.peer.NotifyTo(ctx, g.us.URL, peerID, []f3548.SubscriptionState{}); err != nil || st != http.StatusNoContent {
+		t.Fatalf("%d %v", st, err)
+	}
+	if p, _ := g.st.PeerIntent(ctx, peerID); p == nil || p.USSBaseURL != "" || g.count(CounterPeerBaseUnverified) != 1 {
+		t.Fatalf("stored while the DSS is down: %+v %v", p, g.counters.Snapshot())
+	}
+}
+
 // call makes a request to our F3548 endpoints as sub.
 func (g *rig) call(method, path, sub string, body any) (int, []byte) {
 	g.t.Helper()

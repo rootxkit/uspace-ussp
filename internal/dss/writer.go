@@ -47,6 +47,7 @@ const (
 	CounterSubscribersRefused  = "dss_subscribers_refused"
 	CounterNotConverged        = "dss_mirror_not_converged"
 	CounterRecreateRefused     = "dss_recreate_refused"
+	CounterDisplacedNoBase     = "dss_peer_displaced_base_unknown"
 )
 
 // Kinds of the writer's outbox items.
@@ -289,6 +290,30 @@ func (w *Writer) mirrorTimeout() time.Duration {
 type pass struct {
 	down map[string]bool
 	read map[string]seenRef
+	// bases are the uss_base_urls the DSS named for the peers' intents
+	// in this mirror, the only ones a notification is posted to.
+	bases map[string]string
+}
+
+// noteBase keeps the uss_base_url the DSS named for a peer's intent.
+func (p *pass) noteBase(id, base string) {
+	if p == nil {
+		return
+	}
+	if p.bases == nil {
+		p.bases = map[string]string{}
+	}
+	p.bases[id] = base
+}
+
+// baseOf is the uss_base_url the DSS named in this mirror for a peer's
+// intent.
+func (p *pass) baseOf(id string) (string, bool) {
+	if p == nil {
+		return "", false
+	}
+	b, ok := p.bases[id]
+	return b, ok && b != ""
 }
 
 // seenRef is a peer's entity as its manager gave it in this mirror.
@@ -529,6 +554,7 @@ func (w *Writer) gather(ctx context.Context, self string, refs []f3548.Operation
 		if ref.Id == self {
 			continue
 		}
+		p.noteBase(ref.Id, ref.UssBaseUrl)
 		if ref.Manager == w.self() && ref.Ovn != nil && *ref.Ovn != "" && *ref.Ovn != noOVN {
 			k.add(*ref.Ovn)
 			continue
@@ -775,7 +801,7 @@ func (w *Writer) plan(ctx context.Context, r *intent.Record, held *intent.DSSHel
 		return w.holdFor(ctx, r, err)
 	}
 	h := heldOf(res.OperationalIntentReference, ext)
-	notes := w.notes(ctx, r, &h, res.Subscribers, displaced)
+	notes := w.notes(ctx, r, &h, res.Subscribers, displaced, p)
 	authorised, err := w.Intents.DSSAuthorise(ctx, r.ID, r.Version, h, notes)
 	if err != nil {
 		return err
@@ -915,7 +941,7 @@ func (w *Writer) recreate(ctx context.Context, r *intent.Record, p *pass) error 
 		return err
 	}
 	h := heldOf(res.OperationalIntentReference, ext)
-	notes := w.notes(ctx, r, &h, res.Subscribers, chk.Displaced)
+	notes := w.notes(ctx, r, &h, res.Subscribers, chk.Displaced, p)
 	if err := w.Intents.DSSRecord(ctx, r.ID, &h, notes); err != nil {
 		return err
 	}
@@ -976,7 +1002,7 @@ func (w *Writer) update(ctx context.Context, r *intent.Record, held *intent.DSSH
 		return err
 	}
 	h := heldOf(res.OperationalIntentReference, ext)
-	if err := w.Intents.DSSRecord(ctx, r.ID, &h, w.notes(ctx, r, &h, res.Subscribers, nil)); err != nil {
+	if err := w.Intents.DSSRecord(ctx, r.ID, &h, w.notes(ctx, r, &h, res.Subscribers, nil, nil)); err != nil {
 		return err
 	}
 	w.count(CounterOIRUpdated)
@@ -1006,7 +1032,7 @@ func (w *Writer) delete(ctx context.Context, r *intent.Record, held *intent.DSSH
 		}
 		return err
 	}
-	if err := w.Intents.DSSRecord(ctx, r.ID, nil, w.notes(ctx, r, nil, res.Subscribers, nil)); err != nil {
+	if err := w.Intents.DSSRecord(ctx, r.ID, nil, w.notes(ctx, r, nil, res.Subscribers, nil, nil)); err != nil {
 		return err
 	}
 	w.count(CounterOIRDeleted)
@@ -1054,8 +1080,9 @@ func sameBase(a, b string) bool { return strings.TrimRight(a, "/") == strings.Tr
 
 // notes are the notifications of a write (held) or a delete (held nil):
 // one per subscriber the DSS listed but ourselves, and one to each
-// displaced peer the DSS did not list.
-func (w *Writer) notes(ctx context.Context, r *intent.Record, held *intent.DSSHeld, subs []f3548.SubscriberToNotify, displaced []string) []intent.OutboxSpec {
+// displaced peer the DSS did not list, at the uss_base_url the DSS named
+// for its intent in this mirror (p), never one a peer asserted.
+func (w *Writer) notes(ctx context.Context, r *intent.Record, held *intent.DSSHeld, subs []f3548.SubscriberToNotify, displaced []string, p *pass) []intent.OutboxSpec {
 	var oi *f3548.OperationalIntent
 	if held != nil {
 		d := Details(r, held)
@@ -1063,9 +1090,14 @@ func (w *Writer) notes(ctx context.Context, r *intent.Record, held *intent.DSSHe
 	}
 	displacedAt := map[string]bool{}
 	for _, id := range displaced {
-		if p, err := w.Store.PeerIntent(ctx, id); err == nil && p != nil {
-			displacedAt[strings.TrimRight(p.USSBaseURL, "/")] = true
+		base, ok := p.baseOf(id)
+		if !ok {
+			w.count(CounterDisplacedNoBase)
+			w.logger().LogAttrs(ctx, slog.LevelWarn, "a displaced peer's intent was not named by the DSS in this write; it is not told inline",
+				slog.String("intent_id", r.ID), slog.String("peer_intent_id", id))
+			continue
 		}
+		displacedAt[strings.TrimRight(base, "/")] = true
 	}
 	now := w.now().UTC()
 	var out []intent.OutboxSpec

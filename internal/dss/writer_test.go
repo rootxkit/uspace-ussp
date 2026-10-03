@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -899,5 +902,52 @@ func TestWriterTellsADisplacedPeerOnce(t *testing.T) {
 	g.w.notifyItem(ctx, ctx, held[0])
 	if n := len(g.peer.Notifications()); n != 1 || len(g.st.pending(store.OutboxPeerNotify)) != 0 {
 		t.Fatalf("the peer told %d times, %d queued", n, len(g.st.pending(store.OutboxPeerNotify)))
+	}
+}
+
+// A displaced peer is told at the uss_base_url the DSS names for its
+// intent, never at the one stored from its manager's word: a stored copy
+// pointing at another host gets nothing (E-01: the base the DSS names is
+// TestWriterTellsADisplacedPeerWithinOneSecond).
+func TestWriterTellsADisplacedPeerWhereTheDSSSays(t *testing.T) {
+	g := newRig(t)
+	ctx := context.Background()
+	var hits atomic.Int32
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(elsewhere.Close)
+	if _, err := g.peer.File(ctx, peeruss.Spec{ID: peerID, Volumes: []f3548.Volume4D{volume(41.7, 44.8)}}); err != nil {
+		t.Fatal(err)
+	}
+	oi, _ := g.peer.Intent(peerID)
+	rec, err := peerRecordOf(&oi, elsewhere.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.st.UpsertPeerIntent(ctx, rec); err != nil {
+		t.Fatal(err)
+	}
+	g.peer.Down(true)
+	g.in.check = func(*intent.Record) intent.PeerCheckResult {
+		return intent.PeerCheckResult{Outcome: intent.PeerCheckOK, Displaced: []string{peerID}}
+	}
+	r := pending(oursID, volume(41.7, 44.8))
+	r.Priority = 100
+	g.in.put(r)
+	if err := g.w.Mirror(ctx, oursID); err != nil {
+		t.Fatal(err)
+	}
+	if n := hits.Load(); n != 0 {
+		t.Fatalf("a host the DSS does not name was sent %d requests", n)
+	}
+	q := g.st.pending(store.OutboxPeerNotify)
+	if len(q) != 1 {
+		t.Fatalf("%d notifications queued", len(q))
+	}
+	var n PeerNotify
+	if err := json.Unmarshal(q[0].Payload, &n); err != nil || !sameBase(n.URL, g.peer.URL()) || !n.Displaced {
+		t.Fatalf("queued %+v %v", n, err)
 	}
 }

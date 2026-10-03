@@ -124,7 +124,7 @@ func newDSSRig(t *testing.T) *dssRig {
 	}
 	within(t, 10*time.Second, func() bool { _, err := v.Verify(context.Background(), probe); return err == nil })
 	guard := &auth.Guard{Verifier: v, Counters: d.counters, Logger: quiet()}
-	d.server = &dss.Server{Intents: g.svc, Store: d.st, Manager: dssOurManager, Counters: d.counters, Logger: quiet()}
+	d.server = &dss.Server{Intents: g.svc, Store: d.st, Manager: dssOurManager, Client: d.client, Counters: d.counters, Logger: quiet()}
 	mux := http.NewServeMux()
 	if err := stdapi.MountF3548(mux, d.server, stdapi.Options{Guard: d.exlog.Behind(guard.Require), Validate: auth.ValidateAccess}); err != nil {
 		t.Fatal(err)

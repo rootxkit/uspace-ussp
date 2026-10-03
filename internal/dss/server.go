@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -42,6 +43,8 @@ const (
 	CounterLogSetServed         = "uss_log_set_served"
 	CounterPeerPublishFailed    = "peer_intent_publish_failed"
 	CounterPeerConflictNotJudge = "dss_peer_conflict_not_judged"
+	CounterPeerBaseMismatch     = "uss_peer_notification_base_mismatch"
+	CounterPeerBaseUnverified   = "uss_peer_notification_base_unverified"
 )
 
 // SchemaPeerIntent is the schema of the internal peer.intent.v1 message.
@@ -291,7 +294,11 @@ func (s *Server) NotifyOperationalIntentDetailsChanged(ctx context.Context, req 
 		s.count(CounterPeerNotOwnManager)
 		return stdf3548.NotifyOperationalIntentDetailsChanged403JSONResponse{Message: msg("a USS notifies only the operational intents it manages")}, nil
 	}
-	rec, err := peerRecordOf(oi, oi.Reference.UssBaseUrl)
+	base, refusal := s.baseOf(ctx, oi, who)
+	if refusal != nil {
+		return refusal, nil
+	}
+	rec, err := peerRecordOf(oi, base)
 	if err != nil {
 		return nil, err
 	}
@@ -304,13 +311,47 @@ func (s *Server) NotifyOperationalIntentDetailsChanged(ctx context.Context, req 
 		// An older version than the one held: the newer stands.
 		return stdf3548.NotifyOperationalIntentDetailsChanged204Response{}, nil
 	}
-	_, _ = s.Store.MarkPeerUnavailable(ctx, rec.USSBaseURL, false)
+	if rec.USSBaseURL != "" {
+		_, _ = s.Store.MarkPeerUnavailable(ctx, rec.USSBaseURL, false)
+	}
 	st, v, pri := rec.State, rec.Version, rec.Priority
 	ts, te := rec.TimeStart, rec.TimeEnd
 	s.publish(ctx, PeerIntentBody{EntityID: rec.EntityID, Manager: rec.Manager, USSBaseURL: rec.USSBaseURL, Trust: core.TrustProvider,
 		State: &st, Version: &v, Priority: &pri, TimeStart: &ts, TimeEnd: &te, ReceivedAt: s.now().UTC(), Details: oi})
 	s.judgePeer(ctx, oi, rec)
 	return stdf3548.NotifyOperationalIntentDetailsChanged204Response{}, nil
+}
+
+// baseOf is the uss_base_url stored for a peer's notified intent: the
+// one the DSS records for its reference, never the notification's own
+// claim, since the writer reads details from and posts notifications to
+// what is stored. A notification whose uss_base_url or manager is not
+// the DSS's, or about a reference the DSS does not hold, is refused
+// (403, 400); while the DSS cannot be read the intent is stored and
+// judged with no uss_base_url (nothing is sent to it until a survey
+// names its manager's), counted.
+func (s *Server) baseOf(ctx context.Context, oi *f3548.OperationalIntent, who string) (string, stdf3548.NotifyOperationalIntentDetailsChangedResponseObject) {
+	if s.Client == nil {
+		s.count(CounterPeerBaseUnverified)
+		return "", nil
+	}
+	ref, err := s.Client.GetOperationalIntent(ctx, oi.Reference.Id)
+	switch {
+	case errors.Is(err, ErrNotFound):
+		s.count(CounterPeerBaseMismatch)
+		return "", refuseNotification("the DSS holds no reference " + oi.Reference.Id)
+	case err != nil:
+		s.count(CounterPeerBaseUnverified)
+		s.logger().LogAttrs(ctx, slog.LevelWarn, "a peer's uss_base_url not checked against the DSS; stored without one",
+			slog.String("peer_intent_id", oi.Reference.Id), obs.Err(err))
+		return "", nil
+	case ref.Manager != who || !sameBase(ref.UssBaseUrl, oi.Reference.UssBaseUrl):
+		s.count(CounterPeerBaseMismatch)
+		s.logger().LogAttrs(ctx, slog.LevelWarn, "a peer notified a uss_base_url or manager the DSS does not record; refused",
+			slog.String("peer_intent_id", oi.Reference.Id), slog.String("claimed", oi.Reference.UssBaseUrl), slog.String("dss", ref.UssBaseUrl))
+		return "", stdf3548.NotifyOperationalIntentDetailsChanged403JSONResponse{Message: msg("the uss_base_url or the manager is not the one the DSS records")}
+	}
+	return ref.UssBaseUrl, nil
 }
 
 func (s *Server) publish(ctx context.Context, b PeerIntentBody) {
