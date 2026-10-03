@@ -171,6 +171,67 @@ export interface paths {
         patch: operations["changeIntent"];
         trace?: never;
     };
+    "/v1/geo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Geo-awareness for a box at an instant
+         * @description What the CIS says in the box (2021/664 Art. 9; spec 02 F5; brief
+         *     WP-12), answered from this USSP's CIS cache, never from the CISP
+         *     in the request path: the U-space airspaces with their Art. 3(4)
+         *     requirements, the services they require and their adjacent
+         *     airspaces; the geographical zones with their ED-318 feature
+         *     verbatim and their limits with their references; the ANSP's
+         *     restrictions with their state, starts_at and ends_at. Each item
+         *     carries updated_at (its dataSource.updateDateTime, else its
+         *     dataset version's cis_updated_at), version (the dataset version)
+         *     and valid_from/valid_to (its limitedApplicability bounds), and how
+         *     it applies at the instant (applies, or unknown with why: an
+         *     unknown applicability is listed, never dropped). The answer
+         *     carries cis_version, cis_age_s and stale (beyond the policy's
+         *     cis_stale_s): a stale cache still answers and says so. A list cut
+         *     at 2000 features says truncated. The geo change push of the
+         *     traffic stream (geo/changed/v1) tells a subscriber to refetch.
+         */
+        get: operations["getGeo"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/geo/intents/{intent_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                intent_id: components["parameters"]["IntentID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Geo-awareness for one of the operator's intents
+         * @description GET /v1/geo with the intent's volumes and their windows as the
+         *     query: every feature whose extent meets a volume's box and that
+         *     applies at some time of its window (its applicability says how:
+         *     always, during from/to, or scheduled on daily windows from/to). The
+         *     operator's own intent only: another operator's is 404, never 403.
+         */
+        get: operations["getGeoForIntent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/telemetry": {
         parameters: {
             query?: never;
@@ -322,7 +383,10 @@ export interface paths {
          *     alerts; the degraded inputs) and every alert/v1 of the
          *     subscription as it comes. Above traffic_throttle_track_count
          *     tracks each track is sent every other second and what is held
-         *     back is counted in dropped_frames.
+         *     back is counted in dropped_frames. When this USSP installs a new
+         *     version of a CIS dataset, a geo/changed/v1 frame (dataset,
+         *     version, feature_ids) tells every subscription to refetch
+         *     GET /v1/geo (brief WP-12).
          *
          *     Client to server (staff only): console/subscribe/v1 {bbox,
          *     layers[]}; anything else is ignored. Nothing on this socket can
@@ -1059,6 +1123,98 @@ export interface components {
             time_start: components["schemas"]["IntentTime"];
             time_end: components["schemas"]["IntentTime"];
         };
+        /** @description One vertical limit as published, in metres, in its own reference (never converted, D-01). */
+        GeoLimit: {
+            value_m: number;
+            /** @enum {string} */
+            ref: "AGL" | "AMSL" | "WGS84";
+        };
+        /** @description One part of a feature (a layer of a GeometryCollection is "<id>/L<k>") with its limits; null is no limit. */
+        GeoPart: {
+            id: string;
+            lower: components["schemas"]["GeoLimit"] | null;
+            upper: components["schemas"]["GeoLimit"] | null;
+        };
+        /**
+         * @description How the feature applies over the query: kind always (no
+         *     limitedApplicability), during (a period from/to; null is an open
+         *     end) or scheduled (daily windows between from and to); at an
+         *     instant also at_state applies or unknown (why says why: an
+         *     applicability that cannot be evaluated is listed, never dropped).
+         */
+        GeoApplicability: {
+            /** @enum {string} */
+            kind: "always" | "during" | "scheduled";
+            /** Format: date-time */
+            from: string | null;
+            /** Format: date-time */
+            to: string | null;
+            /** @enum {string} */
+            at_state?: "applies" | "unknown";
+            why?: string;
+        };
+        /** @description One CIS feature with the versions it rests on and the ED-318 feature verbatim. */
+        GeoItem: {
+            identifier: string;
+            /** @description The ED-318 type: PROHIBITED, REQ_AUTHORIZATION, CONDITIONAL, NO_RESTRICTION, USPACE. */
+            type: string;
+            /** @enum {string} */
+            dataset: "zones" | "uspace_airspace" | "restrictions";
+            /** @description <dataset>:<version> of the publication the feature is in. */
+            version: string;
+            /** Format: date-time */
+            updated_at: string | null;
+            /** Format: date-time */
+            valid_from: string | null;
+            /** Format: date-time */
+            valid_to: string | null;
+            applicability: components["schemas"]["GeoApplicability"];
+            parts: components["schemas"]["GeoPart"][];
+            /** @description The ED-318 feature as published (properties verbatim, limitedApplicability included). */
+            feature: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description A U-space airspace with its Art. 3(4) requirements (cis/uspace_requirements/v1 as published, null with requirements_problem when they cannot be read). */
+        GeoAirspace: components["schemas"]["GeoItem"] & {
+            requirements: {
+                [key: string]: unknown;
+            } | null;
+            requirements_problem: string | null;
+            services_required: string[];
+            adjacent: string[];
+        };
+        /** @description A restriction of the ANSP with its state and window (null members when the CISP gives none). */
+        GeoRestriction: components["schemas"]["GeoItem"] & {
+            restriction_id: string | null;
+            /** @description planned, active, ended or cancelled. */
+            state: string | null;
+            /** Format: date-time */
+            starts_at: string | null;
+            /** Format: date-time */
+            ends_at: string | null;
+            ansp_ref: string | null;
+        };
+        /** @description GET /v1/geo's answer, from the CIS cache, with the basis it rests on. */
+        GeoAnswer: {
+            /** @description zones:<v>,uspace_airspace:<v>,restrictions:<v>; empty when nothing is loaded. */
+            cis_version: string;
+            cis_age_s: number;
+            /** @description True beyond the policy's cis_stale_s or with a dataset never loaded. */
+            stale: boolean;
+            /** Format: date-time */
+            at: string | null;
+            /** Format: date-time */
+            from: string | null;
+            /** Format: date-time */
+            to: string | null;
+            /** Format: uuid */
+            intent_id?: string;
+            uspace_airspaces: components["schemas"]["GeoAirspace"][];
+            zones: components["schemas"]["GeoItem"][];
+            restrictions: components["schemas"]["GeoRestriction"][];
+            truncated: boolean;
+        };
         /** @description intent/decision/v1 (schemas/intent/decision/v1/schema.json, the source of truth). */
         IntentDecision: {
             /** @description UUID, also the DSS entity id. */
@@ -1515,6 +1671,64 @@ export interface operations {
             404: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
             413: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getGeo: {
+        parameters: {
+            query: {
+                /** @description west,south,east,north in WGS84 degrees; at most 5 degrees a side. */
+                bbox: string;
+                /** @description The instant (RFC 3339); now when absent. */
+                at?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The answer from the CIS cache. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeoAnswer"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getGeoForIntent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                intent_id: components["parameters"]["IntentID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The answer from the CIS cache. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeoAnswer"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
             503: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
         };

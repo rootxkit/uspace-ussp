@@ -9,19 +9,25 @@
 
 -- name: RecordAlert :one
 -- flight_known is false when the flights table does not hold the flight
--- yet (the consumer tries again); written is false for a message on a
--- cleared alert, which changes nothing.
+-- yet (the consumer tries again); an alert of an intent without a
+-- flight (restriction_activated before the activation, WP-12) is known
+-- once its intent is. written is false for a message on a cleared
+-- alert, which changes nothing.
 WITH f AS (
-    SELECT id FROM flights WHERE id = sqlc.arg(flight_id)::uuid
+    SELECT id FROM flights WHERE id = sqlc.narg(flight_id)::uuid
+), known AS (
+    SELECT CASE WHEN sqlc.narg(flight_id)::uuid IS NULL
+                THEN EXISTS (SELECT 1 FROM operational_intents oi WHERE oi.id = sqlc.narg(intent_id)::uuid)
+                ELSE EXISTS (SELECT 1 FROM f) END AS ok
 ), ins AS (
     INSERT INTO alerts (id, kind, flight_id, intent_id, authorisation_number, peer_ref, severity, state, raised_at, updated_at,
                         cleared_at, clear_reason, detail, captured_at, policy_version, cell5)
-    SELECT sqlc.arg(id)::uuid, sqlc.arg(kind), f.id,
+    SELECT sqlc.arg(id)::uuid, sqlc.arg(kind), (SELECT id FROM f),
            (SELECT oi.id FROM operational_intents oi WHERE oi.id = sqlc.narg(intent_id)::uuid),
            sqlc.narg(authorisation_number), sqlc.narg(peer_ref), sqlc.arg(severity), sqlc.arg(state), sqlc.arg(raised_at),
            sqlc.arg(updated_at), sqlc.narg(cleared_at), sqlc.narg(clear_reason), sqlc.arg(detail), sqlc.arg(captured_at),
            sqlc.arg(policy_version), sqlc.narg(cell5)
-    FROM f
+    FROM known WHERE known.ok
     ON CONFLICT (id) DO UPDATE
     SET severity = EXCLUDED.severity,
         state = EXCLUDED.state,
@@ -37,7 +43,7 @@ WITH f AS (
     WHERE alerts.cleared_at IS NULL
     RETURNING 1
 )
-SELECT EXISTS (SELECT 1 FROM f) AS flight_known, EXISTS (SELECT 1 FROM ins) AS written;
+SELECT (SELECT ok FROM known)::bool AS flight_known, EXISTS (SELECT 1 FROM ins) AS written;
 
 -- name: GetAlert :one
 SELECT id, kind, flight_id, intent_id, authorisation_number, peer_ref, severity, state, raised_at, updated_at, cleared_at,
@@ -47,18 +53,24 @@ WHERE id = sqlc.arg(id)::uuid;
 
 -- name: AckAlert :one
 -- The acknowledgement of an alert of one of the caller's operator's
--- flights, on the database clock; a repeat keeps the first. No row:
--- not this operator's alert, or no such alert.
+-- flights, or of its intents for an alert without a flight
+-- (restriction_activated before the activation, WP-12), on the database
+-- clock; a repeat keeps the first. No row: not this operator's alert,
+-- or no such alert.
 UPDATE alerts a
 SET acked_at = COALESCE(a.acked_at, now()),
     acked_by = COALESCE(a.acked_by, sqlc.arg(client_id)::text),
     delivery = jsonb_set(a.delivery, ARRAY[sqlc.arg(client_id)::text],
                          COALESCE(a.delivery -> sqlc.arg(client_id)::text, '{}'::jsonb)
                          || jsonb_build_object('acked_at', to_jsonb(COALESCE(a.acked_at, now()))))
-FROM flights f
-JOIN oauth_clients owner ON owner.client_id = f.client_id
-JOIN oauth_clients caller ON caller.client_id = sqlc.arg(client_id)::text AND caller.operator_id = owner.operator_id
-WHERE a.id = sqlc.arg(id)::uuid AND f.id = a.flight_id
+FROM oauth_clients caller
+WHERE a.id = sqlc.arg(id)::uuid
+  AND caller.client_id = sqlc.arg(client_id)::text
+  AND caller.operator_id = (
+      SELECT owner.operator_id FROM oauth_clients owner
+      WHERE owner.client_id = COALESCE(
+          (SELECT f.client_id FROM flights f WHERE f.id = a.flight_id),
+          (SELECT oi.client_id FROM operational_intents oi WHERE oi.id = a.intent_id AND a.flight_id IS NULL)))
 RETURNING a.id, a.kind, a.flight_id, a.intent_id, a.authorisation_number, a.severity, a.state, a.raised_at, a.updated_at,
           a.cleared_at, a.clear_reason, a.detail, a.captured_at, a.policy_version, a.acked_at, a.acked_by, a.escalated_at, a.cell5;
 
@@ -87,3 +99,32 @@ WHERE a.id IN (
 )
 RETURNING a.id, a.kind, a.flight_id, a.intent_id, a.authorisation_number, a.severity, a.state, a.raised_at, a.updated_at,
           a.cleared_at, a.clear_reason, a.detail, a.captured_at, a.policy_version, a.acked_at, a.acked_by, a.escalated_at, a.cell5;
+
+-- name: OpenIntentNoticesEnded :many
+-- The open restriction_activated alerts (WP-12) whose intent is over:
+-- ended, or past its time_end in any state (a withdrawn intent's
+-- notice stands until the window it would have flown has passed). At
+-- most max_rows, oldest first.
+SELECT a.id, a.kind, a.flight_id, a.intent_id, a.authorisation_number, a.severity, a.state, a.raised_at, a.updated_at,
+       a.cleared_at, a.clear_reason, a.detail, a.captured_at, a.policy_version, a.acked_at, a.acked_by, a.escalated_at, a.cell5
+FROM alerts a
+JOIN operational_intents oi ON oi.id = a.intent_id
+WHERE a.kind = 'restriction_activated' AND a.cleared_at IS NULL
+  AND (oi.local_state = 'ended' OR oi.time_end < now())
+ORDER BY a.raised_at
+LIMIT sqlc.arg(max_rows);
+
+-- name: OpenIntentNotices :many
+-- The open restriction_activated alerts (WP-12) whose intent is not
+-- over: api republishes them from the record, so a traffic-ws that
+-- restarted holds them again (they are published once by the intent's
+-- projection, and no monitor republishes them). At most max_rows,
+-- oldest first.
+SELECT a.id, a.kind, a.flight_id, a.intent_id, a.authorisation_number, a.severity, a.state, a.raised_at, a.updated_at,
+       a.cleared_at, a.clear_reason, a.detail, a.captured_at, a.policy_version, a.acked_at, a.acked_by, a.escalated_at, a.cell5
+FROM alerts a
+JOIN operational_intents oi ON oi.id = a.intent_id
+WHERE a.kind = 'restriction_activated' AND a.cleared_at IS NULL
+  AND oi.local_state <> 'ended' AND oi.time_end >= now()
+ORDER BY a.raised_at
+LIMIT sqlc.arg(max_rows);

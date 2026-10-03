@@ -19,10 +19,14 @@ SET acked_at = COALESCE(a.acked_at, now()),
     delivery = jsonb_set(a.delivery, ARRAY[$1::text],
                          COALESCE(a.delivery -> $1::text, '{}'::jsonb)
                          || jsonb_build_object('acked_at', to_jsonb(COALESCE(a.acked_at, now()))))
-FROM flights f
-JOIN oauth_clients owner ON owner.client_id = f.client_id
-JOIN oauth_clients caller ON caller.client_id = $1::text AND caller.operator_id = owner.operator_id
-WHERE a.id = $2::uuid AND f.id = a.flight_id
+FROM oauth_clients caller
+WHERE a.id = $2::uuid
+  AND caller.client_id = $1::text
+  AND caller.operator_id = (
+      SELECT owner.operator_id FROM oauth_clients owner
+      WHERE owner.client_id = COALESCE(
+          (SELECT f.client_id FROM flights f WHERE f.id = a.flight_id),
+          (SELECT oi.client_id FROM operational_intents oi WHERE oi.id = a.intent_id AND a.flight_id IS NULL)))
 RETURNING a.id, a.kind, a.flight_id, a.intent_id, a.authorisation_number, a.severity, a.state, a.raised_at, a.updated_at,
           a.cleared_at, a.clear_reason, a.detail, a.captured_at, a.policy_version, a.acked_at, a.acked_by, a.escalated_at, a.cell5
 `
@@ -54,8 +58,10 @@ type AckAlertRow struct {
 }
 
 // The acknowledgement of an alert of one of the caller's operator's
-// flights, on the database clock; a repeat keeps the first. No row:
-// not this operator's alert, or no such alert.
+// flights, or of its intents for an alert without a flight
+// (restriction_activated before the activation, WP-12), on the database
+// clock; a repeat keeps the first. No row: not this operator's alert,
+// or no such alert.
 func (q *Queries) AckAlert(ctx context.Context, arg AckAlertParams) (AckAlertRow, error) {
 	row := q.db.QueryRow(ctx, ackAlert, arg.ClientID, arg.ID)
 	var i AckAlertRow
@@ -201,19 +207,174 @@ func (q *Queries) GetAlert(ctx context.Context, id pgtype.UUID) (Alert, error) {
 	return i, err
 }
 
+const openIntentNotices = `-- name: OpenIntentNotices :many
+SELECT a.id, a.kind, a.flight_id, a.intent_id, a.authorisation_number, a.severity, a.state, a.raised_at, a.updated_at,
+       a.cleared_at, a.clear_reason, a.detail, a.captured_at, a.policy_version, a.acked_at, a.acked_by, a.escalated_at, a.cell5
+FROM alerts a
+JOIN operational_intents oi ON oi.id = a.intent_id
+WHERE a.kind = 'restriction_activated' AND a.cleared_at IS NULL
+  AND oi.local_state <> 'ended' AND oi.time_end >= now()
+ORDER BY a.raised_at
+LIMIT $1
+`
+
+type OpenIntentNoticesRow struct {
+	ID                  pgtype.UUID `json:"id"`
+	Kind                string      `json:"kind"`
+	FlightID            pgtype.UUID `json:"flight_id"`
+	IntentID            pgtype.UUID `json:"intent_id"`
+	AuthorisationNumber *string     `json:"authorisation_number"`
+	Severity            string      `json:"severity"`
+	State               string      `json:"state"`
+	RaisedAt            time.Time   `json:"raised_at"`
+	UpdatedAt           time.Time   `json:"updated_at"`
+	ClearedAt           *time.Time  `json:"cleared_at"`
+	ClearReason         *string     `json:"clear_reason"`
+	Detail              []byte      `json:"detail"`
+	CapturedAt          *time.Time  `json:"captured_at"`
+	PolicyVersion       int64       `json:"policy_version"`
+	AckedAt             *time.Time  `json:"acked_at"`
+	AckedBy             *string     `json:"acked_by"`
+	EscalatedAt         *time.Time  `json:"escalated_at"`
+	Cell5               *string     `json:"cell5"`
+}
+
+// The open restriction_activated alerts (WP-12) whose intent is not
+// over: api republishes them from the record, so a traffic-ws that
+// restarted holds them again (they are published once by the intent's
+// projection, and no monitor republishes them). At most max_rows,
+// oldest first.
+func (q *Queries) OpenIntentNotices(ctx context.Context, maxRows int32) ([]OpenIntentNoticesRow, error) {
+	rows, err := q.db.Query(ctx, openIntentNotices, maxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OpenIntentNoticesRow
+	for rows.Next() {
+		var i OpenIntentNoticesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.FlightID,
+			&i.IntentID,
+			&i.AuthorisationNumber,
+			&i.Severity,
+			&i.State,
+			&i.RaisedAt,
+			&i.UpdatedAt,
+			&i.ClearedAt,
+			&i.ClearReason,
+			&i.Detail,
+			&i.CapturedAt,
+			&i.PolicyVersion,
+			&i.AckedAt,
+			&i.AckedBy,
+			&i.EscalatedAt,
+			&i.Cell5,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const openIntentNoticesEnded = `-- name: OpenIntentNoticesEnded :many
+SELECT a.id, a.kind, a.flight_id, a.intent_id, a.authorisation_number, a.severity, a.state, a.raised_at, a.updated_at,
+       a.cleared_at, a.clear_reason, a.detail, a.captured_at, a.policy_version, a.acked_at, a.acked_by, a.escalated_at, a.cell5
+FROM alerts a
+JOIN operational_intents oi ON oi.id = a.intent_id
+WHERE a.kind = 'restriction_activated' AND a.cleared_at IS NULL
+  AND (oi.local_state = 'ended' OR oi.time_end < now())
+ORDER BY a.raised_at
+LIMIT $1
+`
+
+type OpenIntentNoticesEndedRow struct {
+	ID                  pgtype.UUID `json:"id"`
+	Kind                string      `json:"kind"`
+	FlightID            pgtype.UUID `json:"flight_id"`
+	IntentID            pgtype.UUID `json:"intent_id"`
+	AuthorisationNumber *string     `json:"authorisation_number"`
+	Severity            string      `json:"severity"`
+	State               string      `json:"state"`
+	RaisedAt            time.Time   `json:"raised_at"`
+	UpdatedAt           time.Time   `json:"updated_at"`
+	ClearedAt           *time.Time  `json:"cleared_at"`
+	ClearReason         *string     `json:"clear_reason"`
+	Detail              []byte      `json:"detail"`
+	CapturedAt          *time.Time  `json:"captured_at"`
+	PolicyVersion       int64       `json:"policy_version"`
+	AckedAt             *time.Time  `json:"acked_at"`
+	AckedBy             *string     `json:"acked_by"`
+	EscalatedAt         *time.Time  `json:"escalated_at"`
+	Cell5               *string     `json:"cell5"`
+}
+
+// The open restriction_activated alerts (WP-12) whose intent is over:
+// ended, or past its time_end in any state (a withdrawn intent's
+// notice stands until the window it would have flown has passed). At
+// most max_rows, oldest first.
+func (q *Queries) OpenIntentNoticesEnded(ctx context.Context, maxRows int32) ([]OpenIntentNoticesEndedRow, error) {
+	rows, err := q.db.Query(ctx, openIntentNoticesEnded, maxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OpenIntentNoticesEndedRow
+	for rows.Next() {
+		var i OpenIntentNoticesEndedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.FlightID,
+			&i.IntentID,
+			&i.AuthorisationNumber,
+			&i.Severity,
+			&i.State,
+			&i.RaisedAt,
+			&i.UpdatedAt,
+			&i.ClearedAt,
+			&i.ClearReason,
+			&i.Detail,
+			&i.CapturedAt,
+			&i.PolicyVersion,
+			&i.AckedAt,
+			&i.AckedBy,
+			&i.EscalatedAt,
+			&i.Cell5,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const recordAlert = `-- name: RecordAlert :one
 
 WITH f AS (
     SELECT id FROM flights WHERE id = $1::uuid
+), known AS (
+    SELECT CASE WHEN $1::uuid IS NULL
+                THEN EXISTS (SELECT 1 FROM operational_intents oi WHERE oi.id = $2::uuid)
+                ELSE EXISTS (SELECT 1 FROM f) END AS ok
 ), ins AS (
     INSERT INTO alerts (id, kind, flight_id, intent_id, authorisation_number, peer_ref, severity, state, raised_at, updated_at,
                         cleared_at, clear_reason, detail, captured_at, policy_version, cell5)
-    SELECT $2::uuid, $3, f.id,
-           (SELECT oi.id FROM operational_intents oi WHERE oi.id = $4::uuid),
+    SELECT $3::uuid, $4, (SELECT id FROM f),
+           (SELECT oi.id FROM operational_intents oi WHERE oi.id = $2::uuid),
            $5, $6, $7, $8, $9,
            $10, $11, $12, $13, $14,
            $15, $16
-    FROM f
+    FROM known WHERE known.ok
     ON CONFLICT (id) DO UPDATE
     SET severity = EXCLUDED.severity,
         state = EXCLUDED.state,
@@ -229,14 +390,14 @@ WITH f AS (
     WHERE alerts.cleared_at IS NULL
     RETURNING 1
 )
-SELECT EXISTS (SELECT 1 FROM f) AS flight_known, EXISTS (SELECT 1 FROM ins) AS written
+SELECT (SELECT ok FROM known)::bool AS flight_known, EXISTS (SELECT 1 FROM ins) AS written
 `
 
 type RecordAlertParams struct {
 	FlightID            pgtype.UUID `json:"flight_id"`
+	IntentID            pgtype.UUID `json:"intent_id"`
 	ID                  pgtype.UUID `json:"id"`
 	Kind                string      `json:"kind"`
-	IntentID            pgtype.UUID `json:"intent_id"`
 	AuthorisationNumber *string     `json:"authorisation_number"`
 	PeerRef             *string     `json:"peer_ref"`
 	Severity            string      `json:"severity"`
@@ -265,14 +426,16 @@ type RecordAlertRow struct {
 // message (a republish that crossed the clear); acknowledgement and
 // escalation are never undone by a message.
 // flight_known is false when the flights table does not hold the flight
-// yet (the consumer tries again); written is false for a message on a
-// cleared alert, which changes nothing.
+// yet (the consumer tries again); an alert of an intent without a
+// flight (restriction_activated before the activation, WP-12) is known
+// once its intent is. written is false for a message on a cleared
+// alert, which changes nothing.
 func (q *Queries) RecordAlert(ctx context.Context, arg RecordAlertParams) (RecordAlertRow, error) {
 	row := q.db.QueryRow(ctx, recordAlert,
 		arg.FlightID,
+		arg.IntentID,
 		arg.ID,
 		arg.Kind,
-		arg.IntentID,
 		arg.AuthorisationNumber,
 		arg.PeerRef,
 		arg.Severity,

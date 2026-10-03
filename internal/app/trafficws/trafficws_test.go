@@ -27,6 +27,8 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/alerts"
 	"github.com/rootxkit/uspace-ussp/internal/auth"
 	"github.com/rootxkit/uspace-ussp/internal/bus"
+	"github.com/rootxkit/uspace-ussp/internal/cis"
+	"github.com/rootxkit/uspace-ussp/internal/geo"
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/intent"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
@@ -797,5 +799,86 @@ func TestMissedClearReachesTheConnection(t *testing.T) {
 	}
 	if len(c.out) != 1 || !strings.Contains(string(<-c.out), `"state":"cleared"`) {
 		t.Fatal("the missed clear did not reach the connection")
+	}
+}
+
+// The geo change push (brief WP-12): an installed CIS version reaches a
+// connected traffic subscriber as a valid geo/changed/v1 frame; a
+// restriction_activated notice of the subscribed intent (flight_id
+// null) reaches it even once the intent left intent_active, and
+// another operator's does not (E-01 pair).
+func TestGeoChangeAndNoticeReachTheSubscriber(t *testing.T) {
+	ss := schemas(t)
+	r := newRig(t)
+	r.srv.Geo = &geo.Changes{}
+	c, _, err := r.dial("/v1/traffic?intent_id="+intentA, "op-a", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.CloseNow()
+	next(t, ss, c, 2*time.Second, func(f frame) bool { return f.Schema == SchemaSnapshot })
+	ch := cis.Change{Dataset: cis.Restrictions, Version: 9, PreviousVersion: 8, FeatureIDs: []string{"TRS001"}, Reason: cis.ChangeInstalled,
+		CISVersion: "zones:1,uspace_airspace:1,restrictions:9", At: time.Now().UTC()}
+	raw, _ := json.Marshal(geo.ChangedMessageOf(ch, time.Now()))
+	r.srv.Geo.Take(raw)
+	f := next(t, ss, c, 2*time.Second, func(f frame) bool { return f.Schema == geo.SchemaChanged })
+	var got cis.Change
+	if err := json.Unmarshal(f.Body, &got); err != nil || got.Version != 9 || got.FeatureIDs[0] != "TRS001" {
+		t.Fatalf("%s %v", f.Body, err)
+	}
+	// The intent is withdrawn (it leaves intent_active), then its notice
+	// is published, and another intent's notice beside it.
+	r.hub.Intents.(*bus.Mirror[intent.StateBody]).Seed(map[string]intent.StateBody{})
+	notice := func(alertID, intentID string) {
+		at := time.Now().UTC()
+		n := &intent.Notice{Cause: intent.CauseRestriction, Ref: "TRS001", Decision: intent.RecheckWithdrawn, Withdrawn: true,
+			AffectedIntents: []string{intentID}, ChangeReason: "restriction TRS001", Version: 2, At: at, AlertID: alertID, Conflicts: []intent.Conflict{}}
+		m, err := geo.NoticeMessageOf(&intent.Record{ID: intentID}, n, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(m)
+		r.hub.TakeAlert("alrt.v1.restriction_activated.c5:1317:2248."+alertID, raw)
+	}
+	other := "99999999-9999-4999-8999-999999999999"
+	notice("5e6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7e83", other)
+	notice("4d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7e82", intentA)
+	f = next(t, ss, c, 2*time.Second, func(f frame) bool { return f.Schema == "alert/v1" })
+	var a struct {
+		AlertID  string  `json:"alert_id"`
+		IntentID string  `json:"intent_id"`
+		FlightID *string `json:"flight_id"`
+	}
+	if err := json.Unmarshal(f.Body, &a); err != nil || a.IntentID != intentA || a.FlightID != nil {
+		t.Fatalf("%s %v", f.Body, err)
+	}
+}
+
+// An open restriction_activated notice is api's (republished from its
+// record), not the monitor's: it never makes the monitor input
+// degraded, however long since it was heard. Twin: a monitor alert not
+// republished does (E-01 pair).
+func TestOpenNoticeDoesNotDegradeTheMonitor(t *testing.T) {
+	r := newRig(t)
+	now := time.Now()
+	at := now.UTC()
+	n := &intent.Notice{Cause: intent.CauseRestriction, Ref: "TRS001", Decision: intent.RecheckWithdrawn, Withdrawn: true,
+		AffectedIntents: []string{intentA}, ChangeReason: "restriction TRS001", Version: 2, At: at,
+		AlertID: "4d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7e82", Conflicts: []intent.Conflict{}}
+	m, err := geo.NoticeMessageOf(&intent.Record{ID: intentA}, n, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(m)
+	r.hub.TakeAlert("alrt.v1.restriction_activated.c5:1317:2248."+n.AlertID, raw)
+	if len(r.hub.Book.Active(nil)) != 1 {
+		t.Fatal("notice not in the book")
+	}
+	if d, ok := r.hub.Degraded(now.Add(time.Minute))["monitor"]; ok {
+		t.Fatalf("an open notice degraded the monitor: %+v", d)
+	}
+	r.alert(traffic.AlertRaised, false, now)
+	if _, ok := r.hub.Degraded(now.Add(time.Minute))["monitor"]; !ok {
+		t.Fatal("a monitor alert not republished did not degrade the monitor")
 	}
 }

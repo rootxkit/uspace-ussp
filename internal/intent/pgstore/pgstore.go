@@ -138,6 +138,26 @@ func (p Store) InTx(ctx context.Context, fn func(ctx context.Context, tx intent.
 	})
 }
 
+var _ intent.ActiveLister = Store{}
+
+// ActiveIn implements intent.ActiveLister.
+func (p Store) ActiveIn(ctx context.Context, boxes []geodesy.BBox, from, to *time.Time, limit int) ([]string, error) {
+	params := relational.IntentActiveInParams{FromAt: from, ToAt: to, MaxRows: int32(limit + 1)}
+	if len(boxes) > 0 {
+		w := WKT(boxes)
+		params.EnvelopeWkt = &w
+	}
+	ids, err := p.S.Queries().IntentActiveIn(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("active intents: %w", err)
+	}
+	out := make([]string, 0, len(ids))
+	for _, u := range ids {
+		out = append(out, store.UUIDText(u))
+	}
+	return out, nil
+}
+
 // Unprojected are the intents committed but not projected, oldest
 // change first.
 func (p Store) Unprojected(ctx context.Context, limit int) ([]string, error) {
@@ -493,6 +513,18 @@ func (t tx) FlagUpdate(ctx context.Context, ids []string, by string, at time.Tim
 		}); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// SetNotice writes a re-check's notice into update_required.
+func (t tx) SetNotice(ctx context.Context, id string, notice json.RawMessage) error {
+	u, err := store.UUID("id", id)
+	if err != nil {
+		return err
+	}
+	if _, err := t.q.IntentSetUpdateRequired(ctx, relational.IntentSetUpdateRequiredParams{UpdateRequired: notice, ID: u}); err != nil {
+		return fmt.Errorf("intent notice: %w", err)
 	}
 	return nil
 }

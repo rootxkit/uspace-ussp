@@ -248,13 +248,19 @@ func (b *Book) Active(match func(*Entry) bool) []Entry {
 
 // Unrefreshed is the oldest Seen of an active alert not received for
 // longer than after (the monitor republishes every active alert every
-// second, C-08): zero when every one is fresh.
-func (b *Book) Unrefreshed(now time.Time, after time.Duration) time.Time {
+// second, C-08): zero when every one is fresh. monitored selects the
+// alerts the monitor republishes (nil: all); another (an alert api
+// publishes from its record) is never late by this measure.
+func (b *Book) Unrefreshed(now time.Time, after time.Duration, monitored func(*Entry) bool) time.Time {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	var oldest time.Time
 	for id := range b.alerts {
-		if seen := b.alerts[id].Seen; now.Sub(seen) > after && (oldest.IsZero() || seen.Before(oldest)) {
+		e := b.alerts[id]
+		if monitored != nil && !monitored(&e) {
+			continue
+		}
+		if seen := e.Seen; now.Sub(seen) > after && (oldest.IsZero() || seen.Before(oldest)) {
 			oldest = seen
 		}
 	}

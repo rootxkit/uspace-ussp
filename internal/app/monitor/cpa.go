@@ -68,7 +68,7 @@ func (c *cpaPath) offerManned(data []byte) {
 // man.v1 and peer.v1 feeds; the trk.v1 feed is shared with the
 // conformance path. It runs everything but the trk feed.
 func startCPA(ctx context.Context, rt *proc.Runtime, own cell.Ownership, current func() policy.Record,
-	intents *bus.Mirror[intentBody], instance string, o Options) (*cpaPath, error) {
+	intents *bus.Mirror[intentBody], instance string, und geoid.Undulator, missing string, o Options) (*cpaPath, error) {
 	js := rt.Bus.JetStream()
 	logger := rt.Logger
 	counters := &core.Counters{}
@@ -77,13 +77,6 @@ func startCPA(ctx context.Context, rt *proc.Runtime, own cell.Ownership, current
 	proc.Publish(rt, "proximity_state", storeCounters)
 	mirror := &bus.Mirror[traffic.Saved]{JS: js, Bucket: bus.BucketProximityState, Decode: traffic.DecodeSaved, Counters: storeCounters, Logger: logger}
 	store := traffic.KVStates{M: mirror, KV: bus.KVStore{JS: js, Bucket: bus.BucketProximityState}}
-	und, missing := loadGeoid(rt.Config.GeoidFile)
-	rt.Health.Register(DepGeoid, false, func(context.Context) (obs.State, string) {
-		if und == nil {
-			return obs.StateDown, missing
-		}
-		return obs.StateUp, ""
-	})
 	eng := &traffic.Engine{
 		Policy: current, Sink: bus.NewPublisher(rt.Bus, counters), Store: store, Ownership: own, InstanceID: instance,
 		Authorisation: func(intentID string) string {

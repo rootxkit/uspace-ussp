@@ -167,12 +167,16 @@ const (
 	ReasonZoneUnknownType      = "zone_type_unknown"
 	ReasonZoneReqAuthorisation = "zone_requires_authorisation"
 	ReasonRestrictionActive    = "restriction_active"
-	ReasonIntentPriority       = "intent_higher_priority"
-	ReasonIntentFirstCome      = "intent_filed_first"
-	ReasonIntentFlagged        = "intent_flagged_for_update"
-	ReasonThresholdInvalid     = "threshold_invalid"
-	ReasonDeconflictNotJudged  = "deconfliction_not_judged"
-	ReasonDSSUnavailable       = "dss_unavailable"
+	// ReasonAirspaceEntered: a standing re-check (WP-12) finds the
+	// volumes of an intent authorised outside U-space airspace inside
+	// one published since.
+	ReasonAirspaceEntered     = "uspace_airspace_entered"
+	ReasonIntentPriority      = "intent_higher_priority"
+	ReasonIntentFirstCome     = "intent_filed_first"
+	ReasonIntentFlagged       = "intent_flagged_for_update"
+	ReasonThresholdInvalid    = "threshold_invalid"
+	ReasonDeconflictNotJudged = "deconfliction_not_judged"
+	ReasonDSSUnavailable      = "dss_unavailable"
 	// ReasonClassLabelMismatch: the request's class_label is not the one
 	// the registry holds for the UAS (item 4).
 	ReasonClassLabelMismatch = "class_label_mismatch"

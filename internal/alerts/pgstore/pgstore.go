@@ -42,13 +42,16 @@ func (p Store) RecordAlert(ctx context.Context, r alerts.Record) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	flight, err := store.UUID("flight_id", r.FlightID)
-	if err != nil {
-		return false, err
-	}
 	params, err := intentUUID(r.IntentID)
 	if err != nil {
 		return false, err
+	}
+	// An alert of an intent without a flight (restriction_activated
+	// before the activation, WP-12) has no flight id: NULL.
+	if r.FlightID != "" {
+		if params.FlightID, err = store.UUID("flight_id", r.FlightID); err != nil {
+			return false, err
+		}
 	}
 	var cleared *time.Time
 	if r.State == alerts.StateCleared {
@@ -60,7 +63,7 @@ func (p Store) RecordAlert(ctx context.Context, r alerts.Record) (bool, error) {
 		cell = &r.Cell5
 	}
 	captured := r.CapturedAt.UTC()
-	params.FlightID, params.ID, params.Kind, params.AuthorisationNumber, params.PeerRef = flight, id, r.Kind, r.AuthorisationNumber, r.PeerRef
+	params.ID, params.Kind, params.AuthorisationNumber, params.PeerRef = id, r.Kind, r.AuthorisationNumber, r.PeerRef
 	params.Severity, params.State, params.RaisedAt, params.UpdatedAt = string(r.Severity), r.State, r.RaisedAt.UTC(), r.UpdatedAt.UTC()
 	params.ClearedAt, params.ClearReason, params.Detail, params.CapturedAt = cleared, r.ClearReason, r.Detail, &captured
 	params.PolicyVersion, params.Cell5 = r.PolicyVersion, cell
@@ -141,6 +144,32 @@ func (p Store) Escalate(ctx context.Context, afterS float64, maxRows int) ([]ale
 	rs, err := p.S.Queries().EscalateAlerts(ctx, relational.EscalateAlertsParams{AfterS: afterS, MaxRows: int32(min(maxRows, 10_000))})
 	if err != nil {
 		return nil, fmt.Errorf("alert escalation: %w", err)
+	}
+	out := make([]alerts.Stored, 0, len(rs))
+	for i := range rs {
+		out = append(out, row(rs[i]).stored())
+	}
+	return out, nil
+}
+
+// EndedNotices implements alerts.FactStore.
+func (p Store) EndedNotices(ctx context.Context, maxRows int) ([]alerts.Stored, error) {
+	rs, err := p.S.Queries().OpenIntentNoticesEnded(ctx, int32(min(maxRows, 10_000)))
+	if err != nil {
+		return nil, fmt.Errorf("ended notices: %w", err)
+	}
+	out := make([]alerts.Stored, 0, len(rs))
+	for i := range rs {
+		out = append(out, row(rs[i]).stored())
+	}
+	return out, nil
+}
+
+// OpenNotices implements alerts.FactStore.
+func (p Store) OpenNotices(ctx context.Context, maxRows int) ([]alerts.Stored, error) {
+	rs, err := p.S.Queries().OpenIntentNotices(ctx, int32(min(maxRows, 10_000)))
+	if err != nil {
+		return nil, fmt.Errorf("open notices: %w", err)
 	}
 	out := make([]alerts.Stored, 0, len(rs))
 	for i := range rs {

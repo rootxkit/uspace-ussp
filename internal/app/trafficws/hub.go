@@ -472,7 +472,7 @@ func (h *Hub) Degraded(now time.Time) map[string]traffic.Degraded {
 	}
 	if !feed {
 		out["alerts"] = traffic.Degraded{Input: "alerts", Since: stamp(feedSince), Reason: "the alert feed is not open: " + feedReason}
-	} else if since := h.Book.Unrefreshed(now, traffic.DefaultUnrefreshedAge); !since.IsZero() {
+	} else if since := h.Book.Unrefreshed(now, traffic.DefaultUnrefreshedAge, monitored); !since.IsZero() {
 		out["monitor"] = traffic.Degraded{Input: "monitor", Since: stamp(since),
 			Reason: "active alerts not republished by the monitor: shown with their last numbers"}
 	}
@@ -484,6 +484,12 @@ func (h *Hub) Degraded(now time.Time) map[string]traffic.Degraded {
 	}
 	return out
 }
+
+// monitored selects the alerts the monitor republishes every second: a
+// restriction_activated notice is api's, published once by the intent's
+// projection and republished from api's record (alerts.Service), so an
+// open one never says the monitor is late.
+func monitored(e *traffic.Entry) bool { return e.Kind != alerts.KindRestrictionActivated }
 
 // Delivered records, once per alert and client, that an alert was sent
 // (alert/delivery/v1 on alrt.v1.delivery, recorded by api).

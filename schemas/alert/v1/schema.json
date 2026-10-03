@@ -152,7 +152,7 @@
           "$ref": "#/$defs/uuid"
         },
         "kind": {
-          "description": "04 §3.3.",
+          "description": "04 §3.3, and uspace-core alerting's two identification kinds (identification: an unidentified or unknown-operator aircraft inside a PROHIBITED or REQ_AUTHORIZATION zone, G-03; identification_mismatch, G-02; brief WP-12).",
           "enum": [
             "proximity",
             "nonconformance",
@@ -161,7 +161,9 @@
             "zone_incursion",
             "lost_link",
             "restriction_activated",
-            "emergency_nearby"
+            "emergency_nearby",
+            "identification",
+            "identification_mismatch"
           ]
         },
         "severity": {
@@ -198,7 +200,15 @@
           ]
         },
         "flight_id": {
-          "$ref": "#/$defs/uuid"
+          "description": "The flight of this USSP the alert is about; null only for a restriction_activated alert of an intent that has no flight yet (an accepted intent a restriction withdrew before its activation, brief WP-12).",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "intent_id": {
           "oneOf": [
@@ -293,8 +303,250 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "zone_incursion"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "detail": {
+                "$ref": "#/$defs/zone_incursion_detail"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "restriction_activated"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "detail": {
+                "$ref": "#/$defs/restriction_activated_detail"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "not": {
+                  "const": "restriction_activated"
+                }
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "flight_id": {
+                "$ref": "#/$defs/uuid"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "flight_id": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "flight_id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "intent_id": {
+                "$ref": "#/$defs/uuid"
+              }
+            }
+          }
         }
       ]
+    },
+    "zone_incursion_detail": {
+      "description": "A zone incursion as uspace-core's alerting.Monitor judged it (zones.JudgeVertical, spec 04 §3.3): the zone's id and ED-318 type, the dataset and versions it was published in, and core's vertical judgement: vertical_known (false for a pressure altitude or an unjudged limit), limit_not_judged with not_judged naming the references (AGL without terrain, WGS84 without a geoid, SC-13), within_band for a pressure altitude. The severity is core's per type, never above the zone's restriction (Z-10).",
+      "type": "object",
+      "required": [
+        "zone_id",
+        "zone_type",
+        "vertical_known",
+        "limit_not_judged"
+      ],
+      "properties": {
+        "zone_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "zone_type": {
+          "enum": [
+            "PROHIBITED",
+            "REQ_AUTHORIZATION",
+            "CONDITIONAL"
+          ]
+        },
+        "zone_part": {
+          "type": "string"
+        },
+        "dataset": {
+          "enum": [
+            "zones",
+            "restrictions"
+          ]
+        },
+        "zone_version": {
+          "type": "string"
+        },
+        "cis_version": {
+          "type": "string"
+        },
+        "restriction_state": {
+          "type": "string"
+        },
+        "vertical_known": {
+          "type": "boolean"
+        },
+        "limit_not_judged": {
+          "type": "boolean"
+        },
+        "within_band": {
+          "type": "boolean"
+        },
+        "not_judged": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "AGL",
+              "WGS84"
+            ]
+          }
+        },
+        "height_agl_m": {
+          "type": "number"
+        },
+        "alt_hae_m": {
+          "type": "number"
+        },
+        "carried_since": {
+          "$ref": "#/$defs/time"
+        }
+      }
+    },
+    "restriction_activated_detail": {
+      "description": "The standing re-check of 2021/664 Art. 10(10) (brief WP-12): a restriction, a zone or a U-space airspace published or changed after the intent was authorised meets the intent's volumes. cause names it (restriction, zone, uspace_airspace, priority); ref is the feature or the intent; decision says what this USSP did: withdrawn (an accepted intent not yet activated: its local state is withdrawn) or marked (an activated one: it stays activated, conformance keeps judging the flight, and its authorisation no longer stands for the window). withdrawn is true when the authorisation no longer stands; authorisation_updated is false (an update is the operator's new request). window is when the conflict applies. No advice: the remote pilot decides (Art. 11(4)).",
+      "type": "object",
+      "required": [
+        "cause",
+        "ref",
+        "decision",
+        "withdrawn",
+        "authorisation_updated",
+        "affected_intents",
+        "window",
+        "change_reason"
+      ],
+      "properties": {
+        "cause": {
+          "enum": [
+            "restriction",
+            "zone",
+            "uspace_airspace",
+            "priority"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "restriction_id": {
+          "type": "string"
+        },
+        "by_intent_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "withdrawn",
+            "marked"
+          ]
+        },
+        "withdrawn": {
+          "type": "boolean"
+        },
+        "authorisation_updated": {
+          "const": false
+        },
+        "previous_state": {
+          "type": "string"
+        },
+        "intent_state": {
+          "type": "string"
+        },
+        "affected_intents": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/uuid"
+          }
+        },
+        "window": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": [
+                "starts_at",
+                "ends_at"
+              ],
+              "properties": {
+                "starts_at": {
+                  "$ref": "#/$defs/nullable_time"
+                },
+                "ends_at": {
+                  "$ref": "#/$defs/nullable_time"
+                }
+              }
+            }
+          ]
+        },
+        "conflicts": {
+          "type": "array"
+        },
+        "change_reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cis_version": {
+          "type": "string"
+        }
+      }
     }
   }
 }

@@ -178,8 +178,9 @@ func newStack(t *testing.T, c *clock, logs *logBuffer) *stack {
 	return newStackWith(t, c, logs, nil)
 }
 
-// newStackWith is newStack serving /v1/intents from intents (nil: 503).
-func newStackWith(t *testing.T, c *clock, logs *logBuffer, intents national.Intents) *stack {
+// newStackWith is newStack serving /v1/intents from intents (nil: 503);
+// each of with changes the national server before it is registered.
+func newStackWith(t *testing.T, c *clock, logs *logBuffer, intents national.Intents, with ...func(*national.Server)) *stack {
 	t.Helper()
 	ensureSchemas(t)
 	own, _, _ := testKeys(t)
@@ -223,7 +224,11 @@ func newStackWith(t *testing.T, c *clock, logs *logBuffer, intents national.Inte
 	token := &auth.TokenEndpoint{Issuer: iss, Clients: s.svc, Hasher: hasher, Audit: s.svc, Counters: s.counters, Logger: logger, Now: c.Now,
 		TTL: func() time.Duration { return time.Duration(pol.OperatorTokenTTLS) * time.Second }}
 	mux := http.NewServeMux()
-	if err := national.Register(mux, &national.Server{Health: noHealth{}, Token: token, Issuer: iss, Accounts: s.svc, Intents: intents, Logger: logger}, guard.Require); err != nil {
+	ns := &national.Server{Health: noHealth{}, Token: token, Issuer: iss, Accounts: s.svc, Intents: intents, Logger: logger}
+	for _, f := range with {
+		f(ns)
+	}
+	if err := national.Register(mux, ns, guard.Require); err != nil {
 		t.Fatal(err)
 	}
 	mux.HandleFunc("/", httpx.NotFound)

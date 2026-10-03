@@ -135,7 +135,7 @@ func TestBook(t *testing.T) {
 	if len(act) != 2 || act[0].AlertID != "b" || !act[0].Acked || b.counters().Get(CounterBookOlder) != 1 {
 		t.Fatalf("%+v", act)
 	}
-	if u := b.Unrefreshed(t0.Add(10*time.Second), 5*time.Second); !u.Equal(t0) {
+	if u := b.Unrefreshed(t0.Add(10*time.Second), 5*time.Second, nil); !u.Equal(t0) {
 		t.Fatalf("unrefreshed %v", u)
 	}
 	b.Put(Entry{AlertID: "a", State: AlertCleared, UpdatedAt: t0.Add(3 * time.Second)})

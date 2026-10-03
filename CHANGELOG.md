@@ -9,6 +9,41 @@ additively within `/v1`.
 
 ### Added
 
+- WP-12: geo-awareness, zone alerts and the standing re-check. api
+  serves `GET /v1/geo?bbox=&at=` and `GET /v1/geo/intents/{id}` (scope
+  `ussp.geo`) from its CIS cache: U-space airspaces with their Art. 3(4)
+  requirements, zones with their ED-318 feature verbatim and their
+  limits, restrictions with state and window, each with `updated_at`,
+  `version` and `valid_from/to`, and `cis_version`, `cis_age_s`,
+  `stale`. Every installed CIS version is published on
+  `cis.v1.<dataset>` as the new schema `geo/changed/v1`, which traffic-ws
+  forwards to every traffic subscription. The monitor judges this USSP's
+  flights against the zones of `cis_current` with uspace-core's
+  `alerting.Monitor` (conflicts skipped), rebuilt within one tick of a
+  new projection, and publishes `alert/v1` `zone_incursion`,
+  `identification` and `identification_mismatch`; active zone alerts are
+  carried across a rebuild, a restart and a handover in each flight's
+  `conformance_state`. The standing re-check (Art. 10(10), PLAN §15.1
+  Q20) runs on every installed version of zones, uspace_airspace and
+  restrictions and every 60 s: an accepted intent that now conflicts is
+  withdrawn, an activated one is marked, and the operator gets
+  `restriction_activated` (critical, `flight_id` null before a flight)
+  and the decision's `change_reason`. `alert/v1` gains the two
+  identification kinds, a nullable `flight_id` for
+  `restriction_activated`, and the `zone_incursion` and
+  `restriction_activated` details. Policy values `zone_clear_after_s`
+  (3), `zone_stale_after_s` (15), `zone_conditional_severity`
+  (warning). `USSP_TERRAIN_DIR` is read by the monitor. A decision is
+  granted only on the CIS version still current at its commit (else it
+  is assessed again, at most three times, then 503 `cis_changed`), and
+  an activation is judged on the CIS as it is now (409
+  `authorisation_withdrawn` on a conflict). A second conflict while the
+  first still applies is a new notice; a displacement whose re-check
+  never ran is recovered by the sweep; api republishes open
+  `restriction_activated` notices every 10 s, and they never mark the
+  monitor degraded in traffic-ws. A carried zone alert whose zone did not
+  build, or whose set is over its bound, is kept.
+
 - WP-11: traffic information and the CPA proximity alert. The monitor
   feeds one uspace-core `alerting.Monitor` per owned cell set with every
   `trk.v1`, `peer.v1` and `man.v1` sample of its cells and their ring-1

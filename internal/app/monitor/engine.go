@@ -14,10 +14,12 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/cell"
 	"github.com/rootxkit/uspace-ussp/internal/conformance"
+	"github.com/rootxkit/uspace-ussp/internal/geo"
 	"github.com/rootxkit/uspace-ussp/internal/intent"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
 	"github.com/rootxkit/uspace-ussp/internal/telemetry"
+	"github.com/rootxkit/uspace-ussp/internal/traffic"
 )
 
 // Bounds (E-10).
@@ -125,6 +127,11 @@ type Engine struct {
 	// InstanceID names this instance as the owner of the flights it
 	// persists (the host name: stable across a restart in place).
 	InstanceID string
+	// Zones is the zone set the zone path judges (brief WP-12); nil
+	// turns the zone path off. Env resolves the ground and the geoid at
+	// a position (nil: neither known).
+	Zones ZoneProvider
+	Env   EnvFunc
 
 	once    sync.Once
 	ctx     context.Context
@@ -447,7 +454,7 @@ func (e *Engine) workerLocked(home string) *worker {
 			return nil
 		}
 		w = &worker{e: e, cell3: home, ch: make(chan item, e.QueueLen), flights: map[string]*flight{},
-			nearby: &conformance.Nearby{Counters: e.Counters}}
+			nearby: &conformance.Nearby{Counters: e.Counters}, zones: geo.NewTracker(e.Counters)}
 		e.workers[home] = w
 		ctx := e.ctx
 		go w.run(ctx)
@@ -557,6 +564,9 @@ type worker struct {
 	ch      chan item
 	flights map[string]*flight
 	nearby  *conformance.Nearby
+	// zones is the zone path of the worker's flights (geo.Tracker over
+	// uspace-core's alerting.Monitor).
+	zones *geo.Tracker
 
 	mu      sync.Mutex
 	sum     workerSummary
@@ -670,8 +680,62 @@ func (w *worker) take(ctx context.Context, it item) {
 		w.publishState(ctx, f, ev, tr.Times(), cfg.PolicyVersion, now)
 	}
 	w.publishAlerts(ctx, ev.Alerts, now)
+	if zevs := w.observeZones(ctx, tr, f, in.SourceDisabled, now); len(zevs) > 0 {
+		changed = true
+	}
 	w.save(f, now, changed)
 }
+
+// observeZones judges one sample of a flight against the zones (brief
+// WP-12): core's monitor over the zone set in force, the sample mapped
+// by traffic.TrackOf (the one mapping of a track onto core), with the
+// ground and the geoid at its position. A sample of a disabled source
+// is judged by nothing (its alerts are dropped on the tick).
+func (w *worker) observeZones(ctx context.Context, tr *telemetry.Track, f *flight, disabled bool, now time.Time) []geo.Event {
+	if w.e.Zones == nil || disabled {
+		return nil
+	}
+	w.configureZones(ctx, now)
+	in := traffic.TrackInputOf(traffic.NSTrack, tr)
+	if in.FlightID == "" {
+		return nil
+	}
+	ct, _ := traffic.TrackOf(&in)
+	if w.e.Env != nil {
+		ct.Env = w.e.Env(in.Position)
+	}
+	ref := geo.Ref{FlightID: in.FlightID, IntentID: f.intentID, Cell5: in.Cell5}
+	if f.intentID != "" {
+		if b, found, _, _ := w.e.Intents.Intent(f.intentID); found && b.AuthorisationNumber != nil {
+			ref.AuthorisationNumber = *b.AuthorisationNumber
+		}
+	}
+	evs := w.zones.Observe(ct, ref, unixS(now), now)
+	w.publishZones(ctx, evs, now)
+	return evs
+}
+
+// configureZones gives the worker's zone path the set and policy in
+// force: a new projection of cis_current or a new policy is judged from
+// the next sample (within one tick, Z-12).
+func (w *worker) configureZones(ctx context.Context, now time.Time) {
+	if w.e.Zones == nil {
+		return
+	}
+	set := w.e.Zones.Current()
+	if set == nil {
+		return
+	}
+	w.publishZones(ctx, w.zones.Configure(set, w.e.policy(), now), now)
+}
+
+func (w *worker) publishZones(ctx context.Context, evs []geo.Event, now time.Time) {
+	for i := range evs {
+		w.publish(ctx, zoneAlertEvent(evs[i]), now)
+	}
+}
+
+func unixS(t time.Time) float64 { return float64(t.UnixNano()) / 1e9 }
 
 // bounded is false, counted and logged, when the worker tracks as many
 // flights as it may.
@@ -716,6 +780,7 @@ func (w *worker) restore(st *StoredState, now time.Time) *flight {
 		f.lastAt = now
 	}
 	w.nearby.Restore(st.Nearby)
+	w.zones.Restore(id, st.Zones, now)
 	w.flights[id] = f
 	if w.e.persist != nil {
 		w.e.persist.adopt(id, st.Rev)
@@ -762,13 +827,14 @@ func (w *worker) letGo(id string, release bool) {
 	for i := range active {
 		w.nearby.Forget(active[i].ID)
 	}
+	w.zones.Forget(id, unixS(w.e.now()))
 	delete(w.flights, id)
 	w.e.unhome(id)
 }
 
 // saved is the flight's persisted state.
 func (w *worker) saved(f *flight) Saved {
-	s := Saved{Home: w.cell3, Instance: f.instance, LastAt: f.lastAt, Tracker: f.tr.State()}
+	s := Saved{Home: w.cell3, Instance: f.instance, LastAt: f.lastAt, Tracker: f.tr.State(), Zones: w.zones.Saved(f.tr.FlightID)}
 	active := f.tr.Active()
 	for i := range active {
 		s.Nearby = append(s.Nearby, conformance.SaveAlerts(w.nearby.Of(active[i].ID))...)
@@ -796,6 +862,7 @@ func (w *worker) end(ctx context.Context, id string, now time.Time, reason strin
 	if f := w.flights[id]; f != nil {
 		ev := f.tr.Drop(reason, now)
 		w.publishAlerts(ctx, ev.Alerts, now)
+		w.publishZones(ctx, w.zones.Drop(id, reason, unixS(now), now), now)
 		delete(w.flights, id)
 		w.e.forget(id)
 		if w.e.persist != nil {
@@ -810,6 +877,15 @@ func (w *worker) tick(ctx context.Context) {
 	w.e.Counters.Inc(CounterTicks)
 	cfg, vals := w.config()
 	_, _, _, loaded := w.e.Intents.Intent("")
+	w.configureZones(ctx, now)
+	if zevs := w.zones.Tick(unixS(now), now); len(zevs) > 0 {
+		w.publishZones(ctx, zevs, now)
+		for i := range zevs {
+			if f := w.flights[zevs[i].Alert.FlightID]; f != nil {
+				w.save(f, now, true)
+			}
+		}
+	}
 	states := map[string]int{}
 	ids := slices.Sorted(maps.Keys(w.flights))
 	for _, id := range ids {
@@ -830,6 +906,10 @@ func (w *worker) tick(ctx context.Context) {
 				if ev := f.tr.Disable(now); len(ev.Transitions) > 0 || len(ev.Alerts) > 0 {
 					w.publishState(ctx, f, ev, systemTimes(now), cfg.PolicyVersion, now)
 					w.publishAlerts(ctx, ev.Alerts, now)
+					w.save(f, now, true)
+				}
+				if zevs := w.zones.Drop(id, conformance.ClearSourceDisabled, unixS(now), now); len(zevs) > 0 {
+					w.publishZones(ctx, zevs, now)
 					w.save(f, now, true)
 				}
 			}
@@ -854,6 +934,7 @@ func (w *worker) tick(ctx context.Context) {
 		// that holds an alert is kept until its intent ends.
 		snap := f.tr.Snapshot()
 		if len(f.tr.Active()) == 0 && !snap.LinkLost && now.Sub(f.lastAt) > secs(vals.FlightEndAfterS) {
+			w.publishZones(ctx, w.zones.Drop(id, conformance.ClearFlightEnded, unixS(now), now), now)
 			delete(w.flights, id)
 			w.e.forget(id)
 			if w.e.persist != nil {
@@ -888,6 +969,14 @@ func (w *worker) tick(ctx context.Context) {
 	active = append(active, w.nearby.Active()...)
 	for i := range active {
 		w.publish(ctx, conformance.AlertEvent{State: conformance.AlertUpdated, Alert: active[i]}, now)
+	}
+	// The zone alerts too, carried ones with carried_since (C-08).
+	zactive := w.zones.Active()
+	for i := range zactive {
+		if w.flights[zactive[i].FlightID] == nil {
+			continue
+		}
+		w.publish(ctx, zoneAlertEvent(geo.Event{State: geo.StateUpdated, Alert: zactive[i]}), now)
 	}
 	w.mu.Lock()
 	if !w.lastTck.IsZero() {

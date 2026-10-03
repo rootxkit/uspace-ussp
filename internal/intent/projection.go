@@ -100,10 +100,28 @@ type BusProjector struct {
 	KV  KVWriter
 	Pub MessagePublisher
 	Now func() time.Time
+	// Notices publishes the restriction_activated alert of a version a
+	// re-check wrote (internal/geo); nil publishes none.
+	Notices NoticePublisher
 }
 
-// Project implements Projector.
+// NoticePublisher publishes the alert of a re-check's notice (brief
+// WP-12): the operator is told before the intent leaves intent_active.
+type NoticePublisher interface {
+	PublishNotice(ctx context.Context, r *Record, n *Notice) error
+}
+
+// Project implements Projector. The version a re-check wrote first
+// publishes its notice's alert (restriction_activated), then the
+// projection: a failure of either leaves the version unprojected and
+// the sweep publishes both again (the alert id is the notice's, so a
+// repeat names the same alert).
 func (p BusProjector) Project(ctx context.Context, r *Record) error {
+	if n := NoticeOf(r); n != nil && n.Version == r.Version && p.Notices != nil {
+		if err := p.Notices.PublishNotice(ctx, r, n); err != nil {
+			return &policy.ProjectionError{Bucket: "alrt.v1", Err: err}
+		}
+	}
 	body := StateOf(r)
 	var err error
 	if slices.Contains(ActiveStates, r.LocalState) {

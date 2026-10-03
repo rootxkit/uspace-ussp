@@ -13,7 +13,9 @@
 // to the DSS (internal/ridsp), with dss on /readyz; WP-11 the alerts
 // record (internal/alerts): alrt.v1 recorded, POST
 // /v1/alerts/{alert_id}/ack and the escalation of unacknowledged
-// critical alerts.
+// critical alerts; WP-12 geo-awareness (internal/geo): GET /v1/geo*,
+// every installed CIS version on cis.v1 and the standing re-check of
+// the active intents (Art. 10(10)).
 package api
 
 import (
@@ -196,8 +198,10 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	}
 	intents := startIntents(ctx, rt, pol, cisState, reg.Cache, kv)
 	alertSvc := startAlerts(ctx, rt, current)
+	geoState := startGeo(ctx, rt, cisState, intents)
+	cisState.Start(ctx, rt)
 	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc,
-		CIS: cisState.Receiver, Registry: reg.Cache, Intents: intents, Alerts: alertSvc, Logger: rt.Logger}
+		CIS: cisState.Receiver, Registry: reg.Cache, Intents: intents, Alerts: alertSvc, Geo: geoState, Logger: rt.Logger}
 	if err := national.Register(mux, srv, guard.Require); err != nil {
 		return fmt.Errorf("access table: %w", err)
 	}

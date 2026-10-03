@@ -19,6 +19,8 @@ import (
 
 	"github.com/rootxkit/uspace-ussp/internal/auth"
 	"github.com/rootxkit/uspace-ussp/internal/bus"
+	"github.com/rootxkit/uspace-ussp/internal/cis"
+	"github.com/rootxkit/uspace-ussp/internal/geo"
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 	"github.com/rootxkit/uspace-ussp/internal/traffic"
@@ -57,6 +59,7 @@ const (
 	CounterAlertsSent       = "traffic_ws_alerts_sent"
 	CounterAlertsRepeated   = "traffic_ws_alerts_repeated"
 	CounterExpired          = "traffic_ws_credential_expired"
+	CounterGeoChanges       = "traffic_ws_geo_changes_sent"
 )
 
 // The access of the operations (06 §3): an operator machine token of
@@ -102,6 +105,10 @@ type Server struct {
 	RepeatEvery time.Duration
 	// Degraded lists the process's degraded dependencies (/readyz).
 	Degraded func() []string
+	// Geo is the geo change push (brief WP-12): every installed CIS
+	// version is a geo/changed/v1 frame on the traffic stream, so the
+	// subscriber refetches GET /v1/geo; nil sends none.
+	Geo      *geo.Changes
 	Counters *core.Counters
 	Logger   *slog.Logger
 }
@@ -306,6 +313,12 @@ func (s *Server) serve(rctx context.Context, conn *websocket.Conn, sub *Sub, exp
 	c := &connState{id: bus.NewULID(time.Now()), sub: sub, out: make(chan []byte, SendQueueLen), sent: map[string]string{}, repeatAt: map[string]time.Time{}}
 	book := s.Hub.Book.Subscribe()
 	defer book.Cancel()
+	var geoCh <-chan cis.Change
+	if s.Geo != nil && !alertsOnly {
+		ch, cancelGeo := s.Geo.Subscribe()
+		defer cancelGeo()
+		geoCh = ch
+	}
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	wg.Go(func() { s.write(ctx, cancel, conn, c) })
@@ -352,6 +365,10 @@ func (s *Server) serve(rctx context.Context, conn *websocket.Conn, sub *Sub, exp
 				_ = conn.Close(websocket.StatusTryAgainLater, "alert clears missed: reconnect for a new snapshot")
 				cancel()
 				return
+			}
+		case ch := <-geoCh:
+			if s.enqueue(c, s.frame(geo.SchemaChanged, ch)) {
+				s.count(CounterGeoChanges)
 			}
 		case <-status.C:
 			s.enqueue(c, s.status(c))
@@ -665,6 +682,12 @@ func (s *Server) record(ctx context.Context, c *connState) {
 func (s *Server) matches(c *connState, e *traffic.Entry) bool {
 	sub := c.subscription()
 	if !sub.Staff {
+		if e.FlightID == "" && e.IntentID != "" && e.IntentID == sub.IntentID {
+			// A notice of the subscribed intent (restriction_activated,
+			// WP-12; ownership was checked at the upgrade) reaches it even
+			// once the intent left intent_active (withdrawn).
+			return true
+		}
 		b, ref := s.Hub.Owns(sub.ClientID, sub.IntentID)
 		if ref != nil {
 			return false

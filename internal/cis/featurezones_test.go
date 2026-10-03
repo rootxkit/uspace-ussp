@@ -2,7 +2,9 @@ package cis
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/rootxkit/uspace-core/core"
 )
@@ -35,5 +37,33 @@ func TestFeatureZones(t *testing.T) {
 		if zs, err := FeatureZones(bad); err == nil {
 			t.Errorf("%s: zones %v", bad, zs)
 		}
+	}
+}
+
+// FeatureZonesApplicable keeps the periods (core judges the instant),
+// holds a zone whose daylight schedule has no dates as applying always
+// and says so, and refuses what does not parse (E-01 pairs).
+func TestFeatureZonesApplicable(t *testing.T) {
+	week := prohibited("W1")
+	week.applicability = []any{map[string]any{"startDateTime": "2026-10-10T00:00:00Z", "endDateTime": "2026-10-11T00:00:00Z"}}
+	zs, err := FeatureZonesApplicable(week.json())
+	if err != nil || len(zs) != 1 || len(zs[0].Periods) == 0 {
+		t.Fatalf("dated zone %v %v", zs, err)
+	}
+	if zs[0].AppliesAt(time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)) || !zs[0].AppliesAt(time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)) {
+		t.Fatal("the dated zone's periods are not core's")
+	}
+	always, err := FeatureZonesApplicable(prohibited("A1").json())
+	if err != nil || len(always) != 1 || len(always[0].Periods) != 0 {
+		t.Fatalf("zone without applicability %v %v", always, err)
+	}
+	dl := prohibited("D1")
+	dl.applicability = []any{map[string]any{"schedule": []any{map[string]any{"day": []string{"ANY"}, "startEvent": "SR", "endEvent": "SS"}}}}
+	zs, err = FeatureZonesApplicable(dl.json())
+	if !errors.Is(err, ErrApplicabilityNotBuilt) || len(zs) != 1 || len(zs[0].Periods) != 0 {
+		t.Fatalf("open daylight zone %v %v", zs, err)
+	}
+	if zs, err := FeatureZonesApplicable(json.RawMessage(`{"type":"Feature"}`)); err == nil || errors.Is(err, ErrApplicabilityNotBuilt) || zs != nil {
+		t.Fatalf("unparsable %v %v", zs, err)
 	}
 }

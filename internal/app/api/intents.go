@@ -9,6 +9,7 @@ import (
 
 	"github.com/rootxkit/uspace-ussp/internal/app/proc"
 	"github.com/rootxkit/uspace-ussp/internal/bus"
+	"github.com/rootxkit/uspace-ussp/internal/geo"
 	"github.com/rootxkit/uspace-ussp/internal/intent"
 	"github.com/rootxkit/uspace-ussp/internal/intent/pgstore"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
@@ -78,7 +79,7 @@ func startIntents(ctx context.Context, rt *proc.Runtime, pol *policy.Service, ci
 	pub := bus.NewPublisher(rt.Bus, counters)
 	svc := &intent.Service{
 		Decider: d, Geoid: g, Policy: current, Counters: counters, Logger: rt.Logger.With("component", "intent"),
-		Projector: intent.BusProjector{KV: kv, Pub: pub},
+		Projector: intent.BusProjector{KV: kv, Pub: pub, Notices: geo.NoticeBus{Pub: pub, Counters: counters}},
 	}
 	if rt.Store != nil && rt.Store.Rel != nil {
 		svc.Store = pgstore.Store{S: rt.Store}

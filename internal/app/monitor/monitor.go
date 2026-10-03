@@ -54,6 +54,7 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/cell"
 	"github.com/rootxkit/uspace-ussp/internal/config"
+	"github.com/rootxkit/uspace-ussp/internal/geo"
 	"github.com/rootxkit/uspace-ussp/internal/intent"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
@@ -191,6 +192,29 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 		return obs.StateUnknown, "not read yet: every source is enabled (B-09)"
 	})
 
+	// The zone path's inputs (brief WP-12): the zones of cis_current,
+	// rebuilt within one tick of a new projection, and the ground and the
+	// geoid under each sample.
+	und, geoidMissing := loadGeoid(rt.Config.GeoidFile)
+	rt.Health.Register(DepGeoid, false, func(context.Context) (obs.State, string) {
+		if und == nil {
+			return obs.StateDown, geoidMissing
+		}
+		return obs.StateUp, ""
+	})
+	ground, terrainMissing := loadTerrain(rt.Config.TerrainDir)
+	rt.Health.Register(DepTerrain, false, func(context.Context) (obs.State, string) {
+		if ground == nil {
+			return obs.StateDegraded, terrainMissing
+		}
+		return obs.StateUp, ""
+	})
+	zoneCounters := &core.Counters{}
+	proc.Publish(rt, "zones", zoneCounters)
+	cisM := &bus.Mirror[telemetry.CISValue]{JS: js, Bucket: bus.BucketCISCurrent, Decode: telemetry.DecodeCIS, Counters: followCounters, Logger: logger}
+	zoneSrc := &geo.ZoneSource{M: cisM, Counters: zoneCounters}
+	rt.Health.Register(DepCISCurrent, false, zoneProbe(zoneSrc))
+
 	// The engine and its feed.
 	engCounters := &core.Counters{}
 	proc.Publish(rt, "conformance", engCounters)
@@ -204,11 +228,12 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 		Ownership: own, Intents: MirrorIntents{M: intents}, Sources: src, Policy: current,
 		Sink: bus.NewPublisher(rt.Bus, pubCounters), Counters: engCounters, Logger: logger, Tick: o.Tick,
 		Store: KVStates{KV: bus.KVStore{JS: js, Bucket: bus.BucketConformanceState}}, InstanceID: instance,
+		Zones: zoneSrc, Env: NewEnv(und, ground),
 	}
 	if o.Engine != nil {
 		o.Engine(eng)
 	}
-	cpa, err := startCPA(ctx, rt, own, current, intents, instance, o)
+	cpa, err := startCPA(ctx, rt, own, current, intents, instance, und, geoidMissing, o)
 	if err != nil {
 		return err
 	}
@@ -231,7 +256,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 		every = SummaryEvery
 	}
 	for _, run := range []func(context.Context){
-		pol.Run, intents.Run, src.Run, eng.Run,
+		pol.Run, intents.Run, src.Run, cisM.Run, eng.Run,
 		// The feed opens once the saved flights are restored, so no
 		// sample starts a flight its saved state holds.
 		func(ctx context.Context) {
@@ -261,6 +286,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 					_, age, loaded := intents.Snapshot()
 					logger.LogAttrs(ctx, slog.LevelInfo, "conformance status", StatusAttrs(eng.Summary(), age, loaded, current().Version)...)
 					logger.LogAttrs(ctx, slog.LevelInfo, "cpa status", CPAStatusAttrs(cpa.eng.Summary())...)
+					logger.LogAttrs(ctx, slog.LevelInfo, "zone status", ZoneStatusAttrs(zoneSrc.Current(), ground != nil, und != nil)...)
 				}
 			}
 		},
