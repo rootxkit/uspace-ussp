@@ -40,6 +40,129 @@ func (e DependencyState) Valid() bool {
 	}
 }
 
+// Defines values for GeoAirspaceDataset.
+const (
+	GeoAirspaceDatasetRestrictions   GeoAirspaceDataset = "restrictions"
+	GeoAirspaceDatasetUspaceAirspace GeoAirspaceDataset = "uspace_airspace"
+	GeoAirspaceDatasetZones          GeoAirspaceDataset = "zones"
+)
+
+// Valid indicates whether the value is a known member of the GeoAirspaceDataset enum.
+func (e GeoAirspaceDataset) Valid() bool {
+	switch e {
+	case GeoAirspaceDatasetRestrictions:
+		return true
+	case GeoAirspaceDatasetUspaceAirspace:
+		return true
+	case GeoAirspaceDatasetZones:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GeoApplicabilityAtState.
+const (
+	GeoApplicabilityAtStateApplies GeoApplicabilityAtState = "applies"
+	GeoApplicabilityAtStateUnknown GeoApplicabilityAtState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the GeoApplicabilityAtState enum.
+func (e GeoApplicabilityAtState) Valid() bool {
+	switch e {
+	case GeoApplicabilityAtStateApplies:
+		return true
+	case GeoApplicabilityAtStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GeoApplicabilityKind.
+const (
+	Always    GeoApplicabilityKind = "always"
+	During    GeoApplicabilityKind = "during"
+	Scheduled GeoApplicabilityKind = "scheduled"
+)
+
+// Valid indicates whether the value is a known member of the GeoApplicabilityKind enum.
+func (e GeoApplicabilityKind) Valid() bool {
+	switch e {
+	case Always:
+		return true
+	case During:
+		return true
+	case Scheduled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GeoItemDataset.
+const (
+	GeoItemDatasetRestrictions   GeoItemDataset = "restrictions"
+	GeoItemDatasetUspaceAirspace GeoItemDataset = "uspace_airspace"
+	GeoItemDatasetZones          GeoItemDataset = "zones"
+)
+
+// Valid indicates whether the value is a known member of the GeoItemDataset enum.
+func (e GeoItemDataset) Valid() bool {
+	switch e {
+	case GeoItemDatasetRestrictions:
+		return true
+	case GeoItemDatasetUspaceAirspace:
+		return true
+	case GeoItemDatasetZones:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GeoLimitRef.
+const (
+	AGL   GeoLimitRef = "AGL"
+	AMSL  GeoLimitRef = "AMSL"
+	WGS84 GeoLimitRef = "WGS84"
+)
+
+// Valid indicates whether the value is a known member of the GeoLimitRef enum.
+func (e GeoLimitRef) Valid() bool {
+	switch e {
+	case AGL:
+		return true
+	case AMSL:
+		return true
+	case WGS84:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GeoRestrictionDataset.
+const (
+	GeoRestrictionDatasetRestrictions   GeoRestrictionDataset = "restrictions"
+	GeoRestrictionDatasetUspaceAirspace GeoRestrictionDataset = "uspace_airspace"
+	GeoRestrictionDatasetZones          GeoRestrictionDataset = "zones"
+)
+
+// Valid indicates whether the value is a known member of the GeoRestrictionDataset enum.
+func (e GeoRestrictionDataset) Valid() bool {
+	switch e {
+	case GeoRestrictionDatasetRestrictions:
+		return true
+	case GeoRestrictionDatasetUspaceAirspace:
+		return true
+	case GeoRestrictionDatasetZones:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HealthStatus.
 const (
 	Ok HealthStatus = "ok"
@@ -486,6 +609,157 @@ type FieldProblem struct {
 	Field  string `json:"field"`
 	Reason string `json:"reason"`
 }
+
+// GeoAirspace A U-space airspace with its Art. 3(4) requirements (cis/uspace_requirements/v1 as published, null with requirements_problem when they cannot be read).
+type GeoAirspace struct {
+	Adjacent []string `json:"adjacent"`
+
+	// Applicability How the feature applies over the query: kind always (no
+	// limitedApplicability), during (a period from/to; null is an open
+	// end) or scheduled (daily windows between from and to); at an
+	// instant also at_state applies or unknown (why says why: an
+	// applicability that cannot be evaluated is listed, never dropped).
+	Applicability GeoApplicability   `json:"applicability"`
+	Dataset       GeoAirspaceDataset `json:"dataset"`
+
+	// Feature The ED-318 feature as published (properties verbatim, limitedApplicability included).
+	Feature             map[string]interface{}  `json:"feature"`
+	Identifier          string                  `json:"identifier"`
+	Parts               []GeoPart               `json:"parts"`
+	Requirements        *map[string]interface{} `json:"requirements"`
+	RequirementsProblem *string                 `json:"requirements_problem"`
+	ServicesRequired    []string                `json:"services_required"`
+
+	// Type The ED-318 type: PROHIBITED, REQ_AUTHORIZATION, CONDITIONAL, NO_RESTRICTION, USPACE.
+	Type      string     `json:"type"`
+	UpdatedAt *time.Time `json:"updated_at"`
+	ValidFrom *time.Time `json:"valid_from"`
+	ValidTo   *time.Time `json:"valid_to"`
+
+	// Version <dataset>:<version> of the publication the feature is in.
+	Version string `json:"version"`
+}
+
+// GeoAirspaceDataset defines model for GeoAirspace.Dataset.
+type GeoAirspaceDataset string
+
+// GeoAnswer GET /v1/geo's answer, from the CIS cache, with the basis it rests on.
+type GeoAnswer struct {
+	At      *time.Time `json:"at"`
+	CisAgeS float32    `json:"cis_age_s"`
+
+	// CisVersion zones:<v>,uspace_airspace:<v>,restrictions:<v>; empty when nothing is loaded.
+	CisVersion   string              `json:"cis_version"`
+	From         *time.Time          `json:"from"`
+	IntentId     *openapi_types.UUID `json:"intent_id,omitempty"`
+	Restrictions []GeoRestriction    `json:"restrictions"`
+
+	// Stale True beyond the policy's cis_stale_s or with a dataset never loaded.
+	Stale           bool          `json:"stale"`
+	To              *time.Time    `json:"to"`
+	Truncated       bool          `json:"truncated"`
+	UspaceAirspaces []GeoAirspace `json:"uspace_airspaces"`
+	Zones           []GeoItem     `json:"zones"`
+}
+
+// GeoApplicability How the feature applies over the query: kind always (no
+// limitedApplicability), during (a period from/to; null is an open
+// end) or scheduled (daily windows between from and to); at an
+// instant also at_state applies or unknown (why says why: an
+// applicability that cannot be evaluated is listed, never dropped).
+type GeoApplicability struct {
+	AtState *GeoApplicabilityAtState `json:"at_state,omitempty"`
+	From    *time.Time               `json:"from"`
+	Kind    GeoApplicabilityKind     `json:"kind"`
+	To      *time.Time               `json:"to"`
+	Why     *string                  `json:"why,omitempty"`
+}
+
+// GeoApplicabilityAtState defines model for GeoApplicability.AtState.
+type GeoApplicabilityAtState string
+
+// GeoApplicabilityKind defines model for GeoApplicability.Kind.
+type GeoApplicabilityKind string
+
+// GeoItem One CIS feature with the versions it rests on and the ED-318 feature verbatim.
+type GeoItem struct {
+	// Applicability How the feature applies over the query: kind always (no
+	// limitedApplicability), during (a period from/to; null is an open
+	// end) or scheduled (daily windows between from and to); at an
+	// instant also at_state applies or unknown (why says why: an
+	// applicability that cannot be evaluated is listed, never dropped).
+	Applicability GeoApplicability `json:"applicability"`
+	Dataset       GeoItemDataset   `json:"dataset"`
+
+	// Feature The ED-318 feature as published (properties verbatim, limitedApplicability included).
+	Feature    map[string]interface{} `json:"feature"`
+	Identifier string                 `json:"identifier"`
+	Parts      []GeoPart              `json:"parts"`
+
+	// Type The ED-318 type: PROHIBITED, REQ_AUTHORIZATION, CONDITIONAL, NO_RESTRICTION, USPACE.
+	Type      string     `json:"type"`
+	UpdatedAt *time.Time `json:"updated_at"`
+	ValidFrom *time.Time `json:"valid_from"`
+	ValidTo   *time.Time `json:"valid_to"`
+
+	// Version <dataset>:<version> of the publication the feature is in.
+	Version string `json:"version"`
+}
+
+// GeoItemDataset defines model for GeoItem.Dataset.
+type GeoItemDataset string
+
+// GeoLimit One vertical limit as published, in metres, in its own reference (never converted, D-01).
+type GeoLimit struct {
+	Ref    GeoLimitRef `json:"ref"`
+	ValueM float32     `json:"value_m"`
+}
+
+// GeoLimitRef defines model for GeoLimit.Ref.
+type GeoLimitRef string
+
+// GeoPart One part of a feature (a layer of a GeometryCollection is "<id>/L<k>") with its limits; null is no limit.
+type GeoPart struct {
+	Id    string    `json:"id"`
+	Lower *GeoLimit `json:"lower"`
+	Upper *GeoLimit `json:"upper"`
+}
+
+// GeoRestriction A restriction of the ANSP with its state and window (null members when the CISP gives none).
+type GeoRestriction struct {
+	AnspRef *string `json:"ansp_ref"`
+
+	// Applicability How the feature applies over the query: kind always (no
+	// limitedApplicability), during (a period from/to; null is an open
+	// end) or scheduled (daily windows between from and to); at an
+	// instant also at_state applies or unknown (why says why: an
+	// applicability that cannot be evaluated is listed, never dropped).
+	Applicability GeoApplicability      `json:"applicability"`
+	Dataset       GeoRestrictionDataset `json:"dataset"`
+	EndsAt        *time.Time            `json:"ends_at"`
+
+	// Feature The ED-318 feature as published (properties verbatim, limitedApplicability included).
+	Feature       map[string]interface{} `json:"feature"`
+	Identifier    string                 `json:"identifier"`
+	Parts         []GeoPart              `json:"parts"`
+	RestrictionId *string                `json:"restriction_id"`
+	StartsAt      *time.Time             `json:"starts_at"`
+
+	// State planned, active, ended or cancelled.
+	State *string `json:"state"`
+
+	// Type The ED-318 type: PROHIBITED, REQ_AUTHORIZATION, CONDITIONAL, NO_RESTRICTION, USPACE.
+	Type      string     `json:"type"`
+	UpdatedAt *time.Time `json:"updated_at"`
+	ValidFrom *time.Time `json:"valid_from"`
+	ValidTo   *time.Time `json:"valid_to"`
+
+	// Version <dataset>:<version> of the publication the feature is in.
+	Version string `json:"version"`
+}
+
+// GeoRestrictionDataset defines model for GeoRestriction.Dataset.
+type GeoRestrictionDataset string
 
 // Health defines model for Health.
 type Health struct {
@@ -1076,6 +1350,15 @@ type OperatorID = openapi_types.UUID
 // problem.
 type OAuthError = OAuthProblem
 
+// GetGeoParams defines parameters for GetGeo.
+type GetGeoParams struct {
+	// Bbox west,south,east,north in WGS84 degrees; at most 5 degrees a side.
+	Bbox string `form:"bbox" json:"bbox"`
+
+	// At The instant (RFC 3339); now when absent.
+	At *time.Time `form:"at,omitempty" json:"at,omitempty"`
+}
+
 // ListIntentsParams defines parameters for ListIntents.
 type ListIntentsParams struct {
 	From  *time.Time `form:"from,omitempty" json:"from,omitempty"`
@@ -1300,6 +1583,12 @@ type ServerInterface interface {
 	// ReceiveCISNotification Receive a CIS change notification (F3 push)
 	// (POST /v1/cis/notifications)
 	ReceiveCISNotification(w http.ResponseWriter, r *http.Request)
+	// GetGeo Geo-awareness for a box at an instant
+	// (GET /v1/geo)
+	GetGeo(w http.ResponseWriter, r *http.Request, params GetGeoParams)
+	// GetGeoForIntent Geo-awareness for one of the operator's intents
+	// (GET /v1/geo/intents/{intent_id})
+	GetGeoForIntent(w http.ResponseWriter, r *http.Request, intentId IntentID)
 	// ListIntents The operator's intents, newest first
 	// (GET /v1/intents)
 	ListIntents(w http.ResponseWriter, r *http.Request, params ListIntentsParams)
@@ -1670,6 +1959,78 @@ func (siw *ServerInterfaceWrapper) ReceiveCISNotification(w http.ResponseWriter,
 	handler.ServeHTTP(w, r)
 }
 
+// GetGeo operation middleware
+func (siw *ServerInterfaceWrapper) GetGeo(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetGeoParams
+
+	// ------------- Required query parameter "bbox" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "bbox", r.URL.Query(), &params.Bbox, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "bbox"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "bbox", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "at" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "at", r.URL.Query(), &params.At, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "at"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "at", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGeo(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGeoForIntent operation middleware
+func (siw *ServerInterfaceWrapper) GetGeoForIntent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "intent_id" -------------
+	var intentId IntentID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "intent_id", r.PathValue("intent_id"), &intentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "intent_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGeoForIntent(w, r, intentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListIntents operation middleware
 func (siw *ServerInterfaceWrapper) ListIntents(w http.ResponseWriter, r *http.Request) {
 
@@ -2008,6 +2369,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/intents", wrapper.CreateIntent)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/intents/{intent_id}", wrapper.GetIntent)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/intents/{intent_id}", wrapper.ChangeIntent)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/geo", wrapper.GetGeo)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/geo/intents/{intent_id}", wrapper.GetGeoForIntent)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/alerts/{alert_id}/ack", wrapper.AckAlert)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/oauth/token", wrapper.RequestToken)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/jwks.json", wrapper.GetJWKS)

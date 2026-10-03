@@ -27,6 +27,8 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/alerts"
 	"github.com/rootxkit/uspace-ussp/internal/auth"
 	"github.com/rootxkit/uspace-ussp/internal/bus"
+	"github.com/rootxkit/uspace-ussp/internal/cis"
+	"github.com/rootxkit/uspace-ussp/internal/geo"
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/intent"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
@@ -797,5 +799,28 @@ func TestMissedClearReachesTheConnection(t *testing.T) {
 	}
 	if len(c.out) != 1 || !strings.Contains(string(<-c.out), `"state":"cleared"`) {
 		t.Fatal("the missed clear did not reach the connection")
+	}
+}
+
+// The geo change push (brief WP-12): an installed CIS version reaches a
+// connected traffic subscriber as a valid geo/changed/v1 frame.
+func TestGeoChangeReachesTheSubscriber(t *testing.T) {
+	ss := schemas(t)
+	r := newRig(t)
+	r.srv.Geo = &geo.Changes{}
+	c, _, err := r.dial("/v1/traffic?intent_id="+intentA, "op-a", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.CloseNow()
+	next(t, ss, c, 2*time.Second, func(f frame) bool { return f.Schema == SchemaSnapshot })
+	ch := cis.Change{Dataset: cis.Restrictions, Version: 9, PreviousVersion: 8, FeatureIDs: []string{"TRS001"}, Reason: cis.ChangeInstalled,
+		CISVersion: "zones:1,uspace_airspace:1,restrictions:9", At: time.Now().UTC()}
+	raw, _ := json.Marshal(geo.ChangedMessageOf(ch, time.Now()))
+	r.srv.Geo.Take(raw)
+	f := next(t, ss, c, 2*time.Second, func(f frame) bool { return f.Schema == geo.SchemaChanged })
+	var got cis.Change
+	if err := json.Unmarshal(f.Body, &got); err != nil || got.Version != 9 || got.FeatureIDs[0] != "TRS001" {
+		t.Fatalf("%s %v", f.Body, err)
 	}
 }

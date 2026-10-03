@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rootxkit/uspace-core/core"
@@ -34,14 +36,38 @@ type CIS struct {
 	Evaluator *cis.Evaluator
 	Cache     *cis.Cache
 	Receiver  http.Handler
+
+	mu    sync.Mutex
+	hooks []cis.ChangeHook
 }
+
+// OnChange adds a hook told every installed version (the cis.v1
+// publish, the standing re-check). Hooks are added before Start.
+func (c *CIS) OnChange(h cis.ChangeHook) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.hooks = append(c.hooks, h)
+}
+
+func (c *CIS) changed(ctx context.Context, ch cis.Change) {
+	c.mu.Lock()
+	hooks := slices.Clone(c.hooks)
+	c.mu.Unlock()
+	for _, h := range hooks {
+		h(ctx, ch)
+	}
+}
+
+// Start runs the cache's workers on rt (after the hooks are added, so
+// the warm start's change reaches them).
+func (c *CIS) Start(ctx context.Context, rt *proc.Runtime) { rt.Go(ctx, c.Cache.Run) }
 
 // startCIS builds the CIS cache from the configuration (tokens is the
 // process's outgoing token client, nil without one), registers its
 // readiness and starts its workers on rt. Nothing here refuses the start
 // because a dependency is down; a configuration that cannot be right
 // (an issuer on neither the CISP's nor the ANSP's host, a malformed box)
-// does.
+// does. The workers start with Start.
 func startCIS(ctx context.Context, rt *proc.Runtime, current func() policy.Values, tokens *auth.Outgoing, kv cis.KVWriter) (*CIS, error) {
 	cfg := rt.Config
 	counters := &core.Counters{}
@@ -90,14 +116,16 @@ func startCIS(ctx context.Context, rt *proc.Runtime, current func() policy.Value
 		})
 		publishers = keys
 	}
+	out := &CIS{Evaluator: eval}
 	cache := cis.NewCache(cis.CacheConfig{
 		Client: client, Publishers: publishers, Store: st, Evaluator: eval, Counters: counters, Logger: rt.Logger.With("component", "cis"),
 		CallbackURL: callback, BBox: bbox, ReconcileInterval: time.Duration(cfg.CISReconcileS) * time.Second,
 		RetentionDays: func() int { return current().RecordRetentionDays },
 		Projector:     &cis.BusProjector{KV: kv},
+		OnChange:      out.changed,
 	})
 	rt.Health.Register(DepCIS, false, cache.Probe)
-	out := &CIS{Evaluator: eval, Cache: cache}
+	out.Cache = cache
 	if len(cfg.CISNotifyIssuers) > 0 && st != nil {
 		cc, err := cfg.CompactConfig()
 		if err != nil {
@@ -120,7 +148,6 @@ func startCIS(ctx context.Context, rt *proc.Runtime, current func() policy.Value
 			Logger: rt.Logger.With("component", "cis_receiver"),
 		})
 	}
-	rt.Go(ctx, cache.Run)
 	return out, nil
 }
 

@@ -42,6 +42,129 @@ func (e DependencyState) Valid() bool {
 	}
 }
 
+// Defines values for GeoAirspaceDataset.
+const (
+	GeoAirspaceDatasetRestrictions   GeoAirspaceDataset = "restrictions"
+	GeoAirspaceDatasetUspaceAirspace GeoAirspaceDataset = "uspace_airspace"
+	GeoAirspaceDatasetZones          GeoAirspaceDataset = "zones"
+)
+
+// Valid indicates whether the value is a known member of the GeoAirspaceDataset enum.
+func (e GeoAirspaceDataset) Valid() bool {
+	switch e {
+	case GeoAirspaceDatasetRestrictions:
+		return true
+	case GeoAirspaceDatasetUspaceAirspace:
+		return true
+	case GeoAirspaceDatasetZones:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GeoApplicabilityAtState.
+const (
+	GeoApplicabilityAtStateApplies GeoApplicabilityAtState = "applies"
+	GeoApplicabilityAtStateUnknown GeoApplicabilityAtState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the GeoApplicabilityAtState enum.
+func (e GeoApplicabilityAtState) Valid() bool {
+	switch e {
+	case GeoApplicabilityAtStateApplies:
+		return true
+	case GeoApplicabilityAtStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GeoApplicabilityKind.
+const (
+	Always    GeoApplicabilityKind = "always"
+	During    GeoApplicabilityKind = "during"
+	Scheduled GeoApplicabilityKind = "scheduled"
+)
+
+// Valid indicates whether the value is a known member of the GeoApplicabilityKind enum.
+func (e GeoApplicabilityKind) Valid() bool {
+	switch e {
+	case Always:
+		return true
+	case During:
+		return true
+	case Scheduled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GeoItemDataset.
+const (
+	GeoItemDatasetRestrictions   GeoItemDataset = "restrictions"
+	GeoItemDatasetUspaceAirspace GeoItemDataset = "uspace_airspace"
+	GeoItemDatasetZones          GeoItemDataset = "zones"
+)
+
+// Valid indicates whether the value is a known member of the GeoItemDataset enum.
+func (e GeoItemDataset) Valid() bool {
+	switch e {
+	case GeoItemDatasetRestrictions:
+		return true
+	case GeoItemDatasetUspaceAirspace:
+		return true
+	case GeoItemDatasetZones:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GeoLimitRef.
+const (
+	AGL   GeoLimitRef = "AGL"
+	AMSL  GeoLimitRef = "AMSL"
+	WGS84 GeoLimitRef = "WGS84"
+)
+
+// Valid indicates whether the value is a known member of the GeoLimitRef enum.
+func (e GeoLimitRef) Valid() bool {
+	switch e {
+	case AGL:
+		return true
+	case AMSL:
+		return true
+	case WGS84:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GeoRestrictionDataset.
+const (
+	GeoRestrictionDatasetRestrictions   GeoRestrictionDataset = "restrictions"
+	GeoRestrictionDatasetUspaceAirspace GeoRestrictionDataset = "uspace_airspace"
+	GeoRestrictionDatasetZones          GeoRestrictionDataset = "zones"
+)
+
+// Valid indicates whether the value is a known member of the GeoRestrictionDataset enum.
+func (e GeoRestrictionDataset) Valid() bool {
+	switch e {
+	case GeoRestrictionDatasetRestrictions:
+		return true
+	case GeoRestrictionDatasetUspaceAirspace:
+		return true
+	case GeoRestrictionDatasetZones:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HealthStatus.
 const (
 	Ok HealthStatus = "ok"
@@ -488,6 +611,157 @@ type FieldProblem struct {
 	Field  string `json:"field"`
 	Reason string `json:"reason"`
 }
+
+// GeoAirspace A U-space airspace with its Art. 3(4) requirements (cis/uspace_requirements/v1 as published, null with requirements_problem when they cannot be read).
+type GeoAirspace struct {
+	Adjacent []string `json:"adjacent"`
+
+	// Applicability How the feature applies over the query: kind always (no
+	// limitedApplicability), during (a period from/to; null is an open
+	// end) or scheduled (daily windows between from and to); at an
+	// instant also at_state applies or unknown (why says why: an
+	// applicability that cannot be evaluated is listed, never dropped).
+	Applicability GeoApplicability   `json:"applicability"`
+	Dataset       GeoAirspaceDataset `json:"dataset"`
+
+	// Feature The ED-318 feature as published (properties verbatim, limitedApplicability included).
+	Feature             map[string]interface{}  `json:"feature"`
+	Identifier          string                  `json:"identifier"`
+	Parts               []GeoPart               `json:"parts"`
+	Requirements        *map[string]interface{} `json:"requirements"`
+	RequirementsProblem *string                 `json:"requirements_problem"`
+	ServicesRequired    []string                `json:"services_required"`
+
+	// Type The ED-318 type: PROHIBITED, REQ_AUTHORIZATION, CONDITIONAL, NO_RESTRICTION, USPACE.
+	Type      string     `json:"type"`
+	UpdatedAt *time.Time `json:"updated_at"`
+	ValidFrom *time.Time `json:"valid_from"`
+	ValidTo   *time.Time `json:"valid_to"`
+
+	// Version <dataset>:<version> of the publication the feature is in.
+	Version string `json:"version"`
+}
+
+// GeoAirspaceDataset defines model for GeoAirspace.Dataset.
+type GeoAirspaceDataset string
+
+// GeoAnswer GET /v1/geo's answer, from the CIS cache, with the basis it rests on.
+type GeoAnswer struct {
+	At      *time.Time `json:"at"`
+	CisAgeS float32    `json:"cis_age_s"`
+
+	// CisVersion zones:<v>,uspace_airspace:<v>,restrictions:<v>; empty when nothing is loaded.
+	CisVersion   string              `json:"cis_version"`
+	From         *time.Time          `json:"from"`
+	IntentId     *openapi_types.UUID `json:"intent_id,omitempty"`
+	Restrictions []GeoRestriction    `json:"restrictions"`
+
+	// Stale True beyond the policy's cis_stale_s or with a dataset never loaded.
+	Stale           bool          `json:"stale"`
+	To              *time.Time    `json:"to"`
+	Truncated       bool          `json:"truncated"`
+	UspaceAirspaces []GeoAirspace `json:"uspace_airspaces"`
+	Zones           []GeoItem     `json:"zones"`
+}
+
+// GeoApplicability How the feature applies over the query: kind always (no
+// limitedApplicability), during (a period from/to; null is an open
+// end) or scheduled (daily windows between from and to); at an
+// instant also at_state applies or unknown (why says why: an
+// applicability that cannot be evaluated is listed, never dropped).
+type GeoApplicability struct {
+	AtState *GeoApplicabilityAtState `json:"at_state,omitempty"`
+	From    *time.Time               `json:"from"`
+	Kind    GeoApplicabilityKind     `json:"kind"`
+	To      *time.Time               `json:"to"`
+	Why     *string                  `json:"why,omitempty"`
+}
+
+// GeoApplicabilityAtState defines model for GeoApplicability.AtState.
+type GeoApplicabilityAtState string
+
+// GeoApplicabilityKind defines model for GeoApplicability.Kind.
+type GeoApplicabilityKind string
+
+// GeoItem One CIS feature with the versions it rests on and the ED-318 feature verbatim.
+type GeoItem struct {
+	// Applicability How the feature applies over the query: kind always (no
+	// limitedApplicability), during (a period from/to; null is an open
+	// end) or scheduled (daily windows between from and to); at an
+	// instant also at_state applies or unknown (why says why: an
+	// applicability that cannot be evaluated is listed, never dropped).
+	Applicability GeoApplicability `json:"applicability"`
+	Dataset       GeoItemDataset   `json:"dataset"`
+
+	// Feature The ED-318 feature as published (properties verbatim, limitedApplicability included).
+	Feature    map[string]interface{} `json:"feature"`
+	Identifier string                 `json:"identifier"`
+	Parts      []GeoPart              `json:"parts"`
+
+	// Type The ED-318 type: PROHIBITED, REQ_AUTHORIZATION, CONDITIONAL, NO_RESTRICTION, USPACE.
+	Type      string     `json:"type"`
+	UpdatedAt *time.Time `json:"updated_at"`
+	ValidFrom *time.Time `json:"valid_from"`
+	ValidTo   *time.Time `json:"valid_to"`
+
+	// Version <dataset>:<version> of the publication the feature is in.
+	Version string `json:"version"`
+}
+
+// GeoItemDataset defines model for GeoItem.Dataset.
+type GeoItemDataset string
+
+// GeoLimit One vertical limit as published, in metres, in its own reference (never converted, D-01).
+type GeoLimit struct {
+	Ref    GeoLimitRef `json:"ref"`
+	ValueM float32     `json:"value_m"`
+}
+
+// GeoLimitRef defines model for GeoLimit.Ref.
+type GeoLimitRef string
+
+// GeoPart One part of a feature (a layer of a GeometryCollection is "<id>/L<k>") with its limits; null is no limit.
+type GeoPart struct {
+	Id    string    `json:"id"`
+	Lower *GeoLimit `json:"lower"`
+	Upper *GeoLimit `json:"upper"`
+}
+
+// GeoRestriction A restriction of the ANSP with its state and window (null members when the CISP gives none).
+type GeoRestriction struct {
+	AnspRef *string `json:"ansp_ref"`
+
+	// Applicability How the feature applies over the query: kind always (no
+	// limitedApplicability), during (a period from/to; null is an open
+	// end) or scheduled (daily windows between from and to); at an
+	// instant also at_state applies or unknown (why says why: an
+	// applicability that cannot be evaluated is listed, never dropped).
+	Applicability GeoApplicability      `json:"applicability"`
+	Dataset       GeoRestrictionDataset `json:"dataset"`
+	EndsAt        *time.Time            `json:"ends_at"`
+
+	// Feature The ED-318 feature as published (properties verbatim, limitedApplicability included).
+	Feature       map[string]interface{} `json:"feature"`
+	Identifier    string                 `json:"identifier"`
+	Parts         []GeoPart              `json:"parts"`
+	RestrictionId *string                `json:"restriction_id"`
+	StartsAt      *time.Time             `json:"starts_at"`
+
+	// State planned, active, ended or cancelled.
+	State *string `json:"state"`
+
+	// Type The ED-318 type: PROHIBITED, REQ_AUTHORIZATION, CONDITIONAL, NO_RESTRICTION, USPACE.
+	Type      string     `json:"type"`
+	UpdatedAt *time.Time `json:"updated_at"`
+	ValidFrom *time.Time `json:"valid_from"`
+	ValidTo   *time.Time `json:"valid_to"`
+
+	// Version <dataset>:<version> of the publication the feature is in.
+	Version string `json:"version"`
+}
+
+// GeoRestrictionDataset defines model for GeoRestriction.Dataset.
+type GeoRestrictionDataset string
 
 // Health defines model for Health.
 type Health struct {
@@ -1081,6 +1355,15 @@ type OAuthError = OAuthProblem
 // OpenAlertStreamParams defines parameters for OpenAlertStream.
 type OpenAlertStreamParams struct {
 	IntentId openapi_types.UUID `form:"intent_id" json:"intent_id"`
+}
+
+// GetGeoParams defines parameters for GetGeo.
+type GetGeoParams struct {
+	// Bbox west,south,east,north in WGS84 degrees; at most 5 degrees a side.
+	Bbox string `form:"bbox" json:"bbox"`
+
+	// At The instant (RFC 3339); now when absent.
+	At *time.Time `form:"at,omitempty" json:"at,omitempty"`
 }
 
 // ListIntentsParams defines parameters for ListIntents.
@@ -1689,6 +1972,39 @@ type ClientInterface interface {
 	// Corresponds with POST /v1/cis/notifications (the `ReceiveCISNotification` operationId).
 	ReceiveCISNotificationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetGeo Geo-awareness for a box at an instant
+	//
+	// What the CIS says in the box (2021/664 Art. 9; spec 02 F5; brief
+	// WP-12), answered from this USSP's CIS cache, never from the CISP
+	// in the request path: the U-space airspaces with their Art. 3(4)
+	// requirements, the services they require and their adjacent
+	// airspaces; the geographical zones with their ED-318 feature
+	// verbatim and their limits with their references; the ANSP's
+	// restrictions with their state, starts_at and ends_at. Each item
+	// carries updated_at (its dataSource.updateDateTime, else its
+	// dataset version's cis_updated_at), version (the dataset version)
+	// and valid_from/valid_to (its limitedApplicability bounds), and how
+	// it applies at the instant (applies, or unknown with why: an
+	// unknown applicability is listed, never dropped). The answer
+	// carries cis_version, cis_age_s and stale (beyond the policy's
+	// cis_stale_s): a stale cache still answers and says so. A list cut
+	// at 2000 features says truncated. The geo change push of the
+	// traffic stream (geo/changed/v1) tells a subscriber to refetch.
+	//
+	// Corresponds with GET /v1/geo (the `GetGeo` operationId).
+	GetGeo(ctx context.Context, params *GetGeoParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetGeoForIntent Geo-awareness for one of the operator's intents
+	//
+	// GET /v1/geo with the intent's volumes and their windows as the
+	// query: every feature whose extent meets a volume's box and that
+	// applies at some time of its window (its applicability says how:
+	// always, during from/to, or scheduled on daily windows from/to). The
+	// operator's own intent only: another operator's is 404, never 403.
+	//
+	// Corresponds with GET /v1/geo/intents/{intent_id} (the `GetGeoForIntent` operationId).
+	GetGeoForIntent(ctx context.Context, intentId IntentID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListIntents The operator's intents, newest first
 	//
 	// At most 500; from and to keep the intents whose window overlaps them; state filters.
@@ -1864,7 +2180,10 @@ type ClientInterface interface {
 	// alerts; the degraded inputs) and every alert/v1 of the
 	// subscription as it comes. Above traffic_throttle_track_count
 	// tracks each track is sent every other second and what is held
-	// back is counted in dropped_frames.
+	// back is counted in dropped_frames. When this USSP installs a new
+	// version of a CIS dataset, a geo/changed/v1 frame (dataset,
+	// version, feature_ids) tells every subscription to refetch
+	// GET /v1/geo (brief WP-12).
 	//
 	// Client to server (staff only): console/subscribe/v1 {bbox,
 	// layers[]}; anything else is ignored. Nothing on this socket can
@@ -2466,6 +2785,59 @@ func (c *Client) ReceiveCISNotificationWithBody(ctx context.Context, contentType
 	return c.Client.Do(req)
 }
 
+// GetGeo Geo-awareness for a box at an instant
+//
+// What the CIS says in the box (2021/664 Art. 9; spec 02 F5; brief
+// WP-12), answered from this USSP's CIS cache, never from the CISP
+// in the request path: the U-space airspaces with their Art. 3(4)
+// requirements, the services they require and their adjacent
+// airspaces; the geographical zones with their ED-318 feature
+// verbatim and their limits with their references; the ANSP's
+// restrictions with their state, starts_at and ends_at. Each item
+// carries updated_at (its dataSource.updateDateTime, else its
+// dataset version's cis_updated_at), version (the dataset version)
+// and valid_from/valid_to (its limitedApplicability bounds), and how
+// it applies at the instant (applies, or unknown with why: an
+// unknown applicability is listed, never dropped). The answer
+// carries cis_version, cis_age_s and stale (beyond the policy's
+// cis_stale_s): a stale cache still answers and says so. A list cut
+// at 2000 features says truncated. The geo change push of the
+// traffic stream (geo/changed/v1) tells a subscriber to refetch.
+//
+// Corresponds with GET /v1/geo (the `GetGeo` operationId).
+func (c *Client) GetGeo(ctx context.Context, params *GetGeoParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetGeoRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetGeoForIntent Geo-awareness for one of the operator's intents
+//
+// GET /v1/geo with the intent's volumes and their windows as the
+// query: every feature whose extent meets a volume's box and that
+// applies at some time of its window (its applicability says how:
+// always, during from/to, or scheduled on daily windows from/to). The
+// operator's own intent only: another operator's is 404, never 403.
+//
+// Corresponds with GET /v1/geo/intents/{intent_id} (the `GetGeoForIntent` operationId).
+func (c *Client) GetGeoForIntent(ctx context.Context, intentId IntentID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetGeoForIntentRequest(c.Server, intentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ListIntents The operator's intents, newest first
 //
 // At most 500; from and to keep the intents whose window overlaps them; state filters.
@@ -2741,7 +3113,10 @@ func (c *Client) PostTelemetryBatch(ctx context.Context, body PostTelemetryBatch
 // alerts; the degraded inputs) and every alert/v1 of the
 // subscription as it comes. Above traffic_throttle_track_count
 // tracks each track is sent every other second and what is held
-// back is counted in dropped_frames.
+// back is counted in dropped_frames. When this USSP installs a new
+// version of a CIS dataset, a geo/changed/v1 frame (dataset,
+// version, feature_ids) tells every subscription to refetch
+// GET /v1/geo (brief WP-12).
 //
 // Client to server (staff only): console/subscribe/v1 {bbox,
 // layers[]}; anything else is ignored. Nothing on this socket can
@@ -3444,6 +3819,102 @@ func NewReceiveCISNotificationRequestWithBody(server string, contentType string,
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetGeoRequest constructs an http.Request for the GetGeo method
+func NewGetGeoRequest(server string, params *GetGeoParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/geo")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "bbox", params.Bbox, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.At != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "at", *params.At, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetGeoForIntentRequest constructs an http.Request for the GetGeoForIntent method
+func NewGetGeoForIntentRequest(server string, intentId IntentID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "intent_id", intentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/geo/intents/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -4350,6 +4821,43 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /v1/cis/notifications (the `ReceiveCISNotification` operationId).
 	ReceiveCISNotificationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReceiveCISNotificationResponse, error)
 
+	// GetGeoWithResponse Geo-awareness for a box at an instant
+	//
+	// What the CIS says in the box (2021/664 Art. 9; spec 02 F5; brief
+	// WP-12), answered from this USSP's CIS cache, never from the CISP
+	// in the request path: the U-space airspaces with their Art. 3(4)
+	// requirements, the services they require and their adjacent
+	// airspaces; the geographical zones with their ED-318 feature
+	// verbatim and their limits with their references; the ANSP's
+	// restrictions with their state, starts_at and ends_at. Each item
+	// carries updated_at (its dataSource.updateDateTime, else its
+	// dataset version's cis_updated_at), version (the dataset version)
+	// and valid_from/valid_to (its limitedApplicability bounds), and how
+	// it applies at the instant (applies, or unknown with why: an
+	// unknown applicability is listed, never dropped). The answer
+	// carries cis_version, cis_age_s and stale (beyond the policy's
+	// cis_stale_s): a stale cache still answers and says so. A list cut
+	// at 2000 features says truncated. The geo change push of the
+	// traffic stream (geo/changed/v1) tells a subscriber to refetch.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/geo (the `GetGeo` operationId).
+	GetGeoWithResponse(ctx context.Context, params *GetGeoParams, reqEditors ...RequestEditorFn) (*GetGeoResponse, error)
+
+	// GetGeoForIntentWithResponse Geo-awareness for one of the operator's intents
+	//
+	// GET /v1/geo with the intent's volumes and their windows as the
+	// query: every feature whose extent meets a volume's box and that
+	// applies at some time of its window (its applicability says how:
+	// always, during from/to, or scheduled on daily windows from/to). The
+	// operator's own intent only: another operator's is 404, never 403.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/geo/intents/{intent_id} (the `GetGeoForIntent` operationId).
+	GetGeoForIntentWithResponse(ctx context.Context, intentId IntentID, reqEditors ...RequestEditorFn) (*GetGeoForIntentResponse, error)
+
 	// ListIntentsWithResponse The operator's intents, newest first
 	//
 	// At most 500; from and to keep the intents whose window overlaps them; state filters.
@@ -4533,7 +5041,10 @@ type ClientWithResponsesInterface interface {
 	// alerts; the degraded inputs) and every alert/v1 of the
 	// subscription as it comes. Above traffic_throttle_track_count
 	// tracks each track is sent every other second and what is held
-	// back is counted in dropped_frames.
+	// back is counted in dropped_frames. When this USSP installs a new
+	// version of a CIS dataset, a geo/changed/v1 frame (dataset,
+	// version, feature_ids) tells every subscription to refetch
+	// GET /v1/geo (brief WP-12).
 	//
 	// Client to server (staff only): console/subscribe/v1 {bbox,
 	// layers[]}; anything else is ignored. Nothing on this socket can
@@ -5808,6 +6319,165 @@ func (r ReceiveCISNotificationResponse) ContentType() string {
 	return ""
 }
 
+type GetGeoResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *GeoAnswer
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetGeoResponse) GetJSON200() *GeoAnswer {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r GetGeoResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r GetGeoResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r GetGeoResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r GetGeoResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetGeoResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetGeoResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetGeoResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetGeoResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetGeoResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetGeoForIntentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *GeoAnswer
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetGeoForIntentResponse) GetJSON200() *GeoAnswer {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r GetGeoForIntentResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r GetGeoForIntentResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r GetGeoForIntentResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r GetGeoForIntentResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r GetGeoForIntentResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetGeoForIntentResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetGeoForIntentResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetGeoForIntentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetGeoForIntentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetGeoForIntentResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListIntentsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -7033,6 +7703,55 @@ func (c *ClientWithResponses) ReceiveCISNotificationWithBodyWithResponse(ctx con
 	return ParseReceiveCISNotificationResponse(rsp)
 }
 
+// GetGeoWithResponse Geo-awareness for a box at an instant
+//
+// What the CIS says in the box (2021/664 Art. 9; spec 02 F5; brief
+// WP-12), answered from this USSP's CIS cache, never from the CISP
+// in the request path: the U-space airspaces with their Art. 3(4)
+// requirements, the services they require and their adjacent
+// airspaces; the geographical zones with their ED-318 feature
+// verbatim and their limits with their references; the ANSP's
+// restrictions with their state, starts_at and ends_at. Each item
+// carries updated_at (its dataSource.updateDateTime, else its
+// dataset version's cis_updated_at), version (the dataset version)
+// and valid_from/valid_to (its limitedApplicability bounds), and how
+// it applies at the instant (applies, or unknown with why: an
+// unknown applicability is listed, never dropped). The answer
+// carries cis_version, cis_age_s and stale (beyond the policy's
+// cis_stale_s): a stale cache still answers and says so. A list cut
+// at 2000 features says truncated. The geo change push of the
+// traffic stream (geo/changed/v1) tells a subscriber to refetch.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/geo (the `GetGeo` operationId).
+func (c *ClientWithResponses) GetGeoWithResponse(ctx context.Context, params *GetGeoParams, reqEditors ...RequestEditorFn) (*GetGeoResponse, error) {
+	rsp, err := c.GetGeo(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetGeoResponse(rsp)
+}
+
+// GetGeoForIntentWithResponse Geo-awareness for one of the operator's intents
+//
+// GET /v1/geo with the intent's volumes and their windows as the
+// query: every feature whose extent meets a volume's box and that
+// applies at some time of its window (its applicability says how:
+// always, during from/to, or scheduled on daily windows from/to). The
+// operator's own intent only: another operator's is 404, never 403.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/geo/intents/{intent_id} (the `GetGeoForIntent` operationId).
+func (c *ClientWithResponses) GetGeoForIntentWithResponse(ctx context.Context, intentId IntentID, reqEditors ...RequestEditorFn) (*GetGeoForIntentResponse, error) {
+	rsp, err := c.GetGeoForIntent(ctx, intentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetGeoForIntentResponse(rsp)
+}
+
 // ListIntentsWithResponse The operator's intents, newest first
 //
 // At most 500; from and to keep the intents whose window overlaps them; state filters.
@@ -7276,7 +7995,10 @@ func (c *ClientWithResponses) PostTelemetryBatchWithResponse(ctx context.Context
 // alerts; the degraded inputs) and every alert/v1 of the
 // subscription as it comes. Above traffic_throttle_track_count
 // tracks each track is sent every other second and what is held
-// back is counted in dropped_frames.
+// back is counted in dropped_frames. When this USSP installs a new
+// version of a CIS dataset, a geo/changed/v1 frame (dataset,
+// version, feature_ids) tells every subscription to refetch
+// GET /v1/geo (brief WP-12).
 //
 // Client to server (staff only): console/subscribe/v1 {bbox,
 // layers[]}; anything else is ignored. Nothing on this socket can
@@ -8323,6 +9045,135 @@ func ParseReceiveCISNotificationResponse(rsp *http.Response) (*ReceiveCISNotific
 			return nil, err
 		}
 		response.ApplicationproblemJSON415 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetGeoResponse parses an HTTP response from a GetGeoWithResponse call
+func ParseGetGeoResponse(rsp *http.Response) (*GetGeoResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetGeoResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GeoAnswer
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetGeoForIntentResponse parses an HTTP response from a GetGeoForIntentWithResponse call
+func ParseGetGeoForIntentResponse(rsp *http.Response) (*GetGeoForIntentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetGeoForIntentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GeoAnswer
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Problem

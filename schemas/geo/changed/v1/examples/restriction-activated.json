@@ -1,0 +1,22 @@
+{
+  "schema": "geo/changed/v1",
+  "msg_id": "01K6Q2A3B4C5D6E7F8G9H0J1K3",
+  "producer": "ussp/api",
+  "ts": "2026-10-03T12:00:05.000Z",
+  "rx_ts": "2026-10-03T12:00:05.000Z",
+  "captured_at": "2026-10-03T12:00:05.000Z",
+  "time_source": "system",
+  "backlog": false,
+  "body": {
+    "dataset": "restrictions",
+    "version": 9,
+    "previous_version": 8,
+    "feature_ids": [
+      "TRS001"
+    ],
+    "truncated": false,
+    "reason": "installed",
+    "cis_version": "zones:4,uspace_airspace:2,restrictions:9",
+    "at": "2026-10-03T12:00:04.900Z"
+  }
+}

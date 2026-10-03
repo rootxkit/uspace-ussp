@@ -34,6 +34,7 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/cis"
 	"github.com/rootxkit/uspace-ussp/internal/config"
+	"github.com/rootxkit/uspace-ussp/internal/geo"
 	"github.com/rootxkit/uspace-ussp/internal/intent"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
@@ -178,8 +179,9 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	hub.Started()
 	hub.AlertFeed(false, "not opened yet")
 
+	geoChanges := &geo.Changes{Counters: hubCounters}
 	srv := &Server{
-		Health: proc.HealthHandlers{Health: rt.Health}, Hub: hub,
+		Health: proc.HealthHandlers{Health: rt.Health}, Hub: hub, Geo: geoChanges,
 		WS:  &auth.WSAuth{Guard: guard, AllowedOrigins: cfg.WSAllowedOrigins},
 		Ctx: ctx, ProductEvery: o.ProductEvery, StatusEvery: o.StatusEvery, RecordEvery: o.RecordEvery, RepeatEvery: o.RepeatEvery,
 		Degraded: func() []string { return rt.Health.Snapshot().Degraded }, Counters: hubCounters, Logger: logger,
@@ -200,6 +202,9 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 		bus.SubjectPeerAll: func(_ string, d []byte) { hub.TakeTrack(traffic.NSPeer, d) },
 		bus.SubjectManAll:  func(_ string, d []byte) { hub.TakeManned(d) },
 		bus.SubjectSrcAll:  func(_ string, d []byte) { hub.TakeSourceStatus(d) },
+		// The installed CIS versions (geo/changed/v1, brief WP-12): each
+		// is forwarded to every traffic subscription.
+		bus.SubjectCISAll: func(_ string, d []byte) { geoChanges.Take(d) },
 	} {
 		rt.Go(ctx, func(ctx context.Context) { subs.listen(ctx, rt.Bus, subject, take, logger) })
 	}

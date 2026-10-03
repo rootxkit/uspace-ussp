@@ -53,6 +53,9 @@ type Server struct {
 	// Alerts records acknowledgements (internal/alerts.Service); nil
 	// answers 503 alerts_unavailable.
 	Alerts AlertAcker
+	// Geo answers /v1/geo* from the CIS cache; nil answers 503
+	// cis_unavailable.
+	Geo    *Geo
 	Logger *slog.Logger
 }
 
@@ -87,6 +90,8 @@ func AccessTable() map[string]httpx.Access {
 		"GET /v1/intents":                                   {Scopes: []string{auth.ScopeIntents}},
 		"GET /v1/intents/{intent_id}":                       {Scopes: []string{auth.ScopeIntents}},
 		"PATCH /v1/intents/{intent_id}":                     {Scopes: []string{auth.ScopeIntents}},
+		"GET /v1/geo":                                       {Scopes: []string{auth.ScopeGeo}},
+		"GET /v1/geo/intents/{intent_id}":                   {Scopes: []string{auth.ScopeGeo}},
 		"POST /v1/alerts/{alert_id}/ack":                    {Scopes: []string{auth.ScopeTraffic}},
 		"POST /v1/accounts/logout":                          anySession,
 		"GET /v1/accounts/me":                               anySession,

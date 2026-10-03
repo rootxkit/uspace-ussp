@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/geo/changed/v1.json",
+  "title": "geo/changed/v1",
+  "description": "A version of a CIS dataset this USSP installed (brief WP-12; 2021/664 Art. 9): published by api on cis.v1.<dataset> once the version is installed, projected to cis_current and stored, and forwarded by traffic-ws to every subscription as the geo change push, so an operator client or the portal refetches GET /v1/geo. feature_ids are the identifiers of the features added, removed or changed; truncated says the list was cut at its bound and every feature of the dataset is to be taken as changed. reason is installed, or warm_start when api loaded the version from its store at a start (nothing is known of what changed meanwhile: every feature is listed). It names what changed, never what to do.",
+  "allOf": [
+    {
+      "$ref": "https://schemas.uspace.ge/envelope/v1.json"
+    }
+  ],
+  "properties": {
+    "schema": {
+      "const": "geo/changed/v1"
+    },
+    "body": {
+      "$ref": "#/$defs/body"
+    }
+  },
+  "$defs": {
+    "body": {
+      "type": "object",
+      "required": [
+        "dataset",
+        "version",
+        "previous_version",
+        "feature_ids",
+        "truncated",
+        "reason",
+        "cis_version",
+        "at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "dataset": {
+          "enum": [
+            "zones",
+            "uspace_airspace",
+            "restrictions",
+            "ussp_list"
+          ]
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "previous_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "feature_ids": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "reason": {
+          "enum": [
+            "installed",
+            "warm_start"
+          ]
+        },
+        "cis_version": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}
