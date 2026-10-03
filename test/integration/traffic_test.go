@@ -174,9 +174,17 @@ func newTrafficRig(t *testing.T) *trafficRig {
 	return g
 }
 
-func (g *trafficRig) startMonitor() {
+func (g *trafficRig) startMonitor() { g.startMonitorWith(monitor.Options{}) }
+
+// startMonitorAs starts the monitor under another instance id, as a
+// recreated container with a new hostname.
+func (g *trafficRig) startMonitorAs(instance string) {
+	g.startMonitorWith(monitor.Options{CPA: func(e *traffic.Engine) { e.InstanceID = instance }})
+}
+
+func (g *trafficRig) startMonitorWith(o monitor.Options) {
 	g.t.Helper()
-	addr, stop := runStoppable(g.t, monitor.SpecWith(monitor.Options{}), map[string]string{
+	addr, stop := runStoppable(g.t, monitor.SpecWith(o), map[string]string{
 		"USSP_MONITOR_ADDR": "127.0.0.1:0", "USSP_NATS_URL": mustEnv(g.t, "USSP_TEST_NATS_URL"),
 	})
 	g.monitor, g.stopMon = "http://"+addr, stop
@@ -782,6 +790,65 @@ func TestIntegrationProximityRestart(t *testing.T) {
 		t.Fatalf("%d raises and a clear across the restart", n)
 	}
 	t.Logf("alert %s continued across the monitor restart, judged again %v after it", id, time.Since(restarted))
+}
+
+// A rollover under a changed instance id (a rolling update, a container
+// recreated with a new hostname): monitor A holds a proximity alert; B
+// starts under another id while A is up, its feed holding nothing of the
+// pair (both aircraft silent for longer than the live age), so B leaves
+// the alert to its live owner; A stops; the aircraft fly again, apart,
+// so the conflict has ended. B carries the alert under its id and clears
+// it on the evidence (not_reconfirmed); nothing is left active.
+func TestIntegrationProximityRolloverNewInstance(t *testing.T) {
+	g := newTrafficRig(t)
+	pv := g.policy()
+	a, b := g.ops[0], g.ops[1]
+	fa := g.fly(a, func(float64) (core.LatLon, float64, float64) { return g.o, 0, 0 })
+	fb := g.fly(b, func(float64) (core.LatLon, float64, float64) { return geodesy.Destination(g.o, 90, 30), 0, 0 })
+	within(t, 10*time.Second, func() bool { return len(g.proximity(a.flight, "raised")) == 1 })
+	id := g.proximity(a.flight, "raised")[0].b.AlertID
+	within(t, 5*time.Second, func() bool { return g.saved(a.flight) })
+	fa.halt()
+	fb.halt()
+	silent := time.Unix(0, max(fa.last.Load(), fb.last.Load()))
+	// Past the live age nothing B replays is judged; well inside the
+	// stale time A still holds the alert.
+	time.Sleep(time.Until(silent.Add(secs(pv.MonitorLiveMaxAgeS) + 500*time.Millisecond)))
+	stopA := g.stopMon
+	g.startMonitorAs("it-monitor-b-" + unique())
+	if n := len(g.proximity(a.flight, "cleared")); n != 0 {
+		t.Fatalf("A cleared the alert before the rollover (%v after the last sample): the run is too slow for this test", time.Since(silent))
+	}
+	stopA()
+	stopped := time.Now()
+	if since := stopped.Sub(silent); since >= secs(pv.CPAStaleAfterS) {
+		t.Fatalf("A stopped %v after the last sample, past the stale time", since)
+	}
+	g.fly(a, func(float64) (core.LatLon, float64, float64) { return g.o, 0, 0 })
+	g.fly(b, func(float64) (core.LatLon, float64, float64) { return geodesy.Destination(g.o, 90, 3000), 0, 0 })
+	took := within(t, 20*time.Second, func() bool {
+		for _, c := range g.proximity(a.flight, "cleared") {
+			if c.at.After(stopped) && c.b.AlertID == id {
+				return true
+			}
+		}
+		return false
+	})
+	var carried bool
+	for _, u := range g.proximity(a.flight, "updated") {
+		if u.at.After(stopped) && u.b.AlertID == id && u.b.Detail["carried_since"] != nil {
+			carried = true
+		}
+	}
+	cl := g.proximity(a.flight, "cleared")
+	if !carried || len(cl) != 1 || cl[0].b.ClearReason == nil || *cl[0].b.ClearReason != traffic.ClearNotReconfirmed {
+		t.Fatalf("carried %v, clears %+v", carried, cl)
+	}
+	if n := len(g.proximity(a.flight, "raised")); n != 1 {
+		t.Fatalf("%d raises", n)
+	}
+	within(t, 5*time.Second, func() bool { return !g.saved(a.flight) })
+	t.Logf("alert %s carried by the new instance and cleared %s %v after the old one stopped", id, *cl[0].b.ClearReason, took)
 }
 
 // saved reports whether proximity_state holds an alert of flightID.

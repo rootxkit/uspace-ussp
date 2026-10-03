@@ -497,7 +497,7 @@ func TestCarriedSilentGoesStale(t *testing.T) {
 // Another live instance's saved alert is not carried at a start; one
 // whose owner stopped saving is.
 func TestRestoreRespectsALiveOwner(t *testing.T) {
-	for _, age := range []time.Duration{time.Second, 2 * liveOwnerAfter} {
+	for _, age := range []time.Duration{time.Second, 2 * liveOwner} {
 		store := newMemStore()
 		k := "conflict:trk:" + flightA + ":trk:" + flightB
 		_ = store.Put(context.Background(), Saved{Owner: "other", SavedAt: t0.Add(-age), Key: k, RaisedAt: t0, Aircraft: [2]SavedAircraft{
@@ -507,7 +507,7 @@ func TestRestoreRespectsALiveOwner(t *testing.T) {
 		r := newRig(t, store, "me")
 		r.e.restore(context.Background())
 		_, held := r.e.pairs[k]
-		if want := age > liveOwnerAfter; held != want {
+		if want := age > liveOwner; held != want {
 			t.Fatalf("owner saved %v ago: carried %v", age, held)
 		}
 	}
@@ -631,3 +631,219 @@ func mustCell(p core.LatLon) string {
 	}
 	return c5
 }
+
+// newRigOwning is a rig whose instance owns the cell3 cells own names.
+func newRigOwning(t *testing.T, store *memStore, instance, own string) *rig {
+	t.Helper()
+	r := newRig(t, store, instance)
+	o, err := cell.ParseOwnership(own)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.e.Ownership = o
+	return r
+}
+
+// share makes r read other's clock (two instances, one time).
+func (r *rig) share(other *rig) {
+	r.clk = other.clk
+	r.e.Now = other.clk.Now
+}
+
+// hover feeds A at a and B at b, both flying and still, and ticks.
+func (r *rig) hover(a, b core.LatLon) {
+	r.feed(r.own(flightA, a, 0, 0))
+	r.feed(r.own(flightB, b, 0, 0))
+	r.tick()
+}
+
+// clearsOf are the clears of flightA's alert id across rigs.
+func clearsOf(id string, rs ...*rig) []AlertBody {
+	var out []AlertBody
+	for _, r := range rs {
+		ms := r.of(flightA, AlertCleared)
+		for i := range ms {
+			if ms[i].AlertID == id {
+				out = append(out, ms[i])
+			}
+		}
+	}
+	return out
+}
+
+// A rollover under another instance id (a rolling update, a recreated
+// container): B starts while A holds an alert and saves it, so B leaves
+// it to A; A then stops, at once released (a clean stop) or silently (a
+// crash, carried once A's save is stale), and the conflict ends. B
+// carries the alert under its id and ends it on the evidence
+// (not_reconfirmed): no alert is left without an owner.
+func TestRolloverCarriesWhenTheOldOwnerIsGone(t *testing.T) {
+	for _, crash := range []bool{false, true} {
+		t.Run(fmt.Sprint("crash=", crash), func(t *testing.T) {
+			store := newMemStore()
+			ra := newRig(t, store, "monitor-a")
+			b := geodesy.Destination(origin, 90, 25)
+			for range 3 {
+				ra.hover(origin, b)
+				ra.clk.add(time.Second)
+			}
+			ra.drainPersist()
+			id := ra.of(flightA, AlertRaised)[0].AlertID
+			rb := newRig(t, store, "monitor-b")
+			rb.share(ra)
+			rb.e.restore(context.Background())
+			rb.tick()
+			if _, held := rb.e.pairs["conflict:trk:"+flightA+":trk:"+flightB]; held {
+				t.Fatal("B took a live owner's alert")
+			}
+			// A is gone. B hears nothing of the pair meanwhile.
+			wait := 1
+			if crash {
+				wait = int(liveOwner/time.Second) + 1
+			} else {
+				ra.e.release()
+				ra.drainPersist()
+			}
+			for i := range wait {
+				rb.clk.add(time.Second)
+				rb.tick()
+				if _, held := rb.e.pairs["conflict:trk:"+flightA+":trk:"+flightB]; held && crash && i < wait-2 {
+					t.Fatalf("carried %d s after A's last save, while it was live", i+1)
+				}
+			}
+			up := rb.of(flightA, AlertUpdated)
+			if len(up) == 0 || up[len(up)-1].AlertID != id || up[len(up)-1].Detail["carried_since"] == nil {
+				t.Fatalf("B did not carry the orphaned alert: %+v", up)
+			}
+			far := geodesy.Destination(origin, 90, 3000)
+			for range int(rb.pv.CPAClearAfterS) + 2 {
+				rb.clk.add(time.Second)
+				rb.hover(origin, far)
+			}
+			cl := clearsOf(id, rb)
+			if len(cl) != 1 || *cl[0].ClearReason != ClearNotReconfirmed {
+				t.Fatalf("B's clears %+v", cl)
+			}
+			rb.drainPersist()
+			if len(store.All()) != 0 {
+				t.Fatal("the saved state survived the clear")
+			}
+		})
+	}
+}
+
+// A cleared alert is never carried again from its last save while the
+// store still shows it (a delete not yet seen, or one that failed).
+func TestClearedNotCarriedFromItsLastSave(t *testing.T) {
+	store := newMemStore()
+	r := newRig(t, store, "m1")
+	r.hover(origin, geodesy.Destination(origin, 90, 25))
+	r.drainPersist()
+	r.e.take(context.Background(), item{ended: flightB})
+	r.collect()
+	if len(r.of(flightA, AlertCleared)) != 1 {
+		t.Fatal("not cleared")
+	}
+	// The store still holds the last save (the delete is pending).
+	if len(store.All()) != 1 {
+		t.Fatalf("saved %d", len(store.All()))
+	}
+	r.tick()
+	if len(r.e.pairs) != 0 {
+		t.Fatal("the cleared alert was carried again")
+	}
+	r.drainPersist()
+	r.tick()
+	if len(store.All()) != 0 || len(r.e.clearedAt) != 0 {
+		t.Fatalf("saved %d, marks %d", len(store.All()), len(r.e.clearedAt))
+	}
+}
+
+// boundary is a point just west of a cell3 edge east of origin, and the
+// cell3 names on either side.
+func boundary(t *testing.T) (west, east core.LatLon, c3w, c3e string) {
+	t.Helper()
+	_, start, _ := cell.Key(origin)
+	for d := 0.0; d < 200_000; d += 10 {
+		p := geodesy.Destination(origin, 90, d)
+		if _, c3, _ := cell.Key(p); c3 != start {
+			west, east = geodesy.Destination(origin, 90, d-15), geodesy.Destination(origin, 90, d+5)
+			_, c3w, _ = cell.Key(west)
+			_, c3e, _ = cell.Key(east)
+			return west, east, c3w, c3e
+		}
+	}
+	t.Fatal("no cell3 edge within 200 km")
+	return
+}
+
+// A cell handover: the pair's anchor (flight A) crosses from A's cell
+// into B's while the pair is in conflict, and the conflict ends during
+// the handover. The old owner keeps publishing the alert, and clears it,
+// until the new one has taken it; once B has taken it A stops. Exactly
+// one clear is published either way.
+func TestHandoverOldOwnerClearsUntilTransferred(t *testing.T) {
+	west, east, c3w, c3e := boundary(t)
+	if c3w == c3e {
+		t.Fatal("one cell either side")
+	}
+	behind := geodesy.Destination(west, 270, 10) // flight B, in A's cell
+	far := geodesy.Destination(west, 270, 3000)
+	for _, withB := range []bool{false, true} {
+		t.Run(fmt.Sprint("new_owner_running=", withB), func(t *testing.T) {
+			store := newMemStore()
+			ra := newRigOwning(t, store, "monitor-a", c3w)
+			rb := newRigOwning(t, store, "monitor-b", c3e)
+			rb.share(ra)
+			for range 2 {
+				ra.hover(west, behind)
+				ra.clk.add(time.Second)
+			}
+			ra.drainPersist()
+			raised := ra.of(flightA, AlertRaised)
+			if len(raised) != 1 {
+				t.Fatalf("raised %+v", raised)
+			}
+			id := raised[0].AlertID
+			// The anchor crosses into B's cell, still in conflict.
+			ra.hover(east, behind)
+			ra.drainPersist()
+			if withB {
+				rb.tick() // B is fed nothing of the pair yet
+				rb.drainPersist()
+				ra.clk.add(time.Second)
+				ra.tick()
+			}
+			// The conflict ends: B flies off; A judges it resolved.
+			for range int(ra.pv.CPAClearAfterS) + 3 {
+				ra.clk.add(time.Second)
+				ra.hover(east, far)
+				ra.drainPersist()
+				if withB {
+					rb.hover(east, far)
+					rb.drainPersist()
+				}
+			}
+			cl := clearsOf(id, ra, rb)
+			if len(cl) != 1 {
+				t.Fatalf("%d clears of %s (A %d, B %d)", len(cl), id, len(clearsOf(id, ra)), len(clearsOf(id, rb)))
+			}
+			if withB && len(clearsOf(id, rb)) != 1 {
+				t.Fatal("B took the alert but did not clear it")
+			}
+			if withB {
+				// After the transfer A no longer publishes the alert.
+				last := ra.msgs[len(ra.msgs)-1]
+				if last.AlertID == id && last.State == AlertUpdated {
+					t.Fatalf("A still publishes after the transfer: %+v", last)
+				}
+			}
+			if len(store.All()) != 0 {
+				t.Fatalf("saved state left: %+v", store.All())
+			}
+		})
+	}
+}
+
+// liveOwner is the engine's liveOwnerAfter at the default heartbeat.
+const liveOwner = 3 * DefaultHeartbeat

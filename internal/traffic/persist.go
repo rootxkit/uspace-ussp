@@ -27,10 +27,6 @@ const (
 	CounterStateNotLoaded   = "traffic_state_not_loaded"
 )
 
-// liveOwnerAfter is how recent another instance's save must be for its
-// ownership of an alert to be respected at a start (three heartbeats).
-const liveOwnerAfter = 3 * DefaultHeartbeat
-
 // SavedAircraft is one aircraft of a saved pair: what the alert names
 // and what the carried alert is judged by.
 type SavedAircraft struct {
@@ -48,7 +44,9 @@ type SavedAircraft struct {
 // Saved is one active proximity alert in the proximity_state bucket
 // (key: StateKey of the pair key): its raise time (which, with the pair
 // and the flight, names its alert ids), the aircraft, the last numbers
-// core judged it with, and the instance that owns it.
+// core judged it with, and the instance that owns it ("" once released
+// at a stop). Releasing says the owner's anchor left its cells: the
+// instance owning the anchor takes the alert over at once.
 type Saved struct {
 	Owner         string           `json:"owner"`
 	SavedAt       time.Time        `json:"saved_at"`
@@ -61,6 +59,7 @@ type Saved struct {
 	Detail        map[string]any   `json:"detail"`
 	LoSStartS     float64          `json:"los_start_s"`
 	PolicyVersion int64            `json:"policy_version"`
+	Releasing     bool             `json:"releasing,omitempty"`
 }
 
 // StateKey is the bucket key of a pair key (keys hold ids of any shape;
@@ -182,7 +181,9 @@ func (p *persister) run(ctx context.Context) {
 			p.drain(context.WithoutCancel(ctx), time.Now().Add(2*time.Second))
 			return
 		case <-p.kick:
-			p.drain(ctx, time.Time{})
+			// A write in flight is never cut short by the stop (each has
+			// its own timeout); the stop drains what is left.
+			p.drain(context.WithoutCancel(ctx), time.Time{})
 		}
 	}
 }

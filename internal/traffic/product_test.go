@@ -329,8 +329,15 @@ func TestRunLifecycle(t *testing.T) {
 	e.FlightEnded(flightA)
 	e.SwitchSource(coresourcesState())
 	waitFor(t, func() bool { return e.Counters.Get(CounterSamples) == 1 })
+	// Carried, it was saved again by this instance (the test's put was
+	// the first).
+	waitFor(t, func() bool { ms.mu.Lock(); defer ms.mu.Unlock(); return ms.puts > 1 })
 	cancel()
 	<-done
+	// Stopped: the alert it owned is saved released, for the next owner.
+	if s, ok := ms.Get("conflict:trk:x:trk:y"); !ok || s.Owner != "" || e.Counters.Get(CounterReleasedAtStop) != 1 {
+		t.Fatalf("at the stop: saved %v, owner %q, released %d", ok, s.Owner, e.Counters.Get(CounterReleasedAtStop))
+	}
 }
 
 func waitFor(t *testing.T, cond func() bool) {

@@ -57,6 +57,9 @@ const (
 	CounterRaised            = "traffic_proximity_raised"
 	CounterCleared           = "traffic_proximity_cleared"
 	CounterAdopted           = "traffic_proximity_adopted"
+	CounterTakenOver         = "traffic_proximity_taken_over"
+	CounterHandedOver        = "traffic_proximity_handed_over"
+	CounterReleasedAtStop    = "traffic_proximity_released_at_stop"
 	CounterCarriedCleared    = "traffic_carried_cleared"
 	CounterRefused           = "traffic_aircraft_refused"
 	CounterTicks             = "traffic_ticks"
@@ -109,10 +112,14 @@ type pairState struct {
 	carried   bool
 	carriedAt time.Time
 	heard     [2]time.Time
-	// owned: this instance publishes and saves it (its anchor is in an
-	// owned cell); lastSave when it was last saved.
-	owned    bool
-	lastSave time.Time
+	// owned: this instance publishes, saves and clears it; lastSave when
+	// it was last saved. An owned pair whose anchor left the owned cells
+	// is releasing: it stays owned, saved as releasing, until another
+	// instance has saved it (ownership transferred), so it always has a
+	// live owner that publishes its clear.
+	owned     bool
+	releasing bool
+	lastSave  time.Time
 }
 
 // Summary is what the status line says of the CPA path.
@@ -166,19 +173,25 @@ type Engine struct {
 	base   time.Time
 
 	// The loop's own state (Run's goroutine only).
-	mon       *alerting.Monitor
-	cfg       alerting.Config
-	tracks    map[string]*trackInfo
-	pairs     map[string]*pairState
-	grid      *cpa.Grid
-	restored  bool
-	widened   bool
-	pending   map[string]*Input // coalesced samples while widened
-	nextFlush time.Time
-	windowAt  time.Time
-	pairCount uint64
-	lastRate  float64
-	coreLast  map[string]uint64
+	mon    *alerting.Monitor
+	cfg    alerting.Config
+	tracks map[string]*trackInfo
+	pairs  map[string]*pairState
+	grid   *cpa.Grid
+	// restoredOnce: the start's restore has run (a live peer's alert is
+	// counted there, not again at every tick).
+	restoredOnce bool
+	widened      bool
+	pending      map[string]*Input // coalesced samples while widened
+	nextFlush    time.Time
+	windowAt     time.Time
+	pairCount    uint64
+	lastRate     float64
+	coreLast     map[string]uint64
+	// clearedAt is when this instance cleared each pair it deleted from
+	// the store: a save not newer is never carried again (the mirror can
+	// show a deleted save for a moment).
+	clearedAt map[string]time.Time
 
 	mu  sync.Mutex
 	sum Summary
@@ -240,6 +253,7 @@ func (e *Engine) init() {
 		e.seeded = make(chan struct{})
 		e.base = e.now()
 		e.tracks, e.pairs, e.pending = map[string]*trackInfo{}, map[string]*pairState{}, map[string]*Input{}
+		e.clearedAt = map[string]time.Time{}
 		if e.Store != nil {
 			e.pers = newPersister(e.Store, e.Counters, e.logger())
 		}
@@ -333,12 +347,27 @@ func (e *Engine) Summary() Summary {
 }
 
 // Run is the engine's loop until ctx ends: the publisher and the
-// persister, the start's restore, then samples and ticks.
+// persister, the start's restore, then samples and ticks. At the end
+// every alert it owns is saved released, so another instance carries it
+// at its next tick instead of after liveOwnerAfter.
 func (e *Engine) Run(ctx context.Context) {
 	e.init()
 	go e.publishLoop(ctx)
 	if e.pers != nil {
-		go e.pers.run(ctx)
+		pctx, stop := context.WithCancel(context.WithoutCancel(ctx))
+		persisted := make(chan struct{})
+		go func() {
+			defer close(persisted)
+			e.pers.run(pctx)
+		}()
+		defer func() {
+			// The loop stops (draining what it holds), then the release
+			// is written here, never cut short by the loop's own stop.
+			stop()
+			<-persisted
+			e.release()
+			e.pers.drain(context.WithoutCancel(ctx), time.Now().Add(2*time.Second))
+		}()
 		e.waitStore(ctx)
 	}
 	close(e.seeded)
@@ -377,28 +406,54 @@ func (e *Engine) waitStore(ctx context.Context) {
 	e.restore(ctx)
 }
 
-// restore carries every saved alert this instance owns that it does not
-// hold already: saved by this instance, released, or saved by another
-// one that has not saved for liveOwnerAfter.
+// liveOwnerAfter is how recent another instance's save must be for its
+// ownership of an alert to be respected (three heartbeats): older, its
+// owner is gone.
+func (e *Engine) liveOwnerAfter() time.Duration { return 3 * e.Heartbeat }
+
+// mayTake reports whether this instance may take a saved alert from its
+// last saver: its own save, one released at a stop (no owner), one whose
+// owner stopped saving (gone), or one an owner hands over because the
+// anchor left its cells (releasing) when this instance owns the anchor.
+func (e *Engine) mayTake(s Saved, anchorMine bool, now time.Time) bool {
+	switch {
+	case s.Owner == "" || s.Owner == e.InstanceID:
+		return true
+	case now.Sub(s.SavedAt) >= e.liveOwnerAfter():
+		return true
+	}
+	return s.Releasing && anchorMine
+}
+
+// restore carries every saved alert whose anchor this instance owns, that
+// it does not hold, and that it may take (mayTake). It runs at the start
+// and on every tick, so an alert whose owner stops or hands it over is
+// never left without one.
 func (e *Engine) restore(ctx context.Context) {
-	if e.restored || e.Store == nil || !e.Store.Loaded() {
+	if e.Store == nil || !e.Store.Loaded() {
 		return
 	}
-	e.restored = true
 	now := e.now()
 	all := e.Store.All()
+	e.forgetCleared(now)
+	defer func() { e.restoredOnce = true }()
 	for _, k := range slices.Sorted(maps.Keys(all)) {
 		s := all[k]
 		if _, held := e.pairs[s.Key]; held {
 			continue
 		}
-		if s.Owner != "" && s.Owner != e.InstanceID && now.Sub(s.SavedAt) < liveOwnerAfter {
-			e.Counters.Inc(CounterStateOwnedByPeer)
+		if at, ok := e.clearedAt[s.Key]; ok && !s.SavedAt.After(at) {
 			continue
 		}
 		p := &pairState{key: s.Key, raisedAt: s.RaisedAt, aircraft: s.Aircraft, severity: s.Severity, detail: s.Detail,
 			losStartS: s.LoSStartS, lastTrueAt: s.LastTrueAt, capturedAt: s.CapturedAt, policyVer: s.PolicyVersion}
 		if !e.anchorOwned(p) {
+			continue
+		}
+		if !e.mayTake(s, true, now) {
+			if !e.restoredOnce {
+				e.Counters.Inc(CounterStateOwnedByPeer)
+			}
 			continue
 		}
 		p.owned = true
@@ -407,7 +462,35 @@ func (e *Engine) restore(ctx context.Context) {
 		e.Counters.Inc(CounterStateRestored)
 		e.save(p, now, true)
 		e.logger().LogAttrs(ctx, slog.LevelInfo, "proximity alert carried from its saved state", slog.String("pair_id", PairID(s.Key)),
-			slog.Time("raised_at", s.RaisedAt))
+			slog.Time("raised_at", s.RaisedAt), slog.String("saved_by", s.Owner), slog.Time("saved_at", s.SavedAt),
+			slog.Bool("releasing", s.Releasing))
+	}
+}
+
+// forgetCleared drops the clear marks the store no longer contradicts:
+// the save is gone or newer, or the bucket's TTL has passed.
+func (e *Engine) forgetCleared(now time.Time) {
+	for k, at := range e.clearedAt {
+		s, ok := e.Store.Get(k)
+		if !ok || s.SavedAt.After(at) || now.Sub(at) > bus.ProximityStateTTL {
+			delete(e.clearedAt, k)
+		}
+	}
+}
+
+// release saves every alert this instance owns as released (no owner):
+// another instance that owns its anchor carries it at its next tick.
+func (e *Engine) release() {
+	now := e.now()
+	for _, k := range slices.Sorted(maps.Keys(e.pairs)) {
+		p := e.pairs[k]
+		if !p.owned || !hasOwn(p) {
+			continue
+		}
+		s := e.savedOf(p, now)
+		s.Owner, s.Releasing = "", false
+		e.pers.put(p.key, persistOp{s: s})
+		e.Counters.Inc(CounterReleasedAtStop)
 	}
 }
 
@@ -624,7 +707,11 @@ func (e *Engine) raised(ctx context.Context, a alerting.Alert, now time.Time) {
 		e.Counters.Inc(CounterWithoutOwnFlight)
 		return
 	}
-	p.owned = e.anchorOwned(p)
+	// A held pair keeps its owner (a releasing one is the old owner's to
+	// publish until it is taken); the others go to the anchor's owner.
+	if !held || !p.owned {
+		p.owned = e.anchorOwned(p)
+	}
 	if !p.owned {
 		e.Counters.Inc(CounterNotOwned)
 		return
@@ -669,9 +756,17 @@ func (e *Engine) cleared(ctx context.Context, c alerting.Cleared, now time.Time)
 	}
 	e.Counters.Inc(CounterCleared)
 	e.publishPair(ctx, p, AlertCleared, string(c.Reason), ClearingDetail(c.ClearingDetail), now)
-	if e.pers != nil {
-		e.pers.put(c.Key, persistOp{del: true})
+	e.forget(c.Key, now)
+}
+
+// forget deletes a cleared pair's saved state and marks it cleared, so
+// the restore never carries its last save again.
+func (e *Engine) forget(key string, now time.Time) {
+	if e.pers == nil {
+		return
 	}
+	e.pers.put(key, persistOp{del: true})
+	e.clearedAt[key] = now
 }
 
 // clearCarried clears a carried pair with reason.
@@ -683,9 +778,7 @@ func (e *Engine) clearCarried(ctx context.Context, p *pairState, reason string, 
 	}
 	e.Counters.Inc(CounterCleared)
 	e.publishPair(ctx, p, AlertCleared, reason, clearing, now)
-	if e.pers != nil {
-		e.pers.put(p.key, persistOp{del: true})
-	}
+	e.forget(p.key, now)
 }
 
 // carriedHeard notes a live sample of an aircraft of a carried pair: a
@@ -790,15 +883,13 @@ func (e *Engine) tick(ctx context.Context) {
 	if cfg := ConfigOf(pol.Values); !sameConfig(cfg, e.cfg) {
 		e.rebuild(pol.Values)
 	}
-	if !e.restored {
-		e.restore(ctx)
-	}
+	e.restore(ctx)
 	if e.widened && !now.Before(e.nextFlush) {
 		e.flush(ctx, now)
 	}
 	e.handle(ctx, e.mon.Tick(e.wallS(now)), now)
 	e.carriedTick(ctx, now)
-	e.adoptOwnership(now)
+	e.ownership(ctx, now)
 	period := e.Tick.Seconds()
 	if e.widened {
 		period = WidenedPeriod.Seconds()
@@ -863,24 +954,56 @@ func (e *Engine) budget(now time.Time, v policy.Values) {
 	}
 }
 
-// adoptOwnership makes this instance publish the active pairs whose
-// anchor moved into its cells (a handover), and stop for those that left
-// them: the other instance saves and publishes them from then on.
-func (e *Engine) adoptOwnership(now time.Time) {
+// ownership settles who publishes each pair this instance holds. An
+// owned pair stays owned until another live instance has saved it after
+// this one last did (the transfer of a handover or a rollover; the anchor's
+// owner never yields to a releasing save); its anchor leaving the owned
+// cells only marks it releasing. A pair held but not owned is taken when
+// this instance may take its save (mayTake) or, unsaved, when it owns
+// the anchor.
+func (e *Engine) ownership(ctx context.Context, now time.Time) {
 	for _, k := range slices.Sorted(maps.Keys(e.pairs)) {
 		p := e.pairs[k]
-		if p.carried || !hasOwn(p) {
+		if !hasOwn(p) {
 			continue
 		}
 		e.refreshAircraft(p)
-		owned := e.anchorOwned(p)
-		if owned && !p.owned && e.Store != nil {
-			if s, ok := e.Store.Get(p.key); ok {
-				p.raisedAt = s.RaisedAt
-			}
-			e.save(p, now, true)
+		mine := e.anchorOwned(p)
+		if e.Store == nil {
+			p.owned = mine
+			continue
 		}
-		p.owned = owned
+		s, saved := e.Store.Get(p.key)
+		if p.owned {
+			if saved && s.Owner != "" && s.Owner != e.InstanceID && !s.SavedAt.Before(p.lastSave) &&
+				now.Sub(s.SavedAt) < e.liveOwnerAfter() && (!mine || !s.Releasing) {
+				p.owned, p.releasing = false, false
+				e.Counters.Inc(CounterHandedOver)
+				e.logger().LogAttrs(ctx, slog.LevelInfo, "proximity alert handed over: its new owner publishes it",
+					slog.String("pair_id", PairID(p.key)), slog.String("owner", s.Owner))
+				continue
+			}
+			if p.releasing == mine {
+				p.releasing = !mine
+				e.save(p, now, true)
+			}
+			continue
+		}
+		take := mine
+		if saved {
+			take = e.mayTake(s, mine, now)
+		}
+		if !take {
+			continue
+		}
+		if saved {
+			p.raisedAt = s.RaisedAt
+		}
+		p.owned, p.releasing = true, !mine
+		e.Counters.Inc(CounterTakenOver)
+		e.logger().LogAttrs(ctx, slog.LevelInfo, "proximity alert taken over", slog.String("pair_id", PairID(p.key)),
+			slog.String("saved_by", s.Owner), slog.Bool("anchor_owned", mine))
+		e.save(p, now, true)
 	}
 }
 
@@ -966,11 +1089,16 @@ func (e *Engine) save(p *pairState, now time.Time, force bool) {
 		return
 	}
 	p.lastSave = now
-	e.pers.put(p.key, persistOp{s: Saved{
+	e.pers.put(p.key, persistOp{s: e.savedOf(p, now)})
+}
+
+// savedOf is the pair's saved state, owned by this instance.
+func (e *Engine) savedOf(p *pairState, now time.Time) Saved {
+	return Saved{
 		Owner: e.InstanceID, SavedAt: now.UTC(), Key: p.key, RaisedAt: p.raisedAt, LastTrueAt: p.lastTrueAt,
 		CapturedAt: p.capturedAt, Severity: p.severity, Aircraft: p.aircraft, Detail: maps.Clone(p.detail),
-		LoSStartS: p.losStartS, PolicyVersion: p.policyVer,
-	}})
+		LoSStartS: p.losStartS, PolicyVersion: p.policyVer, Releasing: p.releasing,
+	}
 }
 
 func (e *Engine) period() float64 {
