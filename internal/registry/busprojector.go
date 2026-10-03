@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/rootxkit/uspace-ussp/internal/bus"
 )
@@ -12,6 +13,7 @@ import (
 type KVWriter interface {
 	Put(ctx context.Context, bucket, key string, value []byte) error
 	Delete(ctx context.Context, bucket, key string) error
+	Keys(ctx context.Context, bucket string) ([]string, error)
 }
 
 // KVKey is the registry_validity key of k: the entity type and the key
@@ -28,7 +30,47 @@ type BusProjector struct {
 	KV KVWriter
 }
 
-var _ Projector = BusProjector{}
+var (
+	_ Projector   = BusProjector{}
+	_ FoldDeleter = BusProjector{}
+)
+
+// keyOfKV reverses KVKey; ok is false for a key it did not write.
+func keyOfKV(kv string) (Key, bool) {
+	entity, token, found := strings.Cut(kv, ".")
+	if !found {
+		return Key{}, false
+	}
+	key, err := bus.KeyFromToken(token)
+	if err != nil {
+		return Key{}, false
+	}
+	return Key{Entity: EntityType(entity), Key: key}, true
+}
+
+// DeleteFolds implements FoldDeleter: it lists the bucket and deletes
+// every key an invalidation's fold names.
+func (b BusProjector) DeleteFolds(ctx context.Context, inv []Invalidation) ([]Key, error) {
+	if len(inv) == 0 {
+		return nil, nil
+	}
+	keys, err := b.KV.Keys(ctx, BucketRegistryValidity)
+	if err != nil {
+		return nil, err
+	}
+	var out []Key
+	for _, kv := range keys {
+		k, ok := keyOfKV(kv)
+		if !ok || !invalidates(inv, k) {
+			continue
+		}
+		if err := b.KV.Delete(ctx, BucketRegistryValidity, kv); err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, nil
+}
 
 // ProjectRegistry implements Projector.
 func (b BusProjector) ProjectRegistry(ctx context.Context, put []Entry, del []Key) error {

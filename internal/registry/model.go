@@ -72,8 +72,12 @@ const (
 	CounterFeedPolled       = "registry_feed_polled"        // a change page applied
 	CounterFeedNotModified  = "registry_feed_not_modified"  // the feed answered 304
 	CounterFeedInvalidated  = "registry_feed_invalidated"   // a cached entry deleted by a change
-	CounterFeedFailed       = "registry_feed_failed"        // a poll that did not complete
-	CounterFeedRefused      = "registry_feed_refused"       // a change page refused (out of order, malformed)
+	// CounterFeedOrphansDeleted counts projected answers a change named
+	// that registry_validity held no row for (a commit that failed after
+	// the projection's put; audit S1).
+	CounterFeedOrphansDeleted = "registry_feed_orphans_deleted"
+	CounterFeedFailed         = "registry_feed_failed"  // a poll that did not complete
+	CounterFeedRefused        = "registry_feed_refused" // a change page refused (out of order, malformed)
 )
 
 // EntityType is what a key names.

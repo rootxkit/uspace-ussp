@@ -35,6 +35,46 @@ func (r *recKV) Delete(_ context.Context, bucket, key string) error {
 	return nil
 }
 
+func (r *recKV) Keys(_ context.Context, _ string) ([]string, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	out := make([]string, 0, len(r.vals))
+	for k := range r.vals {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out, nil
+}
+
+// DeleteFolds deletes every key of the bucket an invalidation's fold
+// names (the serial in any case and punctuation), and nothing else: not
+// another serial, not an operator with the same text.
+func TestBusProjectorDeleteFolds(t *testing.T) {
+	kv := &recKV{vals: map[string][]byte{}}
+	b := BusProjector{KV: kv}
+	for _, k := range []Key{{EntityUAS, "test-sn-a"}, {EntityUAS, "TEST-SN-A"}, {EntityUAS, "TEST-SN-B"}, {EntityOperator, "TEST-SN-A"}} {
+		kv.vals[KVKey(k)] = []byte(`{}`)
+	}
+	kv.vals["not-a-registry-key"] = []byte(`{}`)
+	got, err := b.DeleteFolds(context.Background(), []Invalidation{{Entity: EntityUAS, KeyFold: entryKeyFold(EntityUAS, "TEST-SN-A")}})
+	if err != nil || len(got) != 2 {
+		t.Fatalf("deleted %v %v", got, err)
+	}
+	for _, k := range []Key{{EntityUAS, "TEST-SN-B"}, {EntityOperator, "TEST-SN-A"}} {
+		if _, ok := kv.vals[KVKey(k)]; !ok {
+			t.Errorf("%v deleted", k)
+		}
+	}
+	if _, ok := kv.vals["not-a-registry-key"]; !ok {
+		t.Error("a foreign key deleted")
+	}
+	kv.err = errors.New("kv down")
+	if _, err := b.DeleteFolds(context.Background(), []Invalidation{{Entity: EntityUAS, KeyFold: "X"}}); err == nil {
+		t.Fatal("a listing failure not returned")
+	}
+}
+
 func TestBusProjector(t *testing.T) {
 	kv := &recKV{vals: map[string][]byte{}}
 	b := BusProjector{KV: kv}

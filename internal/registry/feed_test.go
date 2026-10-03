@@ -196,3 +196,45 @@ func TestFeedRunPollsAndStops(t *testing.T) {
 	cancel()
 	feed.Run(ctx) // one failed poll, logged, then the cancelled context
 }
+
+// projected says whether the projection holds k.
+func (f *fixture) projected(k Key) bool {
+	es, _ := f.proj.Snapshot()
+	for _, e := range es {
+		if e.Key == k {
+			return true
+		}
+	}
+	return false
+}
+
+// A projected answer the table lacks (its put reached the KV and the
+// commit failed after it) is removed when the feed invalidates its fold
+// key: the hot path never keeps resolving a suspended registration from
+// it until the bucket TTL (audit S1). A projected answer of another key
+// stays (E-01 pair).
+func TestFeedDeletesAProjectedAnswerWithoutARow(t *testing.T) {
+	f := newFixture(t)
+	if err := f.feed.Poll(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	now := f.clock.Now()
+	orphan := Entry{Key: Key{EntityUAS, "test-sn-a"}, KeyFold: entryKeyFold(EntityUAS, "test-sn-a"), Status: StatusValid, FetchedAt: now}
+	other := Entry{Key: Key{EntityUAS, "TEST-SN-B"}, KeyFold: entryKeyFold(EntityUAS, "TEST-SN-B"), Status: StatusValid, FetchedAt: now}
+	if err := f.proj.ProjectRegistry(t.Context(), []Entry{orphan, other}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.store.row(orphan.Key); ok {
+		t.Fatal("the fixture has a row for the orphan")
+	}
+	f.fake.SetUAS(snA, "revoked", "", "")
+	if err := f.feed.Poll(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if f.projected(orphan.Key) {
+		t.Fatal("a projected answer without a row outlived its invalidation")
+	}
+	if !f.projected(other.Key) {
+		t.Fatal("a projected answer of another key was removed")
+	}
+}
