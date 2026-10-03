@@ -315,9 +315,37 @@ func waitForSchemas(ctx context.Context, rt *Runtime, pools []schemaPool) error 
 // TopologyOf is the bus topology with the bounds cfg configures.
 func TopologyOf(cfg config.Config) bus.Topology {
 	return bus.TopologyWith(bus.TopologyOptions{
-		ConfMaxAge:   time.Duration(cfg.ConfStreamMaxAgeS) * time.Second,
-		ConfMaxBytes: int64(cfg.ConfStreamMaxBytes),
+		Streams: map[string]bus.StreamBounds{
+			bus.StreamCONF:    {MaxAge: secs(cfg.ConfStreamMaxAgeS), MaxBytes: int64(cfg.ConfStreamMaxBytes)},
+			bus.StreamTRK:     {MaxAge: secs(cfg.TRKStreamMaxAgeS), MaxBytes: int64(cfg.TRKStreamMaxBytes)},
+			bus.StreamMAN:     {MaxAge: secs(cfg.MANStreamMaxAgeS), MaxBytes: int64(cfg.MANStreamMaxBytes)},
+			bus.StreamPEER:    {MaxAge: secs(cfg.PEERStreamMaxAgeS), MaxBytes: int64(cfg.PEERStreamMaxBytes)},
+			bus.StreamALRT:    {MaxAge: secs(cfg.ALRTStreamMaxAgeS), MaxBytes: int64(cfg.ALRTStreamMaxBytes)},
+			bus.StreamIDENT:   {MaxAge: secs(cfg.IDENTStreamMaxAgeS), MaxBytes: int64(cfg.IDENTStreamMaxBytes)},
+			bus.StreamINTENT:  {MaxAge: secs(cfg.INTENTStreamMaxAgeS), MaxBytes: int64(cfg.INTENTStreamMaxBytes)},
+			bus.StreamCIS:     {MaxAge: secs(cfg.CISStreamMaxAgeS), MaxBytes: int64(cfg.CISStreamMaxBytes)},
+			bus.StreamTRAFFIC: {MaxAge: secs(cfg.TRAFFICStreamMaxAgeS), MaxBytes: int64(cfg.TRAFFICStreamMaxBytes)},
+			bus.StreamINGEST:  {MaxAge: secs(cfg.INGESTStreamMaxAgeS), MaxBytes: int64(cfg.INGESTStreamMaxBytes)},
+			bus.StreamFLIGHT:  {MaxAge: secs(cfg.FLIGHTStreamMaxAgeS), MaxBytes: int64(cfg.FLIGHTStreamMaxBytes)},
+		},
+		BucketMaxBytes: map[string]int64{
+			bus.BucketCISCurrent:       int64(cfg.CISCurrentBucketMaxBytes),
+			bus.BucketPolicy:           int64(cfg.PolicyBucketMaxBytes),
+			bus.BucketSourceControl:    int64(cfg.SourceControlBucketMaxBytes),
+			bus.BucketRegistryValidity: int64(cfg.RegistryValidityBucketMaxBytes),
+			bus.BucketClientBindings:   int64(cfg.ClientBindingsBucketMaxBytes),
+			bus.BucketIntentActive:     int64(cfg.IntentActiveBucketMaxBytes),
+			bus.BucketTelemetrySeen:    int64(cfg.TelemetrySeenBucketMaxBytes),
+			bus.BucketISANotifications: int64(cfg.ISANotificationsBucketMaxBytes),
+			bus.BucketConformanceState: int64(cfg.ConformanceStateBucketMaxBytes),
+			bus.BucketProximityState:   int64(cfg.ProximityStateBucketMaxBytes),
+			bus.BucketSessionsLive:     int64(cfg.SessionsLiveBucketMaxBytes),
+		},
 	})
+}
+
+func secs(n int) time.Duration {
+	return time.Duration(n) * time.Second
 }
 
 // DepClientAddress is api's readiness entry of the client address

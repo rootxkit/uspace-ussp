@@ -265,7 +265,12 @@ func TestIntegrationWriterOverTheCapRecordsTheGap(t *testing.T) {
 	for i := range msgs {
 		msgs[i] = r.track(time.Now().Add(time.Duration(i) * time.Millisecond))
 	}
-	r.publish(msgs)
+	// Fewer than the stream's 500 first, so nothing is removed before the
+	// writer holds 2..201: published in one burst of 2000, the stream can
+	// take in and remove the head before it delivers the first message,
+	// and which sequences end up held is then a race (main 660e2dd held
+	// 217..416).
+	r.publish(msgs[:300])
 	deadline := time.Now().Add(15 * time.Second)
 	for r.pipes[0].Snapshot().QueueRows < 200 && time.Now().Before(deadline) {
 		time.Sleep(50 * time.Millisecond)
@@ -273,6 +278,8 @@ func TestIntegrationWriterOverTheCapRecordsTheGap(t *testing.T) {
 	if s := r.pipes[0].Snapshot(); s.QueueRows != 200 || s.State != tsdbwriter.StateSpilling {
 		t.Fatalf("held %+v", s)
 	}
+	// Not pulling at its bound: the rest overflows the stream.
+	r.publish(msgs[300:])
 	r.tsProxy.start()
 	// 1 + 200 held + 500 left in the stream; 2..201 held, 202..1501 removed.
 	r.waitRows(701, 60*time.Second)

@@ -9,6 +9,17 @@ additively within `/v1`.
 
 ### Added
 
+- Every NATS stream's age and size bound and every bucket's size bound
+  is configurable: `USSP_<STREAM>_STREAM_MAX_AGE_S` and
+  `USSP_<STREAM>_STREAM_MAX_BYTES` for TRK, MAN, PEER, ALRT, IDENT,
+  INTENT, CIS, TRAFFIC, INGEST and FLIGHT (CONF already was), and
+  `USSP_<BUCKET>_BUCKET_MAX_BYTES` for every bucket, each defaulting to
+  the bound it had. A deployment with a smaller JetStream file store than
+  the defaults' 12.6 GiB lowers them to fit; every process creates a
+  missing stream or bucket with the configured bounds, not the defaults.
+  Bucket TTLs stay fixed. `TestTopologyFitsTheFileStore` (now in
+  `internal/app/proc`) checks the bounds the environment configures
+  against `USSP_TEST_NATS_MAX_FILE_STORE`, or the compose store.
 - WP-12: geo-awareness, zone alerts and the standing re-check. api
   serves `GET /v1/geo?bbox=&at=` and `GET /v1/geo/intents/{id}` (scope
   `ussp.geo`) from its CIS cache: U-space airspaces with their Art. 3(4)
