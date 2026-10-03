@@ -32,3 +32,18 @@ func (r Replay) Open(ctx context.Context, from time.Time, handle func(data []byt
 	}
 	return cc.Stop, nil
 }
+
+// OpenSubjects is Open with each message's subject.
+func (r Replay) OpenSubjects(ctx context.Context, from time.Time, handle func(subject string, data []byte)) (stop func(), err error) {
+	cons, err := r.JS.OrderedConsumer(ctx, r.Stream, jetstream.OrderedConsumerConfig{
+		FilterSubjects: []string{r.Subject}, DeliverPolicy: jetstream.DeliverByStartTimePolicy, OptStartTime: &from,
+	})
+	if err != nil {
+		return nil, err
+	}
+	cc, err := cons.Consume(func(m jetstream.Msg) { handle(m.Subject(), m.Data()) })
+	if err != nil {
+		return nil, err
+	}
+	return cc.Stop, nil
+}

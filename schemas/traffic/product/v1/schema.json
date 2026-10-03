@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/traffic/product/v1.json",
+  "title": "traffic/product/v1",
+  "description": "The traffic information product of one subscriber (Reg. (EU) 2021/664 Art. 11; spec 01 §3 S4, 02 F5), at 1 Hz on WS /v1/traffic, once on GET /v1/traffic/snapshot, and sampled every 10 s on traffic.product.v1.<client_id> for the record (03 §3). It carries every track within the radius of the subscription (traffic_radius_m around an intent's envelope, or the console's bbox): this USSP's own flights, the peers' flights, manned traffic and e-conspicuity, each with its trust class (R-05: a broadcast track is always labelled broadcast), source, age and time of report; a track whose source went silent stays with its age as stale, one whose source was switched off as source_disabled, never removed silently (B-11, SC-16). alerts are the subscriber's active proximity alerts, ranked as the monitor ranks them; degraded names each input that is missing or stale and since when (an empty product never looks like an empty sky, SC-22). No member carries resolution advice (X-15).",
+  "allOf": [{ "$ref": "https://schemas.uspace.ge/envelope/v1.json" }],
+  "properties": {
+    "schema": { "const": "traffic/product/v1" },
+    "body": { "$ref": "#/$defs/body" }
+  },
+  "$defs": {
+    "nullable_number": { "type": ["number", "null"] },
+    "timestamp": { "$ref": "https://schemas.uspace.ge/envelope/v1.json#/$defs/timestamp" },
+    "bbox": {
+      "description": "GeoJSON bounding box [west, south, east, north] in WGS84 degrees (RFC 7946 §5).",
+      "type": "array",
+      "prefixItems": [
+        { "type": "number", "minimum": -180, "maximum": 180 },
+        { "type": "number", "minimum": -90, "maximum": 90 },
+        { "type": "number", "minimum": -180, "maximum": 180 },
+        { "type": "number", "minimum": -90, "maximum": 90 }
+      ],
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "track": {
+      "type": "object",
+      "required": [
+        "track_id", "trust", "source", "state", "age_s", "position", "alt_amsl_m", "alt_source",
+        "speed_ms", "track_deg", "vspeed_ms", "emergency", "identification", "time_of_report"
+      ],
+      "properties": {
+        "track_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "trust": { "$ref": "https://schemas.uspace.ge/envelope/v1.json#/$defs/trust" },
+        "source": { "$ref": "https://schemas.uspace.ge/envelope/v1.json#/$defs/source" },
+        "state": {
+          "description": "live; stale (no sample for traffic_stale_after_s, age_s says how long); source_disabled (its source was switched off).",
+          "enum": ["live", "stale", "source_disabled"]
+        },
+        "age_s": {
+          "description": "Seconds from the track's captured_at to the product's at.",
+          "type": "number",
+          "minimum": 0
+        },
+        "position": {
+          "type": "object",
+          "required": ["lat", "lng"],
+          "properties": {
+            "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+            "lng": { "type": "number", "minimum": -180, "maximum": 180 }
+          }
+        },
+        "alt_amsl_m": { "$ref": "#/$defs/nullable_number" },
+        "alt_source": { "enum": ["geodetic", "pressure", "network", "none"] },
+        "speed_ms": { "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
+        "track_deg": { "oneOf": [{ "type": "number", "minimum": 0, "exclusiveMaximum": 360 }, { "type": "null" }] },
+        "vspeed_ms": { "$ref": "#/$defs/nullable_number" },
+        "emergency": { "type": ["boolean", "null"] },
+        "identification": {
+          "description": "The identification status only (04 §3.2; no serial, no operator number); null for a track with none (manned).",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["status"],
+              "additionalProperties": false,
+              "properties": { "status": { "enum": ["registered", "suspended", "unknown_operator", "unidentified"] } }
+            },
+            { "type": "null" }
+          ]
+        },
+        "time_of_report": {
+          "description": "The track's own time of report (Art. 11(3)(a)): its captured_at.",
+          "$ref": "#/$defs/timestamp"
+        },
+        "callsign": { "type": ["string", "null"], "maxLength": 8 },
+        "own": {
+          "description": "True for one of the subscriber's own flights.",
+          "type": "boolean"
+        },
+        "peer_unavailable": {
+          "description": "True when the peer USSP that serves this track cannot be reached (WP-14); the track is its last report with its age.",
+          "type": "boolean"
+        }
+      }
+    },
+    "degraded": {
+      "type": "object",
+      "required": ["input", "since", "reason"],
+      "properties": {
+        "input": {
+          "description": "The input, as a snake_case slug: manned (the ANSP feed), dss, cis, peers, monitor, alerts, source_control, policy.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "since": {
+          "description": "Since when it is degraded; null when it has never been seen up.",
+          "oneOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }]
+        },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 512 }
+      }
+    },
+    "body": {
+      "type": "object",
+      "required": ["at", "for", "tracks", "alerts", "degraded", "cis_version", "policy_version", "dropped_frames"],
+      "properties": {
+        "at": { "$ref": "#/$defs/timestamp" },
+        "for": {
+          "description": "What the product is for: an operator's intent (its envelope plus traffic_radius_m) or a staff bbox.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["intent_id"],
+              "additionalProperties": false,
+              "properties": {
+                "intent_id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["bbox"],
+              "additionalProperties": false,
+              "properties": { "bbox": { "$ref": "#/$defs/bbox" } }
+            }
+          ]
+        },
+        "tracks": { "type": "array", "items": { "$ref": "#/$defs/track" } },
+        "alerts": {
+          "description": "The subscriber's active proximity alerts (alert/v1 bodies).",
+          "type": "array",
+          "items": { "$ref": "https://schemas.uspace.ge/alert/v1.json#/$defs/body" }
+        },
+        "degraded": { "type": "array", "items": { "$ref": "#/$defs/degraded" } },
+        "cis_version": { "type": ["string", "null"] },
+        "policy_version": { "type": "integer", "minimum": 0 },
+        "dropped_frames": {
+          "description": "Frames and track updates held back for this connection since it opened: the throttle above traffic_throttle_track_count tracks (each track every other second), and frames dropped because the connection could not take them (05 §5).",
+          "type": "integer",
+          "minimum": 0
+        },
+        "throttled": {
+          "description": "True when this product carries only the tracks due this second (the throttle).",
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

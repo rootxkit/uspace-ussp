@@ -1,0 +1,136 @@
+{
+  "schema": "traffic/product/v1",
+  "msg_id": "01K6Q2A3B4C5D6E7F8G9H0J1K3",
+  "producer": "ussp/traffic-ws",
+  "ts": "2026-10-03T12:00:06.000Z",
+  "rx_ts": "2026-10-03T12:00:06.000Z",
+  "captured_at": "2026-10-03T12:00:06.000Z",
+  "time_source": "system",
+  "backlog": false,
+  "body": {
+    "at": "2026-10-03T12:00:06.000Z",
+    "for": {
+      "intent_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    },
+    "tracks": [
+      {
+        "track_id": "11111111-1111-4111-8111-111111111111",
+        "trust": "authenticated",
+        "source": "operator_ws",
+        "state": "live",
+        "age_s": 0.4,
+        "position": {
+          "lat": 41.7151,
+          "lng": 44.8271
+        },
+        "alt_amsl_m": 550.0,
+        "alt_source": "geodetic",
+        "speed_ms": 10.0,
+        "track_deg": 0.0,
+        "vspeed_ms": 0.0,
+        "emergency": false,
+        "identification": {
+          "status": "registered"
+        },
+        "time_of_report": "2026-10-03T12:00:05.600Z",
+        "own": true
+      },
+      {
+        "track_id": "22222222-2222-4222-8222-222222222222",
+        "trust": "authenticated",
+        "source": "operator_ws",
+        "state": "live",
+        "age_s": 0.4,
+        "position": {
+          "lat": 41.7204,
+          "lng": 44.8271
+        },
+        "alt_amsl_m": 550.0,
+        "alt_source": "geodetic",
+        "speed_ms": 10.0,
+        "track_deg": 180.0,
+        "vspeed_ms": 0.0,
+        "emergency": false,
+        "identification": {
+          "status": "registered"
+        },
+        "time_of_report": "2026-10-03T12:00:05.600Z"
+      },
+      {
+        "track_id": "4ca7b5",
+        "trust": "surveillance",
+        "source": "ansp_feed",
+        "state": "live",
+        "age_s": 0.8,
+        "position": {
+          "lat": 41.721,
+          "lng": 44.793
+        },
+        "alt_amsl_m": null,
+        "alt_source": "pressure",
+        "speed_ms": 72.5,
+        "track_deg": 134.0,
+        "vspeed_ms": -2.5,
+        "emergency": false,
+        "identification": null,
+        "time_of_report": "2026-10-03T12:00:05.200Z",
+        "callsign": "TST123"
+      },
+      {
+        "track_id": "4ca7b6",
+        "trust": "broadcast",
+        "source": "adsb_rx",
+        "state": "live",
+        "age_s": 0.8,
+        "position": {
+          "lat": 41.721,
+          "lng": 44.793
+        },
+        "alt_amsl_m": null,
+        "alt_source": "pressure",
+        "speed_ms": 72.5,
+        "track_deg": 134.0,
+        "vspeed_ms": -2.5,
+        "emergency": false,
+        "identification": null,
+        "time_of_report": "2026-10-03T12:00:05.200Z",
+        "callsign": null
+      }
+    ],
+    "alerts": [
+      {
+        "alert_id": "5f0c2a8e-3b1d-4c6e-9a7f-1d2e3f4a5b6c",
+        "kind": "proximity",
+        "severity": "critical",
+        "state": "raised",
+        "clear_reason": null,
+        "flight_id": "11111111-1111-4111-8111-111111111111",
+        "intent_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "authorisation_number": "USSP-DEV-20261003-0001",
+        "captured_at": "2026-10-03T12:00:04.812Z",
+        "raised_at": "2026-10-03T12:00:04.812Z",
+        "updated_at": "2026-10-03T12:00:05.000Z",
+        "policy_version": 3,
+        "detail": {
+          "t_cpa_s": 29.4,
+          "d_cpa_h_m": 0.4,
+          "d_alt_m": 0.0,
+          "d_horizontal_now_m": 588.0,
+          "vertical_separation_known": true,
+          "los_start_s": 26.4,
+          "peer": {
+            "track_id": "22222222-2222-4222-8222-222222222222",
+            "trust": "authenticated",
+            "source": "operator_ws"
+          },
+          "pair_id": "3f2a9c1b7e5d4a3b2c1d0e9f",
+          "evaluation_period_s": 1
+        }
+      }
+    ],
+    "degraded": [],
+    "cis_version": "zones-42",
+    "policy_version": 3,
+    "dropped_frames": 0
+  }
+}
