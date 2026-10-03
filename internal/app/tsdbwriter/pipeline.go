@@ -763,7 +763,8 @@ func (p *Pipeline) coalesce(gs []store.Gap) []store.Gap {
 	}
 	out := make([]store.Gap, 0, len(gs))
 	runs := map[int]int{} // index in out -> gaps merged into it
-	for _, g := range gs {
+	for i := range gs {
+		g := gs[i]
 		if n := len(out); n > 0 && mergeable(&g) {
 			last := &out[n-1]
 			if (runs[n-1] > 0 || mergeable(last)) && last.Cause == g.Cause && last.CountUnit == g.CountUnit && g.FromSeq == last.ToSeq+1 {

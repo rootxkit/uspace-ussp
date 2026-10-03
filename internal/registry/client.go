@@ -247,8 +247,11 @@ func (c *Client) Validate(ctx context.Context, p Purpose, qs []normalised) ([]au
 		}
 		out = list.Results
 	}
-	for i := range out {
-		if err := checkAnswer(qs[i], out[i]); err != nil {
+	for i, q := range qs {
+		if i >= len(out) {
+			return nil, refusedAnswer("%d answers to %d queries", len(out), len(qs))
+		}
+		if err := checkAnswer(q, out[i]); err != nil {
 			return nil, err
 		}
 	}

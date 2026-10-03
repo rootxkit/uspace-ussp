@@ -100,7 +100,8 @@ func signedMatches(v *Version, signed []byte) string {
 // error.
 func canonicalFeatures(fs []ed318.Feature) (map[string][]byte, error) {
 	clean := make([]ed318.Feature, len(fs))
-	for i, f := range fs {
+	for i := range fs {
+		f := fs[i]
 		if f.Properties.ExtendedProperties != nil {
 			ext := make(map[string]json.RawMessage, len(f.Properties.ExtendedProperties))
 			for k, raw := range f.Properties.ExtendedProperties {

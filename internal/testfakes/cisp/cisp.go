@@ -644,6 +644,7 @@ func (f *Fake) getVersion(w http.ResponseWriter, dataset string, n int64) {
 	f.mu.Lock()
 	v := vs[n-1]
 	sig, kid := v.pubSig, v.pubKID
+	body := signedBody(dataset, v)
 	f.mu.Unlock()
 	w.Header().Set("ETag", etag(dataset, n))
 	w.Header().Set("X-CIS-Version", strconv.FormatInt(n, 10))
@@ -654,10 +655,7 @@ func (f *Fake) getVersion(w http.ResponseWriter, dataset string, n int64) {
 	if kid != "" {
 		w.Header().Set("X-Publisher-Kid", kid)
 	}
-	f.mu.Lock()
-	body := signedBody(dataset, v)
-	f.mu.Unlock()
-	_, _ = w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // G705: a test fake serving the bytes it was given
 }
 
 // Tokens is a cis.TokenSource-shaped source that hands out Token.

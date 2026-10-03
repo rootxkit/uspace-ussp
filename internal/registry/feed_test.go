@@ -200,8 +200,8 @@ func TestFeedRunPollsAndStops(t *testing.T) {
 // projected says whether the projection holds k.
 func (f *fixture) projected(k Key) bool {
 	es, _ := f.proj.Snapshot()
-	for _, e := range es {
-		if e.Key == k {
+	for i := range es {
+		if es[i].Key == k {
 			return true
 		}
 	}

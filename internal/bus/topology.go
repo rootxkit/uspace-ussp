@@ -255,17 +255,17 @@ func TopologyWith(o TopologyOptions) Topology {
 // is full, JetStream refuses every publish of the account.
 func (t Topology) MaxBytes() int64 {
 	var sum int64
-	for _, s := range t.Streams {
-		if s.MaxBytes <= 0 {
+	for i := range t.Streams {
+		if t.Streams[i].MaxBytes <= 0 {
 			return -1
 		}
-		sum += s.MaxBytes
+		sum += t.Streams[i].MaxBytes
 	}
-	for _, b := range t.Buckets {
-		if b.MaxBytes <= 0 {
+	for i := range t.Buckets {
+		if t.Buckets[i].MaxBytes <= 0 {
 			return -1
 		}
-		sum += b.MaxBytes
+		sum += t.Buckets[i].MaxBytes
 	}
 	return sum
 }
