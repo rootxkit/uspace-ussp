@@ -557,6 +557,18 @@ func TestTopologyWithEveryBound(t *testing.T) {
 			t.Errorf("bucket %s: max_bytes %d ttl %v max_value %d", b.Bucket, b.MaxBytes, b.TTL, b.MaxValueSize)
 		}
 	}
+	// The hot-path captures discard their oldest whatever their bounds;
+	// INGEST refuses new messages when full.
+	for _, top := range []Topology{def, got} {
+		for _, n := range []string{StreamTRK, StreamMAN, StreamPEER} {
+			if s, _ := top.Stream(n); s.Discard != jetstream.DiscardOld {
+				t.Errorf("%s discards %v, want old", n, s.Discard)
+			}
+		}
+		if s, _ := top.Stream(StreamINGEST); s.Discard != jetstream.DiscardNew {
+			t.Errorf("INGEST discards %v, want new", s.Discard)
+		}
+	}
 	// One stream configured, the rest default.
 	one := TopologyWith(TopologyOptions{Streams: map[string]StreamBounds{StreamTRK: {MaxBytes: 256 << 20}}})
 	for i, s := range one.Streams {

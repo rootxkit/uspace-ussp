@@ -15,8 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nats-io/nats.go/jetstream"
-
 	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/config"
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
@@ -377,23 +375,19 @@ func fileStore(t *testing.T) int64 {
 }
 
 // fits is why top does not fit a file store of store bytes, or nil:
-// every stream and bucket bounded in size, the hot-path captures
-// discarding their oldest, and the sum within the store.
+// every stream and bucket bounded in size and the sum within the store
+// (that the hot-path captures discard their oldest, whatever the
+// bounds, is internal/bus's TestTopologyWithEveryBound).
 func fits(top bus.Topology, store int64) []string {
 	var why []string
-	for _, s := range top.Streams {
-		if s.MaxBytes <= 0 {
-			why = append(why, "stream "+s.Name+": unbounded")
+	for i := range top.Streams {
+		if top.Streams[i].MaxBytes <= 0 {
+			why = append(why, "stream "+top.Streams[i].Name+": unbounded")
 		}
 	}
-	for _, b := range top.Buckets {
-		if b.MaxBytes <= 0 {
-			why = append(why, "bucket "+b.Bucket+": unbounded")
-		}
-	}
-	for _, n := range []string{bus.StreamTRK, bus.StreamMAN, bus.StreamPEER} {
-		if s, _ := top.Stream(n); s.Discard != jetstream.DiscardOld {
-			why = append(why, n+": does not discard its oldest")
+	for i := range top.Buckets {
+		if top.Buckets[i].MaxBytes <= 0 {
+			why = append(why, "bucket "+top.Buckets[i].Bucket+": unbounded")
 		}
 	}
 	if sum := top.MaxBytes(); sum <= 0 || sum > store {
@@ -407,8 +401,7 @@ func fits(top bus.Topology, store int64) []string {
 // set) fits the account's file store: a stream that may grow until the
 // store is full makes JetStream refuse every publish in the account,
 // ALRT, FLIGHT, INTENT and CONF included, while the hot path's core
-// publish of trk still looks sent. The hot-path captures discard their
-// oldest messages when full; INGEST refuses new ones.
+// publish of trk still looks sent.
 func TestTopologyFitsTheFileStore(t *testing.T) {
 	cfg, err := config.LoadFrom(os.LookupEnv)
 	if err != nil {
@@ -434,25 +427,26 @@ func TestTopologyFitsRefusesAndConfigures(t *testing.T) {
 		t.Fatalf("the defaults against 3 GiB: %v", why)
 	}
 	small := map[string]string{}
-	for _, s := range bus.DefaultTopology().Streams {
-		small["USSP_"+s.Name+"_STREAM_MAX_BYTES"] = strconv.Itoa(64 << 20)
+	dt := bus.DefaultTopology()
+	for i := range dt.Streams {
+		small["USSP_"+dt.Streams[i].Name+"_STREAM_MAX_BYTES"] = strconv.Itoa(64 << 20)
 	}
-	for _, b := range bus.DefaultTopology().Buckets {
-		small["USSP_"+strings.ToUpper(b.Bucket)+"_BUCKET_MAX_BYTES"] = strconv.Itoa(32 << 20)
+	for i := range dt.Buckets {
+		small["USSP_"+strings.ToUpper(dt.Buckets[i].Bucket)+"_BUCKET_MAX_BYTES"] = strconv.Itoa(32 << 20)
 	}
 	cfg, err := config.LoadFrom(func(k string) (string, bool) { v, ok := small[k]; return v, ok })
 	if err != nil {
 		t.Fatal(err)
 	}
 	top := TopologyOf(cfg)
-	for _, s := range top.Streams {
-		if s.MaxBytes != 64<<20 {
-			t.Errorf("stream %s: %d, the environment says %d", s.Name, s.MaxBytes, 64<<20)
+	for i := range top.Streams {
+		if top.Streams[i].MaxBytes != 64<<20 {
+			t.Errorf("stream %s: %d, the environment says %d", top.Streams[i].Name, top.Streams[i].MaxBytes, 64<<20)
 		}
 	}
-	for _, b := range top.Buckets {
-		if b.MaxBytes != 32<<20 {
-			t.Errorf("bucket %s: %d, the environment says %d", b.Bucket, b.MaxBytes, 32<<20)
+	for i := range top.Buckets {
+		if top.Buckets[i].MaxBytes != 32<<20 {
+			t.Errorf("bucket %s: %d, the environment says %d", top.Buckets[i].Bucket, top.Buckets[i].MaxBytes, 32<<20)
 		}
 	}
 	if why := fits(top, store); len(why) != 0 {
