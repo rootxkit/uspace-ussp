@@ -75,6 +75,9 @@ const (
 	CounterRegistryFailed  = "registry_check_failed"
 	CounterRefusalNotSaved = "login_refusal_not_audited"
 	CounterBindingRefused  = "serial_binding_refused"
+	// CounterSessionProjectionFailed counts a session use whose new idle
+	// end could not be written to sessions_live.
+	CounterSessionProjectionFailed = "session_projection_failed"
 )
 
 // RegistryChecker asks the authority's registry (F8) about an operator
@@ -120,6 +123,11 @@ type Service struct {
 	Issuer   *auth.Issuer // nil: no session can start
 	Registry RegistryChecker
 	Bindings auth.BindingsProjector
+	// LiveSessions projects every session started and ended to
+	// sessions_live, inside the session's transaction, for the processes
+	// that cannot read the session rows (traffic-ws; audit B2). nil
+	// projects nothing (a process with no reader of it).
+	LiveSessions auth.SessionsProjector
 	// Policy is the current policy (client_secret_overlap_s).
 	Policy func() policy.Values
 	// MFA seals staff TOTP secrets; nil: a staff admin cannot sign in.

@@ -202,9 +202,16 @@ func (g *trafficRig) trafficToken(clientID string) string {
 func (g *trafficRig) staffToken() string {
 	g.t.Helper()
 	now := time.Now().Truncate(time.Second)
-	tok, err := g.own.iss.IssueSession(coreauth.SessionClaims{Subject: newUUID(), Audience: testHost, Realm: auth.RealmConsole,
-		Roles: []string{auth.RoleSupervisor}, JTI: newUUID(), IssuedAt: now, ExpiresAt: now.Add(time.Hour)})
+	sub, jti := newUUID(), newUUID()
+	tok, err := g.own.iss.IssueSession(coreauth.SessionClaims{Subject: sub, Audience: testHost, Realm: auth.RealmConsole,
+		Roles: []string{auth.RoleSupervisor}, JTI: jti, IssuedAt: now, ExpiresAt: now.Add(time.Hour)})
 	if err != nil {
+		g.t.Fatal(err)
+	}
+	// As api does when the session starts: traffic-ws admits a session
+	// only while sessions_live holds it (audit B2).
+	if err := g.kv.PutJSON(context.Background(), bus.BucketSessionsLive, bus.KeyToken(jti), auth.LiveSession{Subject: sub,
+		Realm: auth.RealmConsole, ExpiresAt: now.Add(time.Hour), IdleUntil: now.Add(30 * time.Minute)}); err != nil {
 		g.t.Fatal(err)
 	}
 	return tok

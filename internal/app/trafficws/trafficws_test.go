@@ -46,6 +46,7 @@ const (
 	serialA  = "TEST0001"
 	alertA   = "5f0c2a8e-3b1d-4c6e-9a7f-1d2e3f4a5b6c"
 	staffSub = "0d9f8e7c-6b5a-4c3d-8e2f-1a0b9c8d7e6f"
+	staffJTI = "staff-session-1"
 )
 
 var origin = core.LatLon{LatDeg: 41.7151, LonDeg: 44.8271}
@@ -115,14 +116,15 @@ func (p *pub) count(k string) int {
 }
 
 type rig struct {
-	t    *testing.T
-	hub  *Hub
-	srv  *Server
-	http *httptest.Server
-	gate *gate
-	pub  *pub
-	pv   policy.Values
-	mu   sync.Mutex
+	t        *testing.T
+	sessions *bus.Mirror[auth.LiveSession]
+	hub      *Hub
+	srv      *Server
+	http     *httptest.Server
+	gate     *gate
+	pub      *pub
+	pv       policy.Values
+	mu       sync.Mutex
 }
 
 func circle(p core.LatLon, r float32) f3548.Volume4D {
@@ -145,15 +147,23 @@ func newRig(t *testing.T) *rig {
 	r.hub.Started()
 	r.hub.AlertFeed(true, "")
 	v := verifier{
-		"op-a":  {Issuer: ownIss, Subject: clientA, Scopes: []string{auth.ScopeTraffic}, ExpiresAt: time.Now().Add(time.Hour)},
-		"op-b":  {Issuer: ownIss, Subject: clientB, Scopes: []string{auth.ScopeTraffic}, ExpiresAt: time.Now().Add(time.Hour)},
-		"staff": {Issuer: ownIss, Subject: staffSub, Scopes: []string{auth.SessionScope}, Realm: auth.RealmConsole, Roles: []string{auth.RoleSupervisor}, ExpiresAt: time.Now().Add(time.Hour)},
-		"short": {Issuer: ownIss, Subject: clientA, Scopes: []string{auth.ScopeTraffic}, ExpiresAt: time.Now().Add(1500 * time.Millisecond)},
+		"op-a":          {Issuer: ownIss, Subject: clientA, Scopes: []string{auth.ScopeTraffic}, ExpiresAt: time.Now().Add(time.Hour)},
+		"op-b":          {Issuer: ownIss, Subject: clientB, Scopes: []string{auth.ScopeTraffic}, ExpiresAt: time.Now().Add(time.Hour)},
+		"staff":         {Issuer: ownIss, Subject: staffSub, Scopes: []string{auth.SessionScope}, Realm: auth.RealmConsole, Roles: []string{auth.RoleSupervisor}, JTI: staffJTI, ExpiresAt: time.Now().Add(time.Hour)},
+		"staff-unknown": {Issuer: ownIss, Subject: staffSub, Scopes: []string{auth.SessionScope}, Realm: auth.RealmConsole, Roles: []string{auth.RoleSupervisor}, JTI: "never-started", ExpiresAt: time.Now().Add(time.Hour)},
+		"short":         {Issuer: ownIss, Subject: clientA, Scopes: []string{auth.ScopeTraffic}, ExpiresAt: time.Now().Add(1500 * time.Millisecond)},
 	}
-	guard := &auth.Guard{Verifier: v, OwnIssuer: ownIss}
+	// sessions_live as api projects it: the staff session is live.
+	r.sessions = &bus.Mirror[auth.LiveSession]{}
+	r.liveStaff(true)
+	sessions := auth.LiveSessions{Get: func(jti string) (auth.LiveSession, bool, bool) {
+		v, found, _, loaded := r.sessions.Get(bus.KeyToken(jti))
+		return v, found, loaded
+	}}
+	guard := &auth.Guard{Verifier: v, OwnIssuer: ownIss, Sessions: sessions}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	r.srv = &Server{Hub: r.hub, WS: &auth.WSAuth{Guard: guard, AllowedOrigins: []string{"https://console.test"}}, Ctx: ctx,
+	r.srv = &Server{Hub: r.hub, WS: &auth.WSAuth{Guard: guard, AllowedOrigins: []string{"https://console.test"}}, Sessions: sessions, Ctx: ctx,
 		ProductEvery: 100 * time.Millisecond, StatusEvery: 200 * time.Millisecond, RecordEvery: 300 * time.Millisecond, RepeatEvery: 300 * time.Millisecond,
 		Health: healthStub{}}
 	mux := http.NewServeMux()
@@ -163,6 +173,17 @@ func newRig(t *testing.T) *rig {
 	r.http = httptest.NewServer(httpx.TrackRoute(mux))
 	t.Cleanup(r.http.Close)
 	return r
+}
+
+// liveStaff puts the staff session in sessions_live, or takes it out
+// (api signed it out, ended it, or found it idle).
+func (r *rig) liveStaff(live bool) {
+	vals := map[string]auth.LiveSession{}
+	if live {
+		vals[bus.KeyToken(staffJTI)] = auth.LiveSession{Subject: staffSub, Realm: auth.RealmConsole,
+			ExpiresAt: time.Now().Add(time.Hour), IdleUntil: time.Now().Add(30 * time.Minute)}
+	}
+	r.sessions.Seed(vals)
 }
 
 type healthStub struct{}
@@ -880,5 +901,64 @@ func TestOpenNoticeDoesNotDegradeTheMonitor(t *testing.T) {
 	r.alert(traffic.AlertRaised, false, now)
 	if _, ok := r.hub.Degraded(now.Add(time.Minute))["monitor"]; !ok {
 		t.Fatal("a monitor alert not republished did not degrade the monitor")
+	}
+}
+
+// A console session ended in api (signed out, ended, idle) is refused by
+// traffic-ws too (audit B2): its open socket closes with 4401 at the
+// next status frame, a new upgrade with the same cookie is refused, a
+// session api never started is refused, and while sessions_live has not
+// been read a session is not admitted. The live session is served
+// (E-01): its socket stays open across several status frames.
+func TestEndedSessionIsRefusedAndItsSocketClosed(t *testing.T) {
+	ss := schemas(t)
+	r := newRig(t)
+	c, _, err := r.dial("/v1/traffic", "staff", "https://console.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.CloseNow()
+	next(t, ss, c, 2*time.Second, func(f frame) bool { return f.Schema == SchemaSnapshot })
+	sub := `{"schema":"console/subscribe/v1","body":{"bbox":[44.7,41.6,44.9,41.8],"layers":["tracks","manned","alerts"]}}`
+	if err := c.Write(context.Background(), websocket.MessageText, []byte(sub)); err != nil {
+		t.Fatal(err)
+	}
+	statuses := 0
+	next(t, ss, c, 3*time.Second, func(f frame) bool {
+		if f.Schema == SchemaStatus {
+			statuses++
+		}
+		return statuses >= 3
+	})
+
+	r.liveStaff(false)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	for {
+		if _, _, err := c.Read(ctx); err != nil {
+			if websocket.CloseStatus(err) != auth.CloseRelogin {
+				t.Fatalf("closed with %v, want 4401", err)
+			}
+			break
+		}
+	}
+	for _, tok := range []string{"staff", "staff-unknown"} {
+		c2, _, err := r.dial("/v1/traffic", tok, "https://console.test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := c2.Read(context.Background()); websocket.CloseStatus(err) != auth.CloseRelogin {
+			t.Fatalf("%s after the end: %v", tok, err)
+		}
+	}
+
+	// Unread, the session is neither admitted nor sent to sign in again.
+	r.sessions = &bus.Mirror[auth.LiveSession]{}
+	c3, _, err := r.dial("/v1/traffic", "staff", "https://console.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := c3.Read(context.Background()); websocket.CloseStatus(err) != websocket.StatusTryAgainLater {
+		t.Fatalf("unread sessions_live: %v", err)
 	}
 }

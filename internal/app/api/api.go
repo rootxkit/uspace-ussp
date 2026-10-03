@@ -180,7 +180,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	burst := func(n int) int { return max(1, n/6) }
 	svc := &accounts.Service{
 		Store: rt.Store, Hasher: hasher, Issuer: issuer, Registry: reg.Cache,
-		Bindings: bindingsProjector{kv}, Policy: current, MFA: sealer,
+		Bindings: bindingsProjector{kv}, LiveSessions: sessionsProjector{kv}, Policy: current, MFA: sealer,
 		LoginLimiter: httpx.NewRateLimiter(perMin(cfg.LoginRatePerMin), burst(cfg.LoginRatePerMin), 100_000, counters),
 		Counters:     counters, Logger: rt.Logger,
 		Config: accounts.Config{
@@ -334,6 +334,21 @@ func osUser() string {
 // client_bindings (auth.BindingsProjector): the sorted fold keys under
 // the client id as a bus.KeyToken, and a delete when none is left.
 type bindingsProjector struct{ kv *bus.Projector }
+
+// sessionsProjector writes the live sessions to the KV bucket
+// sessions_live (auth.SessionsProjector), under the jti as a
+// bus.KeyToken, for traffic-ws (audit B2).
+type sessionsProjector struct{ kv *bus.Projector }
+
+// ProjectSession implements auth.SessionsProjector.
+func (p sessionsProjector) ProjectSession(ctx context.Context, jti string, s auth.LiveSession) error {
+	return p.kv.PutJSON(ctx, bus.BucketSessionsLive, bus.KeyToken(jti), s)
+}
+
+// EndSession implements auth.SessionsProjector.
+func (p sessionsProjector) EndSession(ctx context.Context, jti string) error {
+	return p.kv.Delete(ctx, bus.BucketSessionsLive, bus.KeyToken(jti))
+}
 
 // ProjectClientBindings implements auth.BindingsProjector.
 func (b bindingsProjector) ProjectClientBindings(ctx context.Context, clientID string, folds []string) error {

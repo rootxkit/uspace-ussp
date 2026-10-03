@@ -46,6 +46,10 @@ const (
 	BucketIntentActive     = "intent_active"
 	BucketTelemetrySeen    = "telemetry_seen"
 	BucketISANotifications = "rid_isa_notifications"
+	// BucketSessionsLive holds every live session by jti (KeyToken),
+	// written by api in the session's transaction and read by traffic-ws,
+	// which has no relational database (audit B2).
+	BucketSessionsLive = "sessions_live"
 	// BucketConformanceState holds each tracked flight's conformance
 	// state machine, written by the monitor instance that owns the
 	// flight, so a restart or a handover continues it (WP-10).
@@ -143,6 +147,15 @@ const (
 	TelemetrySeenMaxBytes    = int64(1 << 30)
 	ISANotificationsMaxBytes = int64(128 << 20)
 	ConformanceStateMaxBytes = int64(512 << 20)
+	SessionsLiveMaxBytes     = int64(64 << 20)
+)
+
+// The live sessions' bounds: a session lives at most 12 h
+// (USSP_SESSION_TTL_S), so a key an hour older belongs to no live
+// session; a value is a subject, a realm and two times.
+const (
+	SessionsLiveTTL   = 13 * time.Hour
+	SessionsLiveBytes = 1 << 10
 )
 
 // CONF's bounds: the monitor publishes the transitions and a heartbeat
@@ -231,6 +244,7 @@ func TopologyWith(o TopologyOptions) Topology {
 			bucket(BucketISANotifications, "F3411 ISA notifications from peer Service Providers, by ISA id (rid-sp)", ISANotificationBytes, ISANotificationTTL, ISANotificationsMaxBytes),
 			bucket(BucketConformanceState, "each tracked flight's conformance state machine, by flight id (monitor)", ConformanceStateBytes, ConformanceStateTTL, ConformanceStateMaxBytes),
 			bucket(BucketProximityState, "each active proximity alert, by pair (monitor)", ProximityStateBytes, ProximityStateTTL, ProximityStateMaxBytes),
+			bucket(BucketSessionsLive, "live sessions by jti: subject, realm, expiry and idle end (api)", SessionsLiveBytes, SessionsLiveTTL, SessionsLiveMaxBytes),
 		},
 	}
 }

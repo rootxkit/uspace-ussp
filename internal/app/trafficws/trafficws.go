@@ -52,6 +52,7 @@ const (
 	DepPolicy         = "policy"
 	DepSourceControl  = "source_control"
 	DepCIS            = "cis_current"
+	DepSessionsLive   = "sessions_live"
 )
 
 // AlertReplay is how far back the alert feed starts: every active alert
@@ -116,13 +117,23 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	if err != nil {
 		return err
 	}
-	guardCounters := &core.Counters{}
-	proc.Publish(rt, "guard", guardCounters)
-	guard := &auth.Guard{Verifier: verifier, OwnIssuer: ownIssuer(cfg), Counters: guardCounters, Logger: logger}
-
 	// The projections (D6).
 	followCounters := &core.Counters{}
 	proc.Publish(rt, "projections", followCounters)
+	// A console session is live while api's sessions_live holds it
+	// (audit B2): signed out, ended or idle in api, it is refused here
+	// at the upgrade and its open sockets close with 4401. Until the
+	// bucket was read once, a session is neither admitted nor refused
+	// (503).
+	sessionsLive := &bus.Mirror[auth.LiveSession]{JS: js, Bucket: bus.BucketSessionsLive, Counters: followCounters, Logger: logger}
+	sessions := auth.LiveSessions{Get: func(jti string) (auth.LiveSession, bool, bool) {
+		v, found, _, loaded := sessionsLive.Get(bus.KeyToken(jti))
+		return v, found, loaded
+	}}
+	guardCounters := &core.Counters{}
+	proc.Publish(rt, "guard", guardCounters)
+	guard := &auth.Guard{Verifier: verifier, OwnIssuer: ownIssuer(cfg), Sessions: sessions, Counters: guardCounters, Logger: logger}
+	rt.Health.Register(DepSessionsLive, false, mirrorProbe(sessionsLive, "sessions_live"))
 	pol := &bus.Follower[policy.Record]{JS: js, Bucket: bus.BucketPolicy, Key: bus.KeyPolicy, Decode: telemetry.DecodePolicy,
 		Core: rt.Bus.Conn, Push: bus.CtlPolicy, Counters: followCounters, Logger: logger}
 	current := func() policy.Record {
@@ -182,7 +193,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	geoChanges := &geo.Changes{Counters: hubCounters}
 	srv := &Server{
 		Health: proc.HealthHandlers{Health: rt.Health}, Hub: hub, Geo: geoChanges,
-		WS:  &auth.WSAuth{Guard: guard, AllowedOrigins: cfg.WSAllowedOrigins},
+		WS: &auth.WSAuth{Guard: guard, AllowedOrigins: cfg.WSAllowedOrigins}, Sessions: sessions,
 		Ctx: ctx, ProductEvery: o.ProductEvery, StatusEvery: o.StatusEvery, RecordEvery: o.RecordEvery, RepeatEvery: o.RepeatEvery,
 		Degraded: func() []string { return rt.Health.Snapshot().Degraded }, Counters: hubCounters, Logger: logger,
 	}
@@ -226,7 +237,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 			}
 		}
 	})
-	for _, run := range []func(context.Context){pol.Run, src.Run, intents.Run, bindings.Run, basis.Run} {
+	for _, run := range []func(context.Context){pol.Run, src.Run, intents.Run, bindings.Run, basis.Run, sessionsLive.Run} {
 		rt.Go(ctx, run)
 	}
 	logger.Info("traffic-ws serving", slog.Any("allowed_origins", cfg.WSAllowedOrigins))

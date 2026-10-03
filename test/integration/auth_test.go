@@ -167,6 +167,7 @@ type stack struct {
 	issuer   *auth.Issuer
 	verifier *auth.Verifier
 	bindings *auth.MemoryBindings
+	sessions *auth.MemorySessions
 	registry *fixedRegistry
 	sealer   *accounts.Sealer
 	log      *logBuffer
@@ -210,12 +211,13 @@ func newStackWith(t *testing.T, c *clock, logs *logBuffer, intents national.Inte
 		t.Fatal(err)
 	}
 	logger := slog.New(slog.NewJSONHandler(logs, nil))
-	s := &stack{t: t, clock: c, issuer: iss, verifier: v, bindings: auth.NewMemoryBindings(), registry: &fixedRegistry{answer: accounts.RegistryValid},
-		sealer: sealer, log: logs, counters: &core.Counters{}}
+	s := &stack{t: t, clock: c, issuer: iss, verifier: v, bindings: auth.NewMemoryBindings(), sessions: auth.NewMemorySessions(),
+		registry: &fixedRegistry{answer: accounts.RegistryValid},
+		sealer:   sealer, log: logs, counters: &core.Counters{}}
 	pol := policy.Defaults()
 	pol.ClientSecretOverlapS = 3600
 	s.svc = &accounts.Service{
-		Store: appStore(t), Hasher: hasher, Issuer: iss, Registry: s.registry, Bindings: s.bindings,
+		Store: appStore(t), Hasher: hasher, Issuer: iss, Registry: s.registry, Bindings: s.bindings, LiveSessions: s.sessions,
 		Policy: func() policy.Values { return pol }, MFA: sealer, Counters: s.counters, Logger: logger,
 		Config: accounts.Config{SessionTTL: 12 * time.Hour, SessionIdle: 30 * time.Minute, LockoutAfter: 10, LockoutFor: 15 * time.Minute,
 			TOTPIssuer: "USSP-TEST", Now: c.Now},
