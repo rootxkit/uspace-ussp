@@ -73,6 +73,21 @@ func (p Store) Fail(ctx context.Context, id int64, cause error, backoff time.Dur
 	return p.S.Outbox().Fail(ctx, id, cause, backoff)
 }
 
+// ClaimByKey leases the due item of a key; nil when none is due (done,
+// or held by the notification loop).
+func (p Store) ClaimByKey(ctx context.Context, kind, entityID string, version int64) (*store.OutboxItem, error) {
+	it, err := p.q().ClaimOutboxByKey(ctx, relational.ClaimOutboxByKeyParams{
+		LeaseS: store.DefaultLease.Seconds(), Kind: kind, EntityID: entityID, EntityVersion: version,
+	})
+	if store.IsNoRows(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &it, nil
+}
+
 // DoneByKey marks the item of a key done.
 func (p Store) DoneByKey(ctx context.Context, kind, entityID string, version int64) (bool, error) {
 	n, err := p.q().MarkOutboxDoneByKey(ctx, relational.MarkOutboxDoneByKeyParams{Kind: kind, EntityID: entityID, EntityVersion: version})

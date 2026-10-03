@@ -1101,7 +1101,9 @@ func (w *Writer) notes(ctx context.Context, r *intent.Record, held *intent.DSSHe
 // displacedDeadline (ConflictingOIMaxUSSNotificationTimeSeconds, PLAN §15
 // Q16), audits the displacement with both references, and leaves a
 // notification it could not deliver in time to the outbox, counted
-// peer_notify_late.
+// peer_notify_late. Each notification is leased from the outbox before
+// it is posted (ClaimByKey): one the notification loop already holds is
+// left to it, so a peer is never told the same thing twice at once.
 func (w *Writer) displacedNow(ctx context.Context, r *intent.Record, held *intent.DSSHeld, notes []intent.OutboxSpec, displaced []string) {
 	if len(displaced) == 0 {
 		return
@@ -1123,18 +1125,31 @@ func (w *Writer) displacedNow(ctx context.Context, r *intent.Record, held *inten
 		if !ok || !pn.Displaced {
 			continue
 		}
+		it, err := w.Store.ClaimByKey(ctx, n.Kind, n.EntityID, n.Version)
+		if err != nil || it == nil {
+			// The notification loop has it (or it is done): it is told
+			// from there, not twice.
+			if err != nil {
+				w.logger().LogAttrs(ctx, slog.LevelWarn, "a displaced peer's notification not leased; the outbox tells it",
+					slog.String("intent_id", r.ID), obs.Err(err))
+			}
+			continue
+		}
 		dctx, cancel := context.WithTimeout(ctx, displacedDeadline)
-		err := w.Client.Notify(dctx, pn.URL, pn.Body)
+		err = w.Client.Notify(dctx, pn.URL, pn.Body)
 		cancel()
 		if err != nil {
 			w.count(CounterNotifyLate)
 			w.logger().LogAttrs(ctx, slog.LevelWarn, "a displaced peer was not told within 900 ms; the outbox goes on",
 				slog.String("intent_id", r.ID), slog.String("uss_base_url", pn.URL), obs.Err(err))
+			if ferr := w.Store.Fail(ctx, it.ID, err, 0); ferr != nil {
+				w.logger().LogAttrs(ctx, slog.LevelWarn, "a displaced peer's notification not released; the outbox takes it after its lease", obs.Err(ferr))
+			}
 			continue
 		}
 		w.count(CounterDisplacedInline)
 		w.count(CounterNotified)
-		if _, err := w.Store.DoneByKey(ctx, n.Kind, n.EntityID, n.Version); err != nil {
+		if err := w.Store.Done(ctx, it.ID); err != nil {
 			w.logger().LogAttrs(ctx, slog.LevelWarn, "displaced peer told but its item not marked; it may be told again", obs.Err(err))
 		}
 	}

@@ -12,6 +12,49 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const claimOutboxByKey = `-- name: ClaimOutboxByKey :one
+UPDATE dss_outbox
+SET attempts = attempts + 1,
+    next_at = now() + make_interval(secs => $1::double precision)
+WHERE kind = $2 AND entity_id = $3 AND entity_version = $4
+  AND done_at IS NULL AND next_at <= now()
+RETURNING id, kind, entity_id, entity_version, payload, attempts, next_at, created_at, done_at, last_error
+`
+
+type ClaimOutboxByKeyParams struct {
+	LeaseS        float64 `json:"lease_s"`
+	Kind          string  `json:"kind"`
+	EntityID      string  `json:"entity_id"`
+	EntityVersion int64   `json:"entity_version"`
+}
+
+// Leases the one due item of a key (a displaced peer's notification
+// posted inline), as ClaimOutboxKinds does: while it is in flight the
+// notification loop does not take it, and an item the loop holds is not
+// taken here (no row).
+func (q *Queries) ClaimOutboxByKey(ctx context.Context, arg ClaimOutboxByKeyParams) (DssOutbox, error) {
+	row := q.db.QueryRow(ctx, claimOutboxByKey,
+		arg.LeaseS,
+		arg.Kind,
+		arg.EntityID,
+		arg.EntityVersion,
+	)
+	var i DssOutbox
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.EntityID,
+		&i.EntityVersion,
+		&i.Payload,
+		&i.Attempts,
+		&i.NextAt,
+		&i.CreatedAt,
+		&i.DoneAt,
+		&i.LastError,
+	)
+	return i, err
+}
+
 const constraintDelete = `-- name: ConstraintDelete :execrows
 DELETE FROM constraints WHERE entity_id = $1 AND manager = $2
 `

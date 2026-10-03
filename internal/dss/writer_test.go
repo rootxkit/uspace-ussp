@@ -860,3 +860,44 @@ func TestWriterJudgesARecreate(t *testing.T) {
 		t.Fatal("the displaced peer got no notification")
 	}
 }
+
+// The notification loop takes a displaced peer's notification as soon as
+// the authorisation commits it, before the inline attempt: the peer is
+// told once, by the loop, not a second time inline (E-01: the inline
+// path alone is TestWriterTellsADisplacedPeerWithinOneSecond).
+func TestWriterTellsADisplacedPeerOnce(t *testing.T) {
+	g := newRig(t)
+	ctx := context.Background()
+	if _, err := g.peer.File(ctx, peeruss.Spec{ID: peerID, Volumes: []f3548.Volume4D{volume(41.7, 44.8)}}); err != nil {
+		t.Fatal(err)
+	}
+	g.in.check = func(*intent.Record) intent.PeerCheckResult {
+		return intent.PeerCheckResult{Outcome: intent.PeerCheckOK, Displaced: []string{peerID}}
+	}
+	var held []store.OutboxItem
+	g.in.onAuthorise = func() {
+		// The loop claims what the commit queued (a tick of runNotify).
+		items, err := g.st.Claim(ctx, NotifyKinds, 10)
+		if err != nil {
+			t.Error(err)
+		}
+		held = items
+	}
+	r := pending(oursID, volume(41.7, 44.8))
+	r.Priority = 100
+	g.in.put(r)
+	if err := g.w.Mirror(ctx, oursID); err != nil {
+		t.Fatal(err)
+	}
+	if len(held) != 1 {
+		t.Fatalf("the loop holds %d notifications", len(held))
+	}
+	if n := len(g.peer.Notifications()); n != 0 || g.count(CounterDisplacedInline) != 0 {
+		t.Fatalf("told inline while the loop held the notification: %d, %v", n, g.counters.Snapshot())
+	}
+	// The loop posts what it holds: the peer is told once.
+	g.w.notifyItem(ctx, ctx, held[0])
+	if n := len(g.peer.Notifications()); n != 1 || len(g.st.pending(store.OutboxPeerNotify)) != 0 {
+		t.Fatalf("the peer told %d times, %d queued", n, len(g.st.pending(store.OutboxPeerNotify)))
+	}
+}

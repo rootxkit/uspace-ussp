@@ -150,6 +150,21 @@ func (m *memStore) Fail(_ context.Context, id int64, cause error, backoff time.D
 	return store.ErrNotPending
 }
 
+func (m *memStore) ClaimByKey(_ context.Context, kind, entity string, version int64) (*store.OutboxItem, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.outbox {
+		it := &m.outbox[i]
+		if it.Kind == kind && it.EntityID == entity && it.EntityVersion == version && it.DoneAt == nil && !it.NextAt.After(m.now) {
+			it.Attempts++
+			it.NextAt = m.now.Add(time.Minute)
+			c := *it
+			return &c, nil
+		}
+	}
+	return nil, nil
+}
+
 func (m *memStore) DoneByKey(_ context.Context, kind, entity string, version int64) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -414,6 +429,8 @@ type fakeIntents struct {
 	recheck func(r *intent.Record) intent.PeerCheckResult
 	// rechecked counts the RecreateCheck calls.
 	rechecked int
+	// onAuthorise, when set, runs after DSSAuthorise committed.
+	onAuthorise func()
 	// conflicts answers PeerConflicts.
 	conflicts []intent.PeerConflict
 	holds     []string
@@ -539,6 +556,11 @@ func (f *fakeIntents) DSSAuthorise(_ context.Context, id string, version int, he
 	s := "Accepted"
 	r.LocalState, r.Decision.State, r.Decision.Decision, r.Decision.DSSState = intent.StateAccepted, intent.StateAccepted, intent.DecisionAuthorised, &s
 	r.Version++
+	if hook := f.onAuthorise; hook != nil {
+		f.mu.Unlock()
+		hook()
+		f.mu.Lock()
+	}
 	return true, nil
 }
 
