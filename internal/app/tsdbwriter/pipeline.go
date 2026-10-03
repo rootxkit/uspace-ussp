@@ -99,6 +99,9 @@ type item struct {
 	gaps    []store.Gap
 	queued  time.Time
 	touched time.Time
+	// rejected is set once the database refused the item's rows and a
+	// rejected gap replaced them.
+	rejected bool
 }
 
 // Pipeline is one stream: a durable consumer over the whole stream, a
@@ -725,7 +728,9 @@ func (p *Pipeline) store(ctx context.Context, items []*item) (store.Written, err
 // writeBatch writes batch in one transaction. When the database refuses
 // the data itself, each message is written alone, and a message refused
 // alone is replaced by a rejected gap carrying its count: one bad row
-// never holds the rest back and is never dropped unrecorded.
+// never holds the rest back and is never dropped unrecorded. When the
+// gap record is refused too, the batch is a failed write: nothing is
+// acknowledged and it is retried with the backoff (audit S8).
 func (p *Pipeline) writeBatch(ctx context.Context, batch []*item) error {
 	isData := p.DataError
 	if isData == nil {
@@ -748,33 +753,42 @@ func (p *Pipeline) writeBatch(ctx context.Context, batch []*item) error {
 		if !isData(err) {
 			return err
 		}
-		p.reject(ctx, it, err)
+		if err := p.reject(ctx, it, err); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func (p *Pipeline) reject(ctx context.Context, it *item, cause error) {
-	p.Counters.Add(CounterRowsRejected, uint64(it.n))
-	p.Logger.LogAttrs(ctx, slog.LevelError, "the database refused a message's rows; recorded in writer_gaps",
-		slog.String("stream", p.Stream.Name), slog.String("subject", it.msg.Subject()), slog.Uint64("stream_seq", it.seq),
-		slog.String("error", cause.Error()))
-	count, unit := int64(it.n), store.UnitRows
-	if count == 0 {
-		count, unit = 1, store.UnitMessages
+// reject replaces the item's rows by a rejected gap (once) and writes
+// it. A gap the database refuses too is returned: the message is then
+// neither acknowledged nor dropped, and stays at the head of the queue.
+func (p *Pipeline) reject(ctx context.Context, it *item, cause error) error {
+	if !it.rejected {
+		it.rejected = true
+		p.Counters.Add(CounterRowsRejected, uint64(it.n))
+		p.Logger.LogAttrs(ctx, slog.LevelError, "the database refused a message's rows; recorded in writer_gaps",
+			slog.String("stream", p.Stream.Name), slog.String("subject", it.msg.Subject()), slog.Uint64("stream_seq", it.seq),
+			slog.String("error", cause.Error()))
+		count, unit := int64(it.n), store.UnitRows
+		if count == 0 {
+			count, unit = 1, store.UnitMessages
+		}
+		it.dec.Rows = nil
+		it.gaps = append(it.gaps, store.Gap{
+			DedupeKey: fmt.Sprintf("%s:%s:%d", store.CauseRejected, p.Stream.Name, it.seq), Stream: p.Stream.Name, Subject: it.msg.Subject(),
+			FromSeq: it.seq, ToSeq: it.seq, Cause: store.CauseRejected, Count: count, CountUnit: unit, Detail: truncate(cause.Error()),
+		})
 	}
-	it.dec.Rows = nil
-	it.gaps = append(it.gaps, store.Gap{
-		DedupeKey: fmt.Sprintf("%s:%s:%d", store.CauseRejected, p.Stream.Name, it.seq), Stream: p.Stream.Name, Subject: it.msg.Subject(),
-		FromSeq: it.seq, ToSeq: it.seq, Cause: store.CauseRejected, Count: count, CountUnit: unit, Detail: truncate(cause.Error()),
-	})
 	w, err := p.store(ctx, []*item{it})
 	if err != nil {
 		p.Counters.Inc(CounterRejectedUnrecord)
-		p.Logger.LogAttrs(ctx, slog.LevelError, "a rejected message's gap record was refused too; counted as rejected_unrecorded",
-			slog.String("stream", p.Stream.Name), slog.Uint64("stream_seq", it.seq), slog.String("error", err.Error()))
-		return
+		p.warnLimited("a rejected message's gap record was refused too; it is not acknowledged and is retried",
+			slog.Uint64("stream_seq", it.seq), slog.String("error", err.Error()))
+		return fmt.Errorf("the rejected gap of stream sequence %d was refused: %w", it.seq, err)
 	}
 	p.count(w)
+	return nil
 }
 
 func (p *Pipeline) count(w store.Written) {

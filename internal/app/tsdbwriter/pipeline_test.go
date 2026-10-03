@@ -717,3 +717,64 @@ func TestPipelineKeepsHeldMessagesAliveWhileWritesSucceed(t *testing.T) {
 		t.Fatal("no held message was kept in progress")
 	}
 }
+
+// A rejected message whose gap record the database refuses too is not
+// acknowledged: it stays at the head of the queue with the failing-write
+// backoff, counted in rejected_unrecorded, and nothing after it is
+// acknowledged past it; once the gap can be recorded it is, and the
+// message is acknowledged (audit S8).
+func TestPipelineRejectedUnrecordedIsNotAcknowledged(t *testing.T) {
+	const badID = "7ZZZZZZZZZZZZZZZZZZZZZZZZZ"
+	var gapsRefused sync.Mutex
+	refuseGaps := true
+	r := newRig(t, testConfig(), func(_ *fakeSource, st *fakeStore) {
+		st.refuse = func(b store.WriteBatch) error {
+			for _, rows := range b.Rows {
+				for _, row := range rows {
+					if row[0] == "BAD" {
+						return errCheckViolation
+					}
+				}
+			}
+			gapsRefused.Lock()
+			defer gapsRefused.Unlock()
+			if refuseGaps && len(b.Gaps) > 0 {
+				return errCheckViolation
+			}
+			return nil
+		}
+	}, func(p *Pipeline) {
+		p.DataError = func(err error) bool { return errors.Is(err, errCheckViolation) }
+		p.Stream.Decode = func(data []byte) (Decoded, error) {
+			d, err := DecodeTelemetry(data)
+			if err == nil && d.MsgID == badID {
+				d.Rows[0].Values[0] = "BAD"
+			}
+			return d, err
+		}
+	})
+	publishTracks(t, r.src, 1)
+	bad := message(t, "track/telemetry/v1", time.Now(), trackBodyOf(flightID))
+	d, _ := DecodeTelemetry(bad)
+	r.src.publish([]byte(strings.Replace(string(bad), d.MsgID, badID, 1)))
+	publishTracks(t, r.src, 1)
+	eventually(t, "counted", func() bool { return r.counter(CounterRejectedUnrecord) >= 1 })
+	time.Sleep(100 * time.Millisecond) // several retries of the backoff
+	if r.counter(CounterRejectedUnrecord) < 2 {
+		t.Fatalf("the refused gap was not tried again: %v", r.p.Counters.Snapshot())
+	}
+	if f, _ := r.src.AckFloor(context.Background()); f >= 2 {
+		t.Fatalf("ack floor %d: the message whose gap was refused was acknowledged", f)
+	}
+	if r.p.Snapshot().State != StateWriteFailing {
+		t.Fatalf("%+v", r.p.Snapshot())
+	}
+	gapsRefused.Lock()
+	refuseGaps = false
+	gapsRefused.Unlock()
+	eventually(t, "acked", func() bool { f, _ := r.src.AckFloor(context.Background()); return f == 3 })
+	gaps := r.st.gapList()
+	if len(gaps) != 1 || gaps[0].Cause != store.CauseRejected || gaps[0].FromSeq != 2 || r.st.count("telemetry") != 2 {
+		t.Fatalf("gaps %+v rows %d", gaps, r.st.count("telemetry"))
+	}
+}
