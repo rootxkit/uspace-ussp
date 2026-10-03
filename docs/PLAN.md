@@ -162,7 +162,7 @@ flowchart LR
 | `telemetry-ingest` | `WS /v1/telemetry`, `POST /v1/telemetry/batch` | KV `client_bindings`, `source_control`, `policy`; geoid grid | `trk.v1.*` (core NATS + mirror), `ingest.v1.<cell3>` on backpressure, `src.v1.*` | `api` down (bindings from KV with age); DSS down; CIS down |
 | `rid-sp` | `GET /uss/flights`, `GET /uss/flights/{id}/details`, `POST /uss/identification_service_areas/{id}` (ISA notifications for our own peer views), optional `WS /v1/authority/flights` | `trk.v1.>` (own flights, replayed 60 s back from `TRK` at start), KV `intent_active`, `policy` | KV `rid_isa_notifications` (the peers' ISA notifications, for WP-14's view registry). As built (WP-9): the ISA create/update/delete in the DSS is planned by `api` in the transaction that records each flight fact (`dss_isas`, `dss_outbox` `isa_put`/`isa_delete`) and written by `internal/ridsp`'s ISA worker running in `api`, the only relational writer (D5, D6); `dss` is on `api`'s `/readyz` | DSS down (serves `/uss/flights` from its in-memory 60 s window; ISA upkeep retried from the outbox) |
 | `monitor` (partitioned per `cell3`; one instance for the demo) | nothing over HTTP but `/healthz`, `/metrics` | `trk.v1.<cell3>.>` plus ring-1 neighbours, `man.v1.<cell3>.>`, KV `intent_active`, `cis_current`, `policy`, `source_control`; terrain and geoid | `alrt.v1.*` (raise, refresh, clear), `conf.v1.*` (conformance states), `ident.v1.*` | `api` down (projections with age); CIS down (last zones with `cis_age_s`); terrain absent (height not evaluated, said so) |
-| `traffic-ws` | `WS /v1/traffic`, `GET /v1/traffic/snapshot`, `WS /v1/alerts` (stream) | `trk.v1`, `man.v1`, `alrt.v1`, KV `policy` | `traffic.product.v1` samples (0.1 Hz per client) for the record | everything but NATS |
+| `traffic-ws` | `WS /v1/traffic`, `GET /v1/traffic/snapshot`, `WS /v1/alerts` (stream) | `trk.v1`, `peer.v1`, `man.v1`, `src.v1` (core), `alrt.v1` (replayed 30 s back from `ALRT`), KV `policy`, `source_control`, `intent_active`, `client_bindings`, `cis_current` (basis) | `traffic.product.v1` samples (0.1 Hz per client) for the record; `alrt.v1.delivery.<cell5>.<alert_id>` (`alert/delivery/v1`, the first send of an alert to a client, recorded by api) | everything but NATS |
 | `dss-sync` | nothing over HTTP | JetStream `intent.v1.*` outbox, `conf.v1.*`, peer notifications queued by `api` | DSS `/dss/v1/*` (operational intent references, subscriptions, constraint queries), peer USS `POST /uss/v1/operational_intents` notifications, `peer_intents` via `api`'s internal endpoint, `ctl.dss_state` | DSS down: queues with backoff, marks `pending_dss`, reports |
 | `tsdb-writer` | nothing | `trk.v1` mirror, `man.v1`, `peer.v1`, `traffic.product.v1`, `conf.v1` | TimescaleDB (sole writer), batched `COPY`, bounded 10 s queue, spill to the JetStream mirror | TimescaleDB down: queue, then spill, counted |
 
@@ -443,13 +443,13 @@ D7's. A subject that carries an `04` message carries the envelope.
 |---|---|---|---|
 | `trk.v1.<cell3>.<cell5>.<track_id>` | core + JetStream mirror `TRK` (1 h) | telemetry-ingest, peers, manned → monitor, traffic-ws, rid-sp, tsdb-writer | `track/telemetry/v1` with `trust`, `source`, `identification`, `flight_id`, `intent_id` |
 | `man.v1.<cell3>.<cell5>.<icao24>` | core | manned → monitor, traffic-ws, tsdb-writer | `track/manned/v1` |
-| `alrt.v1.<kind>.<cell5>.<alert_id>` | JetStream `ALRT` (7 d) | monitor → api (record), traffic-ws (push); republished every 1 s while active (C-08) | `alert/v1` |
+| `alrt.v1.<kind>.<cell5>.<alert_id>` | JetStream `ALRT` (7 d, 1 GiB) | monitor → api (record), traffic-ws (push); republished every 1 s while active (C-08); api republishes an acknowledgement or an escalation after its commit; `alrt.v1.delivery.<cell5>.<alert_id>` carries traffic-ws's `alert/delivery/v1` to api (WP-11) | `alert/v1` |
 | `conf.v1.<flight_id>` | JetStream `CONF` (48 h, 4 GiB, `USSP_CONF_STREAM_*`; transitions and a heartbeat of at most 0.1 Hz per flight; the record is `conformance_samples`) | monitor → api (state record, DSS state change, Annex V notice, nearby fan-out), tsdb-writer | conformance state change |
 | `ident.v1.<track_id>` | JetStream `IDENT` (24 h) | telemetry-ingest, peers → api, console | identification change |
 | `intent.v1.<state>.<intent_id>` | JetStream `INTENT` (30 d) | api → dss-sync (outbox trigger), monitor (via KV `intent_active`), console | `intent/state/v1` |
 | `cis.v1.<dataset>` | JetStream `CIS` (30 d) + KV `cis_current` | api → monitor, traffic-ws, geo | version, feature ids, reason |
 | `peer.v1.<cell3>.<cell5>.<rid_flight_id>` | core | peers → traffic-ws, monitor, tsdb-writer | peer flights as `track/telemetry/v1` with `trust: provider` |
-| `traffic.product.v1.<client_id>` | JetStream `TRAFFIC` (1 d) | traffic-ws → tsdb-writer | sampled products for the record |
+| `traffic.product.v1.<client_id>` | JetStream `TRAFFIC` (1 d, 512 MiB) | traffic-ws → tsdb-writer | sampled `traffic/product/v1` for the record, with `client_id` |
 | `ingest.v1.<cell3>` | JetStream work queue (10 min) | telemetry-ingest → telemetry-ingest (drain) | raw telemetry under backpressure; oldest dropped with a counted gap, never the newest |
 | `flight.v1.<event>.<flight_id>` | JetStream `FLIGHT` (30 d) | telemetry-ingest → api (flights table) | `flight/event/v1`: started, telemetry_lost, telemetry_resumed, ended (WP-8; the §3.2 flight facts) |
 | `src.v1.<type>.<instance>` | core | every adapter every 2 s → api, console | `source/status/v1` |
@@ -472,7 +472,14 @@ and the nearby alerts it raised, by flight id, written by the monitor
 instance that owns the flight (compare-and-set on the revision) and
 read at its start and when a flight crosses into another instance's
 cells, so neither a restart nor a handover clears a nonconformance or
-returns a flight to conforming without the hysteresis (WP-10). Every
+returns a flight to conforming without the hysteresis (WP-10). A
+fourth is `proximity_state` (TTL 1 h, 4096 alerts of at most 16 KiB,
+rewritten at least every 10 s per active alert): each active proximity
+alert by pair (its raise time, aircraft and last numbers), written by
+the monitor instance whose cells hold the pair's first own flight and
+read through a watched mirror, so a restart, a handover or a policy
+change carries the alert under its ids until core judges the pair again
+or the evidence ends it (WP-11, §15 Q21). Every
 follower logs the
 projection age in its status line and refuses nothing when the bucket is
 missing (everything enabled, identification `registry_unavailable`,
@@ -746,6 +753,8 @@ The default is never the policy answer.
 | Q15 | `monitor` partitioning for the demo. | **Decided.** One `monitor` owning every cell (`USSP_CELL_OWNERSHIP=all`); the ownership map is honoured so a second instance needs no code change. |
 | Q16 | Peer conflict notification ≤ 1 s when the peer is slow. | **Decided.** Sent by `api` in the request path with a 900 ms deadline, then the outbox with `peer_notify_late`; measure in the conformance suite before redesigning. |
 | Q20 | An intent is judged against the CIS once, when it is decided or modified. Who re-evaluates the accepted and activated intents when the CIS changes after that (a new PROHIBITED zone, a changed U-space airspace or ceiling, a restriction)? (Found in the WP-7 review.) | **Decided: WP-12.** WP-7 does not re-evaluate. WP-12's standing re-check (`intent.Recheck`, WP-7's step 3 and 4 re-applied on the stored volumes) runs on every `cis.v1.<dataset>` change of the three ED-318 datasets, not only on restrictions and constraint notifications, with the same outcomes (withdrawn before activation, marked for the operator after it, alert, `change_reason`, audit). Until WP-12 lands, an accepted intent keeps the decision made on the CIS version named in its `cis_version_checked`. |
+| Q21 | `uspace-core` v1.3.0's `alerting.Monitor` keeps its state in memory and has no export or restore, but a restart, a handover between monitor instances or a policy change (a new `Config`) must not clear an active proximity alert silently. (Found in WP-11.) | **Decided (WP-11), proposed upstream.** The monitor saves each active proximity alert in `proximity_state` and carries it, under its alert ids, after a restart, a handover or a rebuild: republished every tick, it continues as the same alert when core raises the pair again, and otherwise ends only on evidence: an aircraft's flight end (`flight_ended`), its source switched off (`source_disabled`), a landing (`landed`), silence for `cpa_stale_after_s` (`stale`), or both aircraft heard flying for longer than `cpa_clear_after_s` with core not raising the pair (`not_reconfirmed`, said so in `clearing_detail`). Core raises it again the moment it holds. A `Monitor.Restore` in core would remove the carried layer. |
+| Q22 | The WP-11 brief's throttle reads "above 200 tracks (2 Hz per track)" while the product is 1 Hz. (Found in WP-11.) | **Decided (WP-11).** Above `traffic_throttle_track_count` (200) one subscriber's product carries each track every other second (a stable parity per track); `dropped_frames` counts the track updates held back and the frames a slow connection could not take, and `throttled` marks a product that carries only the tracks due. At or below the bound every track is in every product and nothing is dropped. |
 | — | Cross-cutting defaults not asked by this plan but applied in it: the JWT claim table (`aud` = target host, `USSP_AUDIENCES`; session `scope = "session"`, `roles[]`, `realm`; M18, M20), cookie names (M21), WS cookie upgrade (M22), the scope catalogue (M23), client ids (M24), `USSP_MTLS_MODE` (M25), the problem body (M28), the console frame (M29), `pnpm` (M34), one Timescale container (M37), basemap and CSP (M38), kit pins (M33). | **Applied** in §3, §6, §8, §11, §13 and the briefs. |
 
 ### 15.2 Open (owner-only; demo default recorded, not decided)
