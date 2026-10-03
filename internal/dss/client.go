@@ -396,7 +396,9 @@ func (c *Client) QueryOperationalIntents(ctx context.Context, aoi f3548.Volume4D
 	return r.OperationalIntentReferences, nil
 }
 
-// QueryConstraints is POST /dss/v1/constraint_references/query.
+// QueryConstraints is POST /dss/v1/constraint_references/query
+// (utm.constraint_processing: the file grants it to no other scope of
+// ours).
 func (c *Client) QueryConstraints(ctx context.Context, aoi f3548.Volume4D) ([]f3548.ConstraintReference, error) {
 	dc, err := c.client()
 	if err != nil {
@@ -404,7 +406,7 @@ func (c *Client) QueryConstraints(ctx context.Context, aoi f3548.Volume4D) ([]f3
 	}
 	a, err := c.do(ctx, readDSS, func(ctx context.Context) (*http.Response, error) {
 		return dc.QueryConstraintReferences(ctx, f3548.QueryConstraintReferenceParameters{AreaOfInterest: &aoi},
-			c.bearer(c.DSSBaseURL, f3548.ScopeStrategicCoordination))
+			c.bearer(c.DSSBaseURL, f3548.ScopeConstraintProcessing))
 	})
 	if err != nil {
 		return nil, err
