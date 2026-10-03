@@ -32,14 +32,21 @@ var t0 = time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 type msg struct {
 	subject string
 	data    []byte
+	mu      sync.Mutex
 	acked   bool
 	naked   bool
 }
 
+func (m *msg) isAcked() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.acked
+}
+
 func (m *msg) Data() []byte               { return m.data }
 func (m *msg) Subject() string            { return m.subject }
-func (m *msg) Ack() error                 { m.acked = true; return nil }
-func (m *msg) Nak() error                 { m.naked = true; return nil }
+func (m *msg) Ack() error                 { m.mu.Lock(); m.acked = true; m.mu.Unlock(); return nil }
+func (m *msg) Nak() error                 { m.mu.Lock(); m.naked = true; m.mu.Unlock(); return nil }
 func (m *msg) StreamSeq() (uint64, error) { return 1, nil }
 func (m *msg) InProgress() error          { return nil }
 
@@ -175,17 +182,28 @@ func TestRecorderWritesFactsAndThrottlesRefreshes(t *testing.T) {
 	if p := st.rows[alertA].PeerRef; p == nil || *p != "22222222-2222-4222-8222-222222222222" {
 		t.Fatalf("peer %v", p)
 	}
-	// A flight not recorded yet: naked and kept, then given up.
+	// A flight not recorded yet: left unacknowledged for redelivery
+	// without holding up the next message, then given up at the bound.
 	other := body(StateRaised, t0)
 	other.AlertID, other.FlightID = "6f0c2a8e-3b1d-4c6e-9a7f-1d2e3f4a5b6d", "33333333-3333-4333-8333-333333333333"
 	m := alertMsg(t, other)
+	behind := body(StateUpdated, t0.Add(20*time.Second))
+	behind.AlertID = "7f0c2a8e-3b1d-4c6e-9a7f-1d2e3f4a5b6e"
+	next := alertMsg(t, behind)
 	r.MaxAttempts = 2
-	if r.Take(ctx, []bus.Msg{m}) || !m.naked {
-		t.Fatal("not left in the stream")
+	if !r.Take(ctx, []bus.Msg{m, next}) || m.acked || m.naked || !next.acked || r.Counters.Get(CounterDeferred) != 1 {
+		t.Fatalf("deferred %v acked %v naked %v next %v", r.Counters.Get(CounterDeferred), m.acked, m.naked, next.acked)
 	}
 	if !r.Take(ctx, []bus.Msg{m}) || !m.acked || r.Counters.Get(CounterGaveUp) != 1 {
 		t.Fatal("not given up at the bound")
 	}
+	// A store that fails holds the fetch (nak) and says so.
+	st.fail = errors.New("db down")
+	f := alertMsg(t, body(StateUpdated, t0.Add(30*time.Second)))
+	if r.Take(ctx, []bus.Msg{f}) || !f.naked || r.Counters.Get(CounterRetried) != 1 {
+		t.Fatal("a failing store did not hold the fetch")
+	}
+	st.fail = nil
 }
 
 // An unreadable message and another schema are acknowledged, counted,
@@ -360,4 +378,122 @@ func FuzzDecode(f *testing.F) {
 		_, _ = DecodeDelivery(data)
 		_ = SchemaOf(data)
 	})
+}
+
+// src is a Source of fixed fetches.
+type src struct {
+	mu    sync.Mutex
+	batch [][]bus.Msg
+	err   error
+}
+
+func (s *src) Fetch(ctx context.Context, _ int, _ time.Duration) ([]bus.Msg, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return nil, s.err
+	}
+	if len(s.batch) == 0 {
+		return nil, nil
+	}
+	b := s.batch[0]
+	s.batch = s.batch[1:]
+	return b, nil
+}
+
+// Run fetches and records until stopped; a failing source waits and
+// tries again.
+func TestRecorderRunAndEscalationLoop(t *testing.T) {
+	st := newMem()
+	m := alertMsg(t, body(StateRaised, t0))
+	s := &src{batch: [][]bus.Msg{{m}}}
+	r := &Recorder{Source: s, Store: st, Wait: 10 * time.Millisecond}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { r.Run(ctx); close(done) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for !m.isAcked() && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	s.mu.Lock()
+	s.err = errors.New("nats down")
+	s.mu.Unlock()
+	p := &pub{}
+	svc := &Service{Store: st, Bus: p}
+	esc := make(chan struct{})
+	go func() { svc.RunEscalation(ctx, 10*time.Millisecond); close(esc) }()
+	for svc.counters().Get(CounterEscalated) == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	<-esc
+	if !m.isAcked() || svc.counters().Get(CounterEscalated) != 1 {
+		t.Fatalf("acked %v escalated %d", m.acked, svc.counters().Get(CounterEscalated))
+	}
+	// An escalated alert without a cell is counted, not published.
+	st2 := newMem()
+	r2 := &Recorder{Store: st2}
+	nc := alertMsg(t, body(StateRaised, t0))
+	nc.subject = "not a subject"
+	r2.Take(context.Background(), []bus.Msg{nc})
+	svc2 := &Service{Store: st2, Bus: &pub{}}
+	if n, err := svc2.Escalate(context.Background()); err != nil || n != 1 || svc2.counters().Get(CounterRepublishNoCell) != 1 {
+		t.Fatalf("%d %v %v", n, err, svc2.counters().Snapshot())
+	}
+}
+
+// Decode refuses each malformed field by name; never panics.
+func TestDecodeRefusals(t *testing.T) {
+	good := body(StateRaised, t0)
+	for name, mut := range map[string]func(*Body){
+		"alert id":  func(b *Body) { b.AlertID = "x" },
+		"kind":      func(b *Body) { b.Kind = "advice" },
+		"severity":  func(b *Body) { b.Severity = "high" },
+		"state":     func(b *Body) { b.State = "open" },
+		"reason":    func(b *Body) { r := "because"; b.State, b.ClearReason = StateCleared, &r },
+		"no reason": func(b *Body) { b.State = StateCleared },
+		"flight":    func(b *Body) { b.FlightID = "f" },
+		"intent":    func(b *Body) { i := "i"; b.IntentID = &i },
+		"number":    func(b *Body) { n := strings.Repeat("x", 65); b.AuthorisationNumber = &n },
+		"time":      func(b *Body) { b.RaisedAt = time.Time{} },
+		"policy":    func(b *Body) { b.PolicyVersion = -1 },
+		"detail":    func(b *Body) { b.Detail = json.RawMessage(`[]`) },
+		"clearing":  func(b *Body) { b.ClearingDetail = json.RawMessage(`3`) },
+	} {
+		b := good
+		mut(&b)
+		if _, err := Decode(alertMsg(t, b).data); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	for _, raw := range []string{`{`, `{"schema":"other/v1"}`, `{"schema":"alert/v1","msg_id":"x","body":{}}`, strings.Repeat(" ", MaxMessageBytes+1)} {
+		if _, err := Decode([]byte(raw)); err == nil {
+			t.Errorf("%.40q accepted", raw)
+		}
+		if _, err := DecodeDelivery([]byte(raw)); err == nil {
+			t.Errorf("delivery %.40q accepted", raw)
+		}
+	}
+	d := Delivery{Envelope: bus.SystemEnvelope(SchemaDelivery, "ussp/traffic-ws", t0), Body: DeliveryBody{AlertID: alertA, ClientID: "c", SentAt: t0}}
+	for name, mut := range map[string]func(*Delivery){
+		"alert":  func(d *Delivery) { d.Body.AlertID = "x" },
+		"client": func(d *Delivery) { d.Body.ClientID = "" },
+		"sent":   func(d *Delivery) { d.Body.SentAt = time.Time{} },
+		"env":    func(d *Delivery) { d.MsgID = "x" },
+	} {
+		c := d
+		mut(&c)
+		raw, _ := json.Marshal(&c)
+		if _, err := DecodeDelivery(raw); err == nil {
+			t.Errorf("delivery %s accepted", name)
+		}
+	}
+	var b Body
+	if _, ok := b.Peer(); ok {
+		t.Fatal("a peer from nothing")
+	}
+	if SchemaOf([]byte(`{`)) != "" {
+		t.Fatal("schema of garbage")
+	}
 }

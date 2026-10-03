@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/rootxkit/uspace-core/core"
@@ -46,10 +47,13 @@ const (
 	CounterAckFailed      = "alerts_ack_failed"
 	CounterDeliveries     = "alerts_deliveries_recorded"
 	CounterOtherSchema    = "alerts_other_schema"
+	CounterDeferred       = "alerts_deferred_flight_not_recorded"
 )
 
 // DefaultMaxAttempts bounds the tries of one message before it is given
-// up, counted and logged at error level.
+// up, counted and logged at error level. A message whose flight is not
+// recorded yet is tried again at each redelivery (the consumer's ack
+// wait, 30 s), so it waits about five minutes for its flight fact.
 const DefaultMaxAttempts = 10
 
 // DefaultRefreshEvery is the longest a recorded alert's numbers wait
@@ -65,9 +69,15 @@ const maxRemembered = 100_000
 // change or an acknowledgement or escalation republish is written at
 // once; a republish of an unchanged active alert refreshes its numbers
 // at most every RefreshEvery. Idempotent by alert_id, which the monitor
-// derives from the condition and its raise time. A store that fails
-// leaves the message in the stream (nak) for DefaultMaxAttempts tries; a
-// message that does not read is logged, counted and acknowledged.
+// derives from the condition and its raise time; a cleared row is never
+// reopened, so the messages of one alert may be written in any order. A
+// store that fails leaves the message and the rest of the fetch in the
+// stream (nak) and waits; a message whose flight (or, for a delivery,
+// whose alert) is not recorded yet is left unacknowledged, redelivered
+// after the ack wait, and never holds up the others (one flight whose
+// fact is late must not stall every alert's record); either is given up
+// after MaxAttempts tries, counted and logged. A message that does not
+// read is logged, counted and acknowledged.
 type Recorder struct {
 	Source       Source
 	Store        Store
@@ -80,6 +90,7 @@ type Recorder struct {
 
 	last     map[string]seen
 	attempts map[string]int
+	once     sync.Once
 }
 
 type seen struct {
@@ -96,9 +107,11 @@ func (r *Recorder) logger() *slog.Logger {
 }
 
 func (r *Recorder) counters() *core.Counters {
-	if r.Counters == nil {
-		r.Counters = &core.Counters{}
-	}
+	r.once.Do(func() {
+		if r.Counters == nil {
+			r.Counters = &core.Counters{}
+		}
+	})
 	return r.Counters
 }
 
@@ -160,6 +173,19 @@ func (r *Recorder) Take(ctx context.Context, msgs []bus.Msg) bool {
 		case err == nil:
 			delete(r.attempts, key)
 			ack(m)
+			continue
+		case errors.Is(err, errNotRecorded):
+			// Left for redelivery after the ack wait; the others go on.
+			r.attempts[key]++
+			if r.attempts[key] >= maxTries {
+				delete(r.attempts, key)
+				r.counters().Inc(CounterGaveUp)
+				r.logger().LogAttrs(ctx, slog.LevelError, "alert message given up: its flight was never recorded",
+					slog.String("subject", m.Subject()), slog.Int("attempts", maxTries))
+				ack(m)
+				continue
+			}
+			r.counters().Inc(CounterDeferred)
 			continue
 		}
 		r.attempts[key]++

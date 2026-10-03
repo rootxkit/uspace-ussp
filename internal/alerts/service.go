@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/rootxkit/uspace-core/core"
@@ -64,6 +65,8 @@ type Service struct {
 	Counters *core.Counters
 	Logger   *slog.Logger
 	Now      func() time.Time
+
+	once sync.Once
 }
 
 func (s *Service) logger() *slog.Logger {
@@ -74,9 +77,11 @@ func (s *Service) logger() *slog.Logger {
 }
 
 func (s *Service) counters() *core.Counters {
-	if s.Counters == nil {
-		s.Counters = &core.Counters{}
-	}
+	s.once.Do(func() {
+		if s.Counters == nil {
+			s.Counters = &core.Counters{}
+		}
+	})
 	return s.Counters
 }
 
