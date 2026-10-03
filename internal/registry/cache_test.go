@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -459,5 +460,38 @@ func TestReadinessProbe(t *testing.T) {
 	}
 	if st, detail := probe(t.Context()); st != obs.StateDegraded || !strings.Contains(detail, "last poll failed") {
 		t.Fatalf("feed failed: %s %s", st, detail)
+	}
+}
+
+// A transport failure of a lookup names the operation and the
+// authority's host, never the request's query: neither the error the
+// log line carries nor the readiness detail (public on /readyz) holds
+// the serial, the pilot id or the operator asked (audit S2). The
+// failure itself is still said (E-01): the detail says the lookup failed.
+func TestLookupFailureCarriesNoKeys(t *testing.T) {
+	var logs strings.Builder
+	client, err := NewClient(ClientConfig{BaseURL: "http://127.0.0.1:1", Tokens: authority.Tokens{}, Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := NewCache(CacheConfig{Client: client, Logger: slog.New(slog.NewTextHandler(&logs, nil))})
+	q := []Query{{Serial: "TEST-SN-SECRET", Pilot: "GEO-PILOT-SECRET", Operator: "GEOOPSECRET01"}}
+	if _, err := c.Validate(t.Context(), q, PurposeIdentification); err != nil {
+		t.Fatal(err)
+	}
+	_, detail := ReadinessProbe(c, nil)(t.Context())
+	if !strings.Contains(detail, "last lookup failed") || !strings.Contains(detail, "127.0.0.1") {
+		t.Fatalf("the failure is not said: %q", detail)
+	}
+	for _, where := range []string{detail, logs.String()} {
+		for _, k := range []string{"TEST-SN-SECRET", "GEO-PILOT-SECRET", "GEOOPSECRET", "serial=", "pilot="} {
+			if strings.Contains(where, k) {
+				t.Fatalf("%q carries %s", where, k)
+			}
+		}
+	}
+	if _, err := client.Validate(t.Context(), PurposeIdentification, []normalised{{serial: "TEST-SN-SECRET", pilot: "GEO-PILOT-SECRET"}}); err == nil ||
+		strings.Contains(err.Error(), "SECRET") {
+		t.Fatalf("client error: %v", err)
 	}
 }
