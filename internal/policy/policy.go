@@ -198,6 +198,19 @@ type Values struct {
 	// unacknowledged before it is escalated to the supervisor console
 	// (02 F5); EscalationRepeatS repeats it to the operator meanwhile.
 	EscalationAfterS float64 `json:"escalation_after_s"`
+
+	// Geo-awareness and zone alerts (WP-12). ZoneClearAfterS is the zone
+	// alert's hysteresis (C-06: resolved only once the aircraft's samples
+	// have shown it outside the zone for longer than this since it was
+	// last inside); ZoneStaleAfterS the silence after which an aircraft
+	// is no longer judged against the zones and its zone alerts clear
+	// stale (T-10). ZoneConditionalSeverity is what a CONDITIONAL zone
+	// raises (info or warning, uspace-core zones.Policy, Z-10: never
+	// above the zone's restriction). The 120 m height limit is not here:
+	// it is the authority's to judge (spec 09 §2).
+	ZoneClearAfterS         float64 `json:"zone_clear_after_s"`
+	ZoneStaleAfterS         float64 `json:"zone_stale_after_s"`
+	ZoneConditionalSeverity string  `json:"zone_conditional_severity"`
 }
 
 // MaxCPAPairBudget bounds CPAPairBudget.
@@ -268,6 +281,10 @@ const TelemetryRetentionFloorDays = 30
 // 60 s, the 200-track throttle of 05 §5 and the 0.1 Hz record sample of
 // 03 §3.
 //
+// The zone defaults (WP-12) are uspace-core's alert lifecycle figures
+// (alerting.DefaultConfig: 3 s hysteresis, 15 s stale) and its
+// CONDITIONAL severity (zones.DefaultPolicy: warning).
+//
 // The conformance defaults (WP-10) are uspace-core's alert lifecycle
 // figures (alerting.DefaultConfig: 3 s hysteresis, 10 s live age) and
 // its pressure margin (zones.DefaultPolicy: 250 m), so a conformance
@@ -336,6 +353,10 @@ func Defaults() Values {
 		TrafficThrottleTracks: 200,
 		TrafficRecordEveryS:   10,
 		EscalationAfterS:      30,
+
+		ZoneClearAfterS:         lc.ClearAfterS,
+		ZoneStaleAfterS:         lc.StaleAfterS,
+		ZoneConditionalSeverity: string(zones.DefaultPolicy().ConditionalSeverity),
 	}
 }
 
@@ -345,6 +366,17 @@ func (v Values) AltPolicy() rid.AltPolicy {
 	p := rid.DefaultAltPolicy()
 	p.MinVerticalAccuracy = uint8(min(max(v.PressureFallbackAccuracyCode, 0), MaxPressureFallbackAccuracyCode))
 	p.PressureHoldS = v.PressureHoldS
+	return p
+}
+
+// Zones is the uspace-core zones policy of v: the pressure margin and
+// the CONDITIONAL severity; no height limit (MaxHeightAGLM nil: the
+// 120 m rule is the authority's, brief WP-12).
+func (v Values) Zones() zones.Policy {
+	p := zones.DefaultPolicy()
+	p.PressureUncertaintyM = v.PressureUncertaintyM
+	p.ConditionalSeverity = core.Severity(v.ZoneConditionalSeverity)
+	p.MaxHeightAGLM = nil
 	return p
 }
 
@@ -395,6 +427,7 @@ func (v Values) Validate() error {
 		{"traffic_radius_m", v.TrafficRadiusM}, {"traffic_live_max_age_s", v.TrafficLiveMaxAgeS},
 		{"traffic_stale_after_s", v.TrafficStaleAfterS}, {"traffic_drop_after_s", v.TrafficDropAfterS},
 		{"traffic_record_every_s", v.TrafficRecordEveryS}, {"escalation_after_s", v.EscalationAfterS},
+		{"zone_clear_after_s", v.ZoneClearAfterS}, {"zone_stale_after_s", v.ZoneStaleAfterS},
 	}
 	for _, f := range positive {
 		if !finite(f.v) || f.v <= 0 {
@@ -455,6 +488,16 @@ func (v Values) Validate() error {
 	// stopped being live, and leaves the product only after it was stale.
 	if finite(v.CPAClearAfterS) && finite(v.TelemetryAheadToleranceS) && v.CPAClearAfterS <= 2*v.TelemetryAheadToleranceS {
 		errs = append(errs, core.Fieldf("cpa_clear_after_s", "must be longer than twice telemetry_ahead_tolerance_s (%v), got %v", v.TelemetryAheadToleranceS, v.CPAClearAfterS))
+	}
+	if finite(v.ZoneClearAfterS) && finite(v.TelemetryAheadToleranceS) && v.ZoneClearAfterS <= 2*v.TelemetryAheadToleranceS {
+		errs = append(errs, core.Fieldf("zone_clear_after_s", "must be longer than twice telemetry_ahead_tolerance_s (%v), got %v", v.TelemetryAheadToleranceS, v.ZoneClearAfterS))
+	}
+	switch core.Severity(v.ZoneConditionalSeverity) {
+	case core.SeverityInfo, core.SeverityWarning:
+	case core.SeverityCritical:
+		errs = append(errs, core.Fieldf("zone_conditional_severity", "must be info or warning (a CONDITIONAL zone never raises above its restriction, Z-10), got %q", v.ZoneConditionalSeverity))
+	default:
+		errs = append(errs, core.Fieldf("zone_conditional_severity", "must be info or warning (a CONDITIONAL zone never raises above its restriction, Z-10), got %q", v.ZoneConditionalSeverity))
 	}
 	if finite(v.TrafficStaleAfterS) && finite(v.TrafficLiveMaxAgeS) && v.TrafficStaleAfterS < v.TrafficLiveMaxAgeS {
 		errs = append(errs, core.Fieldf("traffic_stale_after_s", "must be at least traffic_live_max_age_s (%v), got %v", v.TrafficLiveMaxAgeS, v.TrafficStaleAfterS))

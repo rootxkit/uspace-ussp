@@ -12,6 +12,7 @@ import (
 
 	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/conformance"
+	"github.com/rootxkit/uspace-ussp/internal/geo"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 )
 
@@ -63,6 +64,9 @@ type Saved struct {
 	LastAt   time.Time                `json:"last_at"`
 	Tracker  conformance.TrackerState `json:"tracker"`
 	Nearby   []conformance.SavedAlert `json:"nearby,omitempty"`
+	// Zones are the flight's zone and identification alerts (brief
+	// WP-12), carried by the instance that takes the flight over.
+	Zones []geo.Alert `json:"zones,omitempty"`
 }
 
 // StoredState is a Saved with the revision it was read at.

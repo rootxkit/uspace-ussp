@@ -77,12 +77,12 @@ func TestValuesJSONNamesCarryUnits(t *testing.T) {
 		t.Fatalf("%d JSON fields for %d struct fields", len(m), reflect.TypeFor[Values]().NumField())
 	}
 	for k := range m {
-		// _priority, _count and _code are dimensionless (an ordinal, a
-		// number of things, an enumeration code); every other name carries
-		// its unit.
+		// _priority, _count, _code and _severity are dimensionless (an
+		// ordinal, a number of things, an enumeration code, a severity);
+		// every other name carries its unit.
 		if !strings.HasSuffix(k, "_m") && !strings.HasSuffix(k, "_s") && !strings.HasSuffix(k, "_days") &&
 			!strings.HasSuffix(k, "_priority") && !strings.HasSuffix(k, "_count") && !strings.HasSuffix(k, "_hz") &&
-			!strings.HasSuffix(k, "_code") && !strings.HasSuffix(k, "_ms") {
+			!strings.HasSuffix(k, "_code") && !strings.HasSuffix(k, "_ms") && !strings.HasSuffix(k, "_severity") {
 			t.Errorf("%s has no unit", k)
 		}
 	}
@@ -300,5 +300,38 @@ func TestConformanceDefaultsAndHysteresisBound(t *testing.T) {
 	v.PressureUncertaintyM = 0
 	if err := v.Validate(); err != nil {
 		t.Errorf("no pressure margin refused: %v", err)
+	}
+}
+
+// The zone defaults are core's lifecycle figures and CONDITIONAL
+// severity; the hysteresis outlasts twice the ahead tolerance, and a
+// CONDITIONAL zone never raises critical (Z-10). The zones policy never
+// carries a height limit (the 120 m rule is the authority's).
+func TestZoneDefaultsAndBounds(t *testing.T) {
+	d := Defaults()
+	if d.ZoneClearAfterS != 3 || d.ZoneStaleAfterS != 15 || d.ZoneConditionalSeverity != "warning" {
+		t.Fatalf("zone defaults %v %v %q", d.ZoneClearAfterS, d.ZoneStaleAfterS, d.ZoneConditionalSeverity)
+	}
+	if p := d.Zones(); p.MaxHeightAGLM != nil || p.ConditionalSeverity != core.SeverityWarning || p.PressureUncertaintyM != d.PressureUncertaintyM {
+		t.Fatalf("zones policy %+v", p)
+	}
+	for _, sev := range []string{"info", "warning"} {
+		v := Defaults()
+		v.ZoneConditionalSeverity = sev
+		if err := v.Validate(); err != nil {
+			t.Errorf("%s refused: %v", sev, err)
+		}
+	}
+	for name, bad := range map[string]func(*Values){
+		"zone_conditional_severity": func(v *Values) { v.ZoneConditionalSeverity = "critical" },
+		"zone_clear_after_s":        func(v *Values) { v.ZoneClearAfterS = 2 * v.TelemetryAheadToleranceS },
+		"zone_stale_after_s":        func(v *Values) { v.ZoneStaleAfterS = 0 },
+	} {
+		v := Defaults()
+		bad(&v)
+		var fe *core.FieldError
+		if err := v.Validate(); !errors.As(err, &fe) || fe.Field != name {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }
