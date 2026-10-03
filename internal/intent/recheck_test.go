@@ -212,3 +212,45 @@ func TestRecheckPriorityCause(t *testing.T) {
 		t.Fatalf("%+v %v", r, err)
 	}
 }
+
+// The dedupe is on the whole conflict set: a second restriction over a
+// marked intent while the first still applies is a new notice, named
+// after the new restriction and carrying both conflicts; the same set
+// again tells nothing twice, and the first restriction ending tells
+// nothing either (E-01 pair).
+func TestRecheckTellsASecondConflictWhileTheFirstStillApplies(t *testing.T) {
+	g := newRig()
+	s, st, _ := newService(g)
+	d, _, err := submit(t, s, baseRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.now = t0.Add(-5 * time.Minute)
+	if _, err := patch(t, s, d.IntentID, map[string]any{"action": "activate"}); err != nil {
+		t.Fatal(err)
+	}
+	a := restriction(t, "TRSA", "active").candidate(t)
+	g.cis.features = append(g.cis.features, a)
+	if r, err := s.Recheck(t.Context(), d.IntentID, Cause{Kind: CauseRestriction}); err != nil || r.Outcome != RecheckMarked {
+		t.Fatalf("A: %+v %v", r, err)
+	}
+	g.cis.features = append(g.cis.features, restriction(t, "TRSB", "active").candidate(t))
+	r, err := s.Recheck(t.Context(), d.IntentID, Cause{Kind: CauseRestriction})
+	if err != nil || r.Outcome != RecheckMarked || r.Notice == nil || r.Notice.RestrictionID != "TRSB" || r.Notice.ChangeReason != "restriction TRSB" {
+		t.Fatalf("B while A applies: %+v %v", r, err)
+	}
+	if len(r.Notice.Conflicts) != 2 {
+		t.Fatalf("the notice carries the whole set: %+v", r.Notice.Conflicts)
+	}
+	rec := st.byID[d.IntentID]
+	if rec.Version != 4 || NoticeOf(rec).AlertID == "" {
+		t.Fatalf("v%d", rec.Version)
+	}
+	if again, err := s.Recheck(t.Context(), d.IntentID, Cause{Kind: CauseSweep}); err != nil || again.Outcome != RecheckAlreadyMarked {
+		t.Fatalf("again: %+v %v", again, err)
+	}
+	g.cis.features = []cis.ZoneCandidate{g.cis.features[len(g.cis.features)-1]}
+	if after, err := s.Recheck(t.Context(), d.IntentID, Cause{Kind: CauseSweep}); err != nil || after.Outcome != RecheckAlreadyMarked || st.byID[d.IntentID].Version != 4 {
+		t.Fatalf("A ended: %+v %v", after, err)
+	}
+}

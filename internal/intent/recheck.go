@@ -186,7 +186,7 @@ func notJudged(cs []Conflict) (string, bool) {
 	return "", false
 }
 
-// causeOf names the cause from the first affecting conflict: its kind
+// causeOf names the cause from the first conflict not told yet: its kind
 // and its feature.
 func causeOf(c Conflict, given Cause) Cause {
 	out := Cause{Kind: given.Kind, Ref: c.Ref, CISVersion: given.CISVersion}
@@ -259,7 +259,7 @@ func (s *Service) Recheck(ctx context.Context, intentID string, cause Cause) (Re
 		return out, &UnavailableError{Dependency: "database", Detail: "the database clock could not be read"}
 	}
 	var found []Conflict
-	var window *Window
+	var norm *Normalised
 	var cisVersion string
 	if cause.Kind == CausePriority {
 		found = []Conflict{{Kind: KindIntent, Reason: ReasonIntentPriority, Effect: EffectRejects, Ref: cause.Ref,
@@ -298,8 +298,7 @@ func (s *Service) Recheck(ctx context.Context, intentID string, cause Cause) (Re
 			out.Outcome = RecheckUntouched
 			return out, nil
 		}
-		cause = causeOf(found[0], cause)
-		window = s.Decider.windowOf(n, cause.Ref)
+		norm = n
 	}
 	if cisVersion == "" {
 		cisVersion = cause.CISVersion
@@ -320,9 +319,21 @@ func (s *Service) Recheck(ctx context.Context, intentID string, cause Cause) (Re
 			out.Outcome, out.Detail = RecheckNotJudged, "the intent changed while it was re-checked"
 			return nil
 		}
-		if prev := NoticeOf(r); prev != nil && prev.Cause == cause.Kind && prev.Ref == cause.Ref {
+		// The dedupe is on the whole conflict set: a conflict already told
+		// is not told twice, but a further one (restriction B while A
+		// still applies) is a new notice, named after the first conflict
+		// the operator was not told of.
+		prev := NoticeOf(r)
+		fresh := untold(found, prev)
+		if len(fresh) == 0 {
 			out.Outcome, out.Notice = RecheckAlreadyMarked, prev
 			return nil
+		}
+		cause := cause
+		var window *Window
+		if norm != nil {
+			cause = causeOf(fresh[0], cause)
+			window = s.Decider.windowOf(norm, cause.Ref)
 		}
 		at, err := tx.Now(ctx)
 		if err != nil {
@@ -331,7 +342,7 @@ func (s *Service) Recheck(ctx context.Context, intentID string, cause Cause) (Re
 		prevState := r.LocalState
 		reason := cause.String()
 		notice := &Notice{
-			Cause: cause.Kind, Ref: cause.Ref, Reason: found[0].Reason, Withdrawn: true, PreviousState: prevState,
+			Cause: cause.Kind, Ref: cause.Ref, Reason: fresh[0].Reason, Withdrawn: true, PreviousState: prevState,
 			AffectedIntents: []string{r.ID}, Window: window, Conflicts: found, ChangeReason: reason, CISVersion: cisVersion,
 			Severity: string(core.SeverityCritical),
 		}
@@ -350,7 +361,7 @@ func (s *Service) Recheck(ctx context.Context, intentID string, cause Cause) (Re
 			notice.Decision = RecheckMarked
 			event = EventRechecked
 		}
-		r.Decision.Conflicts = append(slices.Clone(r.Decision.Conflicts), found...)
+		r.Decision.Conflicts = append(slices.Clone(r.Decision.Conflicts), fresh...)
 		r.ChangeReason, r.Actor = reason, "system"
 		s.advance(r, at)
 		notice.IntentState, notice.Version, notice.At = r.LocalState, r.Version, at
@@ -382,6 +393,28 @@ func (s *Service) Recheck(ctx context.Context, intentID string, cause Cause) (Re
 		s.count("recheck_already_marked")
 	}
 	return out, nil
+}
+
+// conflictKey identifies a conflict for the dedupe of notices: its
+// kind, reason and feature or intent.
+func conflictKey(c Conflict) string { return c.Kind + "|" + c.Reason + "|" + c.Ref }
+
+// untold are the conflicts of found that the notice prev did not carry
+// (all of them when there is no notice).
+func untold(found []Conflict, prev *Notice) []Conflict {
+	told := map[string]bool{}
+	if prev != nil {
+		for _, c := range prev.Conflicts {
+			told[conflictKey(c)] = true
+		}
+	}
+	var out []Conflict
+	for _, c := range found {
+		if !told[conflictKey(c)] {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // noticeAlertID is the restriction_activated alert of one intent
