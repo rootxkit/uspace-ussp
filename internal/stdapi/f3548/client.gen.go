@@ -170,6 +170,13 @@ type ClientInterface interface {
 	// Corresponds with PUT /dss/v1/operational_intent_references/{entityid}/{ovn} (the `UpdateOperationalIntentReference` operationId).
 	UpdateOperationalIntentReference(ctx context.Context, entityid EntityID, ovn EntityOVN, body UpdateOperationalIntentReferenceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetSubscription Retrieve the specified subscription from the DSS.
+	//
+	// Retrieve a specific subscription.
+	//
+	// Corresponds with GET /dss/v1/subscriptions/{subscriptionid} (the `GetSubscription` operationId).
+	GetSubscription(ctx context.Context, subscriptionid SubscriptionID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CreateSubscriptionWithBody Create the specified subscription in the DSS.
 	//
 	// Create a subscription.
@@ -223,6 +230,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /dss/v1/uss_availability/{uss_id} (the `GetUssAvailability` operationId).
 	GetUssAvailability(ctx context.Context, ussId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetConstraintDetails Retrieve the specified constraint details from a USS.
+	//
+	// The USS hosting this endpoint returns the details (and reference) of a constraint it manages.  While the USS has a pending request to change the constraint in the DSS, the USS should report the most recent version the USS knows was accepted by the DSS.  So, before a USS receives a response to create a constraint reference in the DSS, it should return 404 if queried for that constraint at this endpoint.
+	//
+	// Corresponds with GET /uss/v1/constraints/{entityid} (the `GetConstraintDetails` operationId).
+	GetConstraintDetails(ctx context.Context, entityid EntityID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// NotifyOperationalIntentDetailsChangedWithBody Notify a peer USS of changed operational intent details.
 	//
@@ -439,6 +453,23 @@ func (c *StdClient) UpdateOperationalIntentReference(ctx context.Context, entity
 	return c.Client.Do(req)
 }
 
+// GetSubscription Retrieve the specified subscription from the DSS.
+//
+// Retrieve a specific subscription.
+//
+// Corresponds with GET /dss/v1/subscriptions/{subscriptionid} (the `GetSubscription` operationId).
+func (c *StdClient) GetSubscription(ctx context.Context, subscriptionid SubscriptionID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSubscriptionRequest(c.Server, subscriptionid)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // CreateSubscriptionWithBody Create the specified subscription in the DSS.
 //
 // Create a subscription.
@@ -543,6 +574,23 @@ func (c *StdClient) UpdateSubscription(ctx context.Context, subscriptionid Subsc
 // Corresponds with GET /dss/v1/uss_availability/{uss_id} (the `GetUssAvailability` operationId).
 func (c *StdClient) GetUssAvailability(ctx context.Context, ussId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetUssAvailabilityRequest(c.Server, ussId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetConstraintDetails Retrieve the specified constraint details from a USS.
+//
+// The USS hosting this endpoint returns the details (and reference) of a constraint it manages.  While the USS has a pending request to change the constraint in the DSS, the USS should report the most recent version the USS knows was accepted by the DSS.  So, before a USS receives a response to create a constraint reference in the DSS, it should return 404 if queried for that constraint at this endpoint.
+//
+// Corresponds with GET /uss/v1/constraints/{entityid} (the `GetConstraintDetails` operationId).
+func (c *StdClient) GetConstraintDetails(ctx context.Context, entityid EntityID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetConstraintDetailsRequest(c.Server, entityid)
 	if err != nil {
 		return nil, err
 	}
@@ -898,6 +946,40 @@ func NewUpdateOperationalIntentReferenceRequestWithBody(server string, entityid 
 	return req, nil
 }
 
+// NewGetSubscriptionRequest constructs an http.Request for the GetSubscription method
+func NewGetSubscriptionRequest(server string, subscriptionid SubscriptionID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "subscriptionid", subscriptionid, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/dss/v1/subscriptions/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewCreateSubscriptionRequest calls the generic CreateSubscription builder with application/json body
 func NewCreateSubscriptionRequest(server string, subscriptionid SubscriptionID, body CreateSubscriptionJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -1057,6 +1139,40 @@ func NewGetUssAvailabilityRequest(server string, ussId string) (*http.Request, e
 	}
 
 	operationPath := fmt.Sprintf("/dss/v1/uss_availability/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetConstraintDetailsRequest constructs an http.Request for the GetConstraintDetails method
+func NewGetConstraintDetailsRequest(server string, entityid EntityID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "entityid", entityid, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/uss/v1/constraints/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -1304,6 +1420,15 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PUT /dss/v1/operational_intent_references/{entityid}/{ovn} (the `UpdateOperationalIntentReference` operationId).
 	UpdateOperationalIntentReferenceWithResponse(ctx context.Context, entityid EntityID, ovn EntityOVN, body UpdateOperationalIntentReferenceJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateOperationalIntentReferenceReply, error)
 
+	// GetSubscriptionWithResponse Retrieve the specified subscription from the DSS.
+	//
+	// Retrieve a specific subscription.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /dss/v1/subscriptions/{subscriptionid} (the `GetSubscription` operationId).
+	GetSubscriptionWithResponse(ctx context.Context, subscriptionid SubscriptionID, reqEditors ...RequestEditorFn) (*GetSubscriptionReply, error)
+
 	// CreateSubscriptionWithBodyWithResponse Create the specified subscription in the DSS.
 	//
 	// Create a subscription.
@@ -1361,6 +1486,15 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /dss/v1/uss_availability/{uss_id} (the `GetUssAvailability` operationId).
 	GetUssAvailabilityWithResponse(ctx context.Context, ussId string, reqEditors ...RequestEditorFn) (*GetUssAvailabilityReply, error)
+
+	// GetConstraintDetailsWithResponse Retrieve the specified constraint details from a USS.
+	//
+	// The USS hosting this endpoint returns the details (and reference) of a constraint it manages.  While the USS has a pending request to change the constraint in the DSS, the USS should report the most recent version the USS knows was accepted by the DSS.  So, before a USS receives a response to create a constraint reference in the DSS, it should return 404 if queried for that constraint at this endpoint.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /uss/v1/constraints/{entityid} (the `GetConstraintDetails` operationId).
+	GetConstraintDetailsWithResponse(ctx context.Context, entityid EntityID, reqEditors ...RequestEditorFn) (*GetConstraintDetailsReply, error)
 
 	// NotifyOperationalIntentDetailsChangedWithBodyWithResponse Notify a peer USS of changed operational intent details.
 	//
@@ -1964,6 +2098,82 @@ func (r UpdateOperationalIntentReferenceReply) ContentType() string {
 	return ""
 }
 
+type GetSubscriptionReply struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *GetSubscriptionResponse
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorResponse
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *ErrorResponse
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorResponse
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *ErrorResponse
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSubscriptionReply) GetJSON200() *GetSubscriptionResponse {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetSubscriptionReply) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetSubscriptionReply) GetJSON401() *ErrorResponse {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetSubscriptionReply) GetJSON403() *ErrorResponse {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetSubscriptionReply) GetJSON404() *ErrorResponse {
+	return r.JSON404
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetSubscriptionReply) GetJSON429() *ErrorResponse {
+	return r.JSON429
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSubscriptionReply) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSubscriptionReply) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSubscriptionReply) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSubscriptionReply) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type CreateSubscriptionReply struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -2268,6 +2478,82 @@ func (r GetUssAvailabilityReply) ContentType() string {
 	return ""
 }
 
+type GetConstraintDetailsReply struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *GetConstraintDetailsResponse
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorResponse
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *ErrorResponse
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorResponse
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *ErrorResponse
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetConstraintDetailsReply) GetJSON200() *GetConstraintDetailsResponse {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetConstraintDetailsReply) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetConstraintDetailsReply) GetJSON401() *ErrorResponse {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetConstraintDetailsReply) GetJSON403() *ErrorResponse {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetConstraintDetailsReply) GetJSON404() *ErrorResponse {
+	return r.JSON404
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetConstraintDetailsReply) GetJSON429() *ErrorResponse {
+	return r.JSON429
+}
+
+// GetBody returns the raw response body bytes
+func (r GetConstraintDetailsReply) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetConstraintDetailsReply) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetConstraintDetailsReply) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetConstraintDetailsReply) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type NotifyOperationalIntentDetailsChangedReply struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -2564,6 +2850,21 @@ func (c *ClientWithResponses) UpdateOperationalIntentReferenceWithResponse(ctx c
 	return ParseUpdateOperationalIntentReferenceReply(rsp)
 }
 
+// GetSubscriptionWithResponse Retrieve the specified subscription from the DSS.
+//
+// Retrieve a specific subscription.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /dss/v1/subscriptions/{subscriptionid} (the `GetSubscription` operationId).
+func (c *ClientWithResponses) GetSubscriptionWithResponse(ctx context.Context, subscriptionid SubscriptionID, reqEditors ...RequestEditorFn) (*GetSubscriptionReply, error) {
+	rsp, err := c.GetSubscription(ctx, subscriptionid, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSubscriptionReply(rsp)
+}
+
 // CreateSubscriptionWithBodyWithResponse Create the specified subscription in the DSS.
 //
 // Create a subscription.
@@ -2656,6 +2957,21 @@ func (c *ClientWithResponses) GetUssAvailabilityWithResponse(ctx context.Context
 		return nil, err
 	}
 	return ParseGetUssAvailabilityReply(rsp)
+}
+
+// GetConstraintDetailsWithResponse Retrieve the specified constraint details from a USS.
+//
+// The USS hosting this endpoint returns the details (and reference) of a constraint it manages.  While the USS has a pending request to change the constraint in the DSS, the USS should report the most recent version the USS knows was accepted by the DSS.  So, before a USS receives a response to create a constraint reference in the DSS, it should return 404 if queried for that constraint at this endpoint.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /uss/v1/constraints/{entityid} (the `GetConstraintDetails` operationId).
+func (c *ClientWithResponses) GetConstraintDetailsWithResponse(ctx context.Context, entityid EntityID, reqEditors ...RequestEditorFn) (*GetConstraintDetailsReply, error) {
+	rsp, err := c.GetConstraintDetails(ctx, entityid, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetConstraintDetailsReply(rsp)
 }
 
 // NotifyOperationalIntentDetailsChangedWithBodyWithResponse Notify a peer USS of changed operational intent details.
@@ -3172,6 +3488,67 @@ func ParseUpdateOperationalIntentReferenceReply(rsp *http.Response) (*UpdateOper
 	return response, nil
 }
 
+// ParseGetSubscriptionReply parses an HTTP response from a GetSubscriptionWithResponse call
+func ParseGetSubscriptionReply(rsp *http.Response) (*GetSubscriptionReply, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSubscriptionReply{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GetSubscriptionResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseCreateSubscriptionReply parses an HTTP response from a CreateSubscriptionWithResponse call
 func ParseCreateSubscriptionReply(rsp *http.Response) (*CreateSubscriptionReply, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -3403,6 +3780,67 @@ func ParseGetUssAvailabilityReply(rsp *http.Response) (*GetUssAvailabilityReply,
 			return nil, err
 		}
 		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetConstraintDetailsReply parses an HTTP response from a GetConstraintDetailsWithResponse call
+func ParseGetConstraintDetailsReply(rsp *http.Response) (*GetConstraintDetailsReply, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetConstraintDetailsReply{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GetConstraintDetailsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
 		var dest ErrorResponse

@@ -39,7 +39,11 @@ output-options:
     - createSubscription
     - updateSubscription
     - deleteSubscription
+    - getSubscription
     - getUssAvailability
     # Peer USS (PLAN Â§6.2)
     - getOperationalIntentDetails
     - notifyOperationalIntentDetailsChanged
+    # The constraint manager's details, for the ovn of a constraint the
+    # DSS names (WP-13)
+    - getConstraintDetails
