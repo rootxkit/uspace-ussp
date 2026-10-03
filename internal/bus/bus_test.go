@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -358,12 +362,12 @@ func TestDrift(t *testing.T) {
 		t.Fatal(d)
 	}
 	b, _ := DefaultTopology().Bucket(BucketRegistryValidity)
-	kv := jetstream.StreamConfig{MaxMsgsPerSubject: 1, MaxAge: b.TTL, MaxMsgSize: b.MaxValueSize, Storage: b.Storage}
+	kv := jetstream.StreamConfig{MaxMsgsPerSubject: 1, MaxAge: b.TTL, MaxMsgSize: b.MaxValueSize, Storage: b.Storage, MaxBytes: b.MaxBytes}
 	if d := bucketDrift(kv, b); len(d) != 0 {
 		t.Fatal(d)
 	}
 	kv = jetstream.StreamConfig{MaxMsgsPerSubject: 5, MaxAge: 0, MaxMsgSize: -1, Storage: jetstream.MemoryStorage}
-	if d := bucketDrift(kv, b); strings.Join(d, ",") != "history,ttl,max_value_size,storage" {
+	if d := bucketDrift(kv, b); strings.Join(d, ",") != "history,ttl,max_value_size,storage,max_bytes" {
 		t.Fatal(d)
 	}
 }
@@ -510,5 +514,68 @@ func TestConfStreamCapped(t *testing.T) {
 	conf, _ = TopologyWith(TopologyOptions{}).Stream(StreamCONF)
 	if conf.MaxAge != DefaultConfMaxAge || conf.MaxBytes != DefaultConfMaxBytes {
 		t.Fatalf("CONF zero options %v %d", conf.MaxAge, conf.MaxBytes)
+	}
+}
+
+// composeFileStore is max_file_store of deploy/compose/nats.conf, the
+// JetStream file store the shipped deployment grants the account.
+func composeFileStore(t *testing.T) int64 {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", "deploy", "compose", "nats.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?m)^\s*max_file_store:\s*(\d+)(GB|MB)\s*$`).FindStringSubmatch(string(b))
+	if m == nil {
+		t.Fatal("deploy/compose/nats.conf has no max_file_store in GB or MB")
+	}
+	n, _ := strconv.ParseInt(m[1], 10, 64)
+	if m[2] == "GB" {
+		return n << 30
+	}
+	return n << 20
+}
+
+// Every stream and bucket is bounded in size (audit B1), and the sum of
+// the bounds fits the account's file store: a stream that may grow
+// until the store is full makes JetStream refuse every publish in the
+// account, ALRT, FLIGHT, INTENT and CONF included, while the hot path's
+// core publish of trk still looks sent. The hot-path captures discard
+// their oldest messages when full; INGEST refuses new ones.
+func TestTopologyFitsTheFileStore(t *testing.T) {
+	top := DefaultTopology()
+	for _, s := range top.Streams {
+		if s.MaxBytes <= 0 {
+			t.Errorf("stream %s: max_bytes %d, unbounded", s.Name, s.MaxBytes)
+		}
+	}
+	for _, b := range top.Buckets {
+		if b.MaxBytes <= 0 {
+			t.Errorf("bucket %s: max_bytes %d, unbounded", b.Bucket, b.MaxBytes)
+		}
+	}
+	for _, n := range []string{StreamTRK, StreamMAN, StreamPEER} {
+		if s, _ := top.Stream(n); s.Discard != jetstream.DiscardOld {
+			t.Errorf("%s discards %v, want old", n, s.Discard)
+		}
+	}
+	store := composeFileStore(t)
+	if sum := top.MaxBytes(); sum <= 0 || sum > store {
+		t.Fatalf("the streams and buckets may hold %d bytes, the compose file store is %d", sum, store)
+	}
+}
+
+// A bucket whose size bound differs from this build's is drift, like a
+// stream's: an existing deployment reports the new bound on /readyz.
+func TestBucketDriftMaxBytes(t *testing.T) {
+	want, _ := DefaultTopology().Bucket(BucketCISCurrent)
+	have := jetstream.StreamConfig{MaxMsgsPerSubject: int64(want.History), MaxAge: want.TTL,
+		MaxMsgSize: want.MaxValueSize, Storage: want.Storage, MaxBytes: want.MaxBytes}
+	if d := bucketDrift(have, want); len(d) != 0 {
+		t.Fatalf("the same bucket drifts: %v", d)
+	}
+	have.MaxBytes = -1
+	if d := bucketDrift(have, want); !slices.Equal(d, []string{"max_bytes"}) {
+		t.Fatalf("unbounded bucket: %v", d)
 	}
 }
