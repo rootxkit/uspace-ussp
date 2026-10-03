@@ -61,10 +61,12 @@ func (e *UntrustedError) Error() string {
 const errNoPublisherKeys = "no publisher keys are configured (USSP_CIS_PUBLISHER_KEYS)"
 
 // provenance reads version v as published (GET
-// /v1/{dataset}/versions/{v}) and verifies X-Publisher-Signature over
-// its bytes with the key of the dataset's publisher. It returns an
-// *UntrustedError when the signature is missing or does not verify (or
-// no keys are configured), and another error when the version could not
+// /v1/{dataset}/versions/{v}), verifies X-Publisher-Signature over
+// its bytes with the key of the dataset's publisher, and checks that v
+// (as served, or built from a delta) carries what those signed bytes
+// say (signedMatches). It returns an *UntrustedError when the
+// signature is missing or does not verify, no keys are configured, or v
+// is not what was signed, and another error when the version could not
 // be read (a pull failure: nothing is held, the next pull tries again).
 func (c *Cache) provenance(ctx context.Context, v *Version) error {
 	untrusted := func(format string, a ...any) error {
@@ -93,6 +95,12 @@ func (c *Cache) provenance(ctx context.Context, v *Version) error {
 	}
 	if f.PublisherKID != "" && f.PublisherKID != sig.KID {
 		return untrusted("%s names %q, the signature's kid is %q", HeaderPublisherKID, short(f.PublisherKID), sig.KID)
+	}
+	// The signature covers the bytes just read; what is installed is v,
+	// read from another path (or built from a delta). Without this the
+	// check would show only that the publisher signed something.
+	if reason := signedMatches(v, f.Body); reason != "" {
+		return untrusted("%s", reason)
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package cis
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -309,5 +310,138 @@ func TestLazyPublisherVerifier(t *testing.T) {
 	}
 	if fake.Requests("GET /publishers/authority/jwks.json") == 0 {
 		t.Fatal("the JWKS was not fetched")
+	}
+}
+
+// tamperedRig holds zones version 1 and publishes version 2 signed with
+// TZP002, while the dataset path (and its delta) serves TZP666 for it.
+func tamperedRig(t *testing.T) (*cacheRig, cisp.Change) {
+	t.Helper()
+	g := newCacheRig(t, "")
+	g.fake.Publish("zones", prohibited("TZP001").json())
+	if err := g.cache.Pull(t.Context(), Zones, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	ch := g.fake.Publish("zones", prohibited("TZP001").json(), prohibited("TZP002").json())
+	g.fake.Tamper("zones", 2, prohibited("TZP001").json(), prohibited("TZP666").json())
+	return g, ch
+}
+
+// The signature verifies over the bytes of GET /v1/zones/versions/2,
+// but GET /v1/zones serves other features for version 2: the version
+// is held, never installed, and version 1 stays active.
+func TestProvenanceServedBytesNotTheSignedOnesHeld(t *testing.T) {
+	g, _ := tamperedRig(t)
+	g.pullHeld(t, Zones, 2, "not the ones its publisher signed")
+	if g.active(Zones) != 1 {
+		t.Fatalf("active %d, want 1 kept", g.active(Zones))
+	}
+	for _, e := range g.eval.Snapshot().Entries(Zones) {
+		if e.Identifier == "TZP666" {
+			t.Fatal("a feature the publisher never signed is in use")
+		}
+	}
+}
+
+// The same through the delta: the merged collection is held when it is
+// not what the publisher signed.
+func TestProvenanceDeltaNotTheSignedOnesHeld(t *testing.T) {
+	g, ch := tamperedRig(t)
+	err := g.cache.Pull(t.Context(), Zones, hintOf(ch), false)
+	var ue *UntrustedError
+	if !errors.As(err, &ue) || ue.Version != 2 || !strings.Contains(ue.Reason, "not the ones its publisher signed") {
+		t.Fatalf("pull: %v", err)
+	}
+	if g.count(CounterDeltaPulls) != 1 || g.active(Zones) != 1 {
+		t.Fatalf("delta pulls %d, active %d", g.count(CounterDeltaPulls), g.active(Zones))
+	}
+}
+
+// The branch that says the bytes match, in the real CISP's shape: the
+// publisher signed its own collection (no cis_* members, its own
+// metadata), the CISP serves the snapshot with them; the features are
+// the same and the version is installed, whole and as a delta.
+func TestProvenanceServedSnapshotOfTheSignedCollectionInstalled(t *testing.T) {
+	g := newCacheRig(t, "")
+	signed := func(fs ...json.RawMessage) []byte {
+		b, _ := json.Marshal(map[string]any{"type": "FeatureCollection", "features": fs,
+			"metadata": map[string]any{"provider": []any{map[string]any{"text": "authority", "lang": "en"}}}})
+		return b
+	}
+	a, b := prohibited("TZP001").json(), prohibited("TZP002").json()
+	g.fake.PublishSigned("zones", signed(a), a)
+	if err := g.cache.Pull(t.Context(), Zones, nil, false); err != nil || g.active(Zones) != 1 {
+		t.Fatalf("v1: %v, active %d", err, g.active(Zones))
+	}
+	// The publisher's feature order is not the CISP's.
+	ch := g.fake.PublishSigned("zones", signed(b, a), a, b)
+	if err := g.cache.Pull(t.Context(), Zones, hintOf(ch), false); err != nil || g.active(Zones) != 2 || g.count(CounterDeltaPulls) != 1 {
+		t.Fatalf("v2: %v, active %d, delta pulls %d", err, g.active(Zones), g.count(CounterDeltaPulls))
+	}
+	if g.count(CounterUntrusted) != 0 {
+		t.Fatal("counted as untrusted")
+	}
+}
+
+// restrictionRequest is the ANSP's create body for feature f.
+func restrictionRequest(f json.RawMessage) []byte {
+	b, _ := json.Marshal(map[string]any{"ansp_ref": "R-1", "ansp_version": 1, "state": "active",
+		"starts_at": "2026-10-02T09:00:00Z", "ends_at": "2026-10-02T12:00:00Z", "uspace_airspace_id": "TZU001", "feature": f})
+	return b
+}
+
+// withRestriction is f with the cis_restriction member the CISP adds.
+func withRestriction(f feat) feat {
+	f.extended = map[string]any{RestrictionMember: map[string]any{"id": "r-1", "state": "active"}}
+	return f
+}
+
+// A restrictions version is signed by the ANSP over its request: the
+// feature it carries must be in the version as served (plus the CISP's
+// cis_restriction). Served as signed, it is installed; served with
+// another geometry, it is held.
+func TestProvenanceRestrictionRequestBindsItsFeature(t *testing.T) {
+	g := newCacheRig(t, "")
+	dar := prohibited("DAR0001")
+	g.fake.PublishSigned("restrictions", restrictionRequest(dar.json()), withRestriction(dar).json())
+	if err := g.cache.Pull(t.Context(), Restrictions, nil, false); err != nil || g.active(Restrictions) != 1 {
+		t.Fatalf("as signed: %v, active %d", err, g.active(Restrictions))
+	}
+	dar2 := prohibited("DAR0002")
+	moved := withRestriction(dar2)
+	moved.rect = box{44.90, 41.80, 44.95, 41.83}
+	g.fake.PublishSigned("restrictions", restrictionRequest(dar2.json()), withRestriction(dar).json(), moved.json())
+	g.pullHeld(t, Restrictions, 2, "not the ones its publisher signed")
+	// The signed feature missing from the version is held too.
+	dar3 := prohibited("DAR0003")
+	g.fake.PublishSigned("restrictions", restrictionRequest(dar3.json()), withRestriction(dar).json())
+	g.pullHeld(t, Restrictions, 3, "not the ones its publisher signed")
+	if g.active(Restrictions) != 1 {
+		t.Fatalf("active %d, want 1 kept", g.active(Restrictions))
+	}
+}
+
+// The ussp_list as served carries the CISP's cis_* members; the
+// publisher signed the document without them. The same document is
+// installed; one with another USSP in it is held.
+func TestProvenanceUSSPListBound(t *testing.T) {
+	g := newCacheRig(t, "")
+	doc := func(v int, ussps []any, served bool) []byte {
+		m := map[string]any{"schema": "cis/ussp_list/v1", "issued": "2026-10-01T00:00:00Z", "ussps": ussps}
+		if served {
+			m["cis_dataset"], m["cis_version"], m["cis_updated_at"] = "ussp_list", v, "2026-10-01T00:00:00Z"
+		}
+		b, _ := json.Marshal(m)
+		return b
+	}
+	g.fake.PublishRawSigned("ussp_list", doc(1, []any{}, false), doc(1, []any{}, true))
+	if err := g.cache.Pull(t.Context(), USSPList, nil, false); err != nil || g.active(USSPList) != 1 {
+		t.Fatalf("as signed: %v, active %d", err, g.active(USSPList))
+	}
+	g.fake.PublishRawSigned("ussp_list", doc(2, []any{}, false), []byte(strings.Replace(string(doc(2, []any{}, true)),
+		`"issued":"2026-10-01T00:00:00Z"`, `"issued":"2026-10-02T00:00:00Z"`, 1)))
+	g.pullHeld(t, USSPList, 2, "not the one its publisher signed")
+	if g.active(USSPList) != 1 {
+		t.Fatalf("active %d", g.active(USSPList))
 	}
 }
