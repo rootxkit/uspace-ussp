@@ -108,7 +108,8 @@ type Writer struct {
 	Manager    string
 	ForAll     bool
 	// Availability stops new writes while the authority holds this USSP
-	// Down (*Availability); nil never stops them.
+	// Down (*Availability), and, when it has Loaded, until the Down
+	// recorded before a restart is known; nil never stops them.
 	Availability interface{ Down() bool }
 	Counters     *core.Counters
 	Logger       *slog.Logger
@@ -728,6 +729,9 @@ func (w *Writer) holdFor(ctx context.Context, r *intent.Record, err error) error
 // intent.PeerCheck, the PUT with the key (once more after a 409 with the
 // missing ovns fetched and judged), and the authorisation.
 func (w *Writer) plan(ctx context.Context, r *intent.Record, held *intent.DSSHeld, p *pass) error {
+	if l, ok := w.Availability.(interface{ Loaded() bool }); ok && !l.Loaded() {
+		return fmt.Errorf("%w: the availability recorded in dss_state is not loaded yet", errWaiting)
+	}
 	if w.Availability != nil && w.Availability.Down() {
 		w.count(CounterHeldAvailability)
 		return w.hold(ctx, r, intent.ReasonUSSAvailabilityDown, intent.ReasonUSSAvailabilityDown+": the authority set this USSP's availability Down in the DSS; no new DSS write is made")

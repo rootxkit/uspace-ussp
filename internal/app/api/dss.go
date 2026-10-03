@@ -43,6 +43,10 @@ type strategic struct {
 	why string
 }
 
+// availabilityLoadRetry is the wait before the recorded availability is
+// read again when it could not be.
+const availabilityLoadRetry = 2 * time.Second
+
 // newStrategic builds the client, the availability and the gate.
 func newStrategic(rt *proc.Runtime, tokens *auth.Outgoing) *strategic {
 	cfg := rt.Config
@@ -147,7 +151,15 @@ func (s *strategic) start(ctx context.Context, rt *proc.Runtime, current func() 
 		Policy: current, Counters: s.counters, Logger: logger}
 	probes["f3548"] = dss.Probe(s.client, s.avail, s.store)
 	rt.Health.Register(DepDSS, false, dss.Merge(probes))
-	rt.Go(ctx, w.Run)
+	// The writer starts once the availability recorded before a restart
+	// is loaded: a Down the authority set must stop the first write too
+	// (the request path's WriteNow waits for it in Writer.plan).
+	rt.Go(ctx, func(ctx context.Context) {
+		if err := s.avail.WaitLoaded(ctx, availabilityLoadRetry); err != nil {
+			return
+		}
+		w.Run(ctx)
+	})
 	rt.Go(ctx, s.avail.Run)
 	rt.Go(ctx, subs.Run)
 	manager, merr := s.client.Manager(ctx)

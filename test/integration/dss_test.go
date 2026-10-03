@@ -134,6 +134,10 @@ func newDSSRig(t *testing.T) *dssRig {
 	d.server.USSBaseURL = d.us.URL
 	d.writer = &dss.Writer{Client: d.client, Store: d.st, Intents: g.svc, USSBaseURL: d.us.URL, Manager: dssOurManager,
 		Availability: d.avail, Counters: d.counters, Logger: quiet(), Every: 50 * time.Millisecond}
+	// As api: the writer runs once the recorded availability is loaded.
+	if err := d.avail.Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	g.svc.Writer = d.writer
 	d.peer = peeruss.New(dssPeerManager, d.fake.URL(), func(base string, scope f3548.Scope) string {
 		tok, _ := issuerTokens{a: d.a, sub: dssPeerManager}.Token(context.Background(), base, string(scope))

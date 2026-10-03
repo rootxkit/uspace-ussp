@@ -45,6 +45,7 @@ type Availability struct {
 	OnChange func(state f3548.UssAvailabilityState)
 
 	mu      sync.Mutex
+	loaded  bool
 	known   bool
 	state   f3548.UssAvailabilityState
 	version string
@@ -83,6 +84,38 @@ func (a *Availability) State() (state f3548.UssAvailabilityState, known bool, at
 	return a.state, a.known, a.at, a.err
 }
 
+// Loaded reports whether the availability recorded in dss_state has
+// been loaded, or read from the DSS: before that a Down the authority set
+// is not known, and no new DSS write may be made. A nil *Availability is
+// always loaded (it never stops a write).
+func (a *Availability) Loaded() bool {
+	if a == nil {
+		return true
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.loaded
+}
+
+// WaitLoaded loads the recorded availability, again every retry until
+// it succeeds or ctx ends (the writer starts only after it).
+func (a *Availability) WaitLoaded(ctx context.Context, retry time.Duration) error {
+	for {
+		err := a.Load(ctx)
+		if err == nil {
+			return nil
+		}
+		a.logger().LogAttrs(ctx, slog.LevelWarn, "recorded USS availability not read; no DSS write is made until it is", obs.Err(err))
+		t := time.NewTimer(retry)
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return ctx.Err()
+		case <-t.C:
+		}
+	}
+}
+
 // Load takes the availability recorded in dss_state (a restart keeps a
 // Down the authority set until the next poll says otherwise).
 func (a *Availability) Load(ctx context.Context) error {
@@ -90,11 +123,12 @@ func (a *Availability) Load(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.loaded = true
 	if st.Availability == "" {
 		return nil
 	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
 	if !a.known {
 		a.known, a.state = true, f3548.UssAvailabilityState(st.Availability)
 		if st.SetAt != nil {
@@ -128,7 +162,7 @@ func (a *Availability) Poll(ctx context.Context) error {
 	}
 	a.mu.Lock()
 	prev, wasKnown := a.state, a.known
-	a.known, a.state, a.version, a.at, a.err = true, state, res.Version, time.Now().UTC(), ""
+	a.loaded, a.known, a.state, a.version, a.at, a.err = true, true, state, res.Version, time.Now().UTC(), ""
 	a.mu.Unlock()
 	if changed || !wasKnown || prev != state {
 		a.count(CounterAvailabilityChanged)

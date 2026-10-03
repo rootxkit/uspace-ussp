@@ -36,6 +36,7 @@ type memStore struct {
 	failClaim error
 	failAudit error
 	failLock  error
+	failState error
 	purged    PurgeCounts
 	// inLock counts the Lock calls running now (a write that holds a
 	// transaction).
@@ -301,6 +302,9 @@ func (m *memStore) Notified(_ context.Context, id string, idx int32) (int32, boo
 func (m *memStore) State(context.Context) (StateRecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.failState != nil {
+		return StateRecord{}, m.failState
+	}
 	return m.state, nil
 }
 

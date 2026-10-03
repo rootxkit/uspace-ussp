@@ -751,3 +751,54 @@ func TestWriterADeadPeerDoesNotStallOtherWrites(t *testing.T) {
 		t.Fatalf("the dead manager was asked %d times; one call is %d attempts", outside, attempts)
 	}
 }
+
+// A restart while the authority holds this USSP Down: until the Down
+// recorded in dss_state is loaded no DSS write is made, after it the
+// intent waits uss_availability_down; with Normal recorded the write is
+// made once loaded (E-01 both). WaitLoaded returns once Load succeeds
+// and gives up with its context.
+func TestWriterWaitsForTheRecordedAvailability(t *testing.T) {
+	g := newRig(t)
+	ctx := context.Background()
+	g.st.state = StateRecord{Availability: string(f3548.Down)}
+	a := &Availability{Client: g.c, Store: g.st, USSID: ourManager, Counters: g.counters}
+	g.w.Availability = a
+	g.in.put(pending(oursID, volume(41.7, 44.8)))
+	if err := g.w.Mirror(ctx, oursID); !errors.Is(err, errWaiting) {
+		t.Fatalf("written before the recorded availability was loaded: %v", err)
+	}
+	if _, _, ok := g.dss.OIR(oursID); ok {
+		t.Fatal("written to the DSS before the recorded availability was loaded")
+	}
+	if err := a.WaitLoaded(ctx, time.Millisecond); err != nil || !a.Down() {
+		t.Fatalf("load %v down %v", err, a.Down())
+	}
+	if err := g.w.Mirror(ctx, oursID); !errors.Is(err, errWaiting) || g.in.lastHold() != intent.ReasonUSSAvailabilityDown {
+		t.Fatalf("%v %q", err, g.in.lastHold())
+	}
+	if _, _, ok := g.dss.OIR(oursID); ok {
+		t.Fatal("written while the recorded availability is Down")
+	}
+
+	g2 := newRig(t)
+	g2.st.state = StateRecord{Availability: string(f3548.Normal)}
+	a2 := &Availability{Client: g2.c, Store: g2.st, USSID: ourManager}
+	g2.w.Availability = a2
+	g2.in.put(pending(oursID, volume(41.7, 44.8)))
+	g2.st.failState = errBoom
+	lctx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	if err := a2.WaitLoaded(lctx, time.Millisecond); !errors.Is(err, context.DeadlineExceeded) || a2.Loaded() {
+		t.Fatalf("a load that keeps failing: %v loaded %v", err, a2.Loaded())
+	}
+	g2.st.mu.Lock()
+	g2.st.failState = nil
+	g2.st.mu.Unlock()
+	if err := a2.WaitLoaded(ctx, time.Millisecond); err != nil || !a2.Loaded() || a2.Down() {
+		t.Fatalf("load %v", err)
+	}
+	if err := g2.w.Mirror(ctx, oursID); err != nil {
+		t.Fatal(err)
+	}
+	mustState(t, g2.in, oursID, f3548.Accepted)
+}
