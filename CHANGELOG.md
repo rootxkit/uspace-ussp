@@ -7,7 +7,38 @@ additively within `/v1`.
 
 ## [Unreleased]
 
+### Added
+
+- WP-11: traffic information and the CPA proximity alert. The monitor
+  feeds one uspace-core `alerting.Monitor` per owned cell set with every
+  `trk.v1`, `peer.v1` and `man.v1` sample of its cells and their ring-1
+  (`internal/traffic`) and publishes `alert/v1` `proximity` for each of
+  this USSP's flights in a pair, naming the other aircraft and its trust;
+  active alerts persist in the new KV bucket `proximity_state` and are
+  carried across a restart, a handover and a policy change (PLAN §15
+  Q21). traffic-ws serves `WS /v1/traffic`, `GET /v1/traffic/snapshot`
+  and `WS /v1/alerts` in the console frame (M29). api records every
+  `alert/v1` (relational migration 00016: `alerts.cell5`, `recorded_at`,
+  state checks, the escalation index), serves `POST
+  /v1/alerts/{alert_id}/ack` and escalates critical alerts left
+  unacknowledged. New schemas `alert/v1` and `traffic/product/v1`; pinned
+  copies of `console/snapshot/v1`, `console/subscribe/v1` (uspace-lab)
+  and `track/manned/v1` (uspace-ansp). Policy values
+  `cpa_clear_after_s` (3), `cpa_stale_after_s` (15),
+  `cpa_pair_budget_count` (50 000), `traffic_radius_m` (2000),
+  `traffic_live_max_age_s` (2), `traffic_stale_after_s` (5),
+  `traffic_drop_after_s` (60), `traffic_throttle_track_count` (200),
+  `traffic_record_every_s` (10), `escalation_after_s` (30).
+
 ### Changed
+
+- WP-11: ALRT is bounded at 1 GiB and TRAFFIC at 512 MiB (existing
+  streams report the drift on `/readyz` until an operator updates them).
+  tsdb-writer reads the `traffic/product/v1` record sample (`for`,
+  `tracks`, `degraded[].input`). `make integration` allows the suite 30
+  minutes (CI job 25). The OpenAPI's traffic tag is served by traffic-ws
+  from `internal/traffic/gen`. `bus.Replay.OpenSubjects`,
+  `bus.Cell3Filter`, `monitor.Subjects`.
 
 - WP-10: policy values `conformance_clear_after_s` (3 s),
   `pressure_uncertainty_m` (250 m) and `monitor_live_max_age_s` (10 s),

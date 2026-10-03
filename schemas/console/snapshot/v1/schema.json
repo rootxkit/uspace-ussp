@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/console/snapshot/v1.json",
+  "title": "console/snapshot/v1",
+  "description": "The snapshot frame, sent on connect and on every re-subscribe (decision record M29, Appendix C). Consumers replace their stores with it, they do not merge. Each item is a complete catalogued message with its own envelope, so every track keeps its own `ts`, `rx_ts`, `captured_at`, `time_source` and `backlog`.",
+  "allOf": [{ "$ref": "https://schemas.uspace.ge/envelope/v1.json" }],
+  "properties": {
+    "schema": { "const": "console/snapshot/v1" },
+    "body": { "$ref": "#/$defs/body" }
+  },
+  "$defs": {
+    "body": {
+      "type": "object",
+      "required": ["tracks", "alerts", "manned", "zones_version"],
+      "properties": {
+        "tracks": {
+          "type": "array",
+          "items": { "$ref": "https://schemas.uspace.ge/track/telemetry/v1.json" }
+        },
+        "alerts": {
+          "description": "`alert/v1` (USSP) and `violation/v1` (authority) messages. Their bodies are owned by the producing repos and checked against the mirrors once pinned; here only the envelope and the schema name are checked.",
+          "type": "array",
+          "items": {
+            "allOf": [{ "$ref": "https://schemas.uspace.ge/envelope/v1.json" }],
+            "properties": { "schema": { "enum": ["alert/v1", "violation/v1"] } }
+          }
+        },
+        "manned": {
+          "description": "`track/manned/v1` messages (ANSP-owned body, checked against its mirror once pinned).",
+          "type": "array",
+          "items": {
+            "allOf": [{ "$ref": "https://schemas.uspace.ge/envelope/v1.json" }],
+            "properties": { "schema": { "const": "track/manned/v1" } }
+          }
+        },
+        "zones_version": {
+          "description": "The CIS zones version the connection's zone data is at; null while the system holds no CIS version.",
+          "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        }
+      }
+    }
+  }
+}

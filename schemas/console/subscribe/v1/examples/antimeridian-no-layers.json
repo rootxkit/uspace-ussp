@@ -1,0 +1,12 @@
+{
+  "schema": "console/subscribe/v1",
+  "body": {
+    "bbox": [
+      179.5,
+      -17.0,
+      -179.5,
+      -16.0
+    ],
+    "layers": []
+  }
+}

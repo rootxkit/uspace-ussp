@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/console/subscribe/v1.json",
+  "title": "console/subscribe/v1",
+  "description": "The one client-to-server frame: `{schema, body: {bbox, layers[]}}`, sent on open and whenever the viewport subscription changes; the server answers with a `console/snapshot/v1` (decision record M29, Appendix C; uspace-ui plan §6.3). The client has no receipt or capture times to give, so only `schema` and `body` are required; the server's envelope fields do not apply.",
+  "type": "object",
+  "required": ["schema", "body"],
+  "properties": {
+    "schema": { "const": "console/subscribe/v1" },
+    "msg_id": { "$ref": "https://schemas.uspace.ge/envelope/v1.json#/$defs/ulid" },
+    "body": { "$ref": "#/$defs/body" }
+  },
+  "$defs": {
+    "body": {
+      "type": "object",
+      "required": ["bbox", "layers"],
+      "properties": {
+        "bbox": {
+          "description": "GeoJSON bounding box `[west, south, east, north]` in WGS84 degrees (RFC 7946 §5, 02 §1 `[lng, lat]`). `west > east` crosses the antimeridian.",
+          "type": "array",
+          "prefixItems": [
+            { "type": "number", "minimum": -180, "maximum": 180 },
+            { "type": "number", "minimum": -90, "maximum": 90 },
+            { "type": "number", "minimum": -180, "maximum": 180 },
+            { "type": "number", "minimum": -90, "maximum": 90 }
+          ],
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "layers": {
+          "description": "Which snapshot collections to receive (the keys of `console/snapshot/v1`); `alerts` covers `alert/v1` and `violation/v1`.",
+          "type": "array",
+          "items": { "enum": ["tracks", "manned", "alerts", "zones"] },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

@@ -435,6 +435,16 @@ func (e TokenResponseTokenType) Valid() bool {
 	}
 }
 
+// AlertAck An alert's acknowledgement as recorded.
+type AlertAck struct {
+	// AckedAt When it was first acknowledged, on the database clock.
+	AckedAt time.Time `json:"acked_at"`
+
+	// AckedBy The client that first acknowledged it.
+	AckedBy string             `json:"acked_by"`
+	AlertId openapi_types.UUID `json:"alert_id"`
+}
+
 // ClientRequest defines model for ClientRequest.
 type ClientRequest struct {
 	Scopes []OperatorScope `json:"scopes"`
@@ -1051,6 +1061,9 @@ type TokenResponse struct {
 // TokenResponseTokenType defines model for TokenResponse.TokenType.
 type TokenResponseTokenType string
 
+// AlertID defines model for AlertID.
+type AlertID = openapi_types.UUID
+
 // ClientID defines model for ClientID.
 type ClientID = string
 
@@ -1064,6 +1077,11 @@ type OperatorID = openapi_types.UUID
 // OAuth2 client library reads `error` and a uspace client reads the
 // problem.
 type OAuthError = OAuthProblem
+
+// OpenAlertStreamParams defines parameters for OpenAlertStream.
+type OpenAlertStreamParams struct {
+	IntentId openapi_types.UUID `form:"intent_id" json:"intent_id"`
+}
 
 // ListIntentsParams defines parameters for ListIntents.
 type ListIntentsParams struct {
@@ -1079,6 +1097,21 @@ type ValidateRegistryParams struct {
 	Operator *string         `form:"operator,omitempty" json:"operator,omitempty"`
 	Serial   *string         `form:"serial,omitempty" json:"serial,omitempty"`
 	Pilot    *string         `form:"pilot,omitempty" json:"pilot,omitempty"`
+}
+
+// OpenTrafficStreamParams defines parameters for OpenTrafficStream.
+type OpenTrafficStreamParams struct {
+	// IntentId The operator's intent (operator clients).
+	IntentId *openapi_types.UUID `form:"intent_id,omitempty" json:"intent_id,omitempty"`
+
+	// Bbox west,south,east,north in WGS84 degrees (staff sessions).
+	Bbox *string `form:"bbox,omitempty" json:"bbox,omitempty"`
+}
+
+// GetTrafficSnapshotParams defines parameters for GetTrafficSnapshot.
+type GetTrafficSnapshotParams struct {
+	IntentId *openapi_types.UUID `form:"intent_id,omitempty" json:"intent_id,omitempty"`
+	Bbox     *string             `form:"bbox,omitempty" json:"bbox,omitempty"`
 }
 
 // RequestTokenFormdataRequestBody defines body for RequestToken for application/x-www-form-urlencoded ContentType.
@@ -1576,6 +1609,36 @@ type ClientInterface interface {
 	// Corresponds with DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial} (the `UnbindSerial` operationId).
 	UnbindSerial(ctx context.Context, operatorId OperatorID, clientId ClientID, serial string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// OpenAlertStream Stream the alerts of one intent (WebSocket)
+	//
+	// A WebSocket upgrade (served by traffic-ws; Art. 13, spec 02 F5)
+	// for an operator machine client with a bearer token granting
+	// ussp.traffic; intent_id must be an intent whose aircraft is bound
+	// to the client. Server to client, in the common envelope:
+	// console/status/v1 on connect and every 2 s, every alert/v1 of the
+	// intent's flight as it comes (conformance and proximity alerts,
+	// raised, updated and cleared, with the peer's track id and trust),
+	// the active ones on connect, and every unacknowledged critical
+	// alert repeated every escalation_repeat_s (10 s) until it is
+	// acknowledged (POST /v1/alerts/{alert_id}/ack) or cleared. The
+	// first send of each alert to the client is recorded (delivery).
+	//
+	// Corresponds with GET /v1/alerts (the `OpenAlertStream` operationId).
+	OpenAlertStream(ctx context.Context, params *OpenAlertStreamParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AckAlert Acknowledge an alert
+	//
+	// Records, on the database clock, that the operator acknowledged an
+	// alert of one of its flights (served by api; Art. 13, 02 F5): the
+	// first acknowledgement is kept and a repeat answers it again. The
+	// acknowledged alert is republished to traffic-ws, which stops
+	// repeating it, and a critical alert acknowledged within
+	// escalation_after_s (30 s) is not escalated. An alert of another
+	// operator's flight is 404, never 403. No body.
+	//
+	// Corresponds with POST /v1/alerts/{alert_id}/ack (the `AckAlert` operationId).
+	AckAlert(ctx context.Context, alertId AlertID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// OpenAuthorityFlights Stream every airborne flight to the authority (WebSocket, optional)
 	//
 	// The optional national extension of spec 02 F7 (docs/PLAN.md D12),
@@ -1776,6 +1839,51 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /v1/telemetry/batch (the `PostTelemetryBatch` operationId).
 	PostTelemetryBatch(ctx context.Context, body PostTelemetryBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// OpenTrafficStream Stream traffic information and proximity alerts (WebSocket)
+	//
+	// A WebSocket upgrade (served by traffic-ws; Art. 11, spec 02 F5).
+	// An operator machine client with a bearer token granting
+	// ussp.traffic (issued by this USSP) subscribes with intent_id, an
+	// intent whose aircraft is bound to the client; a console user
+	// with a staff session (realm console) subscribes with bbox, or
+	// with console/subscribe/v1 frames, on a same-origin upgrade with
+	// the uspace_session cookie from an Origin on
+	// USSP_WS_ALLOWED_ORIGINS. A refused upgrade is accepted and closed
+	// with 4401 (sign in again, M22).
+	//
+	// Server to client, every frame in the common envelope with a body
+	// named by schema (M29): console/status/v1 on connect and every
+	// 2 s (connection_id, server_ts, policy_version, stale_after_s,
+	// live_max_age_s, dropped_frames, degraded, sources, cis_version,
+	// cis_age_s, evaluation_period_s and the CPA thresholds in force),
+	// console/snapshot/v1 on connect and after every subscribe, then a
+	// traffic/product/v1 every second (every track within
+	// traffic_radius_m of the intent's envelope or in the bbox, with
+	// trust, source, age and state; the subscriber's active proximity
+	// alerts; the degraded inputs) and every alert/v1 of the
+	// subscription as it comes. Above traffic_throttle_track_count
+	// tracks each track is sent every other second and what is held
+	// back is counted in dropped_frames.
+	//
+	// Client to server (staff only): console/subscribe/v1 {bbox,
+	// layers[]}; anything else is ignored. Nothing on this socket can
+	// command an aircraft, and no frame carries resolution advice.
+	//
+	// Corresponds with GET /v1/traffic (the `OpenTrafficStream` operationId).
+	OpenTrafficStream(ctx context.Context, params *OpenTrafficStreamParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetTrafficSnapshot One traffic product
+	//
+	// One traffic/product/v1 message (schemas/traffic/product/v1) for
+	// intent_id (an operator token granting ussp.traffic, the intent's
+	// aircraft bound to the client) or bbox (a staff session), as the
+	// stream would send it now: the bootstrap of a client. Another
+	// operator's intent is 404, never 403. 503 names the input that is
+	// missing when the product cannot be assembled.
+	//
+	// Corresponds with GET /v1/traffic/snapshot (the `GetTrafficSnapshot` operationId).
+	GetTrafficSnapshot(ctx context.Context, params *GetTrafficSnapshotParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // GetJWKS The issuer's public keys
@@ -2238,6 +2346,56 @@ func (c *Client) UnbindSerial(ctx context.Context, operatorId OperatorID, client
 	return c.Client.Do(req)
 }
 
+// OpenAlertStream Stream the alerts of one intent (WebSocket)
+//
+// A WebSocket upgrade (served by traffic-ws; Art. 13, spec 02 F5)
+// for an operator machine client with a bearer token granting
+// ussp.traffic; intent_id must be an intent whose aircraft is bound
+// to the client. Server to client, in the common envelope:
+// console/status/v1 on connect and every 2 s, every alert/v1 of the
+// intent's flight as it comes (conformance and proximity alerts,
+// raised, updated and cleared, with the peer's track id and trust),
+// the active ones on connect, and every unacknowledged critical
+// alert repeated every escalation_repeat_s (10 s) until it is
+// acknowledged (POST /v1/alerts/{alert_id}/ack) or cleared. The
+// first send of each alert to the client is recorded (delivery).
+//
+// Corresponds with GET /v1/alerts (the `OpenAlertStream` operationId).
+func (c *Client) OpenAlertStream(ctx context.Context, params *OpenAlertStreamParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOpenAlertStreamRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AckAlert Acknowledge an alert
+//
+// Records, on the database clock, that the operator acknowledged an
+// alert of one of its flights (served by api; Art. 13, 02 F5): the
+// first acknowledgement is kept and a repeat answers it again. The
+// acknowledged alert is republished to traffic-ws, which stops
+// repeating it, and a critical alert acknowledged within
+// escalation_after_s (30 s) is not escalated. An alert of another
+// operator's flight is 404, never 403. No body.
+//
+// Corresponds with POST /v1/alerts/{alert_id}/ack (the `AckAlert` operationId).
+func (c *Client) AckAlert(ctx context.Context, alertId AlertID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAckAlertRequest(c.Server, alertId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // OpenAuthorityFlights Stream every airborne flight to the authority (WebSocket, optional)
 //
 // The optional national extension of spec 02 F7 (docs/PLAN.md D12),
@@ -2549,6 +2707,71 @@ func (c *Client) PostTelemetryBatchWithBody(ctx context.Context, contentType str
 // Corresponds with POST /v1/telemetry/batch (the `PostTelemetryBatch` operationId).
 func (c *Client) PostTelemetryBatch(ctx context.Context, body PostTelemetryBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostTelemetryBatchRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// OpenTrafficStream Stream traffic information and proximity alerts (WebSocket)
+//
+// A WebSocket upgrade (served by traffic-ws; Art. 11, spec 02 F5).
+// An operator machine client with a bearer token granting
+// ussp.traffic (issued by this USSP) subscribes with intent_id, an
+// intent whose aircraft is bound to the client; a console user
+// with a staff session (realm console) subscribes with bbox, or
+// with console/subscribe/v1 frames, on a same-origin upgrade with
+// the uspace_session cookie from an Origin on
+// USSP_WS_ALLOWED_ORIGINS. A refused upgrade is accepted and closed
+// with 4401 (sign in again, M22).
+//
+// Server to client, every frame in the common envelope with a body
+// named by schema (M29): console/status/v1 on connect and every
+// 2 s (connection_id, server_ts, policy_version, stale_after_s,
+// live_max_age_s, dropped_frames, degraded, sources, cis_version,
+// cis_age_s, evaluation_period_s and the CPA thresholds in force),
+// console/snapshot/v1 on connect and after every subscribe, then a
+// traffic/product/v1 every second (every track within
+// traffic_radius_m of the intent's envelope or in the bbox, with
+// trust, source, age and state; the subscriber's active proximity
+// alerts; the degraded inputs) and every alert/v1 of the
+// subscription as it comes. Above traffic_throttle_track_count
+// tracks each track is sent every other second and what is held
+// back is counted in dropped_frames.
+//
+// Client to server (staff only): console/subscribe/v1 {bbox,
+// layers[]}; anything else is ignored. Nothing on this socket can
+// command an aircraft, and no frame carries resolution advice.
+//
+// Corresponds with GET /v1/traffic (the `OpenTrafficStream` operationId).
+func (c *Client) OpenTrafficStream(ctx context.Context, params *OpenTrafficStreamParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOpenTrafficStreamRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetTrafficSnapshot One traffic product
+//
+// One traffic/product/v1 message (schemas/traffic/product/v1) for
+// intent_id (an operator token granting ussp.traffic, the intent's
+// aircraft bound to the client) or bbox (a staff session), as the
+// stream would send it now: the bootstrap of a client. Another
+// operator's intent is 404, never 403. 503 names the input that is
+// missing when the product cannot be assembled.
+//
+// Corresponds with GET /v1/traffic/snapshot (the `GetTrafficSnapshot` operationId).
+func (c *Client) GetTrafficSnapshot(ctx context.Context, params *GetTrafficSnapshotParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetTrafficSnapshotRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3085,6 +3308,90 @@ func NewUnbindSerialRequest(server string, operatorId OperatorID, clientId Clien
 	return req, nil
 }
 
+// NewOpenAlertStreamRequest constructs an http.Request for the OpenAlertStream method
+func NewOpenAlertStreamRequest(server string, params *OpenAlertStreamParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/alerts")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "intent_id", params.IntentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAckAlertRequest constructs an http.Request for the AckAlert method
+func NewAckAlertRequest(server string, alertId AlertID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "alert_id", alertId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/alerts/%s/ack", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewOpenAuthorityFlightsRequest constructs an http.Request for the OpenAuthorityFlights method
 func NewOpenAuthorityFlightsRequest(server string) (*http.Request, error) {
 	var err error
@@ -3505,6 +3812,138 @@ func NewPostTelemetryBatchRequestWithBody(server string, contentType string, bod
 	return req, nil
 }
 
+// NewOpenTrafficStreamRequest constructs an http.Request for the OpenTrafficStream method
+func NewOpenTrafficStreamRequest(server string, params *OpenTrafficStreamParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/traffic")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.IntentId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "intent_id", *params.IntentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Bbox != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "bbox", *params.Bbox, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetTrafficSnapshotRequest constructs an http.Request for the GetTrafficSnapshot method
+func NewGetTrafficSnapshotRequest(server string, params *GetTrafficSnapshotParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/traffic/snapshot")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.IntentId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "intent_id", *params.IntentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Bbox != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "bbox", *params.Bbox, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -3825,6 +4264,40 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial} (the `UnbindSerial` operationId).
 	UnbindSerialWithResponse(ctx context.Context, operatorId OperatorID, clientId ClientID, serial string, reqEditors ...RequestEditorFn) (*UnbindSerialResponse, error)
 
+	// OpenAlertStreamWithResponse Stream the alerts of one intent (WebSocket)
+	//
+	// A WebSocket upgrade (served by traffic-ws; Art. 13, spec 02 F5)
+	// for an operator machine client with a bearer token granting
+	// ussp.traffic; intent_id must be an intent whose aircraft is bound
+	// to the client. Server to client, in the common envelope:
+	// console/status/v1 on connect and every 2 s, every alert/v1 of the
+	// intent's flight as it comes (conformance and proximity alerts,
+	// raised, updated and cleared, with the peer's track id and trust),
+	// the active ones on connect, and every unacknowledged critical
+	// alert repeated every escalation_repeat_s (10 s) until it is
+	// acknowledged (POST /v1/alerts/{alert_id}/ack) or cleared. The
+	// first send of each alert to the client is recorded (delivery).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/alerts (the `OpenAlertStream` operationId).
+	OpenAlertStreamWithResponse(ctx context.Context, params *OpenAlertStreamParams, reqEditors ...RequestEditorFn) (*OpenAlertStreamResponse, error)
+
+	// AckAlertWithResponse Acknowledge an alert
+	//
+	// Records, on the database clock, that the operator acknowledged an
+	// alert of one of its flights (served by api; Art. 13, 02 F5): the
+	// first acknowledgement is kept and a repeat answers it again. The
+	// acknowledged alert is republished to traffic-ws, which stops
+	// repeating it, and a critical alert acknowledged within
+	// escalation_after_s (30 s) is not escalated. An alert of another
+	// operator's flight is 404, never 403. No body.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/alerts/{alert_id}/ack (the `AckAlert` operationId).
+	AckAlertWithResponse(ctx context.Context, alertId AlertID, reqEditors ...RequestEditorFn) (*AckAlertResponse, error)
+
 	// OpenAuthorityFlightsWithResponse Stream every airborne flight to the authority (WebSocket, optional)
 	//
 	// The optional national extension of spec 02 F7 (docs/PLAN.md D12),
@@ -4035,6 +4508,55 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /v1/telemetry/batch (the `PostTelemetryBatch` operationId).
 	PostTelemetryBatchWithResponse(ctx context.Context, body PostTelemetryBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*PostTelemetryBatchResponse, error)
+
+	// OpenTrafficStreamWithResponse Stream traffic information and proximity alerts (WebSocket)
+	//
+	// A WebSocket upgrade (served by traffic-ws; Art. 11, spec 02 F5).
+	// An operator machine client with a bearer token granting
+	// ussp.traffic (issued by this USSP) subscribes with intent_id, an
+	// intent whose aircraft is bound to the client; a console user
+	// with a staff session (realm console) subscribes with bbox, or
+	// with console/subscribe/v1 frames, on a same-origin upgrade with
+	// the uspace_session cookie from an Origin on
+	// USSP_WS_ALLOWED_ORIGINS. A refused upgrade is accepted and closed
+	// with 4401 (sign in again, M22).
+	//
+	// Server to client, every frame in the common envelope with a body
+	// named by schema (M29): console/status/v1 on connect and every
+	// 2 s (connection_id, server_ts, policy_version, stale_after_s,
+	// live_max_age_s, dropped_frames, degraded, sources, cis_version,
+	// cis_age_s, evaluation_period_s and the CPA thresholds in force),
+	// console/snapshot/v1 on connect and after every subscribe, then a
+	// traffic/product/v1 every second (every track within
+	// traffic_radius_m of the intent's envelope or in the bbox, with
+	// trust, source, age and state; the subscriber's active proximity
+	// alerts; the degraded inputs) and every alert/v1 of the
+	// subscription as it comes. Above traffic_throttle_track_count
+	// tracks each track is sent every other second and what is held
+	// back is counted in dropped_frames.
+	//
+	// Client to server (staff only): console/subscribe/v1 {bbox,
+	// layers[]}; anything else is ignored. Nothing on this socket can
+	// command an aircraft, and no frame carries resolution advice.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/traffic (the `OpenTrafficStream` operationId).
+	OpenTrafficStreamWithResponse(ctx context.Context, params *OpenTrafficStreamParams, reqEditors ...RequestEditorFn) (*OpenTrafficStreamResponse, error)
+
+	// GetTrafficSnapshotWithResponse One traffic product
+	//
+	// One traffic/product/v1 message (schemas/traffic/product/v1) for
+	// intent_id (an operator token granting ussp.traffic, the intent's
+	// aircraft bound to the client) or bbox (a staff session), as the
+	// stream would send it now: the bootstrap of a client. Another
+	// operator's intent is 404, never 403. 503 names the input that is
+	// missing when the product cannot be assembled.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/traffic/snapshot (the `GetTrafficSnapshot` operationId).
+	GetTrafficSnapshotWithResponse(ctx context.Context, params *GetTrafficSnapshotParams, reqEditors ...RequestEditorFn) (*GetTrafficSnapshotResponse, error)
 }
 
 // GetJWKSResponse200Headers the declared response headers of an HTTP 200 response for GetJWKS
@@ -5017,6 +5539,151 @@ func (r UnbindSerialResponse) ContentType() string {
 	return ""
 }
 
+type OpenAlertStreamResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r OpenAlertStreamResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r OpenAlertStreamResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r OpenAlertStreamResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r OpenAlertStreamResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r OpenAlertStreamResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r OpenAlertStreamResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r OpenAlertStreamResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r OpenAlertStreamResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AckAlertResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AlertAck
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r AckAlertResponse) GetJSON200() *AlertAck {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r AckAlertResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r AckAlertResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r AckAlertResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r AckAlertResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r AckAlertResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r AckAlertResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r AckAlertResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r AckAlertResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AckAlertResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AckAlertResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type OpenAuthorityFlightsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -5715,6 +6382,151 @@ func (r PostTelemetryBatchResponse) ContentType() string {
 	return ""
 }
 
+type OpenTrafficStreamResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r OpenTrafficStreamResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r OpenTrafficStreamResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r OpenTrafficStreamResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r OpenTrafficStreamResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r OpenTrafficStreamResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r OpenTrafficStreamResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r OpenTrafficStreamResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r OpenTrafficStreamResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetTrafficSnapshotResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *map[string]interface{}
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetTrafficSnapshotResponse) GetJSON200() *map[string]interface{} {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r GetTrafficSnapshotResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r GetTrafficSnapshotResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r GetTrafficSnapshotResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r GetTrafficSnapshotResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r GetTrafficSnapshotResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetTrafficSnapshotResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetTrafficSnapshotResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetTrafficSnapshotResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetTrafficSnapshotResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetTrafficSnapshotResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetJWKSWithResponse The issuer's public keys
 //
 // The RS256 keys of this USSP's issuer (`use: sig`, `kid` = the RFC
@@ -6111,6 +6923,52 @@ func (c *ClientWithResponses) UnbindSerialWithResponse(ctx context.Context, oper
 	return ParseUnbindSerialResponse(rsp)
 }
 
+// OpenAlertStreamWithResponse Stream the alerts of one intent (WebSocket)
+//
+// A WebSocket upgrade (served by traffic-ws; Art. 13, spec 02 F5)
+// for an operator machine client with a bearer token granting
+// ussp.traffic; intent_id must be an intent whose aircraft is bound
+// to the client. Server to client, in the common envelope:
+// console/status/v1 on connect and every 2 s, every alert/v1 of the
+// intent's flight as it comes (conformance and proximity alerts,
+// raised, updated and cleared, with the peer's track id and trust),
+// the active ones on connect, and every unacknowledged critical
+// alert repeated every escalation_repeat_s (10 s) until it is
+// acknowledged (POST /v1/alerts/{alert_id}/ack) or cleared. The
+// first send of each alert to the client is recorded (delivery).
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/alerts (the `OpenAlertStream` operationId).
+func (c *ClientWithResponses) OpenAlertStreamWithResponse(ctx context.Context, params *OpenAlertStreamParams, reqEditors ...RequestEditorFn) (*OpenAlertStreamResponse, error) {
+	rsp, err := c.OpenAlertStream(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOpenAlertStreamResponse(rsp)
+}
+
+// AckAlertWithResponse Acknowledge an alert
+//
+// Records, on the database clock, that the operator acknowledged an
+// alert of one of its flights (served by api; Art. 13, 02 F5): the
+// first acknowledgement is kept and a repeat answers it again. The
+// acknowledged alert is republished to traffic-ws, which stops
+// repeating it, and a critical alert acknowledged within
+// escalation_after_s (30 s) is not escalated. An alert of another
+// operator's flight is 404, never 403. No body.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/alerts/{alert_id}/ack (the `AckAlert` operationId).
+func (c *ClientWithResponses) AckAlertWithResponse(ctx context.Context, alertId AlertID, reqEditors ...RequestEditorFn) (*AckAlertResponse, error) {
+	rsp, err := c.AckAlert(ctx, alertId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAckAlertResponse(rsp)
+}
+
 // OpenAuthorityFlightsWithResponse Stream every airborne flight to the authority (WebSocket, optional)
 //
 // The optional national extension of spec 02 F7 (docs/PLAN.md D12),
@@ -6392,6 +7250,67 @@ func (c *ClientWithResponses) PostTelemetryBatchWithResponse(ctx context.Context
 		return nil, err
 	}
 	return ParsePostTelemetryBatchResponse(rsp)
+}
+
+// OpenTrafficStreamWithResponse Stream traffic information and proximity alerts (WebSocket)
+//
+// A WebSocket upgrade (served by traffic-ws; Art. 11, spec 02 F5).
+// An operator machine client with a bearer token granting
+// ussp.traffic (issued by this USSP) subscribes with intent_id, an
+// intent whose aircraft is bound to the client; a console user
+// with a staff session (realm console) subscribes with bbox, or
+// with console/subscribe/v1 frames, on a same-origin upgrade with
+// the uspace_session cookie from an Origin on
+// USSP_WS_ALLOWED_ORIGINS. A refused upgrade is accepted and closed
+// with 4401 (sign in again, M22).
+//
+// Server to client, every frame in the common envelope with a body
+// named by schema (M29): console/status/v1 on connect and every
+// 2 s (connection_id, server_ts, policy_version, stale_after_s,
+// live_max_age_s, dropped_frames, degraded, sources, cis_version,
+// cis_age_s, evaluation_period_s and the CPA thresholds in force),
+// console/snapshot/v1 on connect and after every subscribe, then a
+// traffic/product/v1 every second (every track within
+// traffic_radius_m of the intent's envelope or in the bbox, with
+// trust, source, age and state; the subscriber's active proximity
+// alerts; the degraded inputs) and every alert/v1 of the
+// subscription as it comes. Above traffic_throttle_track_count
+// tracks each track is sent every other second and what is held
+// back is counted in dropped_frames.
+//
+// Client to server (staff only): console/subscribe/v1 {bbox,
+// layers[]}; anything else is ignored. Nothing on this socket can
+// command an aircraft, and no frame carries resolution advice.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/traffic (the `OpenTrafficStream` operationId).
+func (c *ClientWithResponses) OpenTrafficStreamWithResponse(ctx context.Context, params *OpenTrafficStreamParams, reqEditors ...RequestEditorFn) (*OpenTrafficStreamResponse, error) {
+	rsp, err := c.OpenTrafficStream(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOpenTrafficStreamResponse(rsp)
+}
+
+// GetTrafficSnapshotWithResponse One traffic product
+//
+// One traffic/product/v1 message (schemas/traffic/product/v1) for
+// intent_id (an operator token granting ussp.traffic, the intent's
+// aircraft bound to the client) or bbox (a staff session), as the
+// stream would send it now: the bootstrap of a client. Another
+// operator's intent is 404, never 403. 503 names the input that is
+// missing when the product cannot be assembled.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/traffic/snapshot (the `GetTrafficSnapshot` operationId).
+func (c *ClientWithResponses) GetTrafficSnapshotWithResponse(ctx context.Context, params *GetTrafficSnapshotParams, reqEditors ...RequestEditorFn) (*GetTrafficSnapshotResponse, error) {
+	rsp, err := c.GetTrafficSnapshot(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetTrafficSnapshotResponse(rsp)
 }
 
 // ParseGetJWKSResponse parses an HTTP response from a GetJWKSWithResponse call
@@ -7206,6 +8125,124 @@ func ParseUnbindSerialResponse(rsp *http.Response) (*UnbindSerialResponse, error
 	return response, nil
 }
 
+// ParseOpenAlertStreamResponse parses an HTTP response from a OpenAlertStreamWithResponse call
+func ParseOpenAlertStreamResponse(rsp *http.Response) (*OpenAlertStreamResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &OpenAlertStreamResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 101:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAckAlertResponse parses an HTTP response from a AckAlertWithResponse call
+func ParseAckAlertResponse(rsp *http.Response) (*AckAlertResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AckAlertResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AlertAck
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseOpenAuthorityFlightsResponse parses an HTTP response from a OpenAuthorityFlightsWithResponse call
 func ParseOpenAuthorityFlightsResponse(rsp *http.Response) (*OpenAuthorityFlightsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -7764,6 +8801,124 @@ func ParsePostTelemetryBatchResponse(rsp *http.Response) (*PostTelemetryBatchRes
 			return nil, err
 		}
 		response.ApplicationproblemJSON413 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseOpenTrafficStreamResponse parses an HTTP response from a OpenTrafficStreamWithResponse call
+func ParseOpenTrafficStreamResponse(rsp *http.Response) (*OpenTrafficStreamResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &OpenTrafficStreamResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 101:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetTrafficSnapshotResponse parses an HTTP response from a GetTrafficSnapshotWithResponse call
+func ParseGetTrafficSnapshotResponse(rsp *http.Response) (*GetTrafficSnapshotResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetTrafficSnapshotResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Problem

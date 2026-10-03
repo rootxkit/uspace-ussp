@@ -15,5 +15,5 @@ BenchmarkDeconflictEnvelope     500000000
 # p95 <= 1 s (WP-9)
 BenchmarkFlightsView            1000000000
 # traffic product: 6000 msg/s out on one core at 1000 drones, ~166 us
-# per message (WP-12)
+# per message (WP-11 writes it: one product of 1000 tracks in a 2 km area)
 BenchmarkTrafficProduct         166000

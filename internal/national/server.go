@@ -50,7 +50,10 @@ type Server struct {
 	// Intents serves /v1/intents (internal/intent.Service); nil answers
 	// 503 intents_unavailable.
 	Intents Intents
-	Logger  *slog.Logger
+	// Alerts records acknowledgements (internal/alerts.Service); nil
+	// answers 503 alerts_unavailable.
+	Alerts AlertAcker
+	Logger *slog.Logger
 }
 
 // RegistryValidator is the cached, audited F8 lookup
@@ -84,6 +87,7 @@ func AccessTable() map[string]httpx.Access {
 		"GET /v1/intents":                                   {Scopes: []string{auth.ScopeIntents}},
 		"GET /v1/intents/{intent_id}":                       {Scopes: []string{auth.ScopeIntents}},
 		"PATCH /v1/intents/{intent_id}":                     {Scopes: []string{auth.ScopeIntents}},
+		"POST /v1/alerts/{alert_id}/ack":                    {Scopes: []string{auth.ScopeTraffic}},
 		"POST /v1/accounts/logout":                          anySession,
 		"GET /v1/accounts/me":                               anySession,
 		"GET /v1/accounts/operators/{operator_id}":          portalAdmin,

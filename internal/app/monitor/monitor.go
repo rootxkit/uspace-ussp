@@ -1,7 +1,16 @@
-// Package monitor is the monitor process (docs/PLAN.md §3.1; brief
-// WP-10): the conformance path today; WP-11 adds the CPA path and WP-12
-// the zone path to the same process. It serves only /healthz, /readyz
-// and /metrics.
+// Package monitor is the monitor process (docs/PLAN.md §3.1; briefs
+// WP-10, WP-11): the conformance path and the CPA path; WP-12 adds the
+// zone path to the same process. It serves only /healthz, /readyz and
+// /metrics.
+//
+// The CPA path (cpa.go, internal/traffic) feeds one uspace-core
+// alerting.Monitor for the owned cell set with every trk.v1, peer.v1
+// and man.v1 sample of the owned cells and their ring-1 neighbours,
+// ticks it every second (every 2 s, said so, above the pair budget),
+// follows the source switches and the flight ends, and publishes each
+// proximity alert on alrt.v1 for each of this USSP's flights in the
+// pair, republished every tick; the active alerts persist in
+// proximity_state across a restart, a handover and a policy change.
 //
 // It reads the tracks of this USSP's flights from TRK (the cells it owns
 // by USSP_CELL_OWNERSHIP and their ring-1 neighbours, replayed from
@@ -50,6 +59,7 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/policy"
 	"github.com/rootxkit/uspace-ussp/internal/sources"
 	"github.com/rootxkit/uspace-ussp/internal/telemetry"
+	"github.com/rootxkit/uspace-ussp/internal/traffic"
 )
 
 // Readiness dependency names beside nats.
@@ -77,6 +87,8 @@ type Options struct {
 	SummaryEvery time.Duration
 	// Engine, when set, receives the engine once it exists.
 	Engine func(*Engine)
+	// CPA, when set, receives the CPA engine once it exists.
+	CPA func(*traffic.Engine)
 }
 
 // Spec declares the process and the dependencies it reads.
@@ -98,9 +110,18 @@ func Run(ctx context.Context, cfg config.Config) error {
 
 // TrackSubjects are the TRK filters of an ownership: every track for
 // all, else each owned cell3 and its ring-1 neighbours, sorted.
-func TrackSubjects(o cell.Ownership) ([]string, error) {
+func TrackSubjects(o cell.Ownership) ([]string, error) { return Subjects(bus.KindTrk, o) }
+
+// Subjects are the filters of a located kind (trk, man, peer) for an
+// ownership: every subject of the kind for all, else each owned cell3
+// and its ring-1 neighbours, sorted.
+func Subjects(kind string, o cell.Ownership) ([]string, error) {
 	if o.All() {
-		return []string{bus.SubjectTrkAll}, nil
+		all := map[string]string{bus.KindTrk: bus.SubjectTrkAll, bus.KindMan: bus.SubjectManAll, bus.KindPeer: bus.SubjectPeerAll}[kind]
+		if all == "" {
+			return nil, core.Fieldf("kind", "%q is not a located kind", kind)
+		}
+		return []string{all}, nil
 	}
 	set := map[string]bool{}
 	for _, c := range o.Cells() {
@@ -115,7 +136,7 @@ func TrackSubjects(o cell.Ownership) ([]string, error) {
 	}
 	out := make([]string, 0, len(set))
 	for c := range set {
-		s, err := bus.TrkCell3(c)
+		s, err := bus.Cell3Filter(kind, c)
 		if err != nil {
 			return nil, err
 		}
@@ -187,8 +208,16 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	if o.Engine != nil {
 		o.Engine(eng)
 	}
+	cpa, err := startCPA(ctx, rt, own, current, intents, instance, o)
+	if err != nil {
+		return err
+	}
 	fd := &Feed{
-		Subjects: subjects, Take: eng.Offer, Logger: logger,
+		Subjects: subjects, Logger: logger,
+		Take: func(data []byte) {
+			eng.Offer(data)
+			cpa.offerTrack(traffic.NSTrack, data)
+		},
 		Open: func(ctx context.Context, subject string, from time.Time, handle func([]byte)) (func(), error) {
 			return bus.Replay{JS: js, Stream: bus.StreamTRK, Subject: subject}.Open(ctx, from, handle)
 		},
@@ -211,9 +240,16 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 				return
 			case <-eng.Seeded():
 			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-cpa.eng.Seeded():
+			}
 			fd.Run(ctx)
 		},
-		func(ctx context.Context) { flightEnds(ctx, rt.Bus, eng, logger) },
+		func(ctx context.Context) {
+			flightEnds(ctx, rt.Bus, logger, eng.FlightEnded, cpa.eng.FlightEnded)
+		},
 		func(ctx context.Context) {
 			t := time.NewTicker(every)
 			defer t.Stop()
@@ -224,6 +260,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 				case <-t.C:
 					_, age, loaded := intents.Snapshot()
 					logger.LogAttrs(ctx, slog.LevelInfo, "conformance status", StatusAttrs(eng.Summary(), age, loaded, current().Version)...)
+					logger.LogAttrs(ctx, slog.LevelInfo, "cpa status", CPAStatusAttrs(cpa.eng.Summary())...)
 				}
 			}
 		},
@@ -249,9 +286,10 @@ func IntentsProbe(m *bus.Mirror[intentBody]) obs.Probe {
 	}
 }
 
-// flightEnds feeds the flight ends of flight.v1 to the engine (core
-// subscription; a missed end is caught by the intent's end).
-func flightEnds(ctx context.Context, nc *bus.Conn, eng *Engine, logger *slog.Logger) {
+// flightEnds feeds the flight ends of flight.v1 to the engines (core
+// subscription; a missed end is caught by the intent's end, and on the
+// CPA path by the stale time).
+func flightEnds(ctx context.Context, nc *bus.Conn, logger *slog.Logger, ended ...func(flightID string)) {
 	stop, err := nc.Listen(SubjectFlightEnded, func(subject string, data []byte) {
 		s, err := bus.Parse(subject)
 		if err != nil || s.Kind != bus.KindFlight {
@@ -263,7 +301,9 @@ func flightEnds(ctx context.Context, nc *bus.Conn, eng *Engine, logger *slog.Log
 		if json.Unmarshal(data, &probe) != nil || !strings.HasPrefix(probe.Schema, "flight/event/") {
 			return
 		}
-		eng.FlightEnded(s.ID)
+		for _, f := range ended {
+			f(s.ID)
+		}
 	})
 	if err != nil {
 		logger.Warn("flight ends not subscribed; the intent's end clears the alerts", obs.Err(err))

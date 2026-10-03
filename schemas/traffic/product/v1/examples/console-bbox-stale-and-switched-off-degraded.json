@@ -1,0 +1,81 @@
+{
+  "schema": "traffic/product/v1",
+  "msg_id": "01K6Q2A3B4C5D6E7F8G9H0J1K3",
+  "producer": "ussp/traffic-ws",
+  "ts": "2026-10-03T12:00:06.000Z",
+  "rx_ts": "2026-10-03T12:00:06.000Z",
+  "captured_at": "2026-10-03T12:00:06.000Z",
+  "time_source": "system",
+  "backlog": false,
+  "body": {
+    "at": "2026-10-03T12:01:06.000Z",
+    "for": {
+      "bbox": [
+        44.7,
+        41.6,
+        44.9,
+        41.8
+      ]
+    },
+    "tracks": [
+      {
+        "track_id": "33333333-3333-4333-8333-333333333333",
+        "trust": "authenticated",
+        "source": "operator_ws",
+        "state": "stale",
+        "age_s": 12.3,
+        "position": {
+          "lat": 41.7204,
+          "lng": 44.8271
+        },
+        "alt_amsl_m": 550.0,
+        "alt_source": "geodetic",
+        "speed_ms": 10.0,
+        "track_deg": 180.0,
+        "vspeed_ms": 0.0,
+        "emergency": false,
+        "identification": {
+          "status": "registered"
+        },
+        "time_of_report": "2026-10-03T12:00:53.700Z"
+      },
+      {
+        "track_id": "4ca7b7",
+        "trust": "surveillance",
+        "source": "ansp_feed",
+        "state": "source_disabled",
+        "age_s": 3.0,
+        "position": {
+          "lat": 41.721,
+          "lng": 44.793
+        },
+        "alt_amsl_m": null,
+        "alt_source": "pressure",
+        "speed_ms": 72.5,
+        "track_deg": 134.0,
+        "vspeed_ms": -2.5,
+        "emergency": false,
+        "identification": null,
+        "time_of_report": "2026-10-03T12:00:05.200Z",
+        "callsign": "TST123"
+      }
+    ],
+    "alerts": [],
+    "degraded": [
+      {
+        "input": "manned",
+        "since": "2026-10-03T11:58:00.000Z",
+        "reason": "the ANSP feed sent nothing for 120 s"
+      },
+      {
+        "input": "dss",
+        "since": null,
+        "reason": "dss_state not read yet"
+      }
+    ],
+    "cis_version": null,
+    "policy_version": 3,
+    "dropped_frames": 412,
+    "throttled": true
+  }
+}

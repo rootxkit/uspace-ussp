@@ -1,0 +1,15 @@
+{
+  "schema": "console/subscribe/v1",
+  "body": {
+    "bbox": [
+      44.6,
+      41.6,
+      45.0,
+      41.85
+    ],
+    "layers": [
+      "tracks",
+      "violations"
+    ]
+  }
+}

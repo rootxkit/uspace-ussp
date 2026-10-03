@@ -4,7 +4,8 @@
 # (cookies, RFC 6749 errors) through internal/httpx. The telemetry tag
 # is served by telemetry-ingest, from its own generated interface
 # (api/oapi-codegen.telemetry.yaml), the authority tag by rid-sp
-# (api/oapi-codegen.ridsp.yaml). Run through `make generate`; never
+# (api/oapi-codegen.ridsp.yaml), the traffic tag by traffic-ws
+# (api/oapi-codegen.traffic.yaml). Run through `make generate`; never
 # edit the generated file.
 package: gen
 generate:
@@ -14,4 +15,4 @@ generate:
   embedded-spec: false
 output-options:
   skip-prune: true
-  exclude-tags: [telemetry, authority]
+  exclude-tags: [telemetry, authority, traffic]

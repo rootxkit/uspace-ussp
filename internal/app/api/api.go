@@ -10,7 +10,10 @@
 // WP-7 flight authorisation (internal/intent) and /v1/intents; WP-8 the
 // flights table from telemetry-ingest's flight facts (internal/flights);
 // WP-9 the F3411 ISA of every flight, planned with its facts and written
-// to the DSS (internal/ridsp), with dss on /readyz.
+// to the DSS (internal/ridsp), with dss on /readyz; WP-11 the alerts
+// record (internal/alerts): alrt.v1 recorded, POST
+// /v1/alerts/{alert_id}/ack and the escalation of unacknowledged
+// critical alerts.
 package api
 
 import (
@@ -29,6 +32,8 @@ import (
 	"github.com/rootxkit/uspace-core/core"
 
 	"github.com/rootxkit/uspace-ussp/internal/accounts"
+	"github.com/rootxkit/uspace-ussp/internal/alerts"
+	alertstore "github.com/rootxkit/uspace-ussp/internal/alerts/pgstore"
 	"github.com/rootxkit/uspace-ussp/internal/app/proc"
 	"github.com/rootxkit/uspace-ussp/internal/auth"
 	"github.com/rootxkit/uspace-ussp/internal/bus"
@@ -190,8 +195,9 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 		Counters:      counters, Logger: rt.Logger,
 	}
 	intents := startIntents(ctx, rt, pol, cisState, reg.Cache, kv)
+	alertSvc := startAlerts(ctx, rt, current)
 	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc,
-		CIS: cisState.Receiver, Registry: reg.Cache, Intents: intents, Logger: rt.Logger}
+		CIS: cisState.Receiver, Registry: reg.Cache, Intents: intents, Alerts: alertSvc, Logger: rt.Logger}
 	if err := national.Register(mux, srv, guard.Require); err != nil {
 		return fmt.Errorf("access table: %w", err)
 	}
@@ -229,6 +235,29 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	}
 	rt.Go(ctx, crec.Run)
 	return nil
+}
+
+// AlertsConsumer is api's durable consumer of the ALRT stream.
+const AlertsConsumer = "api-alerts"
+
+// startAlerts runs the alerts record (WP-11, PLAN §3.2): every alert/v1
+// of alrt.v1 recorded by its id, the deliveries traffic-ws reports, and
+// the escalation of critical alerts left unacknowledged; it returns the
+// acknowledgement service of POST /v1/alerts/{alert_id}/ack.
+func startAlerts(ctx context.Context, rt *proc.Runtime, current func() policy.Values) *alerts.Service {
+	counters := &core.Counters{}
+	proc.Publish(rt, "alerts", counters)
+	st := alertstore.Store{S: rt.Store}
+	rec := &alerts.Recorder{
+		Source: &bus.StreamSource{Open: bus.PullOpener(rt.Bus.JetStream(), bus.DefaultTopology(), bus.StreamALRT, bus.PullSpec{
+			Durable: AlertsConsumer, FilterSubject: bus.SubjectAlrtAll, MaxAckPending: 1024,
+		})},
+		Store: st, Counters: counters, Logger: rt.Logger,
+	}
+	svc := &alerts.Service{Store: st, Bus: bus.NewPublisher(rt.Bus, counters), Policy: current, Counters: counters, Logger: rt.Logger}
+	rt.Go(ctx, rec.Run)
+	rt.Go(ctx, func(ctx context.Context) { svc.RunEscalation(ctx, alerts.DefaultEscalateEvery) })
+	return svc
 }
 
 // FlightsConsumer is api's durable consumer of the FLIGHT stream.

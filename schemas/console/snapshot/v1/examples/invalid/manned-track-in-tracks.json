@@ -1,0 +1,61 @@
+{
+  "schema": "console/snapshot/v1",
+  "msg_id": "01K6W6VZSKDENC8SP3804GVA35",
+  "producer": "authority/picture-ws",
+  "ts": "2026-10-02T09:15:06.100Z",
+  "rx_ts": "2026-10-02T09:15:06.100Z",
+  "captured_at": "2026-10-02T09:15:06.100Z",
+  "time_source": "system",
+  "backlog": false,
+  "body": {
+    "tracks": [
+      {
+        "schema": "track/manned/v1",
+        "msg_id": "01K67AG3BCKKDJWBHP1G201CYF",
+        "producer": "ansp/manned-feed",
+        "ts": "2026-10-02T09:15:05.000Z",
+        "rx_ts": "2026-10-02T09:15:05.100Z",
+        "captured_at": "2026-10-02T09:15:05.000Z",
+        "time_source": "source_clock",
+        "backlog": false,
+        "body": {
+          "icao24": "4ca7b5",
+          "callsign": "TGZ123"
+        }
+      }
+    ],
+    "alerts": [
+      {
+        "schema": "violation/v1",
+        "msg_id": "01K6H3BV4H15G5E4G7X0NTH82F",
+        "producer": "authority/detect",
+        "ts": "2026-10-02T09:15:04.000Z",
+        "rx_ts": "2026-10-02T09:15:04.500Z",
+        "captured_at": "2026-10-02T09:15:04.000Z",
+        "time_source": "system",
+        "backlog": false,
+        "body": {
+          "violation_id": "v-2026-00031",
+          "kind": "height_120m"
+        }
+      }
+    ],
+    "manned": [
+      {
+        "schema": "track/manned/v1",
+        "msg_id": "01K67AG3BCKKDJWBHP1G201CYF",
+        "producer": "ansp/manned-feed",
+        "ts": "2026-10-02T09:15:05.000Z",
+        "rx_ts": "2026-10-02T09:15:05.100Z",
+        "captured_at": "2026-10-02T09:15:05.000Z",
+        "time_source": "source_clock",
+        "backlog": false,
+        "body": {
+          "icao24": "4ca7b5",
+          "callsign": "TGZ123"
+        }
+      }
+    ],
+    "zones_version": "zones-2026-10-02-0007"
+  }
+}

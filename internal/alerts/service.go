@@ -1,0 +1,190 @@
+package alerts
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"sync"
+	"time"
+
+	"github.com/rootxkit/uspace-core/core"
+
+	"github.com/rootxkit/uspace-ussp/internal/bus"
+	"github.com/rootxkit/uspace-ussp/internal/obs"
+	"github.com/rootxkit/uspace-ussp/internal/policy"
+)
+
+// ErrNotFound is an alert that does not exist or is not the caller's
+// operator's (never told apart: 404 either way, as for intents).
+var ErrNotFound = errors.New("alert not found")
+
+// Stored is one alert as the record holds it, with api's facts.
+type Stored struct {
+	Body
+	Cell5   string
+	AckedBy *string
+}
+
+// FactStore is the part of the record the acknowledgement and the
+// escalation write, on the database clock.
+type FactStore interface {
+	// Ack records the acknowledgement of alertID by clientID, when the
+	// alert is one of the client's operator's flights' (ErrNotFound
+	// otherwise); a repeat keeps the first.
+	Ack(ctx context.Context, alertID, clientID string) (Stored, error)
+	// Escalate marks every critical alert open and unacknowledged
+	// afterS after its raise as escalated, at most maxRows, and returns
+	// them.
+	Escalate(ctx context.Context, afterS float64, maxRows int) ([]Stored, error)
+}
+
+// Publisher is the bus (bus.Publisher).
+type Publisher interface {
+	Publish(ctx context.Context, subject string, m bus.Enveloped) error
+}
+
+// Counters of the service.
+const (
+	CounterAcked             = "alerts_acknowledged"
+	CounterAckNotFound       = "alerts_ack_not_found"
+	CounterEscalated         = "alerts_escalated"
+	CounterEscalateFailed    = "alerts_escalation_failed"
+	CounterRepublished       = "alerts_republished"
+	CounterRepublishFailed   = "alerts_republish_failed"
+	CounterRepublishNoCell   = "alerts_republish_without_cell"
+	DefaultEscalateEvery     = 2 * time.Second
+	DefaultEscalateMaxRows   = 500
+	defaultRepublishDeadline = 3 * time.Second
+)
+
+// Service is api's handle on the record's own facts.
+type Service struct {
+	Store    FactStore
+	Bus      Publisher
+	Policy   func() policy.Values
+	Counters *core.Counters
+	Logger   *slog.Logger
+	Now      func() time.Time
+
+	once sync.Once
+}
+
+func (s *Service) logger() *slog.Logger {
+	if s.Logger == nil {
+		return obs.Discard()
+	}
+	return s.Logger
+}
+
+func (s *Service) counters() *core.Counters {
+	s.once.Do(func() {
+		if s.Counters == nil {
+			s.Counters = &core.Counters{}
+		}
+	})
+	return s.Counters
+}
+
+func (s *Service) now() time.Time {
+	if s.Now != nil {
+		return s.Now()
+	}
+	return time.Now()
+}
+
+// AckResult is the answer of POST /v1/alerts/{alert_id}/ack.
+type AckResult struct {
+	AlertID string    `json:"alert_id"`
+	AckedAt time.Time `json:"acked_at"`
+	AckedBy string    `json:"acked_by"`
+}
+
+// Ack records the acknowledgement (committed), then republishes the
+// alert with acked_at on alrt.v1 so traffic-ws stops repeating it. A
+// republish that fails is counted and logged: the record holds the
+// acknowledgement, and the next one carries it.
+func (s *Service) Ack(ctx context.Context, alertID, clientID string) (AckResult, error) {
+	if !uuidRe.MatchString(alertID) {
+		s.counters().Inc(CounterAckNotFound)
+		return AckResult{}, ErrNotFound
+	}
+	st, err := s.Store.Ack(ctx, alertID, clientID)
+	if errors.Is(err, ErrNotFound) {
+		s.counters().Inc(CounterAckNotFound)
+		return AckResult{}, err
+	}
+	if err != nil {
+		return AckResult{}, err
+	}
+	s.counters().Inc(CounterAcked)
+	s.republish(ctx, st)
+	by := clientID
+	if st.AckedBy != nil {
+		by = *st.AckedBy
+	}
+	return AckResult{AlertID: st.AlertID, AckedAt: st.AckedAt.UTC(), AckedBy: by}, nil
+}
+
+// republish sends the stored alert on alrt.v1.<kind>.<cell5>.<id>.
+func (s *Service) republish(ctx context.Context, st Stored) {
+	if st.Cell5 == "" {
+		s.counters().Inc(CounterRepublishNoCell)
+		return
+	}
+	subject, err := bus.Alrt(st.Kind, st.Cell5, st.AlertID)
+	if err == nil {
+		pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultRepublishDeadline)
+		err = s.Bus.Publish(pctx, subject, &Message{Envelope: bus.SystemEnvelope(SchemaAlert, Producer, s.now()), Body: st.Body})
+		cancel()
+	}
+	if err != nil {
+		s.counters().Inc(CounterRepublishFailed)
+		s.logger().LogAttrs(ctx, slog.LevelError, "alert fact recorded but not republished; the next fact carries it",
+			slog.String("alert_id", st.AlertID), obs.Err(err))
+		return
+	}
+	s.counters().Inc(CounterRepublished)
+}
+
+// Escalate runs one escalation pass: the critical alerts left
+// unacknowledged escalation_after_s are marked (committed), then
+// republished with escalated_at for the supervisor console.
+func (s *Service) Escalate(ctx context.Context) (int, error) {
+	after := policy.Defaults().EscalationAfterS
+	if s.Policy != nil {
+		after = s.Policy().EscalationAfterS
+	}
+	rows, err := s.Store.Escalate(ctx, after, DefaultEscalateMaxRows)
+	if err != nil {
+		s.counters().Inc(CounterEscalateFailed)
+		return 0, err
+	}
+	for i := range rows {
+		s.counters().Inc(CounterEscalated)
+		s.logger().LogAttrs(ctx, slog.LevelWarn, "critical alert unacknowledged: escalated to the supervisor console",
+			slog.String("alert_id", rows[i].AlertID), slog.String("kind", rows[i].Kind), obs.FlightID(rows[i].FlightID),
+			slog.Float64("escalation_after_s", after))
+		s.republish(ctx, rows[i])
+	}
+	return len(rows), nil
+}
+
+// RunEscalation escalates every period until ctx ends; a failed pass
+// (the database down) is logged and tried at the next one.
+func (s *Service) RunEscalation(ctx context.Context, every time.Duration) {
+	if every <= 0 {
+		every = DefaultEscalateEvery
+	}
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if _, err := s.Escalate(ctx); err != nil && ctx.Err() == nil {
+				s.logger().LogAttrs(ctx, slog.LevelError, "escalation pass failed; tried again at the next", obs.Err(err))
+			}
+		}
+	}
+}

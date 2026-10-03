@@ -145,28 +145,32 @@ func TestDecodeManned(t *testing.T) {
 }
 
 func TestDecodeTrafficAndConformance(t *testing.T) {
-	body := map[string]any{"client_id": "c1", "intent_id": flightID, "bbox": []float64{44.7, 41.6, 44.9, 41.8},
-		"tracks_shown": []any{map[string]any{"id": "t1"}}, "degraded": []string{"cis_stale"}, "policy_version": 3}
+	body := map[string]any{"client_id": "c1", "for": map[string]any{"bbox": []float64{44.7, 41.6, 44.9, 41.8}},
+		"tracks":   []any{map[string]any{"track_id": "t1", "trust": "surveillance", "state": "live", "age_s": 0.5, "position": map[string]any{"lat": 1, "lng": 2}}},
+		"degraded": []any{map[string]any{"input": "cis", "since": nil, "reason": "stale"}}, "policy_version": 3}
 	d, err := DecodeTraffic(message(t, "traffic/product/v1", time.Now(), body))
 	if err != nil || d.Rows[0].Table != &store.TableTrafficProducts {
 		t.Fatalf("%+v %v", d, err)
 	}
 	v := d.Rows[0].Values
-	if *(v[4].(*float64)) != 41.6 || *(v[5].(*float64)) != 44.7 || v[8] != `[{"id":"t1"}]` || v[10] != int64(3) {
+	if *(v[4].(*float64)) != 41.6 || *(v[5].(*float64)) != 44.7 || v[8] != `[{"track_id":"t1","trust":"surveillance","state":"live","age_s":0.5}]` ||
+		v[10] != int64(3) || v[9].([]string)[0] != "cis" {
 		t.Fatalf("values %v", v)
 	}
-	delete(body, "bbox")
+	body["for"] = map[string]any{"intent_id": flightID}
 	delete(body, "degraded")
-	if d, err = DecodeTraffic(message(t, "traffic/product/v1", time.Now(), body)); err != nil || d.Rows[0].Values[4] != (*float64)(nil) {
-		t.Fatalf("no bbox: %+v %v", d, err)
+	if d, err = DecodeTraffic(message(t, "traffic/product/v1", time.Now(), body)); err != nil || d.Rows[0].Values[4] != (*float64)(nil) || *(d.Rows[0].Values[3].(*string)) != flightID {
+		t.Fatalf("an intent: %+v %v", d, err)
 	}
 	for name, mut := range map[string]func(map[string]any){
-		"bbox 3":        func(b map[string]any) { b["bbox"] = []float64{1, 2, 3} },
-		"bbox reversed": func(b map[string]any) { b["bbox"] = []float64{44, 42, 45, 41} },
+		"bbox 3":        func(b map[string]any) { b["for"] = map[string]any{"bbox": []float64{1, 2, 3}} },
+		"bbox reversed": func(b map[string]any) { b["for"] = map[string]any{"bbox": []float64{44, 42, 45, 41}} },
 		"no policy":     func(b map[string]any) { delete(b, "policy_version") },
-		"intent":        func(b map[string]any) { b["intent_id"] = "i" },
+		"no tracks":     func(b map[string]any) { delete(b, "tracks") },
+		"no client":     func(b map[string]any) { delete(b, "client_id") },
+		"intent":        func(b map[string]any) { b["for"] = map[string]any{"intent_id": "i"} },
 	} {
-		b := map[string]any{"client_id": "c1", "tracks_shown": []any{}, "policy_version": 1}
+		b := map[string]any{"client_id": "c1", "for": map[string]any{}, "tracks": []any{}, "policy_version": 1}
 		mut(b)
 		if _, err := DecodeTraffic(message(t, "traffic/product/v1", time.Now(), b)); err == nil {
 			t.Errorf("%s accepted", name)

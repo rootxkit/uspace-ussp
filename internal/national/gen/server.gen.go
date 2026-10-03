@@ -433,6 +433,16 @@ func (e TokenResponseTokenType) Valid() bool {
 	}
 }
 
+// AlertAck An alert's acknowledgement as recorded.
+type AlertAck struct {
+	// AckedAt When it was first acknowledged, on the database clock.
+	AckedAt time.Time `json:"acked_at"`
+
+	// AckedBy The client that first acknowledged it.
+	AckedBy string             `json:"acked_by"`
+	AlertId openapi_types.UUID `json:"alert_id"`
+}
+
 // ClientRequest defines model for ClientRequest.
 type ClientRequest struct {
 	Scopes []OperatorScope `json:"scopes"`
@@ -1049,6 +1059,9 @@ type TokenResponse struct {
 // TokenResponseTokenType defines model for TokenResponse.TokenType.
 type TokenResponseTokenType string
 
+// AlertID defines model for AlertID.
+type AlertID = openapi_types.UUID
+
 // ClientID defines model for ClientID.
 type ClientID = string
 
@@ -1281,6 +1294,9 @@ type ServerInterface interface {
 	// UnbindSerial Unbind a serial from a client
 	// (DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial})
 	UnbindSerial(w http.ResponseWriter, r *http.Request, operatorId OperatorID, clientId ClientID, serial string)
+	// AckAlert Acknowledge an alert
+	// (POST /v1/alerts/{alert_id}/ack)
+	AckAlert(w http.ResponseWriter, r *http.Request, alertId AlertID)
 	// ReceiveCISNotification Receive a CIS change notification (F3 push)
 	// (POST /v1/cis/notifications)
 	ReceiveCISNotification(w http.ResponseWriter, r *http.Request)
@@ -1605,6 +1621,32 @@ func (siw *ServerInterfaceWrapper) UnbindSerial(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UnbindSerial(w, r, operatorId, clientId, serial)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AckAlert operation middleware
+func (siw *ServerInterfaceWrapper) AckAlert(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "alert_id" -------------
+	var alertId AlertID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "alert_id", r.PathValue("alert_id"), &alertId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "alert_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AckAlert(w, r, alertId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1966,6 +2008,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/intents", wrapper.CreateIntent)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/intents/{intent_id}", wrapper.GetIntent)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/intents/{intent_id}", wrapper.ChangeIntent)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/alerts/{alert_id}/ack", wrapper.AckAlert)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/oauth/token", wrapper.RequestToken)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/jwks.json", wrapper.GetJWKS)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/login", wrapper.Login)

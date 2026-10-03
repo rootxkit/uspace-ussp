@@ -1,0 +1,300 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/alert/v1.json",
+  "title": "alert/v1",
+  "description": "One alert of a USSP monitor (spec 04 §3.3; Reg. (EU) 2021/664 Art. 11, 13) in the common envelope (04 §2): on alrt.v1.<kind>.<cell5>.<alert_id> from monitor to api (the alerts record) and traffic-ws, and as a body of WS /v1/alerts, WS /v1/traffic and traffic/product/v1. An alert is raised once, updated (republished every second with its current numbers while it holds, C-08) and cleared with a reason (C-06, C-14). A proximity alert is the national CPA addition: one per flight of this USSP in the pair, naming the other aircraft (peer), both sides carrying the numbers of the same judgement (C-11). The alert informs; it never carries resolution advice (2021/664 Art. 11(4), LESSONS X-15). alert_id is a UUID derived from the condition and its raise time, so a republish, a restart and a handover name the same alert.",
+  "allOf": [
+    {
+      "$ref": "https://schemas.uspace.ge/envelope/v1.json"
+    }
+  ],
+  "properties": {
+    "schema": {
+      "const": "alert/v1"
+    },
+    "body": {
+      "$ref": "#/$defs/body"
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "nullable_time": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "trust": {
+      "description": "Trust class (04 §2). Pinned to uspace-core `core.Trust`.",
+      "enum": [
+        "authenticated",
+        "provider",
+        "surveillance",
+        "broadcast",
+        "sensor",
+        "simulated"
+      ]
+    },
+    "peer": {
+      "description": "The other aircraft of a proximity alert: its track id (a flight id, a peer's flight id or an icao24) and its trust class, shown as such (R-05: a broadcast track is always labelled broadcast).",
+      "type": "object",
+      "required": [
+        "track_id",
+        "trust"
+      ],
+      "properties": {
+        "track_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "trust": {
+          "$ref": "#/$defs/trust"
+        },
+        "source": {
+          "description": "Adapter type the peer was heard from (04 §2).",
+          "enum": [
+            "operator_ws",
+            "network_rid",
+            "direct_rid",
+            "ansp_feed",
+            "adsb_rx",
+            "sitl"
+          ]
+        }
+      }
+    },
+    "proximity_detail": {
+      "description": "The CPA numbers of the last judgement that showed the conflict true (uspace-core cpa and alerting): t_cpa_s (time to the closest point of approach, 0 when diverging), d_cpa_h_m (horizontal distance at it), d_alt_m (vertical separation at it, AMSL; null when the vertical is not known, R-09), the peer, and beside them d_horizontal_now_m, vertical_separation_known, los_start_s (time to the loss of separation, 0 when inside the minima now; the ranking of active conflicts, C-19), pair_id (the same on both flights' alerts) and evaluation_period_s (1 s, or 2 s above the pair budget, spec 05 §5).",
+      "type": "object",
+      "required": [
+        "t_cpa_s",
+        "d_cpa_h_m",
+        "d_alt_m",
+        "peer",
+        "evaluation_period_s"
+      ],
+      "properties": {
+        "t_cpa_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "d_cpa_h_m": {
+          "type": "number",
+          "minimum": 0
+        },
+        "d_alt_m": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "d_horizontal_now_m": {
+          "type": "number",
+          "minimum": 0
+        },
+        "vertical_separation_known": {
+          "type": "boolean"
+        },
+        "los_start_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "peer": {
+          "$ref": "#/$defs/peer"
+        },
+        "pair_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{24}$"
+        },
+        "evaluation_period_s": {
+          "description": "1 s, or 2 s above the pair budget; never more (spec 05 §5).",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 2
+        },
+        "carried_since": {
+          "description": "Set while the alert is carried across a monitor restart, a handover or a policy change and not yet judged again.",
+          "$ref": "#/$defs/time"
+        }
+      }
+    },
+    "body": {
+      "type": "object",
+      "required": [
+        "alert_id",
+        "kind",
+        "severity",
+        "state",
+        "clear_reason",
+        "flight_id",
+        "intent_id",
+        "authorisation_number",
+        "captured_at",
+        "raised_at",
+        "updated_at",
+        "policy_version",
+        "detail"
+      ],
+      "properties": {
+        "alert_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "kind": {
+          "description": "04 §3.3.",
+          "enum": [
+            "proximity",
+            "nonconformance",
+            "nonconformance_nearby",
+            "height_exceedance",
+            "zone_incursion",
+            "lost_link",
+            "restriction_activated",
+            "emergency_nearby"
+          ]
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "critical"
+          ]
+        },
+        "state": {
+          "enum": [
+            "raised",
+            "updated",
+            "cleared"
+          ]
+        },
+        "clear_reason": {
+          "description": "Why a cleared alert cleared; null otherwise. resolved rests on evidence (shown false for longer than the hysteresis); stale on silence; source_disabled on a switch; landed on a not-flying sample; flight_ended on the flight's end; not_reconfirmed on an alert carried across a restart that was not judged in conflict again; acknowledged_timeout as 04 §3.3 names it.",
+          "oneOf": [
+            {
+              "enum": [
+                "resolved",
+                "stale",
+                "source_disabled",
+                "landed",
+                "flight_ended",
+                "not_reconfirmed",
+                "acknowledged_timeout"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "flight_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "intent_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authorisation_number": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64
+        },
+        "captured_at": {
+          "description": "The placement of the triggering sample (04 §2).",
+          "$ref": "#/$defs/time"
+        },
+        "raised_at": {
+          "$ref": "#/$defs/time"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/time"
+        },
+        "policy_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "detail": {
+          "description": "The numbers of the kind (04 §3.3); a proximity alert's are proximity_detail.",
+          "type": "object"
+        },
+        "clearing_detail": {
+          "description": "On a clear: the numbers of the judgement that cleared it (C-14), or why a carried alert ended.",
+          "type": "object"
+        },
+        "acked_at": {
+          "description": "When the operator acknowledged it (POST /v1/alerts/{alert_id}/ack); null or absent until then.",
+          "$ref": "#/$defs/nullable_time"
+        },
+        "escalated_at": {
+          "description": "When an unacknowledged critical alert was escalated to the supervisor console (02 F5); null or absent until then.",
+          "$ref": "#/$defs/nullable_time"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "cleared"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "clear_reason": {
+                "type": "string"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "clear_reason": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "proximity"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "detail": {
+                "$ref": "#/$defs/proximity_detail"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

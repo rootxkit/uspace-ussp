@@ -41,8 +41,10 @@ type Values struct {
 	LostLinkS      float64 `json:"lost_link_s"`
 
 	// NonconformanceNearbyRadiusM is the radius of the
-	// nonconformance_nearby fan-out; ProximityRadiusM the radius of the
-	// traffic information around a flight.
+	// nonconformance_nearby fan-out. ProximityRadiusM is the plan's D10
+	// name for a proximity radius with no figure (§15 Q6); nothing reads
+	// it: the CPA search radius is cpa_neighbour_radius_m and the traffic
+	// information radius traffic_radius_m (WP-11).
 	NonconformanceNearbyRadiusM float64 `json:"nonconformance_nearby_radius_m"`
 	ProximityRadiusM            float64 `json:"proximity_radius_m"`
 
@@ -164,7 +166,45 @@ type Values struct {
 	ConformanceClearAfterS float64 `json:"conformance_clear_after_s"`
 	PressureUncertaintyM   float64 `json:"pressure_uncertainty_m"`
 	MonitorLiveMaxAgeS     float64 `json:"monitor_live_max_age_s"`
+
+	// Traffic information and the CPA proximity alert (WP-11).
+	// CPAClearAfterS is the proximity alert's hysteresis (C-06: resolved
+	// only once the pair has been shown clear for longer than this since
+	// it was last in conflict); CPAStaleAfterS the silence after which an
+	// aircraft is no longer tracked and its alerts clear stale (T-10).
+	// CPAPairBudget bounds the pair checks one CPA worker makes per
+	// second: above it the worker evaluates every 2 s and says so
+	// (evaluation_period_s), never skipping (spec 05 §5). It is a count,
+	// so its name carries no unit.
+	CPAClearAfterS float64 `json:"cpa_clear_after_s"`
+	CPAStaleAfterS float64 `json:"cpa_stale_after_s"`
+	CPAPairBudget  int     `json:"cpa_pair_budget_count"`
+	// TrafficRadiusM is the radius of the traffic information around an
+	// intent's envelope (02 F5: 2 km). A track is shown live while its
+	// age is at most TrafficLiveMaxAgeS, stale with its age after
+	// TrafficStaleAfterS, and leaves the product TrafficDropAfterS after
+	// its last sample, having been shown stale all that time (B-11).
+	// TrafficThrottleTracks is the number of tracks above which one
+	// subscriber's product sends each track every other second (05 §5,
+	// dropped_frames counts what was held back); TrafficRecordEveryS the
+	// period of the product sampled for the record (03 §3: 0.1 Hz).
+	TrafficRadiusM        float64 `json:"traffic_radius_m"`
+	TrafficLiveMaxAgeS    float64 `json:"traffic_live_max_age_s"`
+	TrafficStaleAfterS    float64 `json:"traffic_stale_after_s"`
+	TrafficDropAfterS     float64 `json:"traffic_drop_after_s"`
+	TrafficThrottleTracks int     `json:"traffic_throttle_track_count"`
+	TrafficRecordEveryS   float64 `json:"traffic_record_every_s"`
+	// EscalationAfterS is how long a critical alert may stay
+	// unacknowledged before it is escalated to the supervisor console
+	// (02 F5); EscalationRepeatS repeats it to the operator meanwhile.
+	EscalationAfterS float64 `json:"escalation_after_s"`
 }
+
+// MaxCPAPairBudget bounds CPAPairBudget.
+const MaxCPAPairBudget = 10_000_000
+
+// MaxTrafficThrottleTracks bounds TrafficThrottleTracks.
+const MaxTrafficThrottleTracks = 100_000
 
 // MaxSpecialOperationPriority bounds SpecialOperationPriority (an
 // int32 column and the F3548 integer).
@@ -219,6 +259,14 @@ const TelemetryRetentionFloorDays = 30
 // The Service Provider defaults (WP-9, no figure in the plan): 120
 // samples per flight (60 s at the ingest's 2 Hz cap), a 2000 m session
 // ISA reaching one hour ahead.
+//
+// The traffic defaults (WP-11) are uspace-core's alert lifecycle figures
+// for the proximity alert (alerting.DefaultConfig: 3 s hysteresis, 15 s
+// stale), spec 05 §9's budget of 50 000 pair checks per second per
+// worker, 02 F5's 2 km traffic radius and 30 s escalation, a track shown
+// live up to 2 s old, stale from 5 s (telemetry_lost_s) and dropped after
+// 60 s, the 200-track throttle of 05 §5 and the 0.1 Hz record sample of
+// 03 §3.
 //
 // The conformance defaults (WP-10) are uspace-core's alert lifecycle
 // figures (alerting.DefaultConfig: 3 s hysteresis, 10 s live age) and
@@ -277,6 +325,17 @@ func Defaults() Values {
 		ConformanceClearAfterS: lc.ClearAfterS,
 		PressureUncertaintyM:   zones.DefaultPolicy().PressureUncertaintyM,
 		MonitorLiveMaxAgeS:     lc.LiveMaxAgeS,
+
+		CPAClearAfterS:        lc.ClearAfterS,
+		CPAStaleAfterS:        lc.StaleAfterS,
+		CPAPairBudget:         50_000,
+		TrafficRadiusM:        2000,
+		TrafficLiveMaxAgeS:    2,
+		TrafficStaleAfterS:    5,
+		TrafficDropAfterS:     60,
+		TrafficThrottleTracks: 200,
+		TrafficRecordEveryS:   10,
+		EscalationAfterS:      30,
 	}
 }
 
@@ -332,6 +391,10 @@ func (v Values) Validate() error {
 		{"pressure_hold_s", v.PressureHoldS}, {"teleport_speed_ms", v.TeleportSpeedMS},
 		{"session_isa_radius_m", v.SessionISARadiusM}, {"session_isa_horizon_s", v.SessionISAHorizonS},
 		{"conformance_clear_after_s", v.ConformanceClearAfterS}, {"monitor_live_max_age_s", v.MonitorLiveMaxAgeS},
+		{"cpa_clear_after_s", v.CPAClearAfterS}, {"cpa_stale_after_s", v.CPAStaleAfterS},
+		{"traffic_radius_m", v.TrafficRadiusM}, {"traffic_live_max_age_s", v.TrafficLiveMaxAgeS},
+		{"traffic_stale_after_s", v.TrafficStaleAfterS}, {"traffic_drop_after_s", v.TrafficDropAfterS},
+		{"traffic_record_every_s", v.TrafficRecordEveryS}, {"escalation_after_s", v.EscalationAfterS},
 	}
 	for _, f := range positive {
 		if !finite(f.v) || f.v <= 0 {
@@ -380,6 +443,24 @@ func (v Values) Validate() error {
 	// tolerance), or a placement ahead would buy a clear.
 	if finite(v.ConformanceClearAfterS) && finite(v.TelemetryAheadToleranceS) && v.ConformanceClearAfterS <= 2*v.TelemetryAheadToleranceS {
 		errs = append(errs, core.Fieldf("conformance_clear_after_s", "must be longer than twice telemetry_ahead_tolerance_s (%v), got %v", v.TelemetryAheadToleranceS, v.ConformanceClearAfterS))
+	}
+	if v.CPAPairBudget < 1 || v.CPAPairBudget > MaxCPAPairBudget {
+		errs = append(errs, core.Fieldf("cpa_pair_budget_count", "must be from 1 to %d, got %d", MaxCPAPairBudget, v.CPAPairBudget))
+	}
+	if v.TrafficThrottleTracks < 1 || v.TrafficThrottleTracks > MaxTrafficThrottleTracks {
+		errs = append(errs, core.Fieldf("traffic_throttle_track_count", "must be from 1 to %d, got %d", MaxTrafficThrottleTracks, v.TrafficThrottleTracks))
+	}
+	// The proximity hysteresis must outlast the ahead tolerance twice
+	// over (alerting.Config's rule), and a track goes stale only after it
+	// stopped being live, and leaves the product only after it was stale.
+	if finite(v.CPAClearAfterS) && finite(v.TelemetryAheadToleranceS) && v.CPAClearAfterS <= 2*v.TelemetryAheadToleranceS {
+		errs = append(errs, core.Fieldf("cpa_clear_after_s", "must be longer than twice telemetry_ahead_tolerance_s (%v), got %v", v.TelemetryAheadToleranceS, v.CPAClearAfterS))
+	}
+	if finite(v.TrafficStaleAfterS) && finite(v.TrafficLiveMaxAgeS) && v.TrafficStaleAfterS < v.TrafficLiveMaxAgeS {
+		errs = append(errs, core.Fieldf("traffic_stale_after_s", "must be at least traffic_live_max_age_s (%v), got %v", v.TrafficLiveMaxAgeS, v.TrafficStaleAfterS))
+	}
+	if finite(v.TrafficDropAfterS) && finite(v.TrafficStaleAfterS) && v.TrafficDropAfterS <= v.TrafficStaleAfterS {
+		errs = append(errs, core.Fieldf("traffic_drop_after_s", "must be longer than traffic_stale_after_s (%v), got %v", v.TrafficStaleAfterS, v.TrafficDropAfterS))
 	}
 	if v.ClientSecretOverlapS < 0 || v.ClientSecretOverlapS > MaxClientSecretOverlapS {
 		errs = append(errs, core.Fieldf("client_secret_overlap_s", "must be from 0 to %d, got %d", MaxClientSecretOverlapS, v.ClientSecretOverlapS))

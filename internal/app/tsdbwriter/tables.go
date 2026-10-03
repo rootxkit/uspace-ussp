@@ -277,13 +277,35 @@ func DecodeManned(data []byte) (Decoded, error) {
 // trafficBody is the record of one sampled product (traffic/product/v1
 // as traffic-ws samples it for the record, docs/PLAN.md §5.2): who was
 // shown what, with the bbox as [min_lng, min_lat, max_lng, max_lat].
+// trafficBody is what traffic_products keeps of a traffic/product/v1
+// record sample (schemas/traffic/product/v1; traffic-ws publishes one
+// per subscriber every traffic_record_every_s with client_id set): who
+// it was for, what it covered, the tracks shown (id, trust, state and
+// age) and the inputs degraded.
 type trafficBody struct {
-	ClientID      string          `json:"client_id"`
-	IntentID      *string         `json:"intent_id"`
-	BBox          []float64       `json:"bbox"`
-	TracksShown   json.RawMessage `json:"tracks_shown"`
-	Degraded      []string        `json:"degraded"`
-	PolicyVersion *int64          `json:"policy_version"`
+	ClientID string `json:"client_id"`
+	For      struct {
+		IntentID *string   `json:"intent_id"`
+		BBox     []float64 `json:"bbox"`
+	} `json:"for"`
+	Tracks []struct {
+		TrackID string   `json:"track_id"`
+		Trust   string   `json:"trust"`
+		State   string   `json:"state"`
+		AgeS    *float64 `json:"age_s"`
+	} `json:"tracks"`
+	Degraded []struct {
+		Input string `json:"input"`
+	} `json:"degraded"`
+	PolicyVersion *int64 `json:"policy_version"`
+}
+
+// shownTrack is one entry of tracks_shown.
+type shownTrack struct {
+	TrackID string   `json:"track_id"`
+	Trust   string   `json:"trust"`
+	State   string   `json:"state"`
+	AgeS    *float64 `json:"age_s"`
 }
 
 // DecodeTraffic reads a TRAFFIC message into traffic_products; at is
@@ -297,34 +319,43 @@ func DecodeTraffic(data []byte) (Decoded, error) {
 	if err := json.Unmarshal(raw, &b); err != nil {
 		return Decoded{}, core.Fieldf("body", "%v", err)
 	}
-	if b.ClientID == "" || b.PolicyVersion == nil || jsonText(b.TracksShown) == nil {
-		return Decoded{}, core.Fieldf("body", "client_id, tracks_shown and policy_version are required")
+	if b.ClientID == "" || b.PolicyVersion == nil || b.Tracks == nil {
+		return Decoded{}, core.Fieldf("body", "client_id, tracks and policy_version are required")
 	}
-	if b.IntentID != nil && !uuidRe.MatchString(*b.IntentID) {
+	if b.For.IntentID != nil && !uuidRe.MatchString(*b.For.IntentID) {
 		return Decoded{}, core.Fieldf("intent_id", "not a UUID")
 	}
 	var box [4]*float64
-	switch len(b.BBox) {
+	switch len(b.For.BBox) {
 	case 0:
 	case 4:
-		if b.BBox[1] < -90 || b.BBox[3] > 90 || b.BBox[1] > b.BBox[3] || b.BBox[0] < -180 || b.BBox[2] > 180 {
-			return Decoded{}, core.Fieldf("bbox", "not a box: %v", b.BBox)
+		bb := b.For.BBox
+		if bb[1] < -90 || bb[3] > 90 || bb[1] > bb[3] || bb[0] < -180 || bb[2] > 180 {
+			return Decoded{}, core.Fieldf("bbox", "not a box: %v", bb)
 		}
-		for i := range b.BBox {
-			if err := finite("bbox", &b.BBox[i]); err != nil {
+		for i := range bb {
+			if err := finite("bbox", &bb[i]); err != nil {
 				return Decoded{}, err
 			}
 		}
-		box = [4]*float64{&b.BBox[1], &b.BBox[0], &b.BBox[3], &b.BBox[2]}
+		box = [4]*float64{&bb[1], &bb[0], &bb[3], &bb[2]}
 	default:
-		return Decoded{}, core.Fieldf("bbox", "four numbers, got %d", len(b.BBox))
+		return Decoded{}, core.Fieldf("bbox", "four numbers, got %d", len(b.For.BBox))
 	}
-	degraded := b.Degraded
-	if degraded == nil {
-		degraded = []string{}
+	shown := make([]shownTrack, len(b.Tracks))
+	for i, t := range b.Tracks {
+		shown[i] = shownTrack(t)
+	}
+	tracks, err := json.Marshal(shown)
+	if err != nil {
+		return Decoded{}, core.Fieldf("tracks", "%v", err)
+	}
+	degraded := make([]string, 0, len(b.Degraded))
+	for _, d := range b.Degraded {
+		degraded = append(degraded, d.Input)
 	}
 	return Decoded{MsgID: env.MsgID, CapturedAt: env.CapturedAt.Time, Rows: []Row{{Table: &store.TableTrafficProducts, Values: []any{
-		env.MsgID, b.ClientID, env.CapturedAt.Time, b.IntentID, box[0], box[1], box[2], box[3], *jsonText(b.TracksShown),
+		env.MsgID, b.ClientID, env.CapturedAt.Time, b.For.IntentID, box[0], box[1], box[2], box[3], string(tracks),
 		degraded, *b.PolicyVersion,
 	}}}}, nil
 }

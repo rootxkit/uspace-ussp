@@ -87,8 +87,9 @@ func TestIntegrationTSWriterEveryTable(t *testing.T) {
 	add(tsdbwriter.DecodePeer(envelopeOf(t, "track/telemetry/v1", at, track)))
 	add(tsdbwriter.DecodeManned(envelopeOf(t, "track/manned/v1", at, manned("ansp_feed", "surveillance"))))
 	add(tsdbwriter.DecodeManned(envelopeOf(t, "track/manned/v1", at, manned("adsb_rx", "broadcast"))))
-	add(tsdbwriter.DecodeTraffic(envelopeOf(t, "traffic/product/v1", at, map[string]any{"client_id": "c1", "intent_id": flight,
-		"bbox": []float64{44.7, 41.6, 44.9, 41.8}, "tracks_shown": []any{}, "degraded": []string{"cis_stale"}, "policy_version": 1})))
+	add(tsdbwriter.DecodeTraffic(envelopeOf(t, "traffic/product/v1", at, map[string]any{"client_id": "c1",
+		"for": map[string]any{"intent_id": flight, "bbox": []float64{44.7, 41.6, 44.9, 41.8}}, "tracks": []any{},
+		"degraded": []any{map[string]any{"input": "cis_stale", "since": nil, "reason": "integration"}}, "policy_version": 1})))
 	add(tsdbwriter.DecodeConformance(envelopeOf(t, "conformance/state/v1", at, map[string]any{"flight_id": flight, "state": "conforming",
 		"distance_outside_m": 0.0, "height_over_m": nil})))
 	stream := "WP6-EVERY-" + flight
