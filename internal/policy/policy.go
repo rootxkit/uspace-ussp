@@ -211,10 +211,22 @@ type Values struct {
 	ZoneClearAfterS         float64 `json:"zone_clear_after_s"`
 	ZoneStaleAfterS         float64 `json:"zone_stale_after_s"`
 	ZoneConditionalSeverity string  `json:"zone_conditional_severity"`
+
+	// F3548 strategic coordination through the DSS (WP-13).
+	// PeerSubscriptionMarginM widens each U-space airspace's box by this
+	// much for the DSS subscription that tells this USSP of the peers'
+	// intents and the constraints there. DSSExchangeRetentionDays is how
+	// long the exchange log of GET /uss/v1/log_sets keeps a DSS or peer
+	// exchange (and the reports peers sent).
+	PeerSubscriptionMarginM  float64 `json:"peer_subscription_margin_m"`
+	DSSExchangeRetentionDays int     `json:"dss_exchange_retention_days"`
 }
 
 // MaxCPAPairBudget bounds CPAPairBudget.
 const MaxCPAPairBudget = 10_000_000
+
+// MaxDSSExchangeRetentionDays bounds DSSExchangeRetentionDays.
+const MaxDSSExchangeRetentionDays = 366
 
 // MaxTrafficThrottleTracks bounds TrafficThrottleTracks.
 const MaxTrafficThrottleTracks = 100_000
@@ -357,6 +369,9 @@ func Defaults() Values {
 		ZoneClearAfterS:         lc.ClearAfterS,
 		ZoneStaleAfterS:         lc.StaleAfterS,
 		ZoneConditionalSeverity: string(zones.DefaultPolicy().ConditionalSeverity),
+
+		PeerSubscriptionMarginM:  2000,
+		DSSExchangeRetentionDays: 7,
 	}
 }
 
@@ -398,7 +413,8 @@ func (v Values) CPA() cpa.Policy {
 // the deconfliction buffers may be zero (no buffer); the special
 // operation priority at least 1 (above a normal flight's 0) and the
 // open-intent bound at least 1;
-// retentions at least one day and telemetry at least the floor; the
+// retentions at least one day and telemetry at least the floor (the DSS
+// exchange log at most MaxDSSExchangeRetentionDays); the
 // operator token TTL from 60 s to one hour and the secret overlap from 0
 // to seven days. Every refusal names its field.
 func (v Values) Validate() error {
@@ -439,7 +455,7 @@ func (v Values) Validate() error {
 		v    float64
 	}{{"cpa_tcpa_max_s", v.CPATCPAMaxS}, {"cpa_neighbour_max_age_s", v.CPANeighbourMaxAgeS},
 		{"deconflict_buffer_m", v.DeconflictBufferM}, {"deconflict_vertical_buffer_m", v.DeconflictVerticalBufferM},
-		{"pressure_uncertainty_m", v.PressureUncertaintyM}} {
+		{"pressure_uncertainty_m", v.PressureUncertaintyM}, {"peer_subscription_margin_m", v.PeerSubscriptionMarginM}} {
 		if !finite(f.v) || f.v < 0 {
 			errs = append(errs, core.Fieldf(f.name, "must be a finite number of at least 0, got %v", f.v))
 		}
@@ -452,6 +468,9 @@ func (v Values) Validate() error {
 	}
 	if v.AuditRetentionDays < 1 {
 		errs = append(errs, core.Fieldf("audit_retention_days", "must be at least 1, got %d", v.AuditRetentionDays))
+	}
+	if v.DSSExchangeRetentionDays < 1 || v.DSSExchangeRetentionDays > MaxDSSExchangeRetentionDays {
+		errs = append(errs, core.Fieldf("dss_exchange_retention_days", "must be from 1 to %d, got %d", MaxDSSExchangeRetentionDays, v.DSSExchangeRetentionDays))
 	}
 	if v.OperatorTokenTTLS < 60 || v.OperatorTokenTTLS > MaxOperatorTokenTTLS {
 		errs = append(errs, core.Fieldf("operator_token_ttl_s", "must be from 60 to %d, got %d", MaxOperatorTokenTTLS, v.OperatorTokenTTLS))

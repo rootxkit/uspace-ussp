@@ -681,9 +681,37 @@ func (d *Decider) deconflict(a *Assessment, id string, rankAt time.Time, others 
 		a.conflict(Conflict{Kind: KindPolicy, Reason: reason, Effect: EffectRejects, Detail: "the strategic deconfliction did not run: " + reasonOf(err)})
 		return nil
 	}
+	out, flagged := d.conflictsOf(cs)
+	for _, c := range out {
+		a.conflict(c)
+	}
+	return flagged
+}
+
+// PeerPrefix and ConstraintPrefix name the peers' intents and the F3548
+// constraints among the intents a decision is checked against, so that a
+// conflict with one names what it is (WP-13).
+const (
+	PeerPrefix       = "peer:"
+	ConstraintPrefix = "constraint:"
+)
+
+// conflictsOf turns the deconfliction's pairs into conflicts[]: a pair
+// this intent wins by priority flags the other (Art. 10(8), (10)) and
+// names it in flagged; every other pair refuses this intent. A
+// constraint always refuses (it is a restriction, never displaced).
+func (d *Decider) conflictsOf(cs []deconflict.Conflict) ([]Conflict, []string) {
+	var out []Conflict
 	var flagged []string
 	for _, c := range cs {
 		ov := overlapOf(c.Overlap)
+		if strings.HasPrefix(c.OtherID, ConstraintPrefix) {
+			d.count(ReasonConstraintActive)
+			out = append(out, Conflict{Kind: KindConstraint, Reason: ReasonConstraintActive, Effect: EffectRejects,
+				Ref: strings.TrimPrefix(c.OtherID, ConstraintPrefix), Item: ptr(5), Volume: ptr(c.MineVolume), Overlap: ov,
+				Detail: "the volume overlaps an F3548 constraint the DSS holds (an airspace restriction)"})
+			continue
+		}
 		// Only priority lets a request take space another intent already
 		// holds (Art. 10(8), (10)). At equal priority the others were
 		// accepted before this decision, so they came first whatever the
@@ -692,7 +720,7 @@ func (d *Decider) deconflict(a *Assessment, id string, rankAt time.Time, others 
 		if c.MineWins && c.Rule == deconflict.RulePriority {
 			flagged = append(flagged, c.OtherID)
 			d.count(ReasonIntentFlagged)
-			a.conflict(Conflict{Kind: KindIntent, Reason: ReasonIntentFlagged, Effect: EffectFlagsOther, Ref: c.OtherID, Volume: ptr(c.MineVolume), Overlap: ov,
+			out = append(out, Conflict{Kind: KindIntent, Reason: ReasonIntentFlagged, Effect: EffectFlagsOther, Ref: c.OtherID, Volume: ptr(c.MineVolume), Overlap: ov,
 				Detail: "this intent has precedence (" + c.Rule + "); the other authorisation is flagged for an update (Art. 10(10))"})
 			continue
 		}
@@ -704,10 +732,10 @@ func (d *Decider) deconflict(a *Assessment, id string, rankAt time.Time, others 
 			d.count("first_come_rank_inverted")
 		}
 		d.count(reason)
-		a.conflict(Conflict{Kind: KindIntent, Reason: reason, Effect: EffectRejects, Ref: c.OtherID, Item: ptr(5), Volume: ptr(c.MineVolume), Overlap: ov,
+		out = append(out, Conflict{Kind: KindIntent, Reason: reason, Effect: EffectRejects, Ref: c.OtherID, Item: ptr(5), Volume: ptr(c.MineVolume), Overlap: ov,
 			Detail: "the volume conflicts with an authorised intent that has precedence (" + c.Rule + ")"})
 	}
-	return flagged
+	return out, flagged
 }
 
 // authorise is step 6: the thresholds, the DSS and the number.
@@ -730,8 +758,12 @@ func (d *Decider) authorise(a *Assessment) {
 	if a.d.InUSpaceAirspace && !a.dssOK {
 		// 02 F5: inside U-space airspace cross-USSP deconfliction through
 		// the DSS is required; while it cannot be made the intent waits.
-		d.count(ReasonDSSUnavailable)
-		a.conflict(Conflict{Kind: KindDSS, Reason: ReasonDSSUnavailable, Effect: EffectHolds,
+		reason := ReasonDSSUnavailable
+		if strings.HasPrefix(a.dssReason, ReasonUSSAvailabilityDown) {
+			reason = ReasonUSSAvailabilityDown
+		}
+		d.count(reason)
+		a.conflict(Conflict{Kind: KindDSS, Reason: reason, Effect: EffectHolds,
 			Detail: "inside U-space airspace the intent is deconflicted through the DSS, which cannot be written now: " + a.dssReason})
 		a.d.Decision, a.d.State = DecisionPendingDSS, StatePendingDSS
 		return

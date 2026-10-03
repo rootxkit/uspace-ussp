@@ -21,10 +21,13 @@ const (
 	KindCIS     = "cis"
 	KindPeer    = "peer"
 	KindTraffic = "traffic.product"
-	KindIngest  = "ingest"
-	KindFlight  = "flight"
-	KindSrc     = "src"
-	KindCtl     = "ctl"
+	// KindPeerIntent is peer.intent.v1.<entity_id>: a peer's operational
+	// intent as its manager notified it (WP-13), core NATS.
+	KindPeerIntent = "peer.intent"
+	KindIngest     = "ingest"
+	KindFlight     = "flight"
+	KindSrc        = "src"
+	KindCtl        = "ctl"
 )
 
 // The control subjects (core push beside their KV bucket).
@@ -45,9 +48,11 @@ const (
 	SubjectCISAll     = "cis.v1.>"
 	SubjectPeerAll    = "peer.v1.>"
 	SubjectTrafficAll = "traffic.product.v1.>"
-	SubjectIngestAll  = "ingest.v1.>"
-	SubjectSrcAll     = "src.v1.>"
-	SubjectFlightAll  = "flight.v1.>"
+	// SubjectPeerIntentAll is every peer.intent.v1 subject.
+	SubjectPeerIntentAll = "peer.intent.v1.>"
+	SubjectIngestAll     = "ingest.v1.>"
+	SubjectSrcAll        = "src.v1.>"
+	SubjectFlightAll     = "flight.v1.>"
 )
 
 // MaxTokenBytes bounds one variable token of a subject (an id, a kind, a
@@ -169,6 +174,11 @@ func TrafficProduct(clientID string) (string, error) {
 	return one("traffic.product.v1.", "client_id", clientID)
 }
 
+// PeerIntent is peer.intent.v1.<entity_id>.
+func PeerIntent(entityID string) (string, error) {
+	return one("peer.intent.v1.", "entity_id", entityID)
+}
+
 // Ingest is ingest.v1.<cell3>.
 func Ingest(cell3 string) (string, error) {
 	if _, err := cell.Parse3(cell3); err != nil {
@@ -233,6 +243,14 @@ func Parse(s string) (Subject, error) {
 			return bad("%v", err)
 		}
 		return Subject{Kind: KindTraffic, ID: t[3]}, nil
+	case len(t) >= 3 && t[0] == "peer" && t[1] == "intent" && t[2] == "v1":
+		if len(t) != 4 {
+			return bad("peer.intent.v1 takes 1 token after the version, %q has %d", s, len(t)-3)
+		}
+		if err := token("entity_id", t[3]); err != nil {
+			return bad("%v", err)
+		}
+		return Subject{Kind: KindPeerIntent, ID: t[3]}, nil
 	}
 	if t[1] != "v1" {
 		return bad("%q is not a v1 subject", s)
@@ -290,7 +308,7 @@ func Parse(s string) (Subject, error) {
 
 // coreKinds travel on core NATS (best effort, no acknowledgement): the
 // hot path never blocks on a stream (TRK, MAN and PEER capture them).
-var coreKinds = map[string]bool{KindTrk: true, KindMan: true, KindPeer: true, KindSrc: true, KindCtl: true}
+var coreKinds = map[string]bool{KindTrk: true, KindMan: true, KindPeer: true, KindSrc: true, KindCtl: true, KindPeerIntent: true}
 
 // Durable reports whether a subject of kind is published to JetStream
 // with an acknowledgement and a dedupe id.

@@ -610,3 +610,133 @@ func clampLat(v float64) float64 {
 	}
 	return max(-90, min(90, v))
 }
+
+// Held reads what the DSS holds of the intent (migration 00017).
+func (p Store) Held(ctx context.Context, id string) (*intent.DSSHeld, error) {
+	u, err := store.UUID("id", id)
+	if err != nil {
+		return nil, nil //nolint:nilerr // an id that is no UUID names no intent
+	}
+	r, err := p.S.Queries().IntentDSSHeld(ctx, u)
+	if store.IsNoRows(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("intent DSS state: %w", err)
+	}
+	if r.DssOvn == nil || r.DssHeldState == nil {
+		return nil, nil
+	}
+	h := &intent.DSSHeld{State: f3548.OperationalIntentState(*r.DssHeldState), OVN: *r.DssOvn, WrittenAt: r.DssWrittenAt}
+	if r.DssVersion != nil {
+		h.Version = *r.DssVersion
+	}
+	if r.DssSubscriptionID != nil {
+		h.SubscriptionID = *r.DssSubscriptionID
+	}
+	if r.DssLastError != nil {
+		h.LastError = *r.DssLastError
+	}
+	if len(r.DssReference) > 0 {
+		if err := json.Unmarshal(r.DssReference, &h.Reference); err != nil {
+			return nil, fmt.Errorf("intent %s dss_reference: %w", id, err)
+		}
+	}
+	if len(r.DssExtents) > 0 {
+		if err := json.Unmarshal(r.DssExtents, &h.Extents); err != nil {
+			return nil, fmt.Errorf("intent %s dss_extents: %w", id, err)
+		}
+	}
+	return h, nil
+}
+
+// ConstraintsOverlapping reads the constraints of the window as peer
+// intents (their volumes from details).
+func (t tx) ConstraintsOverlapping(ctx context.Context, since, from, to time.Time, limit int) ([]intent.PeerIntent, error) {
+	rs, err := t.q.ConstraintsOverlapping(ctx, relational.ConstraintsOverlappingParams{Since: since, ToAt: to, FromAt: from, MaxRows: int32(limit + 1)})
+	if err != nil {
+		return nil, fmt.Errorf("constraints: %w", err)
+	}
+	out := make([]intent.PeerIntent, 0, len(rs))
+	for i := range rs {
+		r := &rs[i]
+		p := intent.PeerIntent{EntityID: r.EntityID, FetchedAt: r.FetchedAt.UTC()}
+		var d f3548.ConstraintDetails
+		if len(r.Details) > 0 && json.Unmarshal(r.Details, &d) == nil {
+			p.Volumes = d.Volumes
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+// QueueDSS queues the intent's DSS work: always for a managed intent,
+// otherwise only while the DSS holds it.
+func (t tx) QueueDSS(ctx context.Context, id string, version int, managed bool) error {
+	if !managed {
+		u, err := store.UUID("id", id)
+		if err != nil {
+			return err
+		}
+		held, err := t.q.IntentDSSIsHeld(ctx, u)
+		if err != nil {
+			return fmt.Errorf("intent DSS state: %w", err)
+		}
+		if !held {
+			return nil
+		}
+	}
+	_, err := store.Enqueue(ctx, t.q, intent.OutboxOIR, id, int64(version), intent.DSSWorkload{IntentID: id, Version: version})
+	return err
+}
+
+// SetHeld writes what the DSS holds of the intent (nil clears it).
+func (t tx) SetHeld(ctx context.Context, id string, h *intent.DSSHeld) error {
+	u, err := store.UUID("id", id)
+	if err != nil {
+		return err
+	}
+	if h == nil {
+		_, err := t.q.IntentClearDSSHeld(ctx, u)
+		return err
+	}
+	ref, ext, err := intent.MarshalHeld(h)
+	if err != nil {
+		return err
+	}
+	state := string(h.State)
+	v := h.Version
+	n, err := t.q.IntentSetDSSHeld(ctx, relational.IntentSetDSSHeldParams{
+		HeldState: &state, Ovn: &h.OVN, DssVersion: &v, Reference: ref, Extents: ext, SubscriptionID: str(h.SubscriptionID), ID: u,
+	})
+	if err != nil {
+		return fmt.Errorf("intent DSS state: %w", err)
+	}
+	if n != 1 {
+		return fmt.Errorf("intent %s: %w", id, intent.ErrNotFound)
+	}
+	return nil
+}
+
+// Enqueue queues an outbox item in the transaction.
+func (t tx) Enqueue(ctx context.Context, kind, entityID string, version int64, payload any) error {
+	_, err := store.Enqueue(ctx, t.q, kind, entityID, version, payload)
+	return err
+}
+
+// PreviousNumber is the newest authorisation number of an earlier
+// version.
+func (t tx) PreviousNumber(ctx context.Context, id string) (string, error) {
+	u, err := store.UUID("id", id)
+	if err != nil {
+		return "", err
+	}
+	n, err := t.q.IntentPreviousNumber(ctx, u)
+	if store.IsNoRows(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("intent previous number: %w", err)
+	}
+	return n, nil
+}

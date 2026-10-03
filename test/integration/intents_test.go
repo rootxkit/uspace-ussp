@@ -138,6 +138,9 @@ func newIntentRig(t *testing.T) *intentRig {
 	// Registered first, run last: the CIS tables are left as the other
 	// tests expect them (empty), after this rig's cache has stopped.
 	t.Cleanup(func() { cleanCIS(t) })
+	// The DSS work its intents queued is not left to the next test's
+	// api process (WP-13: intents inside U-space airspace queue it).
+	t.Cleanup(func() { cleanDSSOutbox(t) })
 	g.cis = newCISRig(t, time.Hour)
 	g.auth = authority.New()
 	t.Cleanup(g.auth.Close)
@@ -432,7 +435,10 @@ func TestIntegrationIntentCISChecks(t *testing.T) {
 		{"restriction", "rejected", []string{"restriction_active"}, g.box(0.105, 0.005, 0.005), nil},
 		{"req-auth", "pending_authority", []string{"zone_requires_authorisation"}, g.box(0.205, 0.005, 0.005), nil},
 		{"req-auth-ref", "authorised", nil, g.box(0.205, 0.005, 0.005), []any{"authorisation_ref", "AUTH-TEST-1"}},
-		{"uspace", "authorised", nil, g.box(0.35, 0.05, 0.005), nil},
+		// Inside U-space airspace the local checks are not the
+		// authorisation: it waits for its DSS write (WP-13; this rig has
+		// no DSS writer, test/integration/dss_test.go has one).
+		{"uspace", "pending_dss", []string{"dss_write_pending"}, g.box(0.35, 0.05, 0.005), nil},
 		{"clear", "authorised", nil, g.box(0.6, 0.6, 0.005), nil},
 	}
 	for _, c := range cases {
@@ -453,7 +459,7 @@ func TestIntegrationIntentCISChecks(t *testing.T) {
 	}
 	g.dss.down.Store(true)
 	if r := g.file(token, g.request(number, serial, "uspace-dss-down", g.box(0.4, 0.05, 0.005))); r.str("decision") != "pending_dss" ||
-		r.str("authorisation_number") != "" {
+		r.str("authorisation_number") != "" || !slices.Equal(reasonsOf(r), []string{"dss_unavailable"}) {
 		t.Fatalf("DSS down: %s", r.raw)
 	}
 	g.dss.down.Store(false)
@@ -885,10 +891,14 @@ func TestIntegrationScenarioSM1(t *testing.T) {
 	}
 	timed := func(f func() resp) (resp, time.Duration) { t0 := time.Now(); r := f(); return r, time.Since(t0) }
 
+	// Since WP-13 an intent inside U-space airspace is authorised only once
+	// the DSS has taken it; this rig has no DSS writer, so A waits
+	// pending_dss (dss_write_pending) and holds its place in the first
+	// come, first served order (test/integration/dss_test.go writes it).
 	inUspace := g.box(0.2, 0.1, 0.01)
 	a, took := timed(func() resp { return g.file(tokA, g.request(numA, serialA, "sc-a", inUspace)) })
-	expect("A files inside U-space airspace", a, "authorised")
-	t.Logf("         A authorised in %v, number %s, in %v", took.Round(time.Millisecond), a.str("authorisation_number"), a.body["uspace_airspace_ids"])
+	expect("A files inside U-space airspace", a, "pending_dss", "dss_write_pending")
+	t.Logf("         A decided in %v, waiting for its DSS write, in %v", took.Round(time.Millisecond), a.body["uspace_airspace_ids"])
 	expect("B files the same volume later", g.file(tokB, g.request(numB, serialB, "sc-b", inUspace)), "rejected", "intent_filed_first")
 	expect("A files into the PROHIBITED zone", g.file(tokA, g.request(numA, serialA, "sc-zone", g.box(0.005, 0.005, 0.005))), "rejected", "zone_prohibited")
 	sp := expect("B files a special operation over A", g.file(tokB, g.request(numB, serialB, "sc-b-special", inUspace, "flight_type", "special_operation")),
@@ -912,7 +922,7 @@ func TestIntegrationScenarioSM1(t *testing.T) {
 	_ = g.cis.cache.Pull(ctx, cis.USpaceAirspace, nil, false)
 	expect("A files while a newer CIS version is held untrusted", g.file(tokA, g.request(numA, serialA, "sc-held", g.box(0.25, 0.25, 0.005))), "rejected", "cis_outdated")
 	g.publish(cis.USpaceAirspace, edFeature("SC-USP", "USPACE", uspaceBox, 0, 3000, "AMSL", requirementsExt(nil)))
-	expect("A files again after a trusted version", g.file(tokA, g.request(numA, serialA, "sc-trusted", g.box(0.25, 0.25, 0.005))), "authorised")
+	expect("A files again after a trusted version", g.file(tokA, g.request(numA, serialA, "sc-trusted", g.box(0.25, 0.25, 0.005))), "pending_dss", "dss_write_pending")
 
 	// The DSS goes down: inside U-space airspace the intent waits;
 	// outside, local checks suffice.
@@ -935,13 +945,13 @@ func TestIntegrationScenarioSM1(t *testing.T) {
 	}
 	expect("B files after the authority suspends B", g.file(tokB, g.request(numB, serialB, "sc-b-suspended", g.box(3, 3, 0.005))), "rejected", "operator_suspended")
 
-	// A cannot activate hours early; A ends its intent and leaves
-	// intent_active.
+	// A cannot activate before it is authorised (nor hours early); A
+	// ends its intent and leaves intent_active.
 	if r := g.stack.call("PATCH", "/v1/intents/"+a.str("intent_id"), map[string]any{"action": "activate"}, bearer(tokA)); r.status != 409 {
 		t.Fatalf("early activation: %d %s", r.status, r.raw)
 	}
 	step++
-	t.Logf("step %2d %-58s %-18s", step, "A activates an hour early (lead 600 s)", "409 activation_refused")
+	t.Logf("step %2d %-58s %-18s", step, "A activates while pending_dss", "409 activation_refused")
 	e := g.stack.call("PATCH", "/v1/intents/"+a.str("intent_id"), map[string]any{"action": "end"}, bearer(tokA))
 	if e.str("state") != "ended" || slices.Contains(g.activeKeys(), a.str("intent_id")) {
 		t.Fatalf("end: %s", e.raw)

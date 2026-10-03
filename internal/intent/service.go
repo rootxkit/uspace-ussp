@@ -197,6 +197,9 @@ type Store interface {
 	// version is already projected, and records it projected when fn
 	// succeeds; false when there was nothing to project.
 	Project(ctx context.Context, id string, fn func(ctx context.Context, r *Record) error) (bool, error)
+	// Held is what the DSS holds of the intent (WP-13); nil when nothing
+	// or no such intent.
+	Held(ctx context.Context, id string) (*DSSHeld, error)
 }
 
 // Tx is the store inside InTx.
@@ -230,6 +233,21 @@ type Tx interface {
 	// SetNotice writes the intent's update_required (a re-check's
 	// notice, Art. 10(10)).
 	SetNotice(ctx context.Context, id string, notice json.RawMessage) error
+	// ConstraintsOverlapping are the F3548 constraints fetched after
+	// since whose window overlaps [from, to], as PeerIntents; at most
+	// limit+1 rows (WP-13).
+	ConstraintsOverlapping(ctx context.Context, since, from, to time.Time, limit int) ([]PeerIntent, error)
+	// QueueDSS queues the DSS work of the intent's version (OutboxOIR)
+	// when managed, or when the DSS holds the intent (WP-13).
+	QueueDSS(ctx context.Context, id string, version int, managed bool) error
+	// SetHeld records what the DSS holds of the intent; nil clears it.
+	SetHeld(ctx context.Context, id string, h *DSSHeld) error
+	// Enqueue queues an outbox item, idempotent by kind, entity and
+	// version (store.Enqueue).
+	Enqueue(ctx context.Context, kind, entityID string, version int64, payload any) error
+	// PreviousNumber is the newest authorisation number an earlier
+	// version of the intent carried; "" when none (Art. 6(6)).
+	PreviousNumber(ctx context.Context, id string) (string, error)
 }
 
 // Projector writes an intent's state where the hot path and the other
@@ -252,6 +270,12 @@ type Service struct {
 	Projector Projector
 	Counters  *core.Counters
 	Logger    *slog.Logger
+	// DSSForAll writes every intent that needs an authorisation to the
+	// DSS, outside U-space airspace too (USSP_DSS_FOR_ALL, WP-13).
+	DSSForAll bool
+	// Writer writes a committed pending_dss intent to the DSS in the
+	// request path (internal/dss); nil leaves it to the outbox.
+	Writer DSSWriter
 }
 
 func (s *Service) count(name string) {
@@ -362,7 +386,7 @@ func (s *Service) Submit(ctx context.Context, clientID string, raw []byte) (Deci
 	var out Decision
 	var displaced []string
 	err = s.withCurrentCIS(ctx, n, pol, now, func(a *Assessment) error {
-		return s.Store.InTx(ctx, func(ctx context.Context, tx Tx) error {
+		return s.inTx(ctx, func(ctx context.Context, tx Tx) error {
 			return s.submitTx(ctx, tx, a, o, req, hash, id, &out, &displaced)
 		})
 	})
@@ -378,7 +402,7 @@ func (s *Service) Submit(ctx context.Context, clientID string, raw []byte) (Deci
 	s.count("submitted")
 	s.projectCommitted(ctx, id)
 	s.recheckDisplaced(ctx, id, displaced)
-	return out, true, nil
+	return s.writeNow(ctx, out), true, nil
 }
 
 // submitTx is Submit's transaction on the assessment a.
@@ -403,6 +427,8 @@ func (s *Service) submitTx(ctx context.Context, tx Tx, a *Assessment, o Owner, r
 		return err
 	}
 	d, flagged := s.Decider.Finish(a, id, at, others)
+	s.holdForDSS(ctx, &d, n.Exempt)
+	flagged = localFlagged(flagged)
 	r := &Record{
 		ID: id, OperatorID: o.OperatorID, ClientID: clientID, ClientRef: req.ClientRef, RequestHash: hash,
 		Request: req, Decision: d, Version: 1, LocalState: d.State, Exempt: n.Exempt, Priority: n.Priority,
@@ -608,7 +634,7 @@ func deconflictOfRecord(r *Record) (deconflict.Intent, error) {
 }
 
 func (s *Service) deconflictOfPeer(p PeerIntent) (deconflict.Intent, error) {
-	out := deconflict.Intent{ID: "peer:" + p.EntityID, Priority: p.Priority, RankAt: p.FetchedAt}
+	out := deconflict.Intent{ID: PeerPrefix + p.EntityID, Priority: p.Priority, RankAt: p.FetchedAt}
 	if s.Geoid == nil {
 		return out, errors.New("no geoid")
 	}
@@ -852,7 +878,7 @@ func (s *Service) Change(ctx context.Context, clientID, id string, raw []byte) (
 	}
 	var out Decision
 	var conflicted bool
-	err = s.Store.InTx(ctx, func(ctx context.Context, tx Tx) error {
+	err = s.inTx(ctx, func(ctx context.Context, tx Tx) error {
 		conflicted = false
 		r, err := tx.Lock(ctx, id)
 		if err != nil {
@@ -1020,7 +1046,7 @@ func (s *Service) modify(ctx context.Context, o Owner, cur *Record, p Patch) (De
 		if cur.Decision.AuthorisationNumber != nil {
 			a.KeepNumber(*cur.Decision.AuthorisationNumber)
 		}
-		return s.Store.InTx(ctx, func(ctx context.Context, tx Tx) error {
+		return s.inTx(ctx, func(ctx context.Context, tx Tx) error {
 			return s.modifyTx(ctx, tx, a, o, cur, req, p, &out, &displaced)
 		})
 	})
@@ -1030,7 +1056,7 @@ func (s *Service) modify(ctx context.Context, o Owner, cur *Record, p Patch) (De
 	s.count("modified")
 	s.projectCommitted(ctx, cur.ID)
 	s.recheckDisplaced(ctx, cur.ID, displaced)
-	return out, nil
+	return s.writeNow(ctx, out), nil
 }
 
 // modifyTx is modify's transaction on the assessment a.
@@ -1053,6 +1079,8 @@ func (s *Service) modifyTx(ctx context.Context, tx Tx, a *Assessment, o Owner, c
 		return err
 	}
 	d, flagged := s.Decider.Finish(a, r.ID, at, others)
+	s.holdForDSS(ctx, &d, n.Exempt)
+	flagged = localFlagged(flagged)
 	if d.Decision != DecisionAuthorised && d.Decision != DecisionAcceptedVoluntary {
 		d.AuthorisationNumber = nil
 	}
@@ -1089,7 +1117,7 @@ func (s *Service) modifyTx(ctx context.Context, tx Tx, a *Assessment, o Owner, c
 // database clock), at most SweepBatch, and returns how many.
 func (s *Service) EndDue(ctx context.Context) (int, error) {
 	var ended []string
-	err := s.Store.InTx(ctx, func(ctx context.Context, tx Tx) error {
+	err := s.inTx(ctx, func(ctx context.Context, tx Tx) error {
 		ended = nil
 		now, err := tx.Now(ctx)
 		if err != nil {

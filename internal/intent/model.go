@@ -136,6 +136,7 @@ const (
 	KindIntent      = "intent"
 	KindPolicy      = "policy"
 	KindDSS         = "dss"
+	KindConstraint  = "constraint"
 )
 
 // Effects of a conflict on the decision.
@@ -177,6 +178,25 @@ const (
 	ReasonThresholdInvalid    = "threshold_invalid"
 	ReasonDeconflictNotJudged = "deconfliction_not_judged"
 	ReasonDSSUnavailable      = "dss_unavailable"
+	// ReasonDSSWritePending: the local checks passed and the intent
+	// waits for its strategic coordination write to the DSS (WP-13); it
+	// is authorised only when the DSS has taken it.
+	ReasonDSSWritePending = "dss_write_pending"
+	// ReasonUSSAvailabilityDown: the authority set this USSP's
+	// availability Down in the DSS, which stops every new DSS write.
+	ReasonUSSAvailabilityDown = "uss_availability_down"
+	// ReasonDSSKeyConflict: the DSS answered 409 twice, naming intents or
+	// constraints whose ovns could not be had.
+	ReasonDSSKeyConflict = "dss_key_conflict"
+	// ReasonPeerUnavailable: a peer's intent the DSS names could not be
+	// read from its manager and no copy of it is held, so the intent is
+	// not judged against it.
+	ReasonPeerUnavailable = "peer_intent_unavailable"
+	// ReasonDSSRefused: the DSS refused the write (a 4xx other than 409).
+	ReasonDSSRefused = "dss_refused"
+	// ReasonConstraintActive: an F3548 constraint (an ANSP restriction
+	// through the DSS) overlaps the volumes.
+	ReasonConstraintActive = "constraint_active"
 	// ReasonClassLabelMismatch: the request's class_label is not the one
 	// the registry holds for the UAS (item 4).
 	ReasonClassLabelMismatch = "class_label_mismatch"

@@ -116,6 +116,22 @@ type Constraint struct {
 	Details          []byte     `json:"details"`
 	CisRestrictionID *string    `json:"cis_restriction_id"`
 	FetchedAt        time.Time  `json:"fetched_at"`
+	UssBaseUrl       *string    `json:"uss_base_url"`
+}
+
+type DssExchange struct {
+	ID           int64      `json:"id"`
+	EntityID     *string    `json:"entity_id"`
+	RecorderRole string     `json:"recorder_role"`
+	Method       string     `json:"method"`
+	Url          string     `json:"url"`
+	RequestBody  *string    `json:"request_body"`
+	RequestTime  time.Time  `json:"request_time"`
+	ResponseCode *int32     `json:"response_code"`
+	ResponseBody *string    `json:"response_body"`
+	ResponseTime *time.Time `json:"response_time"`
+	Problem      *string    `json:"problem"`
+	RecordedAt   time.Time  `json:"recorded_at"`
 }
 
 type DssIsa struct {
@@ -307,6 +323,12 @@ type OperationalIntent struct {
 	MtomKg              *float64   `json:"mtom_kg"`
 	UpdateRequired      []byte     `json:"update_required"`
 	ProjectedVersion    int32      `json:"projected_version"`
+	DssHeldState        *string    `json:"dss_held_state"`
+	DssReference        []byte     `json:"dss_reference"`
+	DssExtents          []byte     `json:"dss_extents"`
+	DssSubscriptionID   *string    `json:"dss_subscription_id"`
+	DssWrittenAt        *time.Time `json:"dss_written_at"`
+	DssLastError        *string    `json:"dss_last_error"`
 }
 
 type OperatorAccount struct {
@@ -332,6 +354,7 @@ type PeerIntent struct {
 	Details         []byte     `json:"details"`
 	FetchedAt       time.Time  `json:"fetched_at"`
 	PeerUnavailable bool       `json:"peer_unavailable"`
+	Priority        int32      `json:"priority"`
 }
 
 type Policy struct {
@@ -428,6 +451,13 @@ type StaffAccount struct {
 	Status       string      `json:"status"`
 	CreatedAt    time.Time   `json:"created_at"`
 	MfaLastStep  int64       `json:"mfa_last_step"`
+}
+
+type UssReport struct {
+	ReportID   pgtype.UUID `json:"report_id"`
+	Reporter   string      `json:"reporter"`
+	Exchange   []byte      `json:"exchange"`
+	ReceivedAt time.Time   `json:"received_at"`
 }
 
 type WeatherProduct struct {

@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/peer/intent/v1.json",
+  "title": "peer/intent/v1",
+  "description": "A peer USSP's operational intent as its manager notified this USSP (F3548 POST /uss/v1/operational_intents; brief WP-13), published by api on peer.intent.v1.<entity_id> (core NATS) once stored in peer_intents, for the console's view of the peers' intents and the next decision. trust is always provider: the peer is authenticated, not trusted, and its intent is never altered (LESSONS R-14). deleted is true when the manager removed the intent, and operational_intent is then null. operational_intent is the F3548 OperationalIntent (reference and details) verbatim as the pinned standard file shapes it; it is not redefined here. It names what a peer holds, never what to do.",
+  "allOf": [
+    {
+      "$ref": "https://schemas.uspace.ge/envelope/v1.json"
+    }
+  ],
+  "properties": {
+    "schema": {
+      "const": "peer/intent/v1"
+    },
+    "body": {
+      "$ref": "#/$defs/body"
+    }
+  },
+  "$defs": {
+    "body": {
+      "type": "object",
+      "required": [
+        "entity_id",
+        "manager",
+        "uss_base_url",
+        "trust",
+        "deleted",
+        "state",
+        "version",
+        "priority",
+        "time_start",
+        "time_end",
+        "received_at",
+        "operational_intent"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "entity_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "manager": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "uss_base_url": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "trust": {
+          "const": "provider"
+        },
+        "deleted": {
+          "type": "boolean"
+        },
+        "state": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "Accepted",
+                "Activated",
+                "Nonconforming",
+                "Contingent"
+              ]
+            }
+          ]
+        },
+        "version": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "priority": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "time_start": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "format": "date-time"
+            }
+          ]
+        },
+        "time_end": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "format": "date-time"
+            }
+          ]
+        },
+        "received_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "operational_intent": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}
