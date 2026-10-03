@@ -157,6 +157,11 @@ func TestDecodeTrafficAndConformance(t *testing.T) {
 		v[10] != int64(3) || v[9].([]string)[0] != "cis" {
 		t.Fatalf("values %v", v)
 	}
+	// A box across the antimeridian (west above east) is a box.
+	body["for"] = map[string]any{"bbox": []float64{179.5, 41.6, -179.5, 41.8}}
+	if _, err := DecodeTraffic(message(t, "traffic/product/v1", time.Now(), body)); err != nil {
+		t.Fatalf("across the antimeridian: %v", err)
+	}
 	body["for"] = map[string]any{"intent_id": flightID}
 	delete(body, "degraded")
 	if d, err = DecodeTraffic(message(t, "traffic/product/v1", time.Now(), body)); err != nil || d.Rows[0].Values[4] != (*float64)(nil) || *(d.Rows[0].Values[3].(*string)) != flightID {
@@ -165,10 +170,15 @@ func TestDecodeTrafficAndConformance(t *testing.T) {
 	for name, mut := range map[string]func(map[string]any){
 		"bbox 3":        func(b map[string]any) { b["for"] = map[string]any{"bbox": []float64{1, 2, 3}} },
 		"bbox reversed": func(b map[string]any) { b["for"] = map[string]any{"bbox": []float64{44, 42, 45, 41}} },
-		"no policy":     func(b map[string]any) { delete(b, "policy_version") },
-		"no tracks":     func(b map[string]any) { delete(b, "tracks") },
-		"no client":     func(b map[string]any) { delete(b, "client_id") },
-		"intent":        func(b map[string]any) { b["for"] = map[string]any{"intent_id": "i"} },
+		// Each longitude is checked on both sides (audit N3).
+		"west over 180": func(b map[string]any) { b["for"] = map[string]any{"bbox": []float64{181, 41, 170, 42}} },
+		"east under -180": func(b map[string]any) {
+			b["for"] = map[string]any{"bbox": []float64{-170, 41, -181, 42}}
+		},
+		"no policy": func(b map[string]any) { delete(b, "policy_version") },
+		"no tracks": func(b map[string]any) { delete(b, "tracks") },
+		"no client": func(b map[string]any) { delete(b, "client_id") },
+		"intent":    func(b map[string]any) { b["for"] = map[string]any{"intent_id": "i"} },
 	} {
 		b := map[string]any{"client_id": "c1", "for": map[string]any{}, "tracks": []any{}, "policy_version": 1}
 		mut(b)
