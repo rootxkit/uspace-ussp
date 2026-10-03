@@ -115,6 +115,9 @@ type CacheConfig struct {
 	// RetentionDays is how long the notification log is kept.
 	RetentionDays func() int
 	Now           func() time.Time
+	// OnChange is told every version installed, after its projection and
+	// its store (nil: nobody is told).
+	OnChange ChangeHook
 }
 
 // Cache is the writer of the CIS cache: pulls, notifications,
@@ -208,6 +211,11 @@ func (c *Cache) Warm(ctx context.Context) {
 		return
 	}
 	now := c.cfg.Now()
+	type warmed struct {
+		v  *Version
+		es []*Entry
+	}
+	var installed []warmed
 	for _, sv := range stored {
 		v := sv.Version
 		var es []*Entry
@@ -221,10 +229,16 @@ func (c *Cache) Warm(ctx context.Context) {
 		}
 		age := time.Duration(math.Max(0, sv.AgeS) * float64(time.Second))
 		c.cfg.Evaluator.install(v, es, now.Add(-age))
+		installed = append(installed, warmed{v, es})
 		c.cfg.Logger.Info("CIS version loaded from the database", slog.String("dataset", string(v.Dataset)),
 			slog.Int64("version", v.Number), slog.Float64("age_s", sv.AgeS))
 	}
 	c.project(ctx)
+	// What changed while this process was not running is not known:
+	// every feature of every loaded version is listed.
+	for _, w := range installed {
+		c.notify(ctx, w.v, 0, nil, w.es, ChangeWarm)
+	}
 }
 
 // Trigger asks for a pull of d after a notification; it never blocks.
@@ -404,6 +418,11 @@ func (c *Cache) accept(ctx context.Context, v, cur *Version, reconcile bool) err
 		return c.failPull(v.Dataset, err)
 	}
 	v.SignatureOK = true
+	prevEntries := c.cfg.Evaluator.Snapshot().Entries(v.Dataset)
+	var prevNumber int64
+	if cur != nil {
+		prevNumber = cur.Number
+	}
 	c.cfg.Evaluator.install(v, es, now)
 	c.mu.Lock()
 	delete(c.refused, v.Dataset)
@@ -420,6 +439,7 @@ func (c *Cache) accept(ctx context.Context, v, cur *Version, reconcile bool) err
 	c.project(ctx)
 	c.clearPending(v.Dataset, v.Number)
 	c.persist(ctx, v, es)
+	c.notify(ctx, v, prevNumber, prevEntries, es, ChangeInstalled)
 	return nil
 }
 

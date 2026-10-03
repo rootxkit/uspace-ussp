@@ -2,6 +2,7 @@ package cis
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -155,6 +156,48 @@ func buildEntry(v *Version, f *ed318.Feature) (*Entry, error) {
 // (applicability is the projection's verdict, Applies). A feature Parse
 // or ToZones refuses is an error, never zones that judge nothing.
 func FeatureZones(raw json.RawMessage) ([]*zones.Zone, error) {
+	f, err := parseFeature(raw)
+	if err != nil {
+		return nil, err
+	}
+	f.Properties.LimitedApplicability = nil
+	return ed318.ToZones(&ed318.FeatureCollection{Type: "FeatureCollection", Features: []ed318.Feature{*f}}, ed318.NOAADaylight{})
+}
+
+// FeatureZonesApplicable builds the zones of one feature as
+// FeatureZones does, but with its limitedApplicability as the zones'
+// periods (ed318.ToZones resolves daylight events into fixed windows),
+// so uspace-core judges each sample's applicability at its placement
+// (Zone.AppliesAt, T-09). It returns ErrApplicabilityNotBuilt, with the
+// zones built without periods, when ToZones refuses the periods (an
+// open-ended daylight schedule, which only ed318.Applies judges): the
+// caller then holds zones that apply always, the fail-safe reading, and
+// says so. Any other refusal is an error with no zones.
+func FeatureZonesApplicable(raw json.RawMessage) ([]*zones.Zone, error) {
+	f, err := parseFeature(raw)
+	if err != nil {
+		return nil, err
+	}
+	zs, err := ed318.ToZones(&ed318.FeatureCollection{Type: "FeatureCollection", Features: []ed318.Feature{*f}}, ed318.NOAADaylight{})
+	if err == nil || len(f.Properties.LimitedApplicability) == 0 {
+		return zs, err
+	}
+	shape := *f
+	shape.Properties.LimitedApplicability = nil
+	always, serr := ed318.ToZones(&ed318.FeatureCollection{Type: "FeatureCollection", Features: []ed318.Feature{shape}}, ed318.NOAADaylight{})
+	if serr != nil {
+		return nil, serr
+	}
+	return always, fmt.Errorf("%w: %s", ErrApplicabilityNotBuilt, short(err.Error()))
+}
+
+// ErrApplicabilityNotBuilt is FeatureZonesApplicable's answer for a
+// feature whose periods ed318.ToZones refuses.
+var ErrApplicabilityNotBuilt = errors.New("the applicability periods do not build; the zone is held as applying always")
+
+// parseFeature parses one feature as published (ed318.Parse of a
+// collection holding it alone, with ProblemLimits).
+func parseFeature(raw json.RawMessage) (*ed318.Feature, error) {
 	doc := make([]byte, 0, len(raw)+48)
 	doc = append(doc, `{"type":"FeatureCollection","features":[`...)
 	doc = append(doc, raw...)
@@ -166,9 +209,7 @@ func FeatureZones(raw json.RawMessage) ([]*zones.Zone, error) {
 	if len(fc.Features) != 1 {
 		return nil, fmt.Errorf("%d features, want 1", len(fc.Features))
 	}
-	shape := fc.Features[0]
-	shape.Properties.LimitedApplicability = nil
-	return ed318.ToZones(&ed318.FeatureCollection{Type: "FeatureCollection", Features: []ed318.Feature{shape}}, ed318.NOAADaylight{})
+	return &fc.Features[0], nil
 }
 
 func readRequirements(raw json.RawMessage) (*Requirements, error) {

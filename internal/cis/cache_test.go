@@ -439,7 +439,14 @@ func TestCacheWarm(t *testing.T) {
 	for _, d := range ED318Datasets {
 		g.store.stored = append(g.store.stored, StoredVersion{Version: mustVersion(t, d, 4, featureOf(d, "TZP001").json()), AgeS: 420})
 	}
+	log := &changeLog{}
+	g.cache.cfg.OnChange = log.hook
 	g.cache.Warm(t.Context())
+	// What changed while the process was down is not known: every
+	// dataset loaded is told with all its features.
+	if cs := log.all(); len(cs) != 3 || cs[0].Reason != ChangeWarm || len(cs[0].FeatureIDs) != 1 || cs[0].FeatureIDs[0] != "TZP001" {
+		t.Fatalf("warm changes %+v", cs)
+	}
 	v, age, stale := g.eval.Age()
 	if v != "zones:4,uspace_airspace:4,restrictions:4" || age != 420 || !stale {
 		t.Fatalf("warm: %q %v %v", v, age, stale)

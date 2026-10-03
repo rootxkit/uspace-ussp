@@ -262,6 +262,16 @@ func (e *Evaluator) applicability(en *Entry, part int, at time.Time) (Applicabil
 	}
 }
 
+// ApplicabilityAt is whether entry's part applies at at, judged by
+// ed318.Applies at the part's centre (counted when unknown): what
+// GET /v1/geo says of a zone at an instant (brief WP-12).
+func (e *Evaluator) ApplicabilityAt(en *Entry, part int, at time.Time) (Applicability, error) {
+	if en == nil || part < 0 || part >= len(en.Centres) {
+		return Unknown, errors.New("no such part")
+	}
+	return e.applicability(en, part, at)
+}
+
 // PointJudgement is one zone part containing the point that applies (or
 // may apply) at the instant, with core's vertical judgement.
 type PointJudgement struct {
