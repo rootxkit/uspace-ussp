@@ -249,11 +249,20 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+      # The release binary, checked against a SHA-256 pinned here (not
+      # one fetched beside it), run without any token. Pinned with
+      # GITLEAKS_VERSION in the Makefile; change both together.
+      - name: install gitleaks
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Pinned (and in the Makefile); change both together.
           GITLEAKS_VERSION: "8.24.3"
+          GITLEAKS_SHA256: 9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c
+        run: |
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$tarball" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" gitleaks
+      - name: gitleaks (the whole history)
+        run: ./gitleaks git --no-banner --redact --verbose .
 
   # Both images, built on a pull request and not pushed. This job holds
   # only the workflow's read token: a branch that changes a Dockerfile
