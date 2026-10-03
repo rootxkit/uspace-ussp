@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/rootxkit/uspace-core/core"
@@ -59,13 +60,62 @@ type ExchangeStore interface {
 	InsertExchange(ctx context.Context, e Exchange) error
 }
 
+// clockStore is a store with the database clock (Store.Now).
+type clockStore interface {
+	Now(ctx context.Context) (time.Time, error)
+}
+
+// ClockSyncEvery is how often the log reads the database clock again.
+const ClockSyncEvery = time.Minute
+
 // ExchangeLog queues exchanges for one writer. The zero value is not
 // usable; use NewExchangeLog. A nil *ExchangeLog records nothing.
+//
+// The times of an exchange are the database clock, as every other time
+// the purge and the log sets compare them with: this host's clock plus
+// the offset to the database's, read by Sync (at Run's start and every
+// ClockSyncEvery), so stamping a request costs no query.
 type ExchangeLog struct {
 	ch       chan Exchange
 	store    ExchangeStore
 	counters *core.Counters
 	logger   *slog.Logger
+	offset   atomic.Int64
+}
+
+// Sync reads the database clock (when the store has one) and keeps its
+// offset from this host's.
+func (l *ExchangeLog) Sync(ctx context.Context) error {
+	c, ok := l.store.(clockStore)
+	if !ok {
+		return nil
+	}
+	before := time.Now()
+	db, err := c.Now(ctx)
+	if err != nil {
+		return err
+	}
+	after := time.Now()
+	mid := before.Add(after.Sub(before) / 2)
+	l.offset.Store(int64(db.Sub(mid)))
+	return nil
+}
+
+// Now is the database clock as last synced (this host's before the
+// first Sync).
+func (l *ExchangeLog) Now() time.Time {
+	if l == nil {
+		return time.Now().UTC()
+	}
+	return time.Now().Add(time.Duration(l.offset.Load())).UTC()
+}
+
+func (l *ExchangeLog) sync(ctx context.Context) {
+	sctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := l.Sync(sctx); err != nil {
+		l.logger.LogAttrs(ctx, slog.LevelWarn, "database clock not read; exchanges keep the last offset", obs.Err(err))
+	}
 }
 
 // Counter names of the exchange log.
@@ -102,12 +152,18 @@ func (l *ExchangeLog) Record(e Exchange) {
 }
 
 // Run writes queued exchanges until ctx ends, then the ones still queued
-// within a short grace.
+// within a short grace; it syncs the database clock at its start and
+// every ClockSyncEvery.
 func (l *ExchangeLog) Run(ctx context.Context) {
+	l.sync(ctx)
+	t := time.NewTicker(ClockSyncEvery)
+	defer t.Stop()
 	for {
 		select {
 		case e := <-l.ch:
 			l.write(context.WithoutCancel(ctx), e)
+		case <-t.C:
+			l.sync(ctx)
 		case <-ctx.Done():
 			l.drain(ctx)
 			return
@@ -179,6 +235,9 @@ func (t *Transport) now() time.Time {
 	if t.Now != nil {
 		return t.Now()
 	}
+	if t.Log != nil {
+		return t.Log.Now()
+	}
 	return time.Now()
 }
 
@@ -226,7 +285,7 @@ func (l *ExchangeLog) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		e := Exchange{Role: RoleServer, Method: r.Method, URL: r.URL.RequestURI(), RequestTime: time.Now().UTC(),
+		e := Exchange{Role: RoleServer, Method: r.Method, URL: r.URL.RequestURI(), RequestTime: l.Now(),
 			EntityID: entityOf(r.Context(), r.URL.Path)}
 		if r.Body != nil && r.Body != http.NoBody {
 			r.Body = &teeBody{rc: r.Body, max: MaxExchangeBodyBytes}
@@ -239,7 +298,7 @@ func (l *ExchangeLog) Middleware(next http.Handler) http.Handler {
 				e.EntityID = uuidRE.FindString(strings.ToLower(e.RequestBody))
 			}
 		}
-		e.ResponseTime, e.ResponseCode, e.ResponseBody = time.Now().UTC(), rec.status, clipBody(rec.buf.Bytes())
+		e.ResponseTime, e.ResponseCode, e.ResponseBody = l.Now(), rec.status, clipBody(rec.buf.Bytes())
 		l.Record(e)
 	})
 }

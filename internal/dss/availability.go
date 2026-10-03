@@ -160,9 +160,14 @@ func (a *Availability) Poll(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// The read time is the database clock, as dss_state's set_at.
+	at, err := a.Store.Now(ctx)
+	if err != nil {
+		return err
+	}
 	a.mu.Lock()
 	prev, wasKnown := a.state, a.known
-	a.loaded, a.known, a.state, a.version, a.at, a.err = true, true, state, res.Version, time.Now().UTC(), ""
+	a.loaded, a.known, a.state, a.version, a.at, a.err = true, true, state, res.Version, at.UTC(), ""
 	a.mu.Unlock()
 	if changed || !wasKnown || prev != state {
 		a.count(CounterAvailabilityChanged)
