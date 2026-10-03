@@ -331,3 +331,37 @@ func TestObserveWithoutConfigure(t *testing.T) {
 		t.Fatal("judged without zones")
 	}
 }
+
+// A zone missing from a set because its feature did not build, or
+// because the set is over its bound, was not withdrawn by the CIS: its
+// carried alert is kept, not cleared zone_no_longer_published, and
+// flying on is no evidence against it (core judges no such zone). Twin:
+// TestRebuildCarriesAndWithdrawn, where the zone is really gone.
+func TestCarriedKeptWhenItsZoneIsUnbuildableOrOverBound(t *testing.T) {
+	at := time.Date(2026, 10, 3, 8, 0, 0, 0, time.UTC)
+	z := amslZone("TZP001", "PROHIBITED")
+	for name, mutate := range map[string]func(s *ZoneSet){
+		"unbuildable": func(s *ZoneSet) { s.Unbuildable = []string{"zones/TZP001"} },
+		"over bound":  func(s *ZoneSet) { s.OverBound = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := newRig(t, setOf(t, "zones:1", at, map[string][]feat{"zones": {z}}))
+			id := g.sample(inside, 300)[0].Alert.ID
+			s := setOf(t, "zones:2", at.Add(time.Minute), map[string][]feat{"zones": {amslZone("TZP002", "CONDITIONAL")}})
+			mutate(s)
+			if evs := g.tr.Configure(s, g.pol, g.clk); len(evs) != 0 {
+				t.Fatalf("cleared on a set that could not hold its zone: %s", states(evs))
+			}
+			for range 10 {
+				for _, e := range g.sample(inside, 300) {
+					if e.Alert.ID == id && e.State == StateCleared {
+						t.Fatalf("ended on silence about a zone core does not hold: %+v", e.ClearingDetail)
+					}
+				}
+			}
+			if a := g.tr.Active(); !slices.ContainsFunc(a, func(x Alert) bool { return x.ID == id && x.CarriedSince != nil }) {
+				t.Fatalf("not kept: %+v", a)
+			}
+		})
+	}
+}

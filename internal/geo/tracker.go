@@ -48,6 +48,11 @@ const (
 	CounterSavedOverBound   = "geo_zone_alerts_saved_over_bound"
 	CounterRestoredAlerts   = "geo_zone_alerts_restored"
 	CounterNotJudgedNoZones = "geo_zone_samples_without_zone_set"
+	// CounterKeptZoneNotBuilt counts the carried alerts kept at a
+	// rebuild although the new set lacks their zone, because the set
+	// cannot tell it was withdrawn (the feature did not build, or the set
+	// is over its bound).
+	CounterKeptZoneNotBuilt = "geo_zone_alerts_kept_zone_not_built"
 )
 
 // MaxAlertsPerFlight bounds the zone alerts one flight saves (E-10);
@@ -199,9 +204,28 @@ func (t *Tracker) Configure(s *ZoneSet, pol policy.Record, now time.Time) []Even
 	return t.withdrawn(now)
 }
 
+// zoneUnknown reports whether the set lacks a's zone without telling
+// that the CIS withdrew it: the set is over its bound (any zone may be
+// left out) or a's feature is among those that did not build.
+func (t *Tracker) zoneUnknown(a *Alert) bool {
+	if t.set.OverBound {
+		return true
+	}
+	id, _ := a.Detail["zone_id"].(string)
+	ds, _ := a.Detail["dataset"].(string)
+	for _, u := range t.set.Unbuildable {
+		if (ds != "" && u == ds+"/"+id) || (ds == "" && strings.HasSuffix(u, "/"+id)) {
+			return true
+		}
+	}
+	return false
+}
+
 // withdrawn ends the carried zone alerts whose zone part the set no
 // longer holds. A set that is not loaded withdraws nothing: an unknown
-// CIS is not an empty sky (SC-22).
+// CIS is not an empty sky (SC-22). Nor does a set that lacks the zone
+// only because its feature did not build or the set is over its bound:
+// the alert is kept (counted) and stays carried.
 func (t *Tracker) withdrawn(now time.Time) []Event {
 	if t.set == nil || !t.set.Loaded {
 		return nil
@@ -214,6 +238,10 @@ func (t *Tracker) withdrawn(now time.Time) []Event {
 		}
 		part, _ := a.Detail["zone_part"].(string)
 		if part == "" || t.set.Has(part) {
+			continue
+		}
+		if t.zoneUnknown(a) {
+			t.Counters.Inc(CounterKeptZoneNotBuilt)
 			continue
 		}
 		t.Counters.Inc(CounterNotReconfirmed)
@@ -278,10 +306,15 @@ func (t *Tracker) Observe(tr alerting.Track, ref Ref, wallS float64, now time.Ti
 		}
 		c := t.carried[k]
 		mismatch := a.Kind == KindIdentificationMismatch
+		// Core's silence is evidence only about a zone it holds: one the
+		// set lacks because it did not build or the set is over its bound
+		// is not judged (withdrawn kept the alert).
+		part, _ := a.Detail["zone_part"].(string)
+		held := zonesKnown && t.set.Has(part)
 		switch {
 		case landed && !mismatch:
 			out = append(out, t.end(k, string(alerting.ClearLanded), nil, now))
-		case flying && !mismatch && zonesKnown, mismatch && tr.Identification != nil:
+		case flying && !mismatch && held, mismatch && tr.Identification != nil:
 			placed := math.Min(tr.CapturedAtS, wallS)
 			if !c.judgedFlights {
 				c.judgedSinceS, c.judgedFlights = placed, true
