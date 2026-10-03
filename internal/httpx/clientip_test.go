@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -200,4 +201,49 @@ func FuzzClientIP(f *testing.F) {
 			t.Fatalf("trusted peer %q, header %q yielded %q", peer, xff, got)
 		}
 	})
+}
+
+// An X-Forwarded-For from a peer that is not a trusted proxy (behind a
+// reverse proxy with USSP_TRUSTED_PROXIES unset, every client is the
+// proxy) is keyed on the peer, as before, and now said: counted as
+// xff_from_untrusted_peer, warned once per period, and the watch holds
+// the peer and the time for /readyz (audit S7). A request without the
+// header, and one through a trusted proxy, move nothing (E-01).
+func TestRealIPNoticesForwardedFromAnUntrustedPeer(t *testing.T) {
+	c := &core.Counters{}
+	var logs strings.Builder
+	watch := &ProxyWatch{Counters: c, Logger: slog.New(slog.NewTextHandler(&logs, nil))}
+	h := Baseline(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(RemoteIP(r))) }),
+		discard(), BaselineDeps{Counters: c, TrustedProxies: mustProxies(t, "10.0.0.0/8"), ProxyWatch: watch})
+	do := func(peer, xff string) string {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.RemoteAddr = peer
+		if xff != "" {
+			r.Header.Set("X-Forwarded-For", xff)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+		return rec.Body.String()
+	}
+	if ip := do("198.51.100.5:1", ""); ip != "198.51.100.5" || c.Get(CounterXFFUntrusted) != 0 {
+		t.Fatalf("no header: %q %d", ip, c.Get(CounterXFFUntrusted))
+	}
+	if ip := do("10.0.0.2:1", "203.0.113.1"); ip != "203.0.113.1" || c.Get(CounterXFFUntrusted) != 0 {
+		t.Fatalf("trusted proxy: %q %d", ip, c.Get(CounterXFFUntrusted))
+	}
+	for range 3 {
+		if ip := do("172.18.0.5:1", "203.0.113.9"); ip != "172.18.0.5" {
+			t.Fatalf("untrusted peer keyed on %q", ip)
+		}
+	}
+	if n := c.Get(CounterXFFUntrusted); n != 3 {
+		t.Fatalf("counted %d", n)
+	}
+	peer, at, n := watch.Last()
+	if peer != "172.18.0.5" || at.IsZero() || n != 3 {
+		t.Fatalf("watch %q %v %d", peer, at, n)
+	}
+	if lines := strings.Count(logs.String(), "USSP_TRUSTED_PROXIES"); lines != 1 {
+		t.Fatalf("%d warnings: %s", lines, logs.String())
+	}
 }

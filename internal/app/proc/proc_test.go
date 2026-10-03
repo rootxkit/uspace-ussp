@@ -13,6 +13,7 @@ import (
 
 	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/config"
+	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/national/client"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 )
@@ -152,7 +153,7 @@ func TestRunStartsDegradedAndReadyzNamesWhatIsDown(t *testing.T) {
 		t.Fatalf("drain: %v", err)
 	}
 	out := logs.String()
-	for _, want := range []string{`"msg":"started"`, `"dependencies":{"nats":"required","postgres":"required","timescaledb":"optional"}`, `"msg":"stopped"`, `USSP_PG_URL=\"postgres://ussp:xxxxx@`} {
+	for _, want := range []string{`"msg":"started"`, `"dependencies":{"client_address":"optional","nats":"required","postgres":"required","timescaledb":"optional"}`, `"msg":"stopped"`, `USSP_PG_URL=\"postgres://ussp:xxxxx@`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("%s missing from the log", want)
 		}
@@ -314,5 +315,29 @@ func TestTopologyOfConfiguresCONF(t *testing.T) {
 	conf, _ = TopologyOf(def).Stream(bus.StreamCONF)
 	if conf.MaxAge != bus.DefaultConfMaxAge || conf.MaxBytes != bus.DefaultConfMaxBytes {
 		t.Fatalf("CONF defaults %v %d", conf.MaxAge, conf.MaxBytes)
+	}
+}
+
+// client_address both ways (audit S7): up while no untrusted peer sent
+// X-Forwarded-For; degraded naming the peer and the variable once one
+// did; up again ten minutes later.
+func TestClientAddressProbe(t *testing.T) {
+	watch := &httpx.ProxyWatch{}
+	now := time.Now()
+	probe := ClientAddressProbe(watch, func() time.Time { return now })
+	if st, d := probe(context.Background()); st != obs.StateUp || d != "" {
+		t.Fatalf("nothing seen: %s %q", st, d)
+	}
+	h := httpx.RealIP(nil, watch)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr, now = "172.18.0.5:443", time.Now()
+	r.Header.Set("X-Forwarded-For", "203.0.113.9")
+	h.ServeHTTP(httptest.NewRecorder(), r)
+	if st, d := probe(context.Background()); st != obs.StateDegraded || !strings.Contains(d, "172.18.0.5") || !strings.Contains(d, "USSP_TRUSTED_PROXIES") {
+		t.Fatalf("seen: %s %q", st, d)
+	}
+	now = now.Add(11 * time.Minute)
+	if st, _ := probe(context.Background()); st != obs.StateUp {
+		t.Fatalf("ten minutes later: %s", st)
 	}
 }

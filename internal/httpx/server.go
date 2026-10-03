@@ -127,6 +127,9 @@ type BaselineDeps struct {
 	// TrustedProxies are the proxies whose X-Forwarded-For RealIP
 	// believes (USSP_TRUSTED_PROXIES); empty: the peer is the client.
 	TrustedProxies []netip.Prefix
+	// ProxyWatch, when set, is told of every X-Forwarded-For from a peer
+	// that is not a trusted proxy (audit S7).
+	ProxyWatch *ProxyWatch
 }
 
 // Baseline wraps h with the middleware every listener uses, in order:
@@ -141,7 +144,7 @@ func Baseline(h http.Handler, logger *slog.Logger, deps BaselineDeps) http.Handl
 	return Chain(captureRoute(h),
 		TrackRoute,
 		RequestID,
-		RealIP(deps.TrustedProxies),
+		RealIP(deps.TrustedProxies, deps.ProxyWatch),
 		AccessLog(logger),
 		Recover(logger, deps.Counters),
 		BodyCap(maxBody, deps.Counters),
