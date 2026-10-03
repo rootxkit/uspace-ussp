@@ -2,9 +2,11 @@ package intent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -410,5 +412,38 @@ func TestSweepWithdrawsADisplacementWhoseRecheckNeverRan(t *testing.T) {
 	}
 	if again, err := s.Recheck(t.Context(), d.IntentID, Cause{Kind: CauseSweep}); err != nil || again.Outcome != RecheckNotActive {
 		t.Fatalf("again: %+v %v", again, err)
+	}
+}
+
+// The update_required refusal names what the notice says: a restriction
+// notice is not refused as a later intent with precedence. Twin: the
+// WP-7 flag of a displacement keeps the precedence text.
+func TestActivationRefusalMatchesTheNotice(t *testing.T) {
+	g := newRig()
+	s, st, _ := newService(g)
+	d, _, err := submit(t, s, baseRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.now = t0.Add(-5 * time.Minute)
+	refusal := func() *Error {
+		t.Helper()
+		_, err := patch(t, s, d.IntentID, map[string]any{"action": "activate"})
+		var e *Error
+		if !errors.As(err, &e) || e.Slug != "update_required" {
+			t.Fatalf("not refused update_required: %v", err)
+		}
+		return e
+	}
+	n := Notice{Cause: CauseRestriction, Ref: "TRS042", RestrictionID: "TRS042", Reason: ReasonRestrictionActive, Decision: RecheckMarked,
+		Withdrawn: true, AlertID: "4d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7e82", Conflicts: []Conflict{}}
+	raw, _ := json.Marshal(n)
+	st.byID[d.IntentID].UpdateRequired = raw
+	if e := refusal(); strings.Contains(e.Detail, "precedence") || !strings.Contains(e.Detail, "restriction TRS042") {
+		t.Fatalf("restriction notice refused as %q", e.Detail)
+	}
+	st.byID[d.IntentID].UpdateRequired = json.RawMessage(`{"by_intent_id":"00000000-0000-4000-8000-0000000000ee"}`)
+	if e := refusal(); !strings.Contains(e.Detail, "precedence") {
+		t.Fatalf("displacement refused as %q", e.Detail)
 	}
 }

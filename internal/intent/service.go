@@ -930,9 +930,11 @@ func (s *Service) activatable(r *Record, now time.Time) error {
 	}
 	if r.Flagged() {
 		// Art. 10(10): a later intent with precedence overlaps this
-		// authorisation; it is not flown until it is updated (WP-12).
+		// authorisation, or the standing re-check found a conflict; it
+		// is not flown until it is updated (WP-12). The refusal says
+		// which, as the notice does.
 		s.count("activation_refused_update_required")
-		return refuse(http.StatusConflict, "update_required", "a later intent with precedence overlaps this authorisation (Art. 10(10)); it must be updated before it is activated")
+		return refuse(http.StatusConflict, "update_required", "%s (Art. 10(10)); it must be updated before it is activated", updateRequiredWhy(r))
 	}
 	lead := time.Duration(s.policy().Values.ActivationLeadS * float64(time.Second))
 	if now.Before(r.TimeStart.Add(-lead)) {
@@ -944,6 +946,25 @@ func (s *Service) activatable(r *Record, now time.Time) error {
 		return refuse(http.StatusConflict, "activation_refused", "time_end %s has passed", r.TimeEnd.UTC().Format(time.RFC3339))
 	}
 	return nil
+}
+
+// updateRequiredWhy is why a flagged authorisation needs an update, as
+// its notice says: a later intent with precedence (the WP-7 flag, or a
+// priority notice), else the restriction, zone or U-space airspace the
+// standing re-check found.
+func updateRequiredWhy(r *Record) string {
+	n := NoticeOf(r)
+	if n == nil || n.Cause == CausePriority {
+		return "a later intent with precedence overlaps this authorisation"
+	}
+	what := n.Cause
+	switch n.Cause {
+	case CauseZone:
+		what = "geographical zone"
+	case CauseUSpaceAirspace:
+		what = "U-space airspace"
+	}
+	return fmt.Sprintf("the standing re-check found %s %s conflicting with this authorisation (%s)", what, n.Ref, n.Reason)
 }
 
 // activationCIS judges an activation on the CIS as the cache holds it
