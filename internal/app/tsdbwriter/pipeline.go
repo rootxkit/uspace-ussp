@@ -156,6 +156,8 @@ type Pipeline struct {
 	// logEvery).
 	logMu   sync.Mutex
 	lastLog map[string]time.Time
+	// suppressed counts each logCounted message since its last line.
+	suppressed map[string]uint64
 }
 
 // logEvery is the shortest interval between two repeated warnings.
@@ -256,6 +258,31 @@ func (p *Pipeline) warnLimited(msg string, attrs ...slog.Attr) {
 	p.lastLog[msg] = now
 	p.logMu.Unlock()
 	p.warn(msg, attrs...)
+}
+
+// logCounted logs msg at most once per logEvery, with the number of
+// times it happened since the line before (since_last): a stream whose
+// every message is malformed or refused is said once a period, never
+// once a message (E-09; audit S5).
+func (p *Pipeline) logCounted(level slog.Level, msg string, attrs ...slog.Attr) {
+	now := time.Now()
+	p.logMu.Lock()
+	if p.lastLog == nil {
+		p.lastLog = map[string]time.Time{}
+	}
+	if p.suppressed == nil {
+		p.suppressed = map[string]uint64{}
+	}
+	p.suppressed[msg]++
+	if now.Sub(p.lastLog[msg]) < logEvery {
+		p.logMu.Unlock()
+		return
+	}
+	n := p.suppressed[msg]
+	p.lastLog[msg], p.suppressed[msg] = now, 0
+	p.logMu.Unlock()
+	p.Logger.LogAttrs(context.Background(), level, msg,
+		append([]slog.Attr{slog.String("stream", p.Stream.Name), slog.Uint64("since_last", n)}, attrs...)...)
 }
 
 // start reads the consumer's ack floor: deliveries are measured from it.
@@ -528,8 +555,8 @@ func (p *Pipeline) decode(m bus.Msg, seq uint64, now time.Time) *item {
 		if seq == 0 {
 			it.gaps[0].DedupeKey = fmt.Sprintf("%s:%s:unsequenced:%d", store.CauseMalformed, p.Stream.Name, now.UnixNano())
 		}
-		p.warn("message not readable; recorded in writer_gaps", slog.String("subject", m.Subject()), slog.Uint64("stream_seq", seq),
-			slog.String("error", err.Error()))
+		p.logCounted(slog.LevelWarn, "message not readable; recorded in writer_gaps", slog.String("subject", m.Subject()),
+			slog.Uint64("stream_seq", seq), slog.String("error", err.Error()))
 	case p.remember(it.dec.MsgID, now):
 		p.Counters.Inc(CounterDedupeHits)
 		it.dec.Rows = nil
@@ -706,7 +733,8 @@ func (p *Pipeline) observe(batch []*item, d time.Duration) {
 }
 
 // batchOf is the transaction of a batch: rows by table, gaps, and the
-// highest sequence as the position.
+// highest sequence as the position. Malformed or rejected gaps of
+// consecutive sequences are one row (coalesce).
 func (p *Pipeline) batchOf(items []*item) store.WriteBatch {
 	b := store.WriteBatch{Stream: p.Stream.Name, Rows: map[*store.CopyTable][][]any{}}
 	for _, it := range items {
@@ -716,7 +744,45 @@ func (p *Pipeline) batchOf(items []*item) store.WriteBatch {
 		b.Gaps = append(b.Gaps, it.gaps...)
 		b.Position = max(b.Position, it.seq)
 	}
+	b.Gaps = p.coalesce(b.Gaps)
 	return b
+}
+
+// coalesce merges each run of malformed or rejected gaps of one cause
+// and unit whose sequences follow each other into one gap: from the
+// first to the last sequence, the counts summed, the first detail with
+// the number of others. A stream whose every message is malformed then
+// writes a row a batch, not a row a message (E-10; audit S5). Other
+// gaps, and an unsequenced message's, stay as they are.
+func (p *Pipeline) coalesce(gs []store.Gap) []store.Gap {
+	if len(gs) < 2 {
+		return gs
+	}
+	mergeable := func(g *store.Gap) bool {
+		return (g.Cause == store.CauseMalformed || g.Cause == store.CauseRejected) && g.FromSeq > 0 && g.FromSeq == g.ToSeq
+	}
+	out := make([]store.Gap, 0, len(gs))
+	runs := map[int]int{} // index in out -> gaps merged into it
+	for _, g := range gs {
+		if n := len(out); n > 0 && mergeable(&g) {
+			last := &out[n-1]
+			if (runs[n-1] > 0 || mergeable(last)) && last.Cause == g.Cause && last.CountUnit == g.CountUnit && g.FromSeq == last.ToSeq+1 {
+				last.ToSeq, last.Count = g.ToSeq, last.Count+g.Count
+				if last.Subject != g.Subject {
+					last.Subject = p.Stream.Subject
+				}
+				runs[n-1]++
+				continue
+			}
+		}
+		out = append(out, g)
+	}
+	for i, merged := range runs {
+		g := &out[i]
+		g.DedupeKey = fmt.Sprintf("%s:%s:%d-%d", g.Cause, p.Stream.Name, g.FromSeq, g.ToSeq)
+		g.Detail = truncate(fmt.Sprintf("%s (and %d more messages, sequences %d to %d)", g.Detail, merged, g.FromSeq, g.ToSeq))
+	}
+	return out
 }
 
 func (p *Pipeline) store(ctx context.Context, items []*item) (store.Written, error) {
@@ -744,7 +810,12 @@ func (p *Pipeline) writeBatch(ctx context.Context, batch []*item) error {
 	if !isData(err) {
 		return err
 	}
+	var rejected []*item
 	for _, it := range batch {
+		if it.rejected {
+			rejected = append(rejected, it)
+			continue
+		}
 		w, err := p.store(ctx, []*item{it})
 		if err == nil {
 			p.count(w)
@@ -753,42 +824,45 @@ func (p *Pipeline) writeBatch(ctx context.Context, batch []*item) error {
 		if !isData(err) {
 			return err
 		}
-		if err := p.reject(ctx, it, err); err != nil {
-			return err
-		}
+		p.reject(it, err)
+		rejected = append(rejected, it)
 	}
-	return nil
-}
-
-// reject replaces the item's rows by a rejected gap (once) and writes
-// it. A gap the database refuses too is returned: the message is then
-// neither acknowledged nor dropped, and stays at the head of the queue.
-func (p *Pipeline) reject(ctx context.Context, it *item, cause error) error {
-	if !it.rejected {
-		it.rejected = true
-		p.Counters.Add(CounterRowsRejected, uint64(it.n))
-		p.Logger.LogAttrs(ctx, slog.LevelError, "the database refused a message's rows; recorded in writer_gaps",
-			slog.String("stream", p.Stream.Name), slog.String("subject", it.msg.Subject()), slog.Uint64("stream_seq", it.seq),
-			slog.String("error", cause.Error()))
-		count, unit := int64(it.n), store.UnitRows
-		if count == 0 {
-			count, unit = 1, store.UnitMessages
-		}
-		it.dec.Rows = nil
-		it.gaps = append(it.gaps, store.Gap{
-			DedupeKey: fmt.Sprintf("%s:%s:%d", store.CauseRejected, p.Stream.Name, it.seq), Stream: p.Stream.Name, Subject: it.msg.Subject(),
-			FromSeq: it.seq, ToSeq: it.seq, Cause: store.CauseRejected, Count: count, CountUnit: unit, Detail: truncate(cause.Error()),
-		})
+	if len(rejected) == 0 {
+		return nil
 	}
-	w, err := p.store(ctx, []*item{it})
+	// The rejected gaps in one transaction, consecutive ones coalesced.
+	w, err = p.store(ctx, rejected)
 	if err != nil {
-		p.Counters.Inc(CounterRejectedUnrecord)
+		p.Counters.Add(CounterRejectedUnrecord, uint64(len(rejected)))
 		p.warnLimited("a rejected message's gap record was refused too; it is not acknowledged and is retried",
-			slog.Uint64("stream_seq", it.seq), slog.String("error", err.Error()))
-		return fmt.Errorf("the rejected gap of stream sequence %d was refused: %w", it.seq, err)
+			slog.Uint64("stream_seq", rejected[0].seq), slog.Int("messages", len(rejected)), slog.String("error", err.Error()))
+		return fmt.Errorf("the rejected gaps from stream sequence %d were refused: %w", rejected[0].seq, err)
 	}
 	p.count(w)
 	return nil
+}
+
+// reject replaces the item's rows by a rejected gap, once; the caller
+// writes it. A gap the database refuses too fails the batch: the message
+// is then neither acknowledged nor dropped and stays at the head of the
+// queue (audit S8).
+func (p *Pipeline) reject(it *item, cause error) {
+	if it.rejected {
+		return
+	}
+	it.rejected = true
+	p.Counters.Add(CounterRowsRejected, uint64(it.n))
+	p.logCounted(slog.LevelError, "the database refused a message's rows; recorded in writer_gaps",
+		slog.String("subject", it.msg.Subject()), slog.Uint64("stream_seq", it.seq), slog.String("error", cause.Error()))
+	count, unit := int64(it.n), store.UnitRows
+	if count == 0 {
+		count, unit = 1, store.UnitMessages
+	}
+	it.dec.Rows = nil
+	it.gaps = append(it.gaps, store.Gap{
+		DedupeKey: fmt.Sprintf("%s:%s:%d", store.CauseRejected, p.Stream.Name, it.seq), Stream: p.Stream.Name, Subject: it.msg.Subject(),
+		FromSeq: it.seq, ToSeq: it.seq, Cause: store.CauseRejected, Count: count, CountUnit: unit, Detail: truncate(cause.Error()),
+	})
 }
 
 func (p *Pipeline) count(w store.Written) {

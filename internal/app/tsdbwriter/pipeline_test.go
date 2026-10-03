@@ -778,3 +778,66 @@ func TestPipelineRejectedUnrecordedIsNotAcknowledged(t *testing.T) {
 		t.Fatalf("gaps %+v rows %d", gaps, r.st.count("telemetry"))
 	}
 }
+
+// A stream whose every message is malformed (a producer renamed a body
+// field) writes a few coalesced writer_gaps rows and a few log lines,
+// not one of each per message; the count is exact (audit S5). A
+// malformed message between good ones is still its own row
+// (TestPipelineMalformed).
+func TestPipelineMalformedFloodIsBounded(t *testing.T) {
+	r := newRig(t, testConfig(), nil)
+	const n = 5000
+	for range n {
+		r.src.publish([]byte(`{"schema":"track/telemetry/v1"}`))
+	}
+	eventually(t, "acked", func() bool { f, _ := r.src.AckFloor(context.Background()); return f == n })
+	gaps := r.st.gapList()
+	var counted int64
+	for _, g := range gaps {
+		if g.Cause != store.CauseMalformed || g.CountUnit != store.UnitMessages || g.Count != int64(g.ToSeq-g.FromSeq+1) {
+			t.Fatalf("gap %+v", g)
+		}
+		counted += g.Count
+	}
+	if counted != n || len(gaps) > 50 {
+		t.Fatalf("%d gap rows counting %d messages", len(gaps), counted)
+	}
+	if lines := strings.Count(r.logText(), "message not readable"); lines == 0 || lines > 10 {
+		t.Fatalf("%d log lines for %d malformed messages", lines, n)
+	}
+	if r.counter(CounterMessagesMalformed) != n {
+		t.Fatal(r.p.Counters.Snapshot())
+	}
+}
+
+// coalesce merges runs of one cause and unit over consecutive sequences
+// only: another cause, a sequence step, another unit or an unsequenced
+// message starts a new row; a lone gap keeps its key and detail.
+func TestCoalesceRuns(t *testing.T) {
+	p := &Pipeline{Stream: Stream{Name: "TRK", Subject: bus.SubjectTrkAll}}
+	one := func(cause string, seq uint64, unit string, subject string) store.Gap {
+		return store.Gap{DedupeKey: fmt.Sprintf("%s:TRK:%d", cause, seq), Stream: "TRK", Subject: subject, FromSeq: seq, ToSeq: seq,
+			Cause: cause, Count: 1, CountUnit: unit, Detail: "bad"}
+	}
+	in := []store.Gap{
+		one(store.CauseMalformed, 5, store.UnitMessages, "trk.v1.a"), one(store.CauseMalformed, 6, store.UnitMessages, "trk.v1.b"),
+		{DedupeKey: "stream_removed:TRK:7-9", Stream: "TRK", FromSeq: 7, ToSeq: 9, Cause: store.CauseStreamRemoved, Count: 3, CountUnit: store.UnitRows},
+		one(store.CauseMalformed, 10, store.UnitMessages, "trk.v1.a"),
+		one(store.CauseRejected, 11, store.UnitRows, "trk.v1.a"), one(store.CauseRejected, 12, store.UnitRows, "trk.v1.a"),
+		one(store.CauseRejected, 13, store.UnitMessages, "trk.v1.a"), one(store.CauseRejected, 15, store.UnitRows, "trk.v1.a"),
+		{DedupeKey: "malformed:TRK:unsequenced:1", Stream: "TRK", Cause: store.CauseMalformed, Count: 1, CountUnit: store.UnitMessages},
+	}
+	got := p.coalesce(in)
+	var keys []string
+	for _, g := range got {
+		keys = append(keys, fmt.Sprintf("%s %d", g.DedupeKey, g.Count))
+	}
+	want := []string{"malformed:TRK:5-6 2", "stream_removed:TRK:7-9 3", "malformed:TRK:10 1", "rejected:TRK:11-12 2",
+		"rejected:TRK:13 1", "rejected:TRK:15 1", "malformed:TRK:unsequenced:1 1"}
+	if !slices.Equal(keys, want) {
+		t.Fatalf("got %v", keys)
+	}
+	if got[0].Subject != bus.SubjectTrkAll || !strings.Contains(got[0].Detail, "1 more") || got[2].Detail != "bad" {
+		t.Fatalf("%+v", got[:3])
+	}
+}
