@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"slices"
 	"strconv"
@@ -48,6 +49,7 @@ const (
 	CounterConnections      = "traffic_ws_connections"
 	CounterFramesSent       = "traffic_ws_frames_sent"
 	CounterFramesDropped    = "traffic_ws_frames_dropped"
+	CounterClearsResent     = "traffic_ws_clears_resent"
 	CounterTracksHeldBack   = "traffic_ws_tracks_held_back"
 	CounterSubscribes       = "traffic_ws_subscribes"
 	CounterSubscribeRefused = "traffic_ws_subscribe_refused"
@@ -200,10 +202,13 @@ type connState struct {
 	sub     *Sub
 	dropped atomic.Uint64
 	out     chan []byte
-	// sent is the state and severity of each alert last sent, and
-	// repeatAt when an unacknowledged critical one is due again.
+	// sent is the state and severity of each alert last queued, and
+	// repeatAt when an unacknowledged critical one is due again. unsent
+	// are the clears the queue could not take, sent again each tick (no
+	// republish follows a clear).
 	sent     map[string]string
 	repeatAt map[string]time.Time
+	unsent   map[string]traffic.Entry
 }
 
 func (c *connState) subscription() *Sub {
@@ -213,18 +218,21 @@ func (c *connState) subscription() *Sub {
 	return &cp
 }
 
-// enqueue queues one frame; a full queue drops it, counted.
-func (s *Server) enqueue(c *connState, v any) {
+// enqueue queues one frame and reports whether it was queued; a full
+// queue drops it, counted.
+func (s *Server) enqueue(c *connState, v any) bool {
 	data, err := json.Marshal(v)
 	if err != nil {
 		s.logger().Error("frame not encoded", obs.Err(err))
-		return
+		return false
 	}
 	select {
 	case c.out <- data:
+		return true
 	default:
 		c.dropped.Add(1)
 		s.count(CounterFramesDropped)
+		return false
 	}
 }
 
@@ -341,6 +349,7 @@ func (s *Server) serve(rctx context.Context, conn *websocket.Conn, sub *Sub, exp
 			s.enqueue(c, s.status(c))
 		case <-product.C:
 			tick++
+			s.resend(ctx, c)
 			if alertsOnly {
 				s.repeat(ctx, c)
 				continue
@@ -690,19 +699,45 @@ func (s *Server) forward(ctx context.Context, c *connState, e *traffic.Entry, al
 	if c.sent[e.AlertID] == key {
 		return
 	}
-	if e.State == "cleared" {
+	// Marked only once queued: a dropped raise or change goes with the
+	// next republish, a dropped clear with the next tick (resend).
+	queued := s.send(ctx, c, e, alertsOnly)
+	switch {
+	case e.State == "cleared" && queued:
 		delete(c.sent, e.AlertID)
-	} else {
+		delete(c.unsent, e.AlertID)
+	case e.State == "cleared":
+		if c.unsent == nil {
+			c.unsent = map[string]traffic.Entry{}
+		}
+		c.unsent[e.AlertID] = *e
+	case queued:
 		c.sent[e.AlertID] = key
 	}
-	s.send(ctx, c, e, alertsOnly)
 }
 
-// send writes one alert/v1 frame and records the first send to an
+// resend queues again the clears the connection's queue could not take.
+func (s *Server) resend(ctx context.Context, c *connState) {
+	for _, id := range slices.Sorted(maps.Keys(c.unsent)) {
+		e := c.unsent[id]
+		if !s.matches(c, &e) {
+			// No longer the subscription's (a staff bbox moved).
+			delete(c.unsent, id)
+			continue
+		}
+		s.count(CounterClearsResent)
+		s.forward(ctx, c, &e, true)
+	}
+}
+
+// send queues one alert/v1 frame and records the first send to an
 // operator; an unacknowledged critical alert is due again after the
-// repeat period.
-func (s *Server) send(ctx context.Context, c *connState, e *traffic.Entry, alertsOnly bool) {
-	s.enqueue(c, e.Message)
+// repeat period. It reports whether the frame was queued (nothing is
+// recorded of one that was not).
+func (s *Server) send(ctx context.Context, c *connState, e *traffic.Entry, alertsOnly bool) bool {
+	if !s.enqueue(c, e.Message) {
+		return false
+	}
 	s.count(CounterAlertsSent)
 	sub := c.subscription()
 	if !sub.Staff {
@@ -713,6 +748,7 @@ func (s *Server) send(ctx context.Context, c *connState, e *traffic.Entry, alert
 	} else {
 		delete(c.repeatAt, e.AlertID)
 	}
+	return true
 }
 
 func (s *Server) repeatEvery() time.Duration {
@@ -728,8 +764,10 @@ func (s *Server) sendActive(ctx context.Context, c *connState) {
 	a, flight, _ := s.Hub.Area(sub)
 	es := s.Hub.AlertsFor(sub, a, flight, "")
 	for i := range es {
-		c.sent[es[i].AlertID] = changeKey(&es[i])
-		s.send(ctx, c, &es[i], true)
+		// One the queue cannot take is sent with its next republish.
+		if s.send(ctx, c, &es[i], true) {
+			c.sent[es[i].AlertID] = changeKey(&es[i])
+		}
 	}
 }
 

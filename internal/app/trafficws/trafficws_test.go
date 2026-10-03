@@ -700,3 +700,70 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// entryOf is the book's entry of the rig's alert in state at updated.
+func (r *rig) entryOf(state string, updated time.Time) traffic.Entry {
+	r.t.Helper()
+	r.alert(state, false, updated)
+	if state == traffic.AlertCleared {
+		// The book drops a cleared alert: the clear is the subscriber's.
+		return traffic.Entry{AlertID: alertA, Kind: traffic.KindProximity, Severity: core.SeverityCritical, State: state,
+			FlightID: flightA, UpdatedAt: updated, Message: json.RawMessage(`{"cleared":true}`)}
+	}
+	es := r.hub.Book.Active(nil)
+	if len(es) != 1 {
+		r.t.Fatalf("book %+v", es)
+	}
+	return es[0]
+}
+
+// A frame the connection's queue could not take is not marked sent: a
+// dropped raise goes with the next republish, a dropped clear on the
+// next tick (once queued, neither is sent twice).
+func TestDroppedAlertFramesAreSentAgain(t *testing.T) {
+	r := newRig(t)
+	now := time.Now()
+	r.track(flightA, core.TrustAuthenticated, telemetry.SourceOperatorWS, clientA, origin, now, true)
+	c := &connState{sub: &Sub{ClientID: clientA, IntentID: intentA}, out: make(chan []byte, 1), sent: map[string]string{},
+		repeatAt: map[string]time.Time{}}
+	full := func() { c.out <- []byte("x") }
+	drain := func() int {
+		n := 0
+		for len(c.out) > 0 {
+			<-c.out
+			n++
+		}
+		return n
+	}
+	ctx := context.Background()
+	raised := r.entryOf(traffic.AlertRaised, now)
+	full()
+	r.srv.forward(ctx, c, &raised, true)
+	if drain() != 1 || c.dropped.Load() != 1 {
+		t.Fatal("the raise was not dropped")
+	}
+	up := r.entryOf(traffic.AlertUpdated, now.Add(time.Second))
+	r.srv.forward(ctx, c, &up, true)
+	if drain() != 1 {
+		t.Fatal("the dropped raise was not sent with the next republish")
+	}
+	up2 := r.entryOf(traffic.AlertUpdated, now.Add(2*time.Second))
+	r.srv.forward(ctx, c, &up2, true)
+	if drain() != 0 {
+		t.Fatal("an unchanged republish was sent again once the raise was queued")
+	}
+	cl := r.entryOf(traffic.AlertCleared, now.Add(3*time.Second))
+	full()
+	r.srv.forward(ctx, c, &cl, true)
+	if drain() != 1 {
+		t.Fatal("the clear was not dropped")
+	}
+	r.srv.resend(ctx, c)
+	if drain() != 1 {
+		t.Fatal("the dropped clear was not sent again")
+	}
+	r.srv.resend(ctx, c)
+	if drain() != 0 || len(c.sent) != 0 {
+		t.Fatalf("the clear was sent twice, or left marked: %v", c.sent)
+	}
+}
