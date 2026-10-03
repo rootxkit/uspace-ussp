@@ -24,8 +24,11 @@ defaults:
 jobs:
   # Path filters for pull requests (docs/PLAN.md §14): a docs-only change
   # runs no Go job, a web/-only change runs only the web job. On main
-  # and on tags every job runs. A job skipped by its filter reports as
-  # skipped, which a required check accepts; gitleaks is never filtered.
+  # and on tags every job runs. Every file a Go test or check reads
+  # (testdata, schemas, fixtures, embedded migrations) is in the go
+  # filter, not only the files it compiles. A job skipped by its filter
+  # reports as skipped, which a required check accepts; gitleaks is
+  # never filtered.
   changes:
     name: changed paths
     runs-on: ubuntu-latest
@@ -57,6 +60,13 @@ jobs:
               - 'migrations/**'
               - 'sqlc.yaml'
               - 'internal/store/queries/**'
+              # Read by the tests and the checks, not compiled: a change
+              # to a golden file, a vector, a fixture or a schema alone
+              # must still run the tests that read it (and check-schemas).
+              - 'testdata/**'
+              - '**/testdata/**'
+              - 'schemas/**'
+              - 'test/**'
             web:
               - 'web/**'
               - 'api/**'
