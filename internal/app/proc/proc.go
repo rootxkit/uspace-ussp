@@ -151,6 +151,9 @@ func Run(ctx context.Context, cfg config.Config, spec Spec, opts Options) error 
 	workCtx, stopWork := context.WithCancel(context.WithoutCancel(ctx))
 	defer func() { stopWork(); rt.work.Wait() }()
 	if rt.topology != nil {
+		// captured_trk/man/peer beside every process's published_trk
+		// (audit B1, N6): a core publish cannot see a capture refused.
+		Publish(rt, "bus_capture", rt.topology.Counters())
 		rt.Go(workCtx, func(ctx context.Context) { rt.topology.Run(ctx, topologyCheckTimeout) })
 	}
 	mux := http.NewServeMux()

@@ -597,3 +597,47 @@ func TestIntegrationKVStoreRevisions(t *testing.T) {
 		t.Fatalf("bound: %+v %v", all, err)
 	}
 }
+
+// The captures of the hot path (audit B1, N6): a core publish of trk
+// cannot see the stream refuse it, so the maintainer counts what TRK,
+// MAN and PEER captured (their last sequence's growth between checks)
+// to stand beside published_trk. Three trk messages published are three
+// captured; nothing published moves nothing.
+func TestIntegrationMaintainerCountsCaptures(t *testing.T) {
+	c := connect(t)
+	m := c.Maintain(DefaultTopology(), nil)
+	if _, err := m.Check(ctx(t)); err != nil {
+		t.Fatal(err)
+	}
+	if n := m.Counters().Get(CounterCapturedPrefix + KindTrk); n != 0 {
+		t.Fatalf("captured %d before any publish", n)
+	}
+	subject, err := Trk(tbs, unique("trk"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if err := c.Publish(subject, []byte(`{}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := c.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for m.Counters().Get(CounterCapturedPrefix+KindTrk) < 3 && time.Now().Before(deadline) {
+		if _, err := m.Check(ctx(t)); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if n := m.Counters().Get(CounterCapturedPrefix + KindTrk); n != 3 {
+		t.Fatalf("captured_trk %d, want 3", n)
+	}
+	if _, err := m.Check(ctx(t)); err != nil {
+		t.Fatal(err)
+	}
+	if n := m.Counters().Get(CounterCapturedPrefix + KindTrk); n != 3 {
+		t.Fatalf("captured_trk %d after a check with nothing published", n)
+	}
+}

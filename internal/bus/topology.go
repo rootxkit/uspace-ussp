@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/f3411"
 
 	"github.com/rootxkit/uspace-ussp/internal/obs"
@@ -431,6 +432,58 @@ type Maintainer struct {
 	sem   chan struct{} // one check at a time; never held by readers
 	mu    sync.Mutex
 	state TopologyState
+	// counters holds captured_<kind>; lastSeq is each capture's last
+	// sequence at the previous check (absent before the first).
+	counters *core.Counters
+	lastSeq  map[string]uint64
+}
+
+// CounterCapturedPrefix names the maintainer's counters
+// captured_trk, captured_man and captured_peer: how far the last
+// sequence of TRK, MAN and PEER grew between its checks. The hot path
+// publishes those subjects on core NATS, which cannot see the stream
+// refuse a message (a full store, a missing stream), so published_trk
+// alone never shows a lost capture; the two side by side do (audit B1,
+// N6).
+const CounterCapturedPrefix = "captured_"
+
+// captures are the streams whose growth the maintainer counts, by kind.
+var captures = []struct{ stream, kind string }{
+	{StreamTRK, KindTrk}, {StreamMAN, KindMan}, {StreamPEER, KindPeer},
+}
+
+// Counters is captured_trk, captured_man and captured_peer.
+func (m *Maintainer) Counters() *core.Counters {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.counters == nil {
+		m.counters = &core.Counters{}
+	}
+	return m.counters
+}
+
+// countCaptures adds each capture's growth since the previous check. A
+// stream that went backwards (purged or re-created) restarts its
+// baseline; one that cannot be read is skipped until the next check.
+func (m *Maintainer) countCaptures(ctx context.Context) {
+	c := m.Counters()
+	for _, cp := range captures {
+		s, err := m.JS.Stream(ctx, cp.stream)
+		if err != nil {
+			continue
+		}
+		seq := s.CachedInfo().State.LastSeq
+		m.mu.Lock()
+		if m.lastSeq == nil {
+			m.lastSeq = map[string]uint64{}
+		}
+		prev, seen := m.lastSeq[cp.stream]
+		m.lastSeq[cp.stream] = seq
+		m.mu.Unlock()
+		if seen && seq > prev {
+			c.Add(CounterCapturedPrefix+cp.kind, seq-prev)
+		}
+	}
 }
 
 // acquire takes the one-check-at-a-time slot, or fails when ctx ends
@@ -482,6 +535,7 @@ func (m *Maintainer) check(ctx context.Context) (TopologyState, error) {
 	if err != nil {
 		return m.State(), err
 	}
+	m.countCaptures(ctx)
 	st := TopologyState{Checked: true, At: time.Now(), Drift: drift, Created: created}
 	m.mu.Lock()
 	prev := m.state
