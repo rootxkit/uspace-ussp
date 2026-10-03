@@ -12,6 +12,7 @@ import (
 
 	"github.com/rootxkit/uspace-core/core"
 
+	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 )
 
@@ -241,6 +242,18 @@ func (l *ExchangeLog) Middleware(next http.Handler) http.Handler {
 		e.ResponseTime, e.ResponseCode, e.ResponseBody = time.Now().UTC(), rec.status, clipBody(rec.buf.Bytes())
 		l.Record(e)
 	})
+}
+
+// Behind is guard with the log inside it: a request the guard refuses
+// (no token, a bad one, a scope missing) is answered by the guard and
+// never recorded, so no caller without a valid token can fill the
+// exchange log's queue or its table; every request it admits is
+// recorded with its answer (Middleware).
+func (l *ExchangeLog) Behind(guard httpx.Guard) httpx.Guard {
+	return func(a httpx.Access) func(http.Handler) http.Handler {
+		inner := guard(a)
+		return func(next http.Handler) http.Handler { return inner(l.Middleware(next)) }
+	}
 }
 
 // teeBody keeps the first max bytes read from rc.

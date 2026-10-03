@@ -98,14 +98,14 @@ func TestLabSM4(t *testing.T) {
 	base := "http://" + self + listen
 	server := &dss.Server{Intents: g.svc, Store: st, Manager: clientID, USSBaseURL: base, Counters: counters, Logger: quiet()}
 	mux := http.NewServeMux()
-	if err := stdapi.MountF3548(mux, server, stdapi.Options{Guard: guard.Require, Validate: auth.ValidateAccess}); err != nil {
+	if err := stdapi.MountF3548(mux, server, stdapi.Options{Guard: exlog.Behind(guard.Require), Validate: auth.ValidateAccess}); err != nil {
 		t.Fatal(err)
 	}
 	ln, err := net.Listen("tcp", listen)
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := &http.Server{Handler: exlog.Middleware(mux), ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	wg.Go(func() { _ = srv.Serve(ln) })
 	t.Cleanup(func() { _ = srv.Close() })
 	writer := &dss.Writer{Client: client, Store: st, Intents: g.svc, USSBaseURL: base, Manager: clientID, Availability: avail,
