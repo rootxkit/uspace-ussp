@@ -444,3 +444,25 @@ func TestMountRefusesAnUnknownScope(t *testing.T) {
 		t.Errorf("F3548 with the catalogue: %v", err)
 	}
 }
+
+// A mount without a guard is refused naming the field, not a panic at
+// the first registration (audit N1); with one it mounts (E-01, above).
+func TestMountRefusesANilGuard(t *testing.T) {
+	for name, mount := range map[string]func() error{
+		"F3411": func() error { return stdapi.MountF3411(http.NewServeMux(), stdapi.NotImplementedF3411{}, stdapi.Options{}) },
+		"F3548": func() error { return stdapi.MountF3548(http.NewServeMux(), stdapi.NotImplementedF3548{}, stdapi.Options{}) },
+	} {
+		var err error
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("%s panicked: %v", name, r)
+				}
+			}()
+			err = mount()
+		}()
+		if err == nil || !strings.Contains(err.Error(), "guard") {
+			t.Errorf("%s without a guard: %v", name, err)
+		}
+	}
+}

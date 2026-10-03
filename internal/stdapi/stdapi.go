@@ -105,6 +105,9 @@ type Options struct {
 // F3411Access. The error lists every route without a valid entry and
 // every entry without a route; the process refuses to start on it.
 func MountF3411(mux *http.ServeMux, s stdf3411.StrictServerInterface, o Options) error {
+	if o.Guard == nil {
+		return core.Fieldf("guard", "nil: every route needs one")
+	}
 	g := httpx.NewGuardedMux(mux, F3411Access(), o.Guard, o.Validate)
 	h := stdf3411.NewStrictHandlerWithOptions(s, nil, stdf3411.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: o.requestError, ResponseErrorHandlerFunc: o.responseError,
@@ -116,6 +119,9 @@ func MountF3411(mux *http.ServeMux, s stdf3411.StrictServerInterface, o Options)
 // MountF3548 registers the F3548 USS server s on mux behind
 // F3548Access, like MountF3411.
 func MountF3548(mux *http.ServeMux, s stdf3548.StrictServerInterface, o Options) error {
+	if o.Guard == nil {
+		return core.Fieldf("guard", "nil: every route needs one")
+	}
 	g := httpx.NewGuardedMux(mux, F3548Access(), o.Guard, o.Validate)
 	h := stdf3548.NewStrictHandlerWithOptions(s, nil, stdf3548.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: o.requestError, ResponseErrorHandlerFunc: o.responseError,
