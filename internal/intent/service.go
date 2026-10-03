@@ -470,8 +470,12 @@ func (s *Service) withCurrentCIS(ctx context.Context, n *Normalised, pol policy.
 // recheckDisplaced runs the standing re-check on the authorisations a
 // committed intent with precedence displaced (WP-7 step 5; Art.
 // 10(10)): each is withdrawn or marked for its operator, with the
-// cause "priority <id>". A re-check that fails is logged; the flag set
-// in the transaction keeps the authorisation from being activated.
+// cause "priority <id>". This is the prompt path, not the durable one:
+// the flag written in the displacing intent's transaction keeps the
+// authorisation from being activated, and a re-check that fails here or
+// never runs (a crash after the commit) is run by the next re-check
+// that finds the flag without a notice, the sweep's at the latest
+// (Recheck, displacedBy).
 func (s *Service) recheckDisplaced(ctx context.Context, by string, ids []string) {
 	ctx = context.WithoutCancel(ctx)
 	for _, other := range ids {

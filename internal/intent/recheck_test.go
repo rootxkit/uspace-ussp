@@ -371,3 +371,44 @@ func TestSubmitRefusedWhileTheCISKeepsChanging(t *testing.T) {
 		t.Fatalf("%v, %d written, counter %d", err, len(st.byID), g.counters.Get("intent_cis_changed_during_decision"))
 	}
 }
+
+// A displacement is durable: the flag written in the displacing
+// intent's transaction is enough. When the re-check after the commit
+// never ran (a crash), the sweep finds the flag without a notice and
+// withdraws the authorisation with the priority cause; an unflagged
+// intent the same sweep reads is untouched (E-01 pair).
+func TestSweepWithdrawsADisplacementWhoseRecheckNeverRan(t *testing.T) {
+	g := newRig()
+	s, st, _ := newService(g)
+	d, _, err := submit(t, s, baseRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, _, err := submit(t, s, with(baseRequest(), "client_ref", "other", "volumes", []any{wireVolumeJSON(squareWire(41.75, 44.80, 0.01), 500, 550, t0, t1)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	by := "00000000-0000-4000-8000-0000000000ee"
+	if err := st.InTx(t.Context(), func(ctx context.Context, tx Tx) error { return tx.FlagUpdate(ctx, []string{d.IntentID}, by, testNow) }); err != nil {
+		t.Fatal(err)
+	}
+	rs, err := s.RecheckAll(t.Context(), nil, nil, nil, Cause{Kind: CauseSweep})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]RecheckResult{}
+	for _, r := range rs {
+		got[r.IntentID] = r
+	}
+	r := got[d.IntentID]
+	if r.Outcome != RecheckWithdrawn || r.Notice == nil || r.Notice.Cause != CausePriority || r.Notice.ByIntentID != by ||
+		st.byID[d.IntentID].LocalState != StateWithdrawn {
+		t.Fatalf("displaced: %+v", r)
+	}
+	if got[other.IntentID].Outcome != RecheckUntouched {
+		t.Fatalf("unflagged: %+v", got[other.IntentID])
+	}
+	if again, err := s.Recheck(t.Context(), d.IntentID, Cause{Kind: CauseSweep}); err != nil || again.Outcome != RecheckNotActive {
+		t.Fatalf("again: %+v %v", again, err)
+	}
+}

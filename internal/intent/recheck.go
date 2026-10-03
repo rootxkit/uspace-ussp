@@ -140,6 +140,22 @@ func NoticeOf(r *Record) *Notice {
 	return &n
 }
 
+// displacedBy is the intent that took precedence over r (WP-7 step 5)
+// when r carries the flag but no re-check notice yet: the displacement
+// was recorded and not told. "" otherwise.
+func displacedBy(r *Record) string {
+	if !r.Flagged() || NoticeOf(r) != nil {
+		return ""
+	}
+	var f struct {
+		ByIntentID string `json:"by_intent_id"`
+	}
+	if json.Unmarshal(r.UpdateRequired, &f) != nil || !validUUID(f.ByIntentID) {
+		return ""
+	}
+	return f.ByIntentID
+}
+
 // RecheckResult is what one re-check did.
 type RecheckResult struct {
 	IntentID string
@@ -299,6 +315,14 @@ func (s *Service) Recheck(ctx context.Context, intentID string, cause Cause) (Re
 	if cur == nil || !slices.Contains(ActiveStates, cur.LocalState) {
 		out.Outcome = RecheckNotActive
 		return out, nil
+	}
+	if by := displacedBy(cur); by != "" && cause.Kind != CausePriority {
+		// A displacement whose re-check after the commit never ran (a
+		// crash, a failure): the flag written in the displacing intent's
+		// transaction is the durable record, and any re-check that finds
+		// it, the sweep's at the latest, runs the priority cause.
+		s.count("recheck_displacement_recovered")
+		cause = Cause{Kind: CausePriority, Ref: by, CISVersion: cause.CISVersion}
 	}
 	pol := s.policy()
 	now, err := s.Store.Now(ctx)
