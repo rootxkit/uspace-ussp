@@ -449,8 +449,12 @@ func TestMountRefusesAnUnknownScope(t *testing.T) {
 // the first registration (audit N1); with one it mounts (E-01, above).
 func TestMountRefusesANilGuard(t *testing.T) {
 	for name, mount := range map[string]func() error{
-		"F3411": func() error { return stdapi.MountF3411(http.NewServeMux(), stdapi.NotImplementedF3411{}, stdapi.Options{}) },
-		"F3548": func() error { return stdapi.MountF3548(http.NewServeMux(), stdapi.NotImplementedF3548{}, stdapi.Options{}) },
+		"F3411": func() error {
+			return stdapi.MountF3411(http.NewServeMux(), stdapi.NotImplementedF3411{}, stdapi.Options{})
+		},
+		"F3548": func() error {
+			return stdapi.MountF3548(http.NewServeMux(), stdapi.NotImplementedF3548{}, stdapi.Options{})
+		},
 	} {
 		var err error
 		func() {
