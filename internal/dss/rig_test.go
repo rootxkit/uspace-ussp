@@ -112,7 +112,7 @@ func newRig(t *testing.T) *rig {
 	g.exlog = NewExchangeLog(g.st, g.counters, nil)
 	g.c = &Client{DSSBaseURL: g.dss.URL(), Tokens: &tokens{sub: ourManager}, Backoff: time.Millisecond,
 		HTTP: &http.Client{Timeout: 5 * time.Second, Transport: &Transport{Log: g.exlog}}}
-	g.srv = &Server{Intents: g.in, Store: g.st, Manager: ourManager, Counters: g.counters}
+	g.srv = &Server{Intents: g.in, Store: g.st, Manager: ourManager, Client: g.c, Counters: g.counters}
 	mux := http.NewServeMux()
 	if err := stdapi.MountF3548(mux, g.srv, stdapi.Options{Guard: testGuard}); err != nil {
 		t.Fatal(err)

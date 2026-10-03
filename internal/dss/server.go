@@ -95,12 +95,16 @@ type Server struct {
 	Constraints ConstraintRechecker
 	Publisher   PeerPublisher
 	// Manager and USSBaseURL are ours: a notification about our own
-	// intent is not stored as a peer's.
+	// intent is not stored as a peer's. Our manager is the one the DSS
+	// records for us (Client.Self); Manager, the configured client id,
+	// stands in only before the first DSS call.
 	Manager    string
 	USSBaseURL string
-	Counters   *core.Counters
-	Logger     *slog.Logger
-	Now        func() time.Time
+	// Client is the DSS client (nil in a server without one).
+	Client   *Client
+	Counters *core.Counters
+	Logger   *slog.Logger
+	Now      func() time.Time
 }
 
 var _ stdf3548.StrictServerInterface = (*Server)(nil)
@@ -116,6 +120,16 @@ func (s *Server) logger() *slog.Logger {
 		return obs.Discard()
 	}
 	return s.Logger
+}
+
+// self is our manager at the DSS (Client.Self, else Manager).
+func (s *Server) self() string {
+	if s.Client != nil {
+		if m := s.Client.Self(); m != "" {
+			return m
+		}
+	}
+	return s.Manager
 }
 
 func (s *Server) now() time.Time {
@@ -270,7 +284,7 @@ func (s *Server) NotifyOperationalIntentDetailsChanged(ctx context.Context, req 
 	case oi.Reference.Id != b.OperationalIntentId:
 		s.count(CounterPeerNotificationBad)
 		return refuseNotification("operational_intent.reference.id is not operational_intent_id"), nil
-	case oi.Reference.Manager == s.Manager || sameBase(oi.Reference.UssBaseUrl, s.USSBaseURL):
+	case oi.Reference.Manager == s.self() || sameBase(oi.Reference.UssBaseUrl, s.USSBaseURL):
 		s.count(CounterPeerOwnIgnored)
 		return stdf3548.NotifyOperationalIntentDetailsChanged204Response{}, nil
 	case oi.Reference.Manager != who:

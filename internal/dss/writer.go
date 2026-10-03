@@ -100,9 +100,10 @@ type Writer struct {
 	Client  *Client
 	Store   Store
 	Intents Intents
-	// USSBaseURL is ours (uss_base_url of every reference); Manager is
-	// our client id at the DSS (the token's sub), by which our own
-	// references are told from the peers'.
+	// USSBaseURL is ours (uss_base_url of every reference). Our own
+	// references are told from the peers' by the manager the DSS records
+	// for us (Client.Self); Manager, the configured client id, stands in
+	// only before the first DSS call.
 	USSBaseURL string
 	Manager    string
 	ForAll     bool
@@ -142,6 +143,16 @@ func (w *Writer) logger() *slog.Logger {
 		return obs.Discard()
 	}
 	return w.Logger
+}
+
+// self is our manager at the DSS (Client.Self, else Manager).
+func (w *Writer) self() string {
+	if w.Client != nil {
+		if m := w.Client.Self(); m != "" {
+			return m
+		}
+	}
+	return w.Manager
 }
 
 func (w *Writer) now() time.Time {
@@ -516,7 +527,7 @@ func (w *Writer) gather(ctx context.Context, self string, refs []f3548.Operation
 		if ref.Id == self {
 			continue
 		}
-		if ref.Manager == w.Manager && ref.Ovn != nil && *ref.Ovn != "" && *ref.Ovn != noOVN {
+		if ref.Manager == w.self() && ref.Ovn != nil && *ref.Ovn != "" && *ref.Ovn != noOVN {
 			k.add(*ref.Ovn)
 			continue
 		}
@@ -836,7 +847,7 @@ func (w *Writer) recover(ctx context.Context, r *intent.Record, ext []f3548.Volu
 		return nil
 	}
 	ref, err := w.Client.GetOperationalIntent(ctx, r.ID)
-	if err != nil || ref.Ovn == nil || *ref.Ovn == "" || *ref.Ovn == noOVN || ref.Manager != w.Manager ||
+	if err != nil || ref.Ovn == nil || *ref.Ovn == "" || *ref.Ovn == noOVN || ref.Manager != w.self() ||
 		strings.TrimRight(ref.UssBaseUrl, "/") != strings.TrimRight(w.USSBaseURL, "/") {
 		// Nothing of ours to adopt: the caller holds the intent for the
 		// write's own failure.

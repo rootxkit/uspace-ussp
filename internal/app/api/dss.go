@@ -35,7 +35,9 @@ type strategic struct {
 	client   *dss.Client
 	avail    *dss.Availability
 	gate     *dss.Gate
-	manager  string
+	// manager is the configured client id; the manager the DSS records
+	// for us is the sub of our tokens (dss.Client.Self).
+	manager string
 	// why is set when no DSS write can be made (no base URL, no token
 	// client): the decisions wait pending_dss and /readyz says so.
 	why string
@@ -125,7 +127,7 @@ func (s *strategic) start(ctx context.Context, rt *proc.Runtime, current func() 
 	rt.Go(ctx, purger.Run)
 	server := &dss.Server{Intents: intents, Store: s.store, Telemetry: dsspg.Telemetry{S: rt.Store}, Constraints: re,
 		Publisher: peerBus{pub: bus.NewPublisher(rt.Bus, s.counters)}, Manager: s.manager, USSBaseURL: cfg.USSBaseURL,
-		Counters: s.counters, Logger: logger}
+		Client: s.client, Counters: s.counters, Logger: logger}
 	probes := map[string]obs.Probe{}
 	if isaProbe != nil {
 		probes["f3411"] = isaProbe
@@ -148,7 +150,11 @@ func (s *strategic) start(ctx context.Context, rt *proc.Runtime, current func() 
 	rt.Go(ctx, w.Run)
 	rt.Go(ctx, s.avail.Run)
 	rt.Go(ctx, subs.Run)
-	logger.LogAttrs(ctx, slog.LevelInfo, "F3548 strategic coordination through the DSS", slog.String("manager", s.manager),
+	manager, merr := s.client.Manager(ctx)
+	if merr != nil {
+		manager = s.manager + " (configured; no DSS token yet: " + merr.Error() + ")"
+	}
+	logger.LogAttrs(ctx, slog.LevelInfo, "F3548 strategic coordination through the DSS", slog.String("manager", manager),
 		slog.Bool("for_all", w.ForAll))
 	return server
 }

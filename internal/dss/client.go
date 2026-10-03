@@ -2,6 +2,7 @@ package dss
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -117,6 +118,87 @@ type Client struct {
 
 	mu    sync.Mutex
 	reach Reach
+	// tokenSub is the sub of the last DSS token, dssManager the manager
+	// the DSS named in its answer to one of our writes (Self).
+	tokenSub   string
+	dssManager string
+}
+
+// Self is this USSP's manager at the DSS as it records it: the manager
+// the DSS's answer to our last write named, else the sub of our last DSS
+// token (the DSS records the token's sub), "" before the first DSS call.
+// It is never derived from the configuration: the token service decides
+// the sub, and a different case or format of the configured client id is
+// another manager to the DSS.
+func (c *Client) Self() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.dssManager != "" {
+		return c.dssManager
+	}
+	return c.tokenSub
+}
+
+// Manager is Self, with a DSS token asked for first when no DSS call
+// has been made yet.
+func (c *Client) Manager(ctx context.Context) (string, error) {
+	if m := c.Self(); m != "" {
+		return m, nil
+	}
+	if c.Tokens == nil {
+		return "", errors.New("no outgoing token client")
+	}
+	tok, err := c.Tokens.Token(ctx, c.DSSBaseURL, string(f3548.ScopeStrategicCoordination))
+	if err != nil {
+		return "", fmt.Errorf("token for %s: %w", c.DSSBaseURL, err)
+	}
+	c.learnToken(tok)
+	if m := c.Self(); m != "" {
+		return m, nil
+	}
+	return "", errors.New("the DSS token names no sub")
+}
+
+// learnToken keeps the sub of a token we were handed for the DSS. The
+// token is not verified here: it is ours, from the token service, and
+// only its name is read.
+func (c *Client) learnToken(tok string) {
+	sub := tokenSub(tok)
+	if sub == "" {
+		return
+	}
+	c.mu.Lock()
+	c.tokenSub = sub
+	c.mu.Unlock()
+}
+
+// learnManager keeps the manager the DSS named for one of our writes.
+func (c *Client) learnManager(m string) {
+	if m == "" {
+		return
+	}
+	c.mu.Lock()
+	c.dssManager = m
+	c.mu.Unlock()
+}
+
+// tokenSub is the sub of a compact JWT's payload, "" when it has none.
+func tokenSub(tok string) string {
+	parts := strings.Split(tok, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	b, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var claims struct {
+		Sub string `json:"sub"`
+	}
+	if json.Unmarshal(b, &claims) != nil {
+		return ""
+	}
+	return claims.Sub
 }
 
 func (c *Client) now() time.Time {
@@ -203,6 +285,9 @@ func (c *Client) bearer(target string, scope f3548.Scope) stdf3548.RequestEditor
 		tok, err := c.Tokens.Token(ctx, target, string(scope))
 		if err != nil {
 			return fmt.Errorf("token for %s: %w", target, err)
+		}
+		if target == c.DSSBaseURL {
+			c.learnToken(tok)
 		}
 		req.Header.Set("Authorization", "Bearer "+tok)
 		return nil
@@ -457,7 +542,11 @@ func (c *Client) PutOperationalIntent(ctx context.Context, id, ovn string, p f35
 	if err != nil {
 		return nil, err
 	}
-	return r, checkChange(r, id)
+	if err := checkChange(r, id); err != nil {
+		return r, err
+	}
+	c.learnManager(r.OperationalIntentReference.Manager)
+	return r, nil
 }
 
 // GetOperationalIntent is GET
@@ -759,6 +848,9 @@ func (c *Client) bearerScopes(target string, scopes ...f3548.Scope) stdf3548.Req
 		tok, err := c.Tokens.Token(ctx, target, s...)
 		if err != nil {
 			return fmt.Errorf("token for %s: %w", target, err)
+		}
+		if target == c.DSSBaseURL {
+			c.learnToken(tok)
 		}
 		req.Header.Set("Authorization", "Bearer "+tok)
 		return nil

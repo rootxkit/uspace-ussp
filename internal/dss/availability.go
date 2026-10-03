@@ -33,7 +33,9 @@ const DefaultAvailabilityEvery = time.Minute
 type Availability struct {
 	Client *Client
 	Store  Store
-	// USSID is our client id at the DSS (the sub of our tokens).
+	// USSID is the configured client id; the id polled is the manager
+	// the DSS records for us (Client.Manager: the sub of our tokens),
+	// USSID only when no DSS token can be had.
 	USSID    string
 	Every    time.Duration
 	Counters *core.Counters
@@ -104,7 +106,11 @@ func (a *Availability) Load(ctx context.Context) error {
 
 // Poll reads the availability once and records it.
 func (a *Availability) Poll(ctx context.Context) error {
-	res, err := a.Client.Availability(ctx, a.USSID)
+	id := a.USSID
+	if m, merr := a.Client.Manager(ctx); merr == nil {
+		id = m
+	}
+	res, err := a.Client.Availability(ctx, id)
 	if err != nil {
 		a.count(CounterAvailabilityFailed)
 		a.mu.Lock()
