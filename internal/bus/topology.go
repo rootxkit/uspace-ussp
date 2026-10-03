@@ -94,18 +94,18 @@ const (
 	// ProximityStateBytes bounds one saved proximity alert.
 	ProximityStateBytes = 16 << 10
 	// ProximityStateMaxBytes bounds the bucket: 16 KiB for each of
-	// 16 384 alerts.
-	ProximityStateMaxBytes = int64(ProximityStateBytes) * 16_384
+	// 4096 active alerts.
+	ProximityStateMaxBytes = int64(ProximityStateBytes) * 4096
 )
 
 // ALRT's and TRAFFIC's bounds (every stream bounded in age and size):
-// alerts are republished every second while active (C-08), so ALRT holds
-// seven days and at most 8 GiB, discarding the oldest; api's record is
-// the alerts table. TRAFFIC holds the products sampled at 0.1 Hz per
-// subscriber for tsdb-writer, a day and at most 2 GiB.
+// alerts are republished every second while active (C-08), so ALRT is
+// a hand-over, not the record (api's alerts table is): seven days and at
+// most 1 GiB, discarding the oldest. TRAFFIC holds the products sampled
+// at 0.1 Hz per subscriber for tsdb-writer, a day and at most 512 MiB.
 const (
-	ALRTMaxBytes    = int64(8 << 30)
-	TRAFFICMaxBytes = int64(2 << 30)
+	ALRTMaxBytes    = int64(1 << 30)
+	TRAFFICMaxBytes = int64(512 << 20)
 )
 
 // CONF's bounds: the monitor publishes the transitions and a heartbeat
@@ -162,9 +162,9 @@ func TopologyWith(o TopologyOptions) Topology {
 	conf := stream(StreamCONF, SubjectConfAll, "conformance transitions and heartbeats: the hand-over to api and tsdb-writer (the record is conformance_samples)",
 		o.ConfMaxAge, 256<<10)
 	conf.MaxBytes = o.ConfMaxBytes
-	alrt := stream(StreamALRT, SubjectAlrtAll, "alerts raised, refreshed and cleared (7 d, 8 GiB)", 7*24*time.Hour, 256<<10)
+	alrt := stream(StreamALRT, SubjectAlrtAll, "alerts raised, refreshed and cleared (7 d, 1 GiB)", 7*24*time.Hour, 256<<10)
 	alrt.MaxBytes = ALRTMaxBytes
-	trafficStream := stream(StreamTRAFFIC, SubjectTrafficAll, "traffic products sampled for the record (1 d, 2 GiB)", 24*time.Hour, 512<<10)
+	trafficStream := stream(StreamTRAFFIC, SubjectTrafficAll, "traffic products sampled for the record (1 d, 512 MiB)", 24*time.Hour, 512<<10)
 	trafficStream.MaxBytes = TRAFFICMaxBytes
 	bucket := func(name, desc string, maxValue int32, ttl time.Duration) jetstream.KeyValueConfig {
 		return jetstream.KeyValueConfig{
