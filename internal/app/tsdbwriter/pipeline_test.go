@@ -547,7 +547,10 @@ func TestPipelineRejected(t *testing.T) {
 // At start, an ack floor beyond the written position is messages the
 // stream removed while the writer was not reading: recorded before
 // anything is pulled. A floor at the position records nothing (a quiet
-// stream after a restart), and so does a position never written.
+// stream after a restart), nor does a new consumer on a database that
+// never wrote. A consumer that acknowledged messages the database
+// records no position for (restored from an older backup, re-created)
+// lost them: a position_unknown gap from 1 to the floor (audit S3).
 func TestPipelineStartPosition(t *testing.T) {
 	for _, c := range []struct {
 		name        string
@@ -556,11 +559,13 @@ func TestPipelineStartPosition(t *testing.T) {
 		wantGap     bool
 		wantFrom    uint64
 		wantRemoved uint64
+		wantCause   string
 	}{
-		{"purged while down", 40, 25, true, true, 26, 15},
-		{"quiet stream", 25, 25, true, false, 0, 0},
-		{"written past the floor", 20, 25, true, false, 0, 0},
-		{"never written", 40, 0, false, false, 0, 0},
+		{"purged while down", 40, 25, true, true, 26, 15, store.CauseStreamRemoved},
+		{"quiet stream", 25, 25, true, false, 0, 0, ""},
+		{"written past the floor", 20, 25, true, false, 0, 0, ""},
+		{"new consumer, never written", 0, 0, false, false, 0, 0, ""},
+		{"acknowledged, no position written", 40, 0, false, true, 1, 40, store.CausePositionUnknown},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			r := newRig(t, testConfig(), func(src *fakeSource, st *fakeStore) {
@@ -573,7 +578,7 @@ func TestPipelineStartPosition(t *testing.T) {
 			eventually(t, "written", func() bool { return r.st.count("telemetry") == 1 })
 			gaps := r.st.gapList()
 			if c.wantGap != (len(gaps) == 1) || (c.wantGap && (gaps[0].FromSeq != c.wantFrom || gaps[0].ToSeq != c.floor ||
-				uint64(gaps[0].Count) != c.wantRemoved)) || r.counter(CounterDroppedRows) != c.wantRemoved {
+				uint64(gaps[0].Count) != c.wantRemoved || gaps[0].Cause != c.wantCause)) || r.counter(CounterDroppedRows) != c.wantRemoved {
 				t.Fatalf("gaps %+v counters %v", gaps, r.p.Counters.Snapshot())
 			}
 		})

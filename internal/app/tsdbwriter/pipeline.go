@@ -478,6 +478,22 @@ func (p *Pipeline) removedGap(h bus.Hole, after, before *time.Time) store.Gap {
 	return g
 }
 
+// unknownPositionGap is the record of messages 1..floor that the
+// consumer acknowledged while the database holds no position for the
+// stream: counted in dropped_rows and logged at error.
+func (p *Pipeline) unknownPositionGap(floor uint64) store.Gap {
+	p.Counters.Add(CounterDroppedRows, floor)
+	p.Logger.LogAttrs(context.Background(), slog.LevelError,
+		"the consumer acknowledged messages the database records no position for; recorded in writer_gaps",
+		slog.String("stream", p.Stream.Name), slog.Uint64("ack_floor", floor), slog.Uint64("dropped_rows", floor))
+	return store.Gap{
+		DedupeKey: fmt.Sprintf("%s:%s:1-%d", store.CausePositionUnknown, p.Stream.Name, floor),
+		Stream:    p.Stream.Name, Subject: p.Stream.Subject, FromSeq: 1, ToSeq: floor, Cause: store.CausePositionUnknown,
+		Count: int64(floor), CountUnit: store.UnitRows,
+		Detail: fmt.Sprintf("the consumer acknowledged up to %d but the database records no position: a database restored or re-created under a running consumer", floor),
+	}
+}
+
 func utcPtr(t *time.Time) *time.Time {
 	if t == nil || t.IsZero() {
 		return nil
@@ -534,7 +550,9 @@ func truncate(s string) string {
 // beyond what the writer wrote only when the stream removed messages
 // under it (a purge, its limits) while the writer was down: recorded as
 // a stream_removed gap with the position raised to the floor, in one
-// transaction. Until it is done nothing is written or pulled.
+// transaction. With no position at all and a floor above zero the
+// database lost what was acknowledged: a position_unknown gap from 1 to
+// the floor. Until it is done nothing is written or pulled.
 func (p *Pipeline) checkPosition(ctx context.Context) bool {
 	p.mu.Lock()
 	started, floor := p.started, p.floor
@@ -554,6 +572,20 @@ func (p *Pipeline) checkPosition(ctx context.Context) bool {
 	if known && floor > pos {
 		g := p.removedGap(bus.Hole{FromSeq: pos + 1, ToSeq: floor, Count: floor - pos}, nil, nil)
 		g.Detail = "the consumer's acknowledgement floor is beyond the position written: the stream removed these messages (a purge or its limits) while the writer was not reading"
+		wctx, cancel := context.WithTimeout(ctx, p.Config.WriteTimeout)
+		w, err := p.Store.Write(wctx, store.WriteBatch{Stream: p.Stream.Name, Gaps: []store.Gap{g}, Position: floor})
+		cancel()
+		if err != nil {
+			p.failed(err)
+			return false
+		}
+		p.Counters.Add(CounterGaps, uint64(w.Gaps))
+	}
+	if !known && floor > 0 {
+		// The consumer acknowledged messages the database records no
+		// position for (restored from an older backup, re-created): those
+		// rows are in no database. A hole, not a clean start (B-13).
+		g := p.unknownPositionGap(floor)
 		wctx, cancel := context.WithTimeout(ctx, p.Config.WriteTimeout)
 		w, err := p.Store.Write(wctx, store.WriteBatch{Stream: p.Stream.Name, Gaps: []store.Gap{g}, Position: floor})
 		cancel()

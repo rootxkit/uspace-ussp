@@ -16,6 +16,9 @@ const (
 	CauseStreamRemoved = "stream_removed"
 	CauseMalformed     = "malformed"
 	CauseRejected      = "rejected"
+	// CausePositionUnknown is a consumer that acknowledged messages the
+	// database records no position for (audit S3).
+	CausePositionUnknown = "position_unknown"
 )
 
 // Count units of a gap.
