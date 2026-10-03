@@ -410,6 +410,10 @@ type fakeIntents struct {
 	held map[string]*intent.DSSHeld
 	// check, when set, answers PeerCheck; nil is ok.
 	check func(r *intent.Record) intent.PeerCheckResult
+	// recheck, when set, answers RecreateCheck; nil is ok.
+	recheck func(r *intent.Record) intent.PeerCheckResult
+	// rechecked counts the RecreateCheck calls.
+	rechecked int
 	// conflicts answers PeerConflicts.
 	conflicts []intent.PeerConflict
 	holds     []string
@@ -475,6 +479,21 @@ func (f *fakeIntents) PeerCheck(_ context.Context, id string, version int) (inte
 			f.mu.Unlock()
 		}
 		return out, nil
+	}
+	return intent.PeerCheckResult{Outcome: intent.PeerCheckOK}, nil
+}
+
+func (f *fakeIntents) RecreateCheck(_ context.Context, id string, version int) (intent.PeerCheckResult, error) {
+	r := f.get(id)
+	f.mu.Lock()
+	f.rechecked++
+	check := f.recheck
+	f.mu.Unlock()
+	if r == nil || !slices.Contains(intent.ActiveStates, r.LocalState) || r.Version != version {
+		return intent.PeerCheckResult{Outcome: intent.PeerCheckStale}, nil
+	}
+	if check != nil {
+		return check(r), nil
 	}
 	return intent.PeerCheckResult{Outcome: intent.PeerCheckOK}, nil
 }

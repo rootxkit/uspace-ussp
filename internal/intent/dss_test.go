@@ -418,3 +418,65 @@ func TestPeerConflictsAndDisplacement(t *testing.T) {
 	}
 	_ = time.Second
 }
+
+// RecreateCheck judges an authorised intent the DSS lost as PeerCheck
+// judges a first write, and never commits: a peer filed first is a
+// conflict and the authorisation stands; one it outranks is displaced; a
+// clear sky is ok; a pending_dss intent or another version is stale.
+func TestRecreateCheck(t *testing.T) {
+	peerVol := func() []f3548.Volume4D {
+		n := normalise(t, baseRequest())
+		return []f3548.Volume4D{n.Volumes[0].Wire}
+	}
+	ctx := context.Background()
+	authorised := func(t *testing.T) (*Service, *memStore, string, int) {
+		t.Helper()
+		_, s, st := insideRig(t)
+		d, _, _ := submit(t, s, baseRequest())
+		if out, _ := s.RecreateCheck(ctx, d.IntentID, d.Version); out.Outcome != PeerCheckStale {
+			t.Fatalf("a pending_dss intent checked for a recreate: %+v", out)
+		}
+		if ok, err := s.DSSAuthorise(ctx, d.IntentID, d.Version, DSSHeld{State: f3548.Accepted, OVN: "o"}, nil); err != nil || !ok {
+			t.Fatalf("%v %v", ok, err)
+		}
+		r, _ := st.Get(ctx, d.IntentID)
+		return s, st, d.IntentID, r.Version
+	}
+	t.Run("peer first", func(t *testing.T) {
+		s, st, id, v := authorised(t)
+		st.peers = []PeerIntent{{EntityID: "p1", FetchedAt: testNow, Volumes: peerVol()}}
+		out, err := s.RecreateCheck(ctx, id, v)
+		if err != nil || out.Outcome != PeerCheckConflicting || len(out.Conflicts) == 0 || out.Conflicts[0].Ref != PeerPrefix+"p1" {
+			t.Fatalf("%+v %v", out, err)
+		}
+		if r, _ := st.Get(ctx, id); r.LocalState != StateAccepted || r.Version != v {
+			t.Fatalf("a recreate check changed the intent: %s v%d", r.LocalState, r.Version)
+		}
+		if out, _ := s.RecreateCheck(ctx, id, v+1); out.Outcome != PeerCheckStale {
+			t.Fatalf("another version: %+v", out)
+		}
+	})
+	t.Run("outranks", func(t *testing.T) {
+		s, st, id, v := authorised(t)
+		st.byID[id].Priority = 100
+		st.peers = []PeerIntent{{EntityID: "p1", FetchedAt: testNow, Volumes: peerVol()}}
+		out, err := s.RecreateCheck(ctx, id, v)
+		if err != nil || out.Outcome != PeerCheckOK || !slices.Equal(out.Displaced, []string{"p1"}) {
+			t.Fatalf("%+v %v", out, err)
+		}
+	})
+	t.Run("clear", func(t *testing.T) {
+		s, _, id, v := authorised(t)
+		out, err := s.RecreateCheck(ctx, id, v)
+		if err != nil || out.Outcome != PeerCheckOK || len(out.Displaced) != 0 {
+			t.Fatalf("%+v %v", out, err)
+		}
+	})
+	t.Run("not judged", func(t *testing.T) {
+		s, st, id, v := authorised(t)
+		st.peers = []PeerIntent{{EntityID: "p1", FetchedAt: testNow}}
+		if out, _ := s.RecreateCheck(ctx, id, v); out.Outcome != PeerCheckNotJudged {
+			t.Fatalf("%+v", out)
+		}
+	})
+}

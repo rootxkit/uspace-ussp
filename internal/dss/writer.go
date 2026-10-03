@@ -46,6 +46,7 @@ const (
 	CounterOutboxUnreadable    = "dss_outbox_unreadable"
 	CounterSubscribersRefused  = "dss_subscribers_refused"
 	CounterNotConverged        = "dss_mirror_not_converged"
+	CounterRecreateRefused     = "dss_recreate_refused"
 )
 
 // Kinds of the writer's outbox items.
@@ -874,12 +875,37 @@ func heldOf(ref f3548.OperationalIntentReference, ext []f3548.Volume4D) intent.D
 	return h
 }
 
-// recreate writes again an authorised intent the DSS no longer holds.
+// recreate writes again an authorised intent the DSS no longer holds,
+// judged first as its first write was (intent.RecreateCheck against what
+// the survey named, read from the managers): a reference is created
+// again only for an intent nothing conflicts with now. One that cannot
+// be judged (a manager that does not answer and no copy held, a check
+// that did not run) waits and is tried again; one that conflicts is not
+// written, counted dss_recreate_refused and audited with the conflicts
+// for the authority, and tried again (the conflict may end). What
+// becomes of its authorisation is not decided here.
 func (w *Writer) recreate(ctx context.Context, r *intent.Record, p *pass) error {
 	ext := extentsOf(r)
 	k, err := w.survey(ctx, r.ID, ext, p)
 	if err != nil {
 		return err
+	}
+	if len(k.missing) > 0 {
+		return fmt.Errorf("%w: the reference the DSS lost is not written again: the details of %s could not be read from their manager and no copy of them is held",
+			errWaiting, strings.Join(k.missing, ", "))
+	}
+	chk, err := w.Intents.RecreateCheck(ctx, r.ID, r.Version)
+	if err != nil {
+		return err
+	}
+	switch chk.Outcome {
+	case intent.PeerCheckStale:
+		// The intent moved on while it was judged: the step reads it again.
+		return nil
+	case intent.PeerCheckNotJudged:
+		return fmt.Errorf("%w: the reference the DSS lost is not written again: %s: %s", errWaiting, chk.Reason, chk.Detail)
+	case intent.PeerCheckConflicting:
+		return w.refuseRecreate(ctx, r, chk.Conflicts)
 	}
 	res, err := w.put(ctx, r.ID, nil, f3548.Accepted, ext, k.ovns)
 	if err != nil {
@@ -889,12 +915,31 @@ func (w *Writer) recreate(ctx context.Context, r *intent.Record, p *pass) error 
 		return err
 	}
 	h := heldOf(res.OperationalIntentReference, ext)
-	if err := w.Intents.DSSRecord(ctx, r.ID, &h, w.notes(ctx, r, &h, res.Subscribers, nil)); err != nil {
+	notes := w.notes(ctx, r, &h, res.Subscribers, chk.Displaced)
+	if err := w.Intents.DSSRecord(ctx, r.ID, &h, notes); err != nil {
 		return err
 	}
 	w.count(CounterOIRCreated)
+	w.displacedNow(ctx, r, &h, notes, chk.Displaced)
 	w.Kick()
 	return nil
+}
+
+// refuseRecreate records that the reference of an authorised intent the
+// DSS lost is not written again because it now conflicts.
+func (w *Writer) refuseRecreate(ctx context.Context, r *intent.Record, conflicts []intent.Conflict) error {
+	w.count(CounterRecreateRefused)
+	refs := make([]string, 0, len(conflicts))
+	for _, c := range conflicts {
+		refs = append(refs, c.Kind+" "+c.Ref)
+	}
+	if err := w.Store.Audit(ctx, store.Event{ActorType: store.ActorSystem, ActorID: "dss", EntityType: "operational_intent",
+		EntityID: r.ID, EventType: "dss_recreate_refused", Payload: map[string]any{"conflicts": conflicts, "version": r.Version}}); err != nil {
+		w.logger().LogAttrs(ctx, slog.LevelError, "a refused recreate was not audited", slog.String("intent_id", r.ID), obs.Err(err))
+	}
+	w.logger().LogAttrs(ctx, slog.LevelError, "the DSS lost the reference of an authorised intent that now conflicts; it is not written again",
+		slog.String("intent_id", r.ID), slog.String("conflicts", strings.Join(refs, ", ")))
+	return fmt.Errorf("%w: the reference the DSS lost is not written again: it conflicts with %s", errWaiting, strings.Join(refs, ", "))
 }
 
 // update moves the reference to state (activation, nonconformance,

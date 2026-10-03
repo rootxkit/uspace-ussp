@@ -144,6 +144,7 @@ type Intents interface {
 	Record(ctx context.Context, id string) (*intent.Record, error)
 	Held(ctx context.Context, id string) (*intent.DSSHeld, error)
 	PeerCheck(ctx context.Context, id string, version int) (intent.PeerCheckResult, error)
+	RecreateCheck(ctx context.Context, id string, version int) (intent.PeerCheckResult, error)
 	DSSHold(ctx context.Context, id string, version int, reason, detail string) error
 	DSSAuthorise(ctx context.Context, id string, version int, held intent.DSSHeld, notes []intent.OutboxSpec) (bool, error)
 	DSSRecord(ctx context.Context, id string, held *intent.DSSHeld, notes []intent.OutboxSpec) error

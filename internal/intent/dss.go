@@ -240,8 +240,13 @@ const (
 	// nothing changed.
 	PeerCheckNotJudged = "not_judged"
 	// PeerCheckStale: the intent is not the pending_dss version asked
-	// about; nothing changed.
+	// about (for RecreateCheck: not the active version asked about);
+	// nothing changed.
 	PeerCheckStale = "stale"
+	// PeerCheckConflicting: RecreateCheck found conflicts (Conflicts);
+	// nothing changed, the authorisation stands and no reference may be
+	// written for it.
+	PeerCheckConflicting = "conflicting"
 )
 
 // PeerCheckResult is the outcome of PeerCheck.
@@ -264,12 +269,39 @@ type PeerCheckResult struct {
 // conflict that refuses commits the intent rejected, naming the peer's
 // intent or the constraint; a check that cannot run changes nothing.
 func (s *Service) PeerCheck(ctx context.Context, id string, version int) (PeerCheckResult, error) {
+	return s.dssCheck(ctx, id, version, false)
+}
+
+// RecreateCheck is PeerCheck for an authorised (active) intent whose
+// reference the DSS no longer holds, before the writer creates it again:
+// the same judgement against everything the DSS named that was stored
+// (peers' intents, constraints, our own intents) and against the CIS as
+// it is now. It never commits: a conflict is PeerCheckConflicting with
+// the conflicts found, and the writer writes no reference for it.
+func (s *Service) RecreateCheck(ctx context.Context, id string, version int) (PeerCheckResult, error) {
+	return s.dssCheck(ctx, id, version, true)
+}
+
+// checkable is whether r is the version a check of its kind judges: a
+// pending_dss one before its first write, an active one before its
+// reference is created again.
+func checkable(r *Record, version int, recreate bool) bool {
+	if r == nil || r.Version != version {
+		return false
+	}
+	if recreate {
+		return slices.Contains(ActiveStates, r.LocalState)
+	}
+	return r.LocalState == StatePendingDSS
+}
+
+func (s *Service) dssCheck(ctx context.Context, id string, version int, recreate bool) (PeerCheckResult, error) {
 	var out PeerCheckResult
 	cur, err := s.Store.Get(ctx, id)
 	if err != nil {
 		return out, err
 	}
-	if cur == nil || cur.LocalState != StatePendingDSS || cur.Version != version {
+	if !checkable(cur, version, recreate) {
 		out.Outcome = PeerCheckStale
 		return out, nil
 	}
@@ -284,6 +316,10 @@ func (s *Service) PeerCheck(ctx context.Context, id string, version int) (PeerCh
 		s.count("dss_check_cis_not_judged")
 		out.Outcome, out.Reason, out.Detail = PeerCheckNotJudged, ReasonDeconflictNotJudged, "the CIS cannot be judged now: "+f.notJudged
 		return out, nil
+	case len(f.found) > 0 && recreate:
+		s.count("dss_recreate_conflict")
+		out.Outcome, out.Conflicts = PeerCheckConflicting, f.found
+		return out, nil
 	case len(f.found) > 0:
 		return s.dssReject(ctx, cur, f.found, "the CIS now conflicts with the intent")
 	}
@@ -296,7 +332,7 @@ func (s *Service) PeerCheck(ctx context.Context, id string, version int) (PeerCh
 		if err != nil {
 			return err
 		}
-		if r == nil || r.LocalState != StatePendingDSS || r.Version != version {
+		if !checkable(r, version, recreate) {
 			out.Outcome = PeerCheckStale
 			return nil
 		}
@@ -343,6 +379,10 @@ func (s *Service) PeerCheck(ctx context.Context, id string, version int) (PeerCh
 	case notJudged != "":
 		s.count("dss_check_not_judged")
 		out.Outcome, out.Reason, out.Detail = PeerCheckNotJudged, ReasonDeconflictNotJudged, notJudged
+		return out, nil
+	case len(conflicts) > 0 && recreate:
+		s.count("dss_recreate_conflict")
+		out.Outcome, out.Conflicts = PeerCheckConflicting, conflicts
 		return out, nil
 	case len(conflicts) > 0:
 		return s.dssReject(ctx, cur, conflicts, "deconflicted against the intents and constraints the DSS named")

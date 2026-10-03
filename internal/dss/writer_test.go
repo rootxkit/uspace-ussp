@@ -802,3 +802,61 @@ func TestWriterWaitsForTheRecordedAvailability(t *testing.T) {
 	}
 	mustState(t, g2.in, oursID, f3548.Accepted)
 }
+
+// The DSS lost the reference of an authorised intent and a peer filed in
+// its volumes meanwhile: the reference is judged before it is created
+// again. One that now conflicts is not written, counted, audited and
+// retried; once nothing conflicts it is written, and the peer it
+// displaces is told (E-01 both).
+func TestWriterJudgesARecreate(t *testing.T) {
+	g := newRig(t)
+	ctx := context.Background()
+	g.in.put(pending(oursID, volume(41.7, 44.8)))
+	if err := g.w.Mirror(ctx, oursID); err != nil {
+		t.Fatal(err)
+	}
+	h := g.in.heldOf(oursID)
+	if _, err := g.c.DeleteOperationalIntent(ctx, oursID, h.OVN); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.peer.File(ctx, peeruss.Spec{ID: peerID, Volumes: []f3548.Volume4D{volume(41.7, 44.8)}}); err != nil {
+		t.Fatal(err)
+	}
+	a := string(f3548.Activated)
+	g.in.setState(oursID, intent.StateActivated, &a)
+	g.in.recheck = func(*intent.Record) intent.PeerCheckResult {
+		return intent.PeerCheckResult{Outcome: intent.PeerCheckConflicting,
+			Conflicts: []intent.Conflict{{Kind: intent.KindIntent, Ref: intent.PeerPrefix + peerID, Reason: intent.ReasonIntentPriority}}}
+	}
+	if err := g.w.Mirror(ctx, oursID); !errors.Is(err, errWaiting) {
+		t.Fatalf("a conflicting recreate: %v", err)
+	}
+	if _, _, ok := g.dss.OIR(oursID); ok {
+		t.Fatal("a reference that now conflicts was written again without a judgement")
+	}
+	if g.in.rechecked == 0 || g.count(CounterRecreateRefused) != 1 || len(g.st.auditsOf("dss_recreate_refused")) != 1 {
+		t.Fatalf("rechecked %d, %v", g.in.rechecked, g.counters.Snapshot())
+	}
+	if p, _ := g.st.PeerIntent(ctx, peerID); p == nil {
+		t.Fatal("the peer the DSS named was not read for the judgement")
+	}
+	g.in.recheck = func(*intent.Record) intent.PeerCheckResult {
+		return intent.PeerCheckResult{Outcome: intent.PeerCheckOK, Displaced: []string{peerID}}
+	}
+	if err := g.w.Mirror(ctx, oursID); err != nil {
+		t.Fatal(err)
+	}
+	if ref, _, ok := g.dss.OIR(oursID); !ok || ref.State != f3548.Activated {
+		t.Fatalf("not written again: %+v %v", ref, ok)
+	}
+	if g.count(CounterDisplacedInline) != 1 {
+		t.Fatalf("the displaced peer not told: %v", g.counters.Snapshot())
+	}
+	var told bool
+	for _, n := range g.peer.Notifications() {
+		told = told || n.Body.OperationalIntentId == oursID
+	}
+	if !told {
+		t.Fatal("the displaced peer got no notification")
+	}
+}
