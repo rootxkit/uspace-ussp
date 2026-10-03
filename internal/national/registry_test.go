@@ -9,7 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rootxkit/uspace-core/regnum"
+	"github.com/rootxkit/uspace-core/serial"
+
+	"github.com/rootxkit/uspace-ussp/internal/accounts"
 	"github.com/rootxkit/uspace-ussp/internal/auth"
+	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/registry"
 )
 
@@ -44,7 +49,9 @@ func (f *fakeRegistry) ValidateAudited(_ context.Context, actorType, actorID str
 
 // GET /v1/registry/validate answers an operator client holding
 // ussp.intents with the cached status only, recorded with the client
-// and the purpose; any other caller is refused before the lookup.
+// and the purpose; any other caller is refused before the lookup. A
+// pilot's competencies are not the caller's to see (audit S6; see
+// TestValidateRegistryDetailOnlyForTheCallersOwnKeys).
 func TestValidateRegistryRoute(t *testing.T) {
 	reg := &fakeRegistry{}
 	h, iss := routerWith(t, reg)
@@ -88,7 +95,7 @@ func TestValidateRegistryRoute(t *testing.T) {
 	}
 	if body["operator"]["status"] != "valid" || body["operator"]["cache_age_s"] != 12.5 || body["operator"]["key"] != "GEOTESTOP0001" ||
 		body["uas"]["reason"] != "registry_unavailable" || body["uas"]["cache_age_s"] != nil ||
-		len(body["pilot"]["competencies"].([]any)) != 1 {
+		body["pilot"]["status"] != "valid" || body["pilot"]["competencies"] != nil {
 		t.Fatalf("body %s", rec.Body.String())
 	}
 	if strings.Contains(rec.Body.String(), "-abc") {
@@ -111,3 +118,96 @@ func TestValidateRegistryRoute(t *testing.T) {
 		t.Fatalf("no registry: %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+// fullRegistry answers every key valid with all its detail.
+type fullRegistry struct{}
+
+func (fullRegistry) ValidateAudited(_ context.Context, _, _ string, qs []registry.Query, _ registry.Purpose) ([]registry.Result, error) {
+	until := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	age := 1.0
+	var r registry.Result
+	if qs[0].Operator != "" {
+		r.Operator = &registry.Answer{Key: qs[0].Operator, Status: registry.StatusValid, ValidUntil: &until, CacheAgeS: &age}
+	}
+	if qs[0].Serial != "" {
+		r.UAS = &registry.Answer{Key: qs[0].Serial, Status: registry.StatusValid, ClassLabel: "C2", MTOMBand: "lt4kg", CacheAgeS: &age}
+	}
+	if qs[0].Pilot != "" {
+		r.Pilot = &registry.Answer{Key: qs[0].Pilot, Status: registry.StatusValid, CacheAgeS: &age,
+			Competencies: []registry.Competency{{Competency: "A2", ValidUntil: until}}}
+	}
+	return []registry.Result{r}, nil
+}
+
+// scopes is a RegistryScoper over a fixed table.
+type scopes map[string]accounts.RegistryScope
+
+func (s scopes) RegistryScope(_ context.Context, clientID string) (accounts.RegistryScope, error) {
+	sc, ok := s[clientID]
+	if !ok {
+		return accounts.RegistryScope{}, errors.New("no such client")
+	}
+	return sc, nil
+}
+
+// An operator client sees the detail of an F8 answer only for its own
+// keys: its operator's registration number (on its public part) and the
+// serials bound to it; another operator's number and an unbound serial
+// are answered status only, and so is every pilot until pilots belong
+// to an operator (WP-7). The calls are bounded per client (audit S6).
+func TestValidateRegistryDetailOnlyForTheCallersOwnKeys(t *testing.T) {
+	limiter := httpx.NewRateLimiter(0.001, 3, 100, nil)
+	h, iss := routerWith(t, fullRegistry{}, func(s *Server) {
+		s.RegistryScope = scopes{"client-7": {OperatorKey: compareKey("GEOTESTOP0001"), SerialFolds: []string{serial.FoldKey("TEST-SN-A")}}}
+		s.RegistryLimiter = limiter
+	})
+	tok := func(client string) string {
+		t.Helper()
+		ti, err := iss.IssueOperator(client, []string{auth.ScopeIntents}, time.Hour, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ti.Token
+	}
+	call := func(query, bearer string) (*httptest.ResponseRecorder, map[string]map[string]any) {
+		t.Helper()
+		r := httptest.NewRequest("GET", "/v1/registry/validate?purpose=identification&"+query, nil)
+		r.Header.Set("Authorization", "Bearer "+bearer)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+		var body map[string]map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &body)
+		return rec, body
+	}
+	own := tok("client-7")
+	rec, b := call("operator=GEOTESTOP0001-abc&serial=test-sn-a&pilot=GEO-PILOT-1", own)
+	if rec.Code != 200 || b["operator"]["valid_until"] == nil || b["uas"]["class_label"] != "C2" || b["uas"]["mtom_band"] != "lt4kg" {
+		t.Fatalf("own keys: %d %s", rec.Code, rec.Body.String())
+	}
+	if b["pilot"]["status"] != "valid" || b["pilot"]["competencies"] != nil {
+		t.Fatalf("a pilot's competencies: %s", rec.Body.String())
+	}
+	rec, b = call("operator=GEOOTHEROP0002&serial=TEST-SN-B", own)
+	if rec.Code != 200 || b["operator"]["status"] != "valid" || b["operator"]["valid_until"] != nil ||
+		b["uas"]["status"] != "valid" || b["uas"]["class_label"] != nil || b["uas"]["mtom_band"] != nil {
+		t.Fatalf("another operator's keys: %d %s", rec.Code, rec.Body.String())
+	}
+	// A client whose scope cannot be read sees status only.
+	rec, b = call("operator=GEOTESTOP0001&serial=TEST-SN-A", tok("client-unknown"))
+	if rec.Code != 200 || b["operator"]["valid_until"] != nil || b["uas"]["class_label"] != nil {
+		t.Fatalf("unknown scope: %d %s", rec.Code, rec.Body.String())
+	}
+	// The third call of client-7 is its last within the budget; the
+	// fourth is refused before the lookup, another client is not.
+	if rec, _ := call("serial=TEST-SN-A", own); rec.Code != 200 {
+		t.Fatalf("within the budget: %d", rec.Code)
+	}
+	if rec, _ := call("serial=TEST-SN-A", own); rec.Code != 429 || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("over the budget: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec, _ := call("serial=TEST-SN-A", tok("client-8")); rec.Code != 200 {
+		t.Fatalf("another client: %d", rec.Code)
+	}
+}
+
+func compareKey(number string) string { _, k := regnum.Public(number); return k }

@@ -629,3 +629,36 @@ func TestIntegrationSessionsLiveFollowsTheRows(t *testing.T) {
 		t.Fatalf("sign-in with sessions_live back: %d %s", r.status, r.raw)
 	}
 }
+
+// RegistryScope (audit S6) is the client's operator's registration
+// number, on its compare key, and the serials live-bound to that client:
+// another client of the same operator has the number and none of the
+// first one's serials; an unknown client is an error, which the route
+// answers status only.
+func TestIntegrationRegistryScope(t *testing.T) {
+	s := newStack(t, newClock(), &logBuffer{})
+	opID, session, _ := s.operator(accounts.RegistryValid)
+	a, _ := s.client(opID, session, auth.ScopeIntents)
+	b, _ := s.client(opID, session, auth.ScopeIntents)
+	sn := "TEST" + unique()
+	if r := s.call("POST", "/v1/accounts/operators/"+opID+"/clients/"+a+"/serials", map[string]any{"serial": sn}, bearer(session)); r.status != 201 {
+		t.Fatalf("bind: %d %s", r.status, r.raw)
+	}
+	r := s.call("GET", "/v1/accounts/operators/"+opID, nil, bearer(session))
+	number := r.str("registration_number")
+	if r.status != 200 || number == "" {
+		t.Fatalf("operator: %d %s", r.status, r.raw)
+	}
+	ctx := context.Background()
+	scA, err := s.svc.RegistryScope(ctx, a)
+	if err != nil || scA.OperatorKey == "" || len(scA.SerialFolds) != 1 || scA.SerialFolds[0] != sn {
+		t.Fatalf("client A: %+v %v", scA, err)
+	}
+	scB, err := s.svc.RegistryScope(ctx, b)
+	if err != nil || scB.OperatorKey != scA.OperatorKey || len(scB.SerialFolds) != 0 {
+		t.Fatalf("client B: %+v %v", scB, err)
+	}
+	if _, err := s.svc.RegistryScope(ctx, "no-such-client"); err == nil {
+		t.Fatal("an unknown client has a scope")
+	}
+}
