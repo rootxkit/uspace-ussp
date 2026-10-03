@@ -18,6 +18,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/rootxkit/uspace-core/core"
 	coresources "github.com/rootxkit/uspace-core/sources"
 
 	"github.com/rootxkit/uspace-ussp/internal/obs"
@@ -639,5 +640,51 @@ func TestIntegrationMaintainerCountsCaptures(t *testing.T) {
 	}
 	if n := m.Counters().Get(CounterCapturedPrefix + KindTrk); n != 3 {
 		t.Fatalf("captured_trk %d after a check with nothing published", n)
+	}
+}
+
+// Interior deletes beyond MaxDeletedDetails are not read, so a hole
+// across them counts the head losses only: that is now counted as
+// hole_undercounted (audit N5). Within the bound the deletes are read
+// and counted in the hole, and nothing is undercounted (E-01 pair).
+func TestIntegrationHoleUndercountedBeyondTheDeletedBound(t *testing.T) {
+	c := connect(t)
+	js := c.JetStream()
+	name := strings.ToUpper(unique("HOLE"))
+	subject := strings.ToLower(name) + ".x"
+	cfg := jetstream.StreamConfig{Name: name, Subjects: []string{strings.ToLower(name) + ".>"}, Storage: jetstream.FileStorage,
+		Duplicates: 500 * time.Millisecond}
+	top := Topology{Streams: []jetstream.StreamConfig{cfg}}
+	t.Cleanup(func() { _ = js.DeleteStream(context.Background(), name) })
+	if _, err := Ensure(ctx(t), js, top); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 6 {
+		if _, err := js.Publish(ctx(t), subject, []byte(fmt.Sprint(i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st, err := js.Stream(ctx(t), name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, seq := range []uint64{3, 4} {
+		if err := st.DeleteMsg(ctx(t), seq); err != nil {
+			t.Fatal(err)
+		}
+	}
+	jump := []Jump{{After: 2, Before: 5}}
+	for _, c := range []struct {
+		bound int
+		count uint64
+		under uint64
+	}{{10, 2, 0}, {1, 0, 1}} {
+		counters := &core.Counters{}
+		src := &StreamSource{MaxDeletedDetails: c.bound, Counters: counters,
+			Open: PullOpener(js, top, name, PullSpec{Durable: "h" + fmt.Sprint(c.bound), MaxAckPending: 10})}
+		holes, err := src.Holes(ctx(t), jump)
+		if err != nil || len(holes) != 1 || holes[0].Count != c.count || counters.Get(CounterHoleUndercounted) != c.under {
+			t.Fatalf("bound %d: %+v %v, undercounted %d", c.bound, holes, err, counters.Get(CounterHoleUndercounted))
+		}
 	}
 }
