@@ -50,6 +50,7 @@ const (
 	CounterFramesSent       = "traffic_ws_frames_sent"
 	CounterFramesDropped    = "traffic_ws_frames_dropped"
 	CounterClearsResent     = "traffic_ws_clears_resent"
+	CounterResync           = "traffic_ws_resync"
 	CounterTracksHeldBack   = "traffic_ws_tracks_held_back"
 	CounterSubscribes       = "traffic_ws_subscribes"
 	CounterSubscribeRefused = "traffic_ws_subscribe_refused"
@@ -303,8 +304,8 @@ func (s *Server) serve(rctx context.Context, conn *websocket.Conn, sub *Sub, exp
 		defer stop()
 	}
 	c := &connState{id: bus.NewULID(time.Now()), sub: sub, out: make(chan []byte, SendQueueLen), sent: map[string]string{}, repeatAt: map[string]time.Time{}}
-	entries, unsub := s.Hub.Book.Subscribe()
-	defer unsub()
+	book := s.Hub.Book.Subscribe()
+	defer book.Cancel()
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	wg.Go(func() { s.write(ctx, cancel, conn, c) })
@@ -341,9 +342,16 @@ func (s *Server) serve(rctx context.Context, conn *websocket.Conn, sub *Sub, exp
 			return
 		case <-resubscribed:
 			s.enqueue(c, s.snapshot(c))
-		case e, ok := <-entries:
+		case e, ok := <-book.C:
 			if ok {
 				s.forward(ctx, c, &e, alertsOnly)
+			}
+		case <-book.Missed:
+			if s.missed(ctx, c, book, alertsOnly) {
+				s.count(CounterResync)
+				_ = conn.Close(websocket.StatusTryAgainLater, "alert clears missed: reconnect for a new snapshot")
+				cancel()
+				return
 			}
 		case <-status.C:
 			s.enqueue(c, s.status(c))
@@ -714,6 +722,18 @@ func (s *Server) forward(ctx context.Context, c *connState, e *traffic.Entry, al
 	case queued:
 		c.sent[e.AlertID] = key
 	}
+}
+
+// missed sends the clears the subscription could not take when they
+// came, and reports whether more were missed than the book kept: the
+// client must then resync (reconnect to a new snapshot) rather than miss
+// one silently.
+func (s *Server) missed(ctx context.Context, c *connState, book *traffic.Subscription, alertsOnly bool) bool {
+	missed, resync := book.TakeMissed()
+	for i := range missed {
+		s.forward(ctx, c, &missed[i], alertsOnly)
+	}
+	return resync
 }
 
 // resend queues again the clears the connection's queue could not take.

@@ -767,3 +767,35 @@ func TestDroppedAlertFramesAreSentAgain(t *testing.T) {
 		t.Fatalf("the clear was sent twice, or left marked: %v", c.sent)
 	}
 }
+
+// A clear the book could not hand to a full subscription reaches the
+// connection afterwards; an active alert's misses are left to its
+// republish.
+func TestMissedClearReachesTheConnection(t *testing.T) {
+	r := newRig(t)
+	now := time.Now()
+	r.track(flightA, core.TrustAuthenticated, telemetry.SourceOperatorWS, clientA, origin, now, true)
+	book := r.hub.Book.Subscribe()
+	defer book.Cancel()
+	c := &connState{sub: &Sub{ClientID: clientA, IntentID: intentA}, out: make(chan []byte, 8), sent: map[string]string{},
+		repeatAt: map[string]time.Time{}}
+	ctx := context.Background()
+	raised := r.entryOf(traffic.AlertRaised, now)
+	r.srv.forward(ctx, c, &raised, true)
+	<-c.out
+	for i := 1; len(book.C) < cap(book.C); i++ {
+		r.alert(traffic.AlertUpdated, false, now.Add(time.Duration(i)*time.Millisecond))
+	}
+	r.alert(traffic.AlertCleared, false, now.Add(time.Minute))
+	select {
+	case <-book.Missed:
+	default:
+		t.Fatal("the missed clear was not signalled")
+	}
+	if r.srv.missed(ctx, c, book, true) {
+		t.Fatal("resync asked for one clear")
+	}
+	if len(c.out) != 1 || !strings.Contains(string(<-c.out), `"state":"cleared"`) {
+		t.Fatal("the missed clear did not reach the connection")
+	}
+}

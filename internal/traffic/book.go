@@ -2,6 +2,7 @@ package traffic
 
 import (
 	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -12,11 +13,16 @@ import (
 
 // Counters of the alert book.
 const (
-	CounterBookTaken      = "book_alerts"
-	CounterBookOverBound  = "book_over_bound"
-	CounterBookSubFull    = "book_subscriber_full"
-	CounterBookOlder      = "book_older_than_held"
-	CounterBookSubsBound  = "book_subscribers_over_bound"
+	CounterBookTaken     = "book_alerts"
+	CounterBookOverBound = "book_over_bound"
+	CounterBookSubFull   = "book_subscriber_full"
+	CounterBookOlder     = "book_older_than_held"
+	CounterBookSubsBound = "book_subscribers_over_bound"
+	// CounterBookMissedOverBound counts subscribers told to resync: more
+	// clears waited for them than MaxMissedClears.
+	CounterBookMissedOverBound = "book_missed_clears_over_bound"
+	// MaxMissedClears bounds the clears kept for one full subscriber.
+	MaxMissedClears       = 4 * DefaultSubscriberLen
 	DefaultMaxBookAlerts  = 100_000
 	DefaultSubscriberLen  = 256
 	MaxBookSubscribers    = 10_000
@@ -59,9 +65,60 @@ type Book struct {
 
 	mu     sync.Mutex
 	alerts map[string]Entry
-	subs   map[int]chan Entry
+	subs   map[int]*subscriber
 	next   int
 	once   sync.Once
+}
+
+// subscriber is one subscription: its channel, and the clears it could
+// not take (a clear leaves the book, so nothing would carry it again).
+type subscriber struct {
+	ch     chan Entry
+	kick   chan struct{}
+	missed map[string]Entry
+	resync bool
+}
+
+// Subscription is one subscriber of the book: C carries every alert put
+// from its start; Missed is signalled when a clear C could not take
+// waits in TakeMissed.
+type Subscription struct {
+	C      <-chan Entry
+	Missed <-chan struct{}
+	b      *Book
+	id     int
+}
+
+// TakeMissed returns the clears the subscription missed, once, and
+// whether more were missed than kept (MaxMissedClears): the subscriber
+// must then resync from the book (a new snapshot).
+func (s *Subscription) TakeMissed() ([]Entry, bool) {
+	if s.b == nil {
+		return nil, false
+	}
+	s.b.mu.Lock()
+	defer s.b.mu.Unlock()
+	sub := s.b.subs[s.id]
+	if sub == nil {
+		return nil, false
+	}
+	out := make([]Entry, 0, len(sub.missed))
+	for _, id := range slices.Sorted(maps.Keys(sub.missed)) {
+		out = append(out, sub.missed[id])
+	}
+	resync := sub.resync
+	sub.missed, sub.resync = map[string]Entry{}, false
+	return out, resync
+}
+
+// Cancel ends the subscription.
+func (s *Subscription) Cancel() {
+	if s.b == nil {
+		return
+	}
+	s.b.mu.Lock()
+	delete(s.b.subs, s.id)
+	s.b.mu.Unlock()
 }
 
 func (b *Book) counters() *core.Counters {
@@ -74,8 +131,9 @@ func (b *Book) counters() *core.Counters {
 }
 
 // Put takes one alert message; an older update than the one held
-// changes nothing. Every subscriber gets it (a full subscriber misses
-// it, counted: the next product or repeat carries the alert again).
+// changes nothing. Every subscriber gets it. A full subscriber misses
+// it, counted: an active alert comes again with its next republish, and
+// a clear is kept for the subscriber (TakeMissed).
 func (b *Book) Put(e Entry) {
 	b.mu.Lock()
 	if b.alerts == nil {
@@ -105,19 +163,33 @@ func (b *Book) Put(e Entry) {
 	} else {
 		b.alerts[e.AlertID] = e
 	}
-	subs := make([]chan Entry, 0, len(b.subs))
-	for _, ch := range b.subs {
-		subs = append(subs, ch)
-	}
-	b.mu.Unlock()
 	b.counters().Inc(CounterBookTaken)
-	for _, ch := range subs {
+	// Under the lock: a missed clear is kept before the next Put, and
+	// the sends never block.
+	for _, sub := range b.subs {
 		select {
-		case ch <- e:
+		case sub.ch <- e:
+			continue
 		default:
 			b.counters().Inc(CounterBookSubFull)
 		}
+		if e.State != AlertCleared {
+			continue
+		}
+		if _, kept := sub.missed[e.AlertID]; !kept && len(sub.missed) >= MaxMissedClears {
+			if !sub.resync {
+				b.counters().Inc(CounterBookMissedOverBound)
+			}
+			sub.resync = true
+		} else {
+			sub.missed[e.AlertID] = e
+		}
+		select {
+		case sub.kick <- struct{}{}:
+		default:
+		}
 	}
+	b.mu.Unlock()
 }
 
 func (b *Book) max() int {
@@ -127,27 +199,23 @@ func (b *Book) max() int {
 	return DefaultMaxBookAlerts
 }
 
-// Subscribe returns a channel of every alert put from now on and its
-// cancel; nil when the bound of subscribers is reached.
-func (b *Book) Subscribe() (<-chan Entry, func()) {
+// Subscribe returns a subscription to every alert put from now on;
+// past the bound of subscribers one that never receives (nil channels).
+func (b *Book) Subscribe() *Subscription {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.subs == nil {
-		b.subs = map[int]chan Entry{}
+		b.subs = map[int]*subscriber{}
 	}
 	if len(b.subs) >= MaxBookSubscribers {
 		b.counters().Inc(CounterBookSubsBound)
-		return nil, func() {}
+		return &Subscription{}
 	}
 	id := b.next
 	b.next++
-	ch := make(chan Entry, DefaultSubscriberLen)
-	b.subs[id] = ch
-	return ch, func() {
-		b.mu.Lock()
-		delete(b.subs, id)
-		b.mu.Unlock()
-	}
+	sub := &subscriber{ch: make(chan Entry, DefaultSubscriberLen), kick: make(chan struct{}, 1), missed: map[string]Entry{}}
+	b.subs[id] = sub
+	return &Subscription{C: sub.ch, Missed: sub.kick, b: b, id: id}
 }
 
 // Active are the active alerts match selects, critical first, then the

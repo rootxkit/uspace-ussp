@@ -119,8 +119,9 @@ func TestThrottle(t *testing.T) {
 // time to the loss of separation, and fans out to subscribers.
 func TestBook(t *testing.T) {
 	b := &Book{Max: 2}
-	ch, cancel := b.Subscribe()
-	defer cancel()
+	sub := b.Subscribe()
+	defer sub.Cancel()
+	ch := sub.C
 	b.Put(Entry{AlertID: "a", Severity: core.SeverityWarning, State: AlertRaised, UpdatedAt: t0, Seen: t0})
 	b.Put(Entry{AlertID: "b", Severity: core.SeverityCritical, State: AlertRaised, UpdatedAt: t0, Seen: t0, LoSStartS: 9})
 	b.Put(Entry{AlertID: "c", Severity: core.SeverityCritical, State: AlertRaised, UpdatedAt: t0, Seen: t0, LoSStartS: 3})
@@ -354,3 +355,38 @@ func waitFor(t *testing.T, cond func() bool) {
 func discard() *slog.Logger { return obs.Discard() }
 
 func coresourcesState() coresources.State { return coresources.State{Epoch: "e", Version: 1} }
+
+// A clear a full subscriber cannot take is not forgotten: it waits for
+// the subscriber (signalled), once; past the bound of waiting clears the
+// subscriber is told to resync. An update it misses is not kept (the
+// next republish carries it).
+func TestBookKeepsMissedClears(t *testing.T) {
+	b := &Book{}
+	sub := b.Subscribe()
+	defer sub.Cancel()
+	b.Put(Entry{AlertID: "a", Severity: core.SeverityCritical, State: AlertRaised, UpdatedAt: t0})
+	for i := 1; len(sub.C) < cap(sub.C); i++ {
+		b.Put(Entry{AlertID: "b", Severity: core.SeverityCritical, State: AlertUpdated, UpdatedAt: t0.Add(time.Duration(i) * time.Millisecond)})
+	}
+	b.Put(Entry{AlertID: "b", State: AlertUpdated, UpdatedAt: t0.Add(time.Hour)}) // missed, not kept
+	b.Put(Entry{AlertID: "a", State: AlertCleared, UpdatedAt: t0.Add(time.Second)})
+	select {
+	case <-sub.Missed:
+	default:
+		t.Fatal("a missed clear not signalled")
+	}
+	got, resync := sub.TakeMissed()
+	if len(got) != 1 || got[0].AlertID != "a" || got[0].State != AlertCleared || resync {
+		t.Fatalf("missed %+v resync %v", got, resync)
+	}
+	if again, _ := sub.TakeMissed(); len(again) != 0 {
+		t.Fatalf("taken twice: %+v", again)
+	}
+	for i := range MaxMissedClears + 1 {
+		b.Put(Entry{AlertID: fmt.Sprint("c", i), State: AlertCleared, UpdatedAt: t0})
+	}
+	got, resync = sub.TakeMissed()
+	if len(got) != MaxMissedClears || !resync || b.counters().Get(CounterBookMissedOverBound) != 1 {
+		t.Fatalf("%d missed, resync %v", len(got), resync)
+	}
+}
