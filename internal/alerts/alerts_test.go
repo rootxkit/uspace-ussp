@@ -387,7 +387,7 @@ type src struct {
 	err   error
 }
 
-func (s *src) Fetch(ctx context.Context, _ int, _ time.Duration) ([]bus.Msg, error) {
+func (s *src) Fetch(_ context.Context, _ int, _ time.Duration) ([]bus.Msg, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.err != nil {

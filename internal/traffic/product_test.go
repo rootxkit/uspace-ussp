@@ -288,8 +288,6 @@ func TestPublishRetriesThenDrops(t *testing.T) {
 	// A full outbox drops, counted.
 	full := &Engine{OutboxLen: 1}
 	full.init()
-	r := &rig{t: t, clk: &clock{t: t0}, e: full, pv: policy.Defaults()}
-	_ = r
 	p := &pairState{key: "conflict:trk:a:trk:b", raisedAt: t0, owned: true, aircraft: [2]SavedAircraft{
 		{ID: "trk:a", TrackID: flightA, FlightID: flightA, Cell5: mustCell(origin)}, {ID: "trk:b", TrackID: flightB, FlightID: flightB, Cell5: mustCell(origin)}}}
 	full.publishPairPeriod(context.Background(), p, AlertUpdated, "", nil, t0, 1)
