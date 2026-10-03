@@ -495,3 +495,25 @@ func TestLookupFailureCarriesNoKeys(t *testing.T) {
 		t.Fatalf("client error: %v", err)
 	}
 }
+
+// A lookup the caller gave up on (its context cancelled) is neither a
+// failure of the authority nor a readiness event: /readyz stays as it
+// was and no error is logged; it is counted as cancelled (audit N4). A
+// lookup that fails while the caller waits still degrades (E-01,
+// TestReadinessProbe).
+func TestCallerCancelledLookupIsNotARegistryFailure(t *testing.T) {
+	f := newFixture(t)
+	f.fake.SetUAS(snA, "active", "", "")
+	f.uas(t, snA) // the authority answered once
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := f.cache.Validate(ctx, []Query{{Serial: "TEST-SN-OTHER"}}, PurposeIdentification); err != nil {
+		t.Fatal(err)
+	}
+	if _, detail := ReadinessProbe(f.cache, nil)(t.Context()); strings.Contains(detail, "last lookup failed") {
+		t.Fatalf("a cancelled caller degraded readiness: %q", detail)
+	}
+	if f.count(CounterLookupCancelled) != 1 {
+		t.Fatalf("not counted: %v", f.cache.Counters().Snapshot())
+	}
+}

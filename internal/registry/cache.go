@@ -215,6 +215,18 @@ func (c *Cache) fetch(ctx context.Context, p Purpose, ask []normalised) ([]Entry
 	for start := 0; start < len(ask); start += MaxQueries {
 		batch := ask[start:min(start+MaxQueries, len(ask))]
 		vs, err := c.cfg.Client.Validate(ctx, p, batch)
+		if err != nil && ctx.Err() != nil {
+			// The caller gave up (its context ended), not the authority:
+			// the keys are unknown to this caller, and nothing is said
+			// about the registry (audit N4).
+			c.cfg.Counters.Inc(CounterLookupCancelled)
+			for _, n := range batch {
+				for _, k := range n.keys() {
+					reasons[k] = ReasonRegistryUnavailable
+				}
+			}
+			continue
+		}
 		if err != nil {
 			reason := ReasonRegistryUnavailable
 			var re *RefusedError
