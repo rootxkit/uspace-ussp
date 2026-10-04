@@ -103,8 +103,8 @@ type Config struct {
 	Audiences               []string `env:"USSP_AUDIENCES" by:"api,telemetry-ingest,rid-sp,traffic-ws" help:"hosts accepted as JWT aud, comma-separated: the public host and a lab alias (M18)"`
 	TokenIssuers            []string `env:"USSP_TOKEN_ISSUERS" by:"api,telemetry-ingest,rid-sp,monitor,traffic-ws" kind:"issuers" help:"allow-listed token issuers as iss=jwks_url, comma-separated; the first is the token service for outgoing calls"`
 	CISNotifyIssuers        []string `env:"USSP_CIS_NOTIFY_ISSUERS" by:"api" kind:"issuers" help:"issuers of CIS change notifications (the CISP, the ANSP) as iss=jwks_url, comma-separated"`
-	USSBaseURL              string   `env:"USSP_USS_BASE_URL" by:"api,rid-sp,dss-sync" kind:"url" help:"this USSP's published base URL (uss_base_url in the DSS)"`
-	DSSBaseURL              string   `env:"USSP_DSS_BASE_URL" by:"api,rid-sp,dss-sync" kind:"url" help:"InterUSS DSS base URL; its host is the outgoing aud"`
+	USSBaseURL              string   `env:"USSP_USS_BASE_URL" by:"api,rid-sp,monitor,dss-sync" kind:"url" help:"this USSP's published base URL (uss_base_url in the DSS); monitor's Display Provider subscribes with it and never polls an ISA that names it"`
+	DSSBaseURL              string   `env:"USSP_DSS_BASE_URL" by:"api,rid-sp,monitor,dss-sync" kind:"url" help:"InterUSS DSS base URL; its host is the outgoing aud; monitor discovers the peers' ISAs there (F3411 Display Provider)"`
 	DSSForAll               string   `env:"USSP_DSS_FOR_ALL" default:"off" by:"api" enum:"on|off" help:"on: every intent that needs an authorisation is deconflicted and written through the DSS, outside U-space airspace too; off: only intents inside U-space airspace (02 F5)"`
 	CISPBaseURL             string   `env:"USSP_CISP_BASE_URL" by:"api" kind:"url" help:"CISP base URL (F3 pull)"`
 	CISBBox                 string   `env:"USSP_CIS_BBOX" by:"api" help:"box of the CIS change subscription as min_lng,min_lat,max_lng,max_lat in WGS84 degrees; empty is everywhere"`
@@ -114,7 +114,7 @@ type Config struct {
 	CertificateID           string   `env:"USSP_CERTIFICATE_ID" by:"api" help:"the id of this USSP's certificate at the authority (32 hex characters), named by the Art. 7(6) operating-status notices; unset, no notice can be sent and /readyz says so"`
 	AuthorityBaseURL        string   `env:"USSP_AUTHORITY_BASE_URL" by:"api" kind:"url" help:"authority base URL (F8 registry, occurrences, status)"`
 	ANSPBaseURL             string   `env:"USSP_ANSP_BASE_URL" by:"api" kind:"url" help:"ANSP base URL (Annex V coordination notices)"`
-	ANSPStreamURL           string   `env:"USSP_ANSP_STREAM_URL" by:"monitor" kind:"url" help:"ANSP manned-traffic stream (F4, wss://<ansp>/v1/manned-traffic/stream): monitor reads it with a token of scope ansp.traffic and mTLS per USSP_MTLS_MODE and reports it as ansp_feed on /readyz; the manned tracks are held, not published to man.v1, until WP-14's echo guard (PLAN §15 Q23)"`
+	ANSPStreamURL           string   `env:"USSP_ANSP_STREAM_URL" by:"monitor" kind:"url" help:"ANSP manned-traffic stream (F4, wss://<ansp>/v1/manned-traffic/stream): monitor reads it with a token of scope ansp.traffic and mTLS per USSP_MTLS_MODE, bootstraps from /v1/manned-traffic/snapshot, publishes its tracks on man.v1 (an echo of one of this USSP's own flights left out, PLAN §15 Q23) and reports it as ansp_feed on /readyz; unset means no manned traffic, shown as unavailable"`
 	MTLSMode                string   `env:"USSP_MTLS_MODE" default:"required" by:"api,monitor" enum:"required|off" help:"mTLS towards the ANSP (M25): Annex V notices (api) and the manned-traffic stream (monitor); off only in the lab and on staging, and logged at error level"`
 	MTLSCertFile            string   `env:"USSP_MTLS_CERT_FILE" by:"api,monitor" help:"client certificate (PEM) for USSP_MTLS_MODE=required"`
 	MTLSKeyFile             string   `env:"USSP_MTLS_KEY_FILE" by:"api,monitor" help:"client key (PEM) for USSP_MTLS_MODE=required"`
@@ -132,13 +132,15 @@ type Config struct {
 	RegistryRatePerMin      int      `env:"USSP_REGISTRY_RATE_PER_MIN" default:"60" by:"api" min:"1" max:"10000" unit:"1/min" help:"GET /v1/registry/validate lookups per operator client per minute (per process)"`
 	TrustedProxies          []string `env:"USSP_TRUSTED_PROXIES" by:"api,telemetry-ingest,rid-sp,traffic-ws" kind:"cidrs" help:"CIDRs or addresses of the reverse proxies whose X-Forwarded-For is believed, comma-separated; the client is the rightmost hop that is not one of them; empty: the peer is the client"`
 	TokenClientSecretFile   string   `env:"USSP_TOKEN_CLIENT_SECRET_FILE" by:"api,rid-sp,monitor,dss-sync" secret:"true" help:"file holding the client secret of this USSP's client ussp-<code>-01 at the first USSP_TOKEN_ISSUERS entry, for outgoing calls"`
-	GeoidFile               string   `env:"USSP_GEOID_FILE" by:"api,telemetry-ingest,monitor" help:"geoid grid file for AMSL"`
+	GeoidFile               string   `env:"USSP_GEOID_FILE" by:"api,telemetry-ingest,monitor,traffic-ws" help:"geoid grid file for AMSL"`
 	TerrainDir              string   `env:"USSP_TERRAIN_DIR" by:"monitor" help:"directory of terrain tiles"`
 	CellOwnership           string   `env:"USSP_CELL_OWNERSHIP" default:"all" by:"monitor" help:"cells this monitor instance owns: all, or a comma list of c3 cells"`
 	AuthorityPush           string   `env:"USSP_AUTHORITY_PUSH" default:"off" by:"rid-sp" enum:"on|off" help:"the optional WS /v1/authority/flights extension (D12)"`
 	RecordsDir              string   `env:"USSP_RECORDS_DIR" by:"api" help:"directory (a local volume) the daily record bundles are written to and served from (GET /v1/records/daily/{date}); unset, no bundle is built and /readyz says so"`
 	WeatherSource           string   `env:"USSP_WEATHER_SOURCE" by:"api" help:"weather source adapter and URL; unset means weather answers 503 weather_unavailable"`
-	ADSBSource              string   `env:"USSP_ADSB_SOURCE" by:"monitor" help:"e-conspicuity receiver feed; unset means no receiver, shown as such"`
+	ADSBSource              string   `env:"USSP_ADSB_SOURCE" by:"monitor" help:"e-conspicuity receiver feed: http(s)://<host>/data/aircraft.json (readsb/dump1090, polled at 1 Hz), sbs://<host>:<port> (BaseStation lines) or file://<path>.jsonl (a recorded aircraft.json replay, timestamps re-based); unset means no receiver, shown as such"`
+	ADSBReceiverID          string   `env:"USSP_ADSB_RECEIVER_ID" default:"adsb-rx-1" by:"monitor" help:"the e-conspicuity receiver's id: source_instance of its tracks and the instance of its adsb_rx source switch"`
+	TrafficInputBBox        string   `env:"USSP_TRAFFIC_INPUT_BBOX" by:"monitor" help:"box of the manned and peer inputs as min_lng,min_lat,max_lng,max_lat in WGS84 degrees: the ANSP stream's bbox and the peer Display Provider's area; empty is every U-space airspace of cis_current, padded"`
 	WSAllowedOrigins        []string `env:"USSP_WS_ALLOWED_ORIGINS" by:"telemetry-ingest,traffic-ws" help:"Origin allow-list of browser WebSocket upgrades (M22), comma-separated"`
 	ReadinessCheckTimeoutMS int      `env:"USSP_READINESS_CHECK_TIMEOUT_MS" default:"2000" by:"all" min:"100" max:"10000" unit:"ms" help:"bound on one dependency check of /readyz"`
 }

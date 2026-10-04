@@ -160,11 +160,6 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	if err != nil {
 		return err
 	}
-	// The ANSP's manned-traffic stream (USSP_ANSP_STREAM_URL): read and
-	// reported, its tracks held until WP-14 (anspfeed.go).
-	if err := startANSPFeed(ctx, rt); err != nil {
-		return err
-	}
 	js := rt.Bus.JetStream()
 	logger := rt.Logger
 
@@ -237,6 +232,13 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	}
 	cpa, err := startCPA(ctx, rt, own, current, intents, instance, und, geoidMissing, o)
 	if err != nil {
+		return err
+	}
+	// The manned and peer inputs (brief WP-14), behind the echo guard of
+	// this USSP's own flights (PLAN §15 Q23).
+	owned := &ownFlights{intents: intents}
+	cpa.onOwn = owned.Seen
+	if err := startInputs(ctx, rt, inputs{current: current, gate: src, own: owned, und: und, cis: cisM}); err != nil {
 		return err
 	}
 	fd := &Feed{
