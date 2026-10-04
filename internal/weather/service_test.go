@@ -416,34 +416,42 @@ func TestPollCountsRefusedReports(t *testing.T) {
 }
 
 // Run polls at once and again after the period; it stops with ctx. The
-// test waits on the fake's call count, never on a sleep.
+// test waits on the fake's served signals, never on a sleep or a timer.
 func TestRunPollsUntilCancelled(t *testing.T) {
 	r := newRig(t, "31013KT 9999 Q1026")
 	r.pol.Values.WeatherRefreshS = 0.05 // below the policy's floor: only the loop is under test
+	served := r.f.Served()
+	wait := func(n int) {
+		for range n {
+			<-served
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { r.svc.Run(ctx); close(done) }()
-	deadline := time.Now().Add(10 * time.Second)
-	for r.f.Calls() < 4 {
-		if time.Now().After(deadline) {
-			t.Fatal("Run did not poll twice")
-		}
-		<-time.After(10 * time.Millisecond)
-	}
+	// Two polls of two requests each (METAR and TAF), and the first of a
+	// third: the second poll was answered.
+	wait(5)
 	cancel()
 	<-done
+	if r.c.Get("weather_fetched") < 2 {
+		t.Fatalf("Run did not poll twice: %v", r.c.Snapshot())
+	}
 	r.f.Down()
+	for len(served) > 0 {
+		<-served
+	}
 	ctx, cancel = context.WithCancel(context.Background())
 	done = make(chan struct{})
 	go func() { r.svc.Run(ctx); close(done) }()
-	for r.c.Get("weather_fetch_failed") < 1 {
-		if time.Now().After(deadline) {
-			t.Fatal("Run did not poll the failing source")
-		}
-		<-time.After(10 * time.Millisecond)
-	}
+	// The failing source is asked once per poll (the METAR's 503 ends
+	// it): a second request means the first poll returned, failed.
+	wait(2)
 	cancel()
 	<-done
+	if r.c.Get("weather_fetch_failed") < 1 {
+		t.Fatalf("Run did not poll the failing source: %v", r.c.Snapshot())
+	}
 }
 
 func TestStateNames(t *testing.T) {
