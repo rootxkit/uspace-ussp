@@ -44,6 +44,11 @@ additively within `/v1`.
 
 ### Fixed
 
+- WP-17 review follow-ups:
+  - a portal session's use whose portal user cannot be read keeps the
+    earlier `sessions_live` projection (operator and idle end) instead
+    of projecting it without its operator, and counts
+    `session_operator_unread`.
 - WP-16 review follow-ups:
   - a weather fetch that answers but delivers nothing in force (every
     report refused, no report for any station, or only reports held

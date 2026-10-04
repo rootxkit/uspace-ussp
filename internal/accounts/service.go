@@ -78,6 +78,10 @@ const (
 	// CounterSessionProjectionFailed counts a session use whose new idle
 	// end could not be written to sessions_live.
 	CounterSessionProjectionFailed = "session_projection_failed"
+	// CounterSessionOperatorUnread counts a portal session use whose
+	// operator could not be read: sessions_live keeps the earlier
+	// projection rather than one without the operator.
+	CounterSessionOperatorUnread = "session_operator_unread"
 )
 
 // RegistryChecker asks the authority's registry (F8) about an operator
