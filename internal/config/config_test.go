@@ -191,3 +191,17 @@ func TestEnvMarkdownDocumentsEveryVariable(t *testing.T) {
 		t.Errorf("deploy/ENV.md documents %s, which no process reads", name)
 	}
 }
+
+// USSP_CERTIFICATE_ID is the authority's 32-hex certificate id or unset
+// (E-01 pair: a well-formed id loads).
+func TestCertificateID(t *testing.T) {
+	ok := map[string]string{"USSP_CERTIFICATE_ID": "0123456789abcdef0123456789abcdef"}
+	if c, err := LoadFrom(env(ok)); err != nil || c.CertificateID != ok["USSP_CERTIFICATE_ID"] {
+		t.Fatalf("%v %q", err, c.CertificateID)
+	}
+	for _, bad := range []string{"0123456789ABCDEF0123456789ABCDEF", "123", "0123456789abcdef0123456789abcdeg"} {
+		if _, err := LoadFrom(env(map[string]string{"USSP_CERTIFICATE_ID": bad})); err == nil || !strings.Contains(err.Error(), "USSP_CERTIFICATE_ID") {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+}

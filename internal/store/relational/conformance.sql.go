@@ -65,12 +65,14 @@ func (q *Queries) ConformanceTimeline(ctx context.Context, arg ConformanceTimeli
 
 const insertConformanceState = `-- name: InsertConformanceState :execrows
 
-INSERT INTO conformance_states (flight_id, at, state, reason, distance_outside_m, height_over_m, time_outside_s, policy_version)
+INSERT INTO conformance_states (flight_id, at, state, reason, distance_outside_m, height_over_m, time_outside_s, policy_version,
+                                last_lat_deg, last_lng_deg)
 SELECT f.id, $1, $2, $3,
        $4::double precision, $5::double precision,
-       $6::double precision, $7
+       $6::double precision, $7,
+       $8::double precision, $9::double precision
 FROM flights f
-WHERE f.id = $8::uuid
+WHERE f.id = $10::uuid
 `
 
 type InsertConformanceStateParams struct {
@@ -81,6 +83,8 @@ type InsertConformanceStateParams struct {
 	HeightOverM      *float64    `json:"height_over_m"`
 	TimeOutsideS     *float64    `json:"time_outside_s"`
 	PolicyVersion    int64       `json:"policy_version"`
+	LastLatDeg       *float64    `json:"last_lat_deg"`
+	LastLngDeg       *float64    `json:"last_lng_deg"`
 	FlightID         pgtype.UUID `json:"flight_id"`
 }
 
@@ -89,6 +93,8 @@ type InsertConformanceStateParams struct {
 // Append-only (the application role has INSERT and SELECT only). A row
 // is written only for a flight the flights table holds: 0 rows means the
 // flight fact has not been recorded yet and the consumer tries again.
+// The last position is the one the monitor reported with the state
+// (WP-15: the nonconformance notice to the ANSP carries it).
 func (q *Queries) InsertConformanceState(ctx context.Context, arg InsertConformanceStateParams) (int64, error) {
 	result, err := q.db.Exec(ctx, insertConformanceState,
 		arg.At,
@@ -98,6 +104,8 @@ func (q *Queries) InsertConformanceState(ctx context.Context, arg InsertConforma
 		arg.HeightOverM,
 		arg.TimeOutsideS,
 		arg.PolicyVersion,
+		arg.LastLatDeg,
+		arg.LastLngDeg,
 		arg.FlightID,
 	)
 	if err != nil {

@@ -371,3 +371,44 @@ func TestZoneDefaultsAndBounds(t *testing.T) {
 		}
 	}
 }
+
+// TestRecordsBounds (WP-15): a non-positive or non-finite poll, escalation,
+// record gap or airprox threshold, an escalation shorter than the poll and
+// an operator-position retention outside 1 to its maximum are refused,
+// each naming its field; the defaults and the bounds are accepted (E-01
+// pair).
+func TestRecordsBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		set   func(*Values)
+		field string
+	}{
+		{"no poll", func(v *Values) { v.ATSAckPollS = 0 }, "ats_ack_poll_s"},
+		{"NaN escalation", func(v *Values) { v.ATSAckEscalateS = math.NaN() }, "ats_ack_escalate_s"},
+		{"escalation before the first poll", func(v *Values) { v.ATSAckEscalateS = v.ATSAckPollS / 2 }, "ats_ack_escalate_s"},
+		{"negative gap", func(v *Values) { v.RecordGapS = -1 }, "record_gap_s"},
+		{"no airprox distance", func(v *Values) { v.AirproxReportM = 0 }, "airprox_report_m"},
+		{"infinite airprox height", func(v *Values) { v.AirproxReportVM = math.Inf(1) }, "airprox_report_v_m"},
+		{"no position retention", func(v *Values) { v.OperatorPositionRetentionDays = 0 }, "operator_position_retention_days"},
+		{"too long a position retention", func(v *Values) { v.OperatorPositionRetentionDays = MaxOperatorPositionRetentionDays + 1 }, "operator_position_retention_days"},
+	} {
+		v := Defaults()
+		tc.set(&v)
+		if err := v.Validate(); err == nil || !strings.Contains(err.Error(), tc.field) {
+			t.Errorf("%s: accepted or not named: %v", tc.name, err)
+		}
+	}
+	v := Defaults()
+	if v.ATSAckPollS != 10 || v.ATSAckEscalateS != 300 || v.RecordGapS != 3 || v.OperatorPositionRetentionDays != 90 ||
+		v.AirproxReportM != v.CPAHorizontalMinM || v.AirproxReportVM != v.CPAVerticalMinM {
+		t.Errorf("WP-15 defaults %+v", v)
+	}
+	v.ATSAckEscalateS, v.OperatorPositionRetentionDays = v.ATSAckPollS, MaxOperatorPositionRetentionDays
+	if err := v.Validate(); err != nil {
+		t.Errorf("bounds refused: %v", err)
+	}
+	v.OperatorPositionRetentionDays = 1
+	if err := v.Validate(); err != nil {
+		t.Errorf("one day refused: %v", err)
+	}
+}

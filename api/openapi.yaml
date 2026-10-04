@@ -20,7 +20,8 @@ info:
     WP-8: operator telemetry (served by telemetry-ingest). WP-9: the
     optional authority flight push (served by rid-sp). WP-11: traffic
     information and the alert stream (served by traffic-ws), the alert
-    acknowledgement (api).
+    acknowledgement (api). WP-15: the console's list of Annex V notices
+    to the ANSP; the service records for the authority.
   license:
     name: Apache-2.0
 servers:
@@ -748,6 +749,295 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
 
+  /v1/admin/coordination:
+    get:
+      operationId: listCoordinationNotices
+      tags: [admin]
+      summary: The Annex V notices the console must see
+      description: |
+        Console session of a supervisor or support (served by api; spec
+        02 F13, Art. 13(2), cross-plan M2). Every notice to the ANSP's
+        coordination inbox that is not yet received (pending, with its
+        tries, last error and next try), was refused for good (failed)
+        or was not acknowledged by a person at the ANSP within the
+        policy's ats_ack_escalate_s (escalated, with its age since the
+        receipt), oldest first, at most 500 (truncated when there are
+        more). An empty list means no notice is waiting; it never stands
+        for a coordination that could not be read (503).
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The open notices.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoordinationNotices"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/records/flights/{flight_id}:
+    get:
+      operationId: getFlightRecord
+      tags: [records]
+      summary: One flight's service record
+      description: |
+        The service record of one flight (served by api; Reg. (EU)
+        2021/664 Art. 15(1)(g), 18(b); spec 02 F7): the flight, its
+        authorisation and every version of the decision, the telemetry
+        summary with its holes and their recorded causes, the alerts with
+        their lifecycle, the conformance timeline, the Annex V notices,
+        the traffic products the operator was shown, and every policy
+        version the record names. A section whose store cannot be read
+        is {state: unavailable, reason}, never an empty list (LESSONS
+        B-13); a bounded section says truncated. No names (spec 06 §5):
+        registration numbers by their public part only, no free text of
+        the request. An ecosystem token with scope ussp.records (the
+        authority); every read is audited with the caller before the
+        body is sent (503 when it cannot be). A flight this USSP does not
+        hold is 404.
+      security:
+        - ecosystemToken: []
+      parameters:
+        - name: flight_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: The record.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlightRecord"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/records/daily/{date}:
+    get:
+      operationId: getDailyRecords
+      tags: [records]
+      summary: One day's bundle of service records
+      description: |
+        The bundle of one UTC day (served by api; spec 02 F7): the
+        FlightRecord of every flight that started that day, one per line
+        (JSON lines), gzip, as built from 01:00 UTC the next day. The
+        stored file is hashed before a byte is served and refused (500
+        record_bundle_corrupt) when it no longer matches the recorded
+        hash; X-Content-SHA256 carries that hash. 404 for a day without a
+        bundle (not yet built, or missed: /readyz says records: day
+        <date> missing from 02:00 UTC). An ecosystem token with scope
+        ussp.records; every read is audited with the caller.
+      security:
+        - ecosystemToken: []
+      parameters:
+        - name: date
+          in: path
+          required: true
+          schema: {type: string, format: date}
+      responses:
+        "200":
+          description: The bundle.
+          headers:
+            X-Content-SHA256:
+              description: The SHA-256 of the body, in hex, as record_bundles holds it.
+              schema: {type: string, pattern: "^[0-9a-f]{64}$"}
+            X-Record-Flights:
+              description: The number of records in the bundle.
+              schema: {type: integer, minimum: 0}
+          content:
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "500":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/admin/occurrences:
+    get:
+      operationId: listOccurrences
+      tags: [admin]
+      summary: The occurrence reports not yet delivered
+      description: |
+        Console session of a supervisor or support (served by api; spec
+        02 F7, Reg. (EU) 376/2014 Art. 4(8)). Every report to the
+        authority that is not delivered (pending, with its tries and last
+        error; failed), the nearest deadline first, with the time to its
+        72 h deadline; a report past its deadline is critical. delivery
+        says why nothing is sent while the authority publishes no POST
+        /v1/occurrences (a spec gap); null when reports are sent. A list
+        that cannot be read is 503, never an empty list.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The reports not delivered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccurrenceReports"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: flagOccurrence
+      tags: [admin]
+      summary: Report an alert as an occurrence
+      description: |
+        Console session of a supervisor (served by api; the internal
+        endpoint WP-18's console calls). The alert of one of this USSP's
+        flights is queued as an occurrence report (occurrence/v1, owned by
+        the authority) with became_aware_at now and deadline_at 72 h
+        later, reporter.person_ref the supervisor's account id (an opaque
+        reference, M13). kind defaults to the alert's own (airprox for a
+        proximity alert); other is a voluntary report, every other kind
+        mandatory. An event already reported answers 200 with its report
+        (a proximity conflict is one report for both flights' alerts); a
+        new report 201. The narrative is free text for the authority's
+        safety analysis and must name no person. A report never makes a
+        violation (Art. 15(2)).
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OccurrenceFlag"
+      responses:
+        "200":
+          description: The event was reported before; its report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccurrenceReportItem"
+        "201":
+          description: The report as queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccurrenceReportItem"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/admin/status:
+    get:
+      operationId: listStatusNotices
+      tags: [admin]
+      summary: This USSP's operating-status notices
+      description: |
+        Console session of a supervisor, support or admin (served by api;
+        Reg. (EU) 2021/664 Art. 7(6), spec 02 F7). The notices to the
+        authority for the configured certificate (USSP_CERTIFICATE_ID),
+        newest first, each with its state: pending (with its tries, last
+        error and next try), delivered (with the authority's notice id)
+        or failed. An empty list means no notice was asked for; one that
+        cannot be read is 503.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The notices.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusNotices"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: requestStatusNotice
+      tags: [admin]
+      summary: Confirm the start of operations, or cease or restart them
+      description: |
+        Console session of an admin (served by api). Stores the notice
+        and sends it to the authority's POST /v1/certificates/{id}/status
+        after its commit, retried while the authority is unreachable.
+        start is stored once per certificate: asking again answers the
+        stored notice (200), and a restart of the process sends nothing
+        again. cease follows a start or a restart, restart a cease (400
+        otherwise); asking again for the state the last notice gives
+        answers it (200). A new notice is 201. 400 without
+        USSP_CERTIFICATE_ID.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusRequest"
+      responses:
+        "200":
+          description: The notice already stored for this request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusNotice"
+        "201":
+          description: The notice as stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusNotice"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
   /oauth/token:
     post:
       operationId: requestToken
@@ -1240,6 +1530,371 @@ components:
         acked_by:
           type: string
           description: The client that first acknowledged it.
+    CoordinationNotices:
+      type: object
+      description: The Annex V notices the console must see (GET /v1/admin/coordination).
+      required: [notices, truncated]
+      properties:
+        notices:
+          type: array
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/CoordinationNoticeItem"
+        truncated:
+          type: boolean
+          description: More notices are open than the list holds.
+    CoordinationNoticeItem:
+      type: object
+      description: |
+        One notice to the ANSP (coordination/annex_v/v1, owned by the
+        ANSP) as this USSP holds it. Times are the database clock.
+      required: [id, notice_ref, kind, intent_id, flight_id, state, created_at, age_s, attempts, last_error, ack_id, received_at, escalated_at, failed_at, next_at]
+      properties:
+        id: {type: integer, format: int64}
+        notice_ref: {type: string, maxLength: 128}
+        kind:
+          type: string
+          enum: [intent_notice, nonconformance, contingent, ended]
+        intent_id: {type: string, format: uuid}
+        flight_id:
+          type: [string, "null"]
+          format: uuid
+        state:
+          type: string
+          enum: [pending, escalated, failed]
+        created_at: {type: string, format: date-time}
+        age_s:
+          type: number
+          format: double
+          minimum: 0
+          description: Seconds since the receipt for an escalated notice, since it was queued otherwise.
+        attempts: {type: integer, minimum: 0}
+        last_error: {type: [string, "null"]}
+        ack_id: {type: [string, "null"]}
+        received_at: {type: [string, "null"], format: date-time}
+        escalated_at: {type: [string, "null"], format: date-time}
+        failed_at: {type: [string, "null"], format: date-time}
+        next_at:
+          type: [string, "null"]
+          format: date-time
+          description: The next try of a pending notice.
+    RecordSection:
+      type: object
+      description: How a section of a record reads.
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [included, unavailable]
+        reason:
+          type: string
+          description: Why the section could not be read (state unavailable).
+    FlightRecord:
+      type: object
+      description: |
+        record/flight/v1: one flight's service record (spec 02 F7). Times
+        are UTC; every number carries the policy_version it was judged
+        under, and policy_versions holds those versions' values.
+      additionalProperties: false
+      required: [schema, flight_id, ussp_id, generated_at, flight, intent, telemetry, alerts, conformance, coordination, traffic_products, policy_versions]
+      properties:
+        schema:
+          type: string
+          const: record/flight/v1
+        flight_id: {type: string, format: uuid}
+        ussp_id: {type: string}
+        generated_at: {type: string, format: date-time}
+        flight:
+          type: object
+          additionalProperties: false
+          required: [started_at, ended_at, end_reason, uas_serial, operator_reg_public, authorisation_number, intent_id, rid_flight_id, emergency, last_state]
+          properties:
+            started_at: {type: string, format: date-time}
+            ended_at: {type: [string, "null"], format: date-time}
+            end_reason: {type: [string, "null"]}
+            uas_serial: {type: string}
+            operator_reg_public:
+              type: [string, "null"]
+              description: The public part of the operator registration number (never the secret part).
+            authorisation_number: {type: [string, "null"]}
+            intent_id: {type: [string, "null"], format: uuid}
+            rid_flight_id: {type: [string, "null"]}
+            emergency: {type: boolean}
+            last_state: {type: [string, "null"]}
+        intent:
+          allOf:
+            - $ref: "#/components/schemas/RecordSection"
+            - type: object
+              required: [intent, versions]
+              properties:
+                intent:
+                  type: [object, "null"]
+                  description: The intent as it stands (null for a flight without one); the Annex IV items that are not free text, the decision and its inputs.
+                  required: [intent_id, version, local_state, decision, authorisation_number, time_start, time_end, volumes, deviation_thresholds, conflicts, cis_version_checked, registry_checked_at, policy_version]
+                  properties:
+                    intent_id: {type: string, format: uuid}
+                    version: {type: integer}
+                    local_state: {type: string}
+                    decision: {type: [string, "null"]}
+                    authorisation_number: {type: [string, "null"]}
+                    time_start: {type: string, format: date-time}
+                    time_end: {type: string, format: date-time}
+                    volumes: {type: array, description: "F3548 Volume4D list as authorised (W84)."}
+                    deviation_thresholds: {type: [object, "null"]}
+                    conflicts: {type: [array, "null"]}
+                    cis_version_checked: {type: [string, "null"]}
+                    registry_checked_at: {type: [string, "null"], format: date-time}
+                    policy_version: {type: [integer, "null"]}
+                    operator_reg_public: {type: [string, "null"]}
+                versions:
+                  type: array
+                  items:
+                    type: object
+                    required: [version, at, actor, change_reason, decision]
+                    properties:
+                      version: {type: integer}
+                      at: {type: string, format: date-time}
+                      actor: {type: string, description: "The client id that made the change, or system."}
+                      change_reason: {type: string}
+                      decision: {description: "The decision of that version as it was taken (intent/decision/v1)."}
+                versions_truncated: {type: boolean}
+        telemetry:
+          allOf:
+            - $ref: "#/components/schemas/RecordSection"
+            - type: object
+              required: [samples, first_at, last_at, bbox, max_alt_amsl_m, gap_s, policy_version, holes, causes]
+              properties:
+                samples: {type: integer, minimum: 0}
+                first_at: {type: [string, "null"], format: date-time}
+                last_at: {type: [string, "null"], format: date-time}
+                bbox:
+                  type: [array, "null"]
+                  description: min_lng, min_lat, max_lng, max_lat in WGS84 degrees.
+                  minItems: 4
+                  maxItems: 4
+                  items: {type: number}
+                max_alt_amsl_m:
+                  type: [number, "null"]
+                  description: The highest AMSL altitude; null when no sample had one (not judged, never 0).
+                gap_s: {type: number, description: "The silence that makes a hole (policy record_gap_s)."}
+                policy_version: {type: integer}
+                holes:
+                  type: array
+                  items:
+                    type: object
+                    required: [after, before, gap_s, cause]
+                    properties:
+                      after: {type: string, format: date-time}
+                      before: {type: string, format: date-time}
+                      gap_s: {type: number, minimum: 0}
+                      cause: {type: string, description: "The recorded cause, or no recorded cause."}
+                      detail: {type: string}
+                holes_truncated: {type: boolean}
+                causes:
+                  $ref: "#/components/schemas/RecordSection"
+        alerts:
+          allOf:
+            - $ref: "#/components/schemas/RecordSection"
+            - type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [alert_id, kind, severity, state, raised_at, updated_at, cleared_at, clear_reason, policy_version, detail]
+                    properties:
+                      alert_id: {type: string, format: uuid}
+                      kind: {type: string}
+                      severity: {type: string, enum: [info, warning, critical]}
+                      state: {type: string, enum: [raised, updated, cleared]}
+                      raised_at: {type: string, format: date-time}
+                      updated_at: {type: string, format: date-time}
+                      cleared_at: {type: [string, "null"], format: date-time}
+                      clear_reason: {type: [string, "null"]}
+                      captured_at: {type: [string, "null"], format: date-time}
+                      acked_at: {type: [string, "null"], format: date-time}
+                      escalated_at: {type: [string, "null"], format: date-time}
+                      peer_ref: {type: [string, "null"]}
+                      policy_version: {type: integer}
+                      detail: {type: object}
+                truncated: {type: boolean}
+        conformance:
+          allOf:
+            - $ref: "#/components/schemas/RecordSection"
+            - type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [at, state, reason, policy_version, ats_notified_at, ats_ack_ref]
+                    properties:
+                      at: {type: string, format: date-time}
+                      state: {type: string, enum: [conforming, nonconforming, contingent, lost_link, unknown]}
+                      reason: {type: [string, "null"]}
+                      distance_outside_m: {type: [number, "null"]}
+                      height_over_m: {type: [number, "null"]}
+                      time_outside_s: {type: [number, "null"]}
+                      policy_version: {type: integer}
+                      ats_notified_at: {type: [string, "null"], format: date-time}
+                      ats_ack_ref: {type: [string, "null"]}
+                truncated: {type: boolean}
+        coordination:
+          allOf:
+            - $ref: "#/components/schemas/RecordSection"
+            - type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [notice_ref, kind, state, created_at]
+                    properties:
+                      notice_ref: {type: string}
+                      kind: {type: string, enum: [intent_notice, nonconformance, contingent, ended]}
+                      state: {type: string, enum: [pending, received, acknowledged, escalated, failed]}
+                      created_at: {type: string, format: date-time}
+                      received_at: {type: [string, "null"], format: date-time}
+                      ack_id: {type: [string, "null"]}
+                      acknowledged_at: {type: [string, "null"], format: date-time}
+                      acknowledged_by: {type: [string, "null"], description: "A role at the ANSP, never a person."}
+                      escalated_at: {type: [string, "null"], format: date-time}
+                      failed_at: {type: [string, "null"], format: date-time}
+                truncated: {type: boolean}
+        traffic_products:
+          allOf:
+            - $ref: "#/components/schemas/RecordSection"
+            - type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [at, tracks_shown, degraded, policy_version]
+                    properties:
+                      at: {type: string, format: date-time}
+                      intent_id: {type: [string, "null"], format: uuid}
+                      tracks_shown: {description: "The tracks shown (ids, trust, age) as traffic-ws sampled them."}
+                      degraded: {type: array, items: {type: string}}
+                      policy_version: {type: integer}
+                total: {type: integer, minimum: 0}
+                truncated: {type: boolean}
+        policy_versions:
+          allOf:
+            - $ref: "#/components/schemas/RecordSection"
+            - type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [policy_version, created_at, values]
+                    properties:
+                      policy_version: {type: integer}
+                      created_at: {type: string, format: date-time}
+                      values: {type: object}
+                missing:
+                  type: array
+                  items: {type: integer}
+    OccurrenceFlag:
+      type: object
+      additionalProperties: false
+      required: [alert_id]
+      properties:
+        alert_id: {type: string, format: uuid}
+        kind:
+          type: string
+          enum: [airprox, nonconformance_in_prohibited, lost_link_in_uspace, emergency, other]
+        narrative: {type: string, maxLength: 2000}
+    OccurrenceReports:
+      type: object
+      required: [reports, truncated, delivery]
+      properties:
+        reports:
+          type: array
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/OccurrenceReportItem"
+        truncated: {type: boolean}
+        delivery:
+          type: [string, "null"]
+          description: Why no report is sent (null when reports are sent).
+    OccurrenceReportItem:
+      type: object
+      required: [report_ref, kind, state, channel, flagged_by, became_aware_at, deadline_at, time_to_deadline_s, critical, attempts, last_error, flight_ids]
+      properties:
+        report_ref: {type: string}
+        kind:
+          type: string
+          enum: [airprox, nonconformance_in_prohibited, lost_link_in_uspace, emergency, other]
+        state:
+          type: string
+          enum: [pending, delivered, failed]
+        channel:
+          type: string
+          enum: [mandatory, voluntary]
+        flagged_by:
+          type: string
+          enum: [system, supervisor]
+        became_aware_at: {type: string, format: date-time}
+        deadline_at: {type: string, format: date-time}
+        time_to_deadline_s:
+          type: number
+          format: double
+          description: Seconds to the deadline; negative past it.
+        critical:
+          type: boolean
+          description: Not delivered and past its deadline.
+        attempts: {type: integer, minimum: 0}
+        last_error: {type: [string, "null"]}
+        flight_ids:
+          type: array
+          items: {type: string, format: uuid}
+        submitted_at: {type: [string, "null"], format: date-time}
+        authority_ref: {type: [string, "null"]}
+        failed_at: {type: [string, "null"], format: date-time}
+        next_at: {type: [string, "null"], format: date-time}
+    StatusRequest:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [start, cease, restart]
+    StatusNotices:
+      type: object
+      required: [notices, certificate_id]
+      properties:
+        certificate_id:
+          type: [string, "null"]
+          description: USSP_CERTIFICATE_ID (null when unset).
+        notices:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/StatusNotice"
+    StatusNotice:
+      type: object
+      required: [kind, at, certificate_id, reference, requested_by, state, attempts, last_error, submitted_at, authority_ref, failed_at, created_at]
+      properties:
+        kind:
+          type: string
+          enum: [start, cease, restart]
+        at: {type: string, format: date-time, description: "The time the notice states, on the database clock."}
+        certificate_id: {type: string}
+        reference: {type: string, description: "This USSP's reference of the notice, sent with it."}
+        requested_by: {type: string, description: "The staff account that asked for it."}
+        state:
+          type: string
+          enum: [pending, delivered, failed]
+        attempts: {type: integer, minimum: 0}
+        next_at: {type: [string, "null"], format: date-time}
+        last_error: {type: [string, "null"]}
+        submitted_at: {type: [string, "null"], format: date-time}
+        authority_ref: {type: [string, "null"], description: "The authority's notice id."}
+        failed_at: {type: [string, "null"], format: date-time}
+        created_at: {type: string, format: date-time}
     Problem:
       type: object
       description: |

@@ -158,6 +158,9 @@ func (e SourceType) Valid() bool {
 	}
 }
 
+// CertificateID defines model for CertificateID.
+type CertificateID = string
+
 // ClassLabel defines model for ClassLabel.
 type ClassLabel string
 

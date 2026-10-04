@@ -1,0 +1,21 @@
+{
+  "schema": "coordination/annex_v/v1",
+  "notice_ref": "ussp-01-nc-000183",
+  "kind": "nonconformance",
+  "ussp_id": "ussp-01",
+  "sent_at": "2026-10-02T12:31:01.904Z",
+  "intents": [],
+  "nonconformance": {
+    "intent_ref": "6d1c2b4e-9a0f-4e3b-8c7d-2a1b0c9d8e7f",
+    "authorisation_number": "GEO-UAS-2026-000183",
+    "detected_at": "2026-10-02T12:31:00.500Z",
+    "reason": "threshold_exceeded",
+    "distance_outside_m": 85,
+    "height_over_m": 0,
+    "position": {
+      "lat": 41.7151,
+      "lng": 44.8271
+    },
+    "alt_wgs84_m": 612
+  }
+}

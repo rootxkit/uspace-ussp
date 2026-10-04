@@ -18,6 +18,85 @@ additively within `/v1`.
 
 ### Added
 
+- WP-15: coordination with the ANSP, service records, occurrence reports
+  and operating-status notices (`internal/coordination`,
+  `internal/records`, `internal/occurrence`, `internal/status`, all in
+  api; the retention of the hypertables in tsdb-writer).
+  - Annex V notices (`coordination/annex_v/v1`, the ANSP's schema pinned
+    under `schemas/coordination/annex_v/v1/` with `api/clients/ansp.yaml`
+    at uspace-ansp `7fc3ef1`; the client is generated into
+    `internal/coordination/anspclient`): `nonconformance` and
+    `contingent` on every transition of the conformance timeline into
+    them, `intent_notice` and `ended` for an intent touching a U-space
+    airspace in controlled airspace (`in_controlled_airspace` of
+    `cis_current`; a block that does not say, or an airspace the CIS no
+    longer holds, counts as controlled, said in the remarks). Queued in
+    the transaction that decides them (`coordination_notices`), posted
+    after the commit to `POST {USSP_ANSP_BASE_URL}/v1/coordination/notices`
+    (scope `ansp.coordination`, aud the ANSP's host, mTLS per
+    `USSP_MTLS_MODE`, now read by api too) byte for byte on every try,
+    one intent's notices in order, with bounded tries and backoff; a 409
+    (`notice_ref_reused`) and the other refusals fail a notice for good.
+    The receipt sets `ats_notified_at` on the conformance state, a
+    person's acknowledgement (read every `ats_ack_poll_s`, 10 s) sets
+    `ats_ack_ref`, and a notice unacknowledged after `ats_ack_escalate_s`
+    (300 s) is escalated. `GET /v1/admin/coordination` (supervisor,
+    support) lists what is pending, failed or escalated with its age;
+    `ansp_coordination` on `/readyz`. The conformance state keeps the
+    monitor's last position (`last_lat_deg`, `last_lng_deg`) for the
+    notice.
+  - Service records: `GET /v1/records/flights/{id}` (scope
+    `ussp.records`, the route the authority's evidence packs pull,
+    system audit F-4; audited with the caller before the body) serves
+    `record/flight/v1` (`FlightRecord` in `api/openapi.yaml`): the
+    flight, the intent and every version's decision, the telemetry
+    summary with every hole (a silence over `record_gap_s`, 3 s, and every
+    declared work-queue gap) and its recorded cause or "no recorded
+    cause", the alerts with their lifecycle, the conformance timeline,
+    the Annex V notices, the traffic products shown, and every policy
+    version it names with its values. A section whose store cannot be
+    read is `{state: unavailable, reason}`, never an empty list (B-13);
+    registration numbers keep their public part; no free text of the
+    request is copied. api keeps telemetry-ingest's `src.v1` gap records
+    (`ingest_gaps`) so a hole has a cause.
+  - Daily bundles: from 01:00 UTC the previous day's records (JSON lines,
+    gzip) are written to `USSP_RECORDS_DIR` with their SHA-256 in
+    `record_bundles`; `GET /v1/records/daily/{date}` hashes the file
+    before serving it with `X-Content-SHA256`; a day without a bundle
+    after 02:00 degrades `records` on `/readyz` (`records: day <date>
+    missing`).
+  - Retention: tsdb-writer sets telemetry's retention policy from the
+    policy row at start and on every change, and removes the remote
+    pilot's position from telemetry older than
+    `operator_position_retention_days` (90) except the flights the new
+    KV bucket `record_holds` holds (`USSP_RECORD_HOLDS_BUCKET_MAX_BYTES`);
+    api purges its gap records past the telemetry retention. Alerts,
+    intents and conformance states have no removal job yet (5 years,
+    nothing is that old).
+  - Occurrence reports (`occurrence/v1` as spec 04 §3.3 names it):
+    detected from the recorded alerts and flights (an airprox inside
+    `airprox_report_m` / `airprox_report_v_m`, defaults the CPA minima;
+    a zone incursion on a PROHIBITED zone; a lost link in U-space
+    airspace; a declared emergency) or flagged by a supervisor
+    (`POST /v1/admin/occurrences`); one report per event, `deadline_at`
+    72 h after awareness, its flights held in `record_holds`.
+    `GET /v1/admin/occurrences` lists the undelivered with the time to
+    the deadline; past it a report is critical and `occurrences` on
+    `/readyz` is down. The authority publishes no `POST /v1/occurrences`
+    yet (spec gap): no client is written by hand, so reports stay
+    queued and say why.
+  - Operating status (Art. 7(6)): `POST /v1/admin/status` (admin) stores
+    a start (once per `USSP_CERTIFICATE_ID`), cease or restart, sent to
+    the authority's `POST /v1/certificates/{id}/status` (client generated
+    into `internal/status/authclient`; `api/clients/authority.yaml`
+    bumped to uspace-authority `db84edc`) with this USSP's reference, so
+    a retry is recorded once; `GET /v1/admin/status`,
+    `operating_status` on `/readyz`.
+  - Policy values `ats_ack_poll_s`, `ats_ack_escalate_s`, `record_gap_s`,
+    `operator_position_retention_days`, `airprox_report_m`,
+    `airprox_report_v_m`; migrations 00018 to 00021.
+
+
 - WP-19: uspace-core v1.4.0. Every grid is loaded through core's
   memory-mapped loaders, so the processes on one host share one copy in
   the page cache: `USSP_GEOID_FILE` with `geoid.LoadMapped` in api,

@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -130,6 +131,46 @@ func (l *logBuffer) String() string {
 
 // readyz polls /readyz until it reports want or the deadline passes,
 // and returns the last answer.
+// wp15Deps are the readiness dependencies of WP-15 (the Annex V notices,
+// the occurrence reports, the daily bundles, the operating-status
+// notices). Their state follows rows the other tests of this package
+// leave in the shared database (a nonconformance a conformance test
+// recorded is a notice the next api process queues), so a process test
+// does not judge them: readyz checks they are there and leaves them out
+// of what it returns, with the status they alone made. Their own tests
+// judge them (coordination_test.go, occurrence_test.go, records_test.go,
+// status_test.go and the unit tests of their packages).
+var wp15Deps = []string{"ansp_coordination", "occurrences", "records", "operating_status"}
+
+func withoutWP15(t *testing.T, body *client.Readiness) *client.Readiness {
+	t.Helper()
+	if _, api := body.Dependencies["postgres"]; !api {
+		return body
+	}
+	out := *body
+	out.Dependencies = map[string]client.Dependency{}
+	for k, v := range body.Dependencies {
+		if !slices.Contains(wp15Deps, k) {
+			out.Dependencies[k] = v
+		}
+	}
+	for _, d := range wp15Deps {
+		if _, ok := body.Dependencies[d]; !ok {
+			t.Fatalf("readyz of the api process has no %s", d)
+		}
+	}
+	out.Degraded = nil
+	for _, d := range body.Degraded {
+		if !slices.Contains(wp15Deps, d) {
+			out.Degraded = append(out.Degraded, d)
+		}
+	}
+	if out.Status == client.ReadinessStatusDegraded && len(out.Degraded) == 0 {
+		out.Status = client.ReadinessStatusReady
+	}
+	return &out
+}
+
 func readyz(t *testing.T, c *client.ClientWithResponses, want client.ReadinessStatus) (int, *client.Readiness) {
 	t.Helper()
 	deadline := time.Now().Add(20 * time.Second)
@@ -145,6 +186,7 @@ func readyz(t *testing.T, c *client.ClientWithResponses, want client.ReadinessSt
 		if body == nil {
 			t.Fatalf("readyz %d: %s", resp.StatusCode(), resp.Body)
 		}
+		body = withoutWP15(t, body)
 		if body.Status == want || time.Now().After(deadline) {
 			t.Logf("readyz %d: %s", resp.StatusCode(), resp.Body)
 			return resp.StatusCode(), body

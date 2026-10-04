@@ -482,6 +482,175 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/coordination": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The Annex V notices the console must see
+         * @description Console session of a supervisor or support (served by api; spec
+         *     02 F13, Art. 13(2), cross-plan M2). Every notice to the ANSP's
+         *     coordination inbox that is not yet received (pending, with its
+         *     tries, last error and next try), was refused for good (failed)
+         *     or was not acknowledged by a person at the ANSP within the
+         *     policy's ats_ack_escalate_s (escalated, with its age since the
+         *     receipt), oldest first, at most 500 (truncated when there are
+         *     more). An empty list means no notice is waiting; it never stands
+         *     for a coordination that could not be read (503).
+         */
+        get: operations["listCoordinationNotices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/records/flights/{flight_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One flight's service record
+         * @description The service record of one flight (served by api; Reg. (EU)
+         *     2021/664 Art. 15(1)(g), 18(b); spec 02 F7): the flight, its
+         *     authorisation and every version of the decision, the telemetry
+         *     summary with its holes and their recorded causes, the alerts with
+         *     their lifecycle, the conformance timeline, the Annex V notices,
+         *     the traffic products the operator was shown, and every policy
+         *     version the record names. A section whose store cannot be read
+         *     is {state: unavailable, reason}, never an empty list (LESSONS
+         *     B-13); a bounded section says truncated. No names (spec 06 §5):
+         *     registration numbers by their public part only, no free text of
+         *     the request. An ecosystem token with scope ussp.records (the
+         *     authority); every read is audited with the caller before the
+         *     body is sent (503 when it cannot be). A flight this USSP does not
+         *     hold is 404.
+         */
+        get: operations["getFlightRecord"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/records/daily/{date}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One day's bundle of service records
+         * @description The bundle of one UTC day (served by api; spec 02 F7): the
+         *     FlightRecord of every flight that started that day, one per line
+         *     (JSON lines), gzip, as built from 01:00 UTC the next day. The
+         *     stored file is hashed before a byte is served and refused (500
+         *     record_bundle_corrupt) when it no longer matches the recorded
+         *     hash; X-Content-SHA256 carries that hash. 404 for a day without a
+         *     bundle (not yet built, or missed: /readyz says records: day
+         *     <date> missing from 02:00 UTC). An ecosystem token with scope
+         *     ussp.records; every read is audited with the caller.
+         */
+        get: operations["getDailyRecords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/occurrences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The occurrence reports not yet delivered
+         * @description Console session of a supervisor or support (served by api; spec
+         *     02 F7, Reg. (EU) 376/2014 Art. 4(8)). Every report to the
+         *     authority that is not delivered (pending, with its tries and last
+         *     error; failed), the nearest deadline first, with the time to its
+         *     72 h deadline; a report past its deadline is critical. delivery
+         *     says why nothing is sent while the authority publishes no POST
+         *     /v1/occurrences (a spec gap); null when reports are sent. A list
+         *     that cannot be read is 503, never an empty list.
+         */
+        get: operations["listOccurrences"];
+        put?: never;
+        /**
+         * Report an alert as an occurrence
+         * @description Console session of a supervisor (served by api; the internal
+         *     endpoint WP-18's console calls). The alert of one of this USSP's
+         *     flights is queued as an occurrence report (occurrence/v1, owned by
+         *     the authority) with became_aware_at now and deadline_at 72 h
+         *     later, reporter.person_ref the supervisor's account id (an opaque
+         *     reference, M13). kind defaults to the alert's own (airprox for a
+         *     proximity alert); other is a voluntary report, every other kind
+         *     mandatory. An event already reported answers 200 with its report
+         *     (a proximity conflict is one report for both flights' alerts); a
+         *     new report 201. The narrative is free text for the authority's
+         *     safety analysis and must name no person. A report never makes a
+         *     violation (Art. 15(2)).
+         */
+        post: operations["flagOccurrence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * This USSP's operating-status notices
+         * @description Console session of a supervisor, support or admin (served by api;
+         *     Reg. (EU) 2021/664 Art. 7(6), spec 02 F7). The notices to the
+         *     authority for the configured certificate (USSP_CERTIFICATE_ID),
+         *     newest first, each with its state: pending (with its tries, last
+         *     error and next try), delivered (with the authority's notice id)
+         *     or failed. An empty list means no notice was asked for; one that
+         *     cannot be read is 503.
+         */
+        get: operations["listStatusNotices"];
+        put?: never;
+        /**
+         * Confirm the start of operations, or cease or restart them
+         * @description Console session of an admin (served by api). Stores the notice
+         *     and sends it to the authority's POST /v1/certificates/{id}/status
+         *     after its commit, retried while the authority is unreachable.
+         *     start is stored once per certificate: asking again answers the
+         *     stored notice (200), and a restart of the process sends nothing
+         *     again. cease follows a start or a restart, restart a cease (400
+         *     otherwise); asking again for the state the last notice gives
+         *     answers it (200). A new notice is 201. 400 without
+         *     USSP_CERTIFICATE_ID.
+         */
+        post: operations["requestStatusNotice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/oauth/token": {
         parameters: {
             query?: never;
@@ -779,6 +948,321 @@ export interface components {
             acked_at: string;
             /** @description The client that first acknowledged it. */
             acked_by: string;
+        };
+        /** @description The Annex V notices the console must see (GET /v1/admin/coordination). */
+        CoordinationNotices: {
+            notices: components["schemas"]["CoordinationNoticeItem"][];
+            /** @description More notices are open than the list holds. */
+            truncated: boolean;
+        };
+        /**
+         * @description One notice to the ANSP (coordination/annex_v/v1, owned by the
+         *     ANSP) as this USSP holds it. Times are the database clock.
+         */
+        CoordinationNoticeItem: {
+            /** Format: int64 */
+            id: number;
+            notice_ref: string;
+            /** @enum {string} */
+            kind: "intent_notice" | "nonconformance" | "contingent" | "ended";
+            /** Format: uuid */
+            intent_id: string;
+            /** Format: uuid */
+            flight_id: string | null;
+            /** @enum {string} */
+            state: "pending" | "escalated" | "failed";
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: double
+             * @description Seconds since the receipt for an escalated notice, since it was queued otherwise.
+             */
+            age_s: number;
+            attempts: number;
+            last_error: string | null;
+            ack_id: string | null;
+            /** Format: date-time */
+            received_at: string | null;
+            /** Format: date-time */
+            escalated_at: string | null;
+            /** Format: date-time */
+            failed_at: string | null;
+            /**
+             * Format: date-time
+             * @description The next try of a pending notice.
+             */
+            next_at: string | null;
+        };
+        /** @description How a section of a record reads. */
+        RecordSection: {
+            /** @enum {string} */
+            state: "included" | "unavailable";
+            /** @description Why the section could not be read (state unavailable). */
+            reason?: string;
+        };
+        /**
+         * @description record/flight/v1: one flight's service record (spec 02 F7). Times
+         *     are UTC; every number carries the policy_version it was judged
+         *     under, and policy_versions holds those versions' values.
+         */
+        FlightRecord: {
+            /** @constant */
+            schema: "record/flight/v1";
+            /** Format: uuid */
+            flight_id: string;
+            ussp_id: string;
+            /** Format: date-time */
+            generated_at: string;
+            flight: {
+                /** Format: date-time */
+                started_at: string;
+                /** Format: date-time */
+                ended_at: string | null;
+                end_reason: string | null;
+                uas_serial: string;
+                /** @description The public part of the operator registration number (never the secret part). */
+                operator_reg_public: string | null;
+                authorisation_number: string | null;
+                /** Format: uuid */
+                intent_id: string | null;
+                rid_flight_id: string | null;
+                emergency: boolean;
+                last_state: string | null;
+            };
+            intent: components["schemas"]["RecordSection"] & {
+                /** @description The intent as it stands (null for a flight without one); the Annex IV items that are not free text, the decision and its inputs. */
+                intent: {
+                    /** Format: uuid */
+                    intent_id: string;
+                    version: number;
+                    local_state: string;
+                    decision: string | null;
+                    authorisation_number: string | null;
+                    /** Format: date-time */
+                    time_start: string;
+                    /** Format: date-time */
+                    time_end: string;
+                    /** @description F3548 Volume4D list as authorised (W84). */
+                    volumes: unknown[];
+                    deviation_thresholds: Record<string, never> | null;
+                    conflicts: unknown[] | null;
+                    cis_version_checked: string | null;
+                    /** Format: date-time */
+                    registry_checked_at: string | null;
+                    policy_version: number | null;
+                    operator_reg_public?: string | null;
+                } | null;
+                versions: {
+                    version: number;
+                    /** Format: date-time */
+                    at: string;
+                    /** @description The client id that made the change, or system. */
+                    actor: string;
+                    change_reason: string;
+                    /** @description The decision of that version as it was taken (intent/decision/v1). */
+                    decision: unknown;
+                }[];
+                versions_truncated?: boolean;
+            };
+            telemetry: components["schemas"]["RecordSection"] & {
+                samples: number;
+                /** Format: date-time */
+                first_at: string | null;
+                /** Format: date-time */
+                last_at: string | null;
+                /** @description min_lng, min_lat, max_lng, max_lat in WGS84 degrees. */
+                bbox: number[] | null;
+                /** @description The highest AMSL altitude; null when no sample had one (not judged, never 0). */
+                max_alt_amsl_m: number | null;
+                /** @description The silence that makes a hole (policy record_gap_s). */
+                gap_s: number;
+                policy_version: number;
+                holes: {
+                    /** Format: date-time */
+                    after: string;
+                    /** Format: date-time */
+                    before: string;
+                    gap_s: number;
+                    /** @description The recorded cause, or no recorded cause. */
+                    cause: string;
+                    detail?: string;
+                }[];
+                holes_truncated?: boolean;
+                causes: components["schemas"]["RecordSection"];
+            };
+            alerts: components["schemas"]["RecordSection"] & {
+                items?: {
+                    /** Format: uuid */
+                    alert_id: string;
+                    kind: string;
+                    /** @enum {string} */
+                    severity: "info" | "warning" | "critical";
+                    /** @enum {string} */
+                    state: "raised" | "updated" | "cleared";
+                    /** Format: date-time */
+                    raised_at: string;
+                    /** Format: date-time */
+                    updated_at: string;
+                    /** Format: date-time */
+                    cleared_at: string | null;
+                    clear_reason: string | null;
+                    /** Format: date-time */
+                    captured_at?: string | null;
+                    /** Format: date-time */
+                    acked_at?: string | null;
+                    /** Format: date-time */
+                    escalated_at?: string | null;
+                    peer_ref?: string | null;
+                    policy_version: number;
+                    detail: Record<string, never>;
+                }[];
+                truncated?: boolean;
+            };
+            conformance: components["schemas"]["RecordSection"] & {
+                items?: {
+                    /** Format: date-time */
+                    at: string;
+                    /** @enum {string} */
+                    state: "conforming" | "nonconforming" | "contingent" | "lost_link" | "unknown";
+                    reason: string | null;
+                    distance_outside_m?: number | null;
+                    height_over_m?: number | null;
+                    time_outside_s?: number | null;
+                    policy_version: number;
+                    /** Format: date-time */
+                    ats_notified_at: string | null;
+                    ats_ack_ref: string | null;
+                }[];
+                truncated?: boolean;
+            };
+            coordination: components["schemas"]["RecordSection"] & {
+                items?: {
+                    notice_ref: string;
+                    /** @enum {string} */
+                    kind: "intent_notice" | "nonconformance" | "contingent" | "ended";
+                    /** @enum {string} */
+                    state: "pending" | "received" | "acknowledged" | "escalated" | "failed";
+                    /** Format: date-time */
+                    created_at: string;
+                    /** Format: date-time */
+                    received_at?: string | null;
+                    ack_id?: string | null;
+                    /** Format: date-time */
+                    acknowledged_at?: string | null;
+                    /** @description A role at the ANSP, never a person. */
+                    acknowledged_by?: string | null;
+                    /** Format: date-time */
+                    escalated_at?: string | null;
+                    /** Format: date-time */
+                    failed_at?: string | null;
+                }[];
+                truncated?: boolean;
+            };
+            traffic_products: components["schemas"]["RecordSection"] & {
+                items?: {
+                    /** Format: date-time */
+                    at: string;
+                    /** Format: uuid */
+                    intent_id?: string | null;
+                    /** @description The tracks shown (ids, trust, age) as traffic-ws sampled them. */
+                    tracks_shown: unknown;
+                    degraded: string[];
+                    policy_version: number;
+                }[];
+                total?: number;
+                truncated?: boolean;
+            };
+            policy_versions: components["schemas"]["RecordSection"] & {
+                items?: {
+                    policy_version: number;
+                    /** Format: date-time */
+                    created_at: string;
+                    values: Record<string, never>;
+                }[];
+                missing?: number[];
+            };
+        };
+        OccurrenceFlag: {
+            /** Format: uuid */
+            alert_id: string;
+            /** @enum {string} */
+            kind?: "airprox" | "nonconformance_in_prohibited" | "lost_link_in_uspace" | "emergency" | "other";
+            narrative?: string;
+        };
+        OccurrenceReports: {
+            reports: components["schemas"]["OccurrenceReportItem"][];
+            truncated: boolean;
+            /** @description Why no report is sent (null when reports are sent). */
+            delivery: string | null;
+        };
+        OccurrenceReportItem: {
+            report_ref: string;
+            /** @enum {string} */
+            kind: "airprox" | "nonconformance_in_prohibited" | "lost_link_in_uspace" | "emergency" | "other";
+            /** @enum {string} */
+            state: "pending" | "delivered" | "failed";
+            /** @enum {string} */
+            channel: "mandatory" | "voluntary";
+            /** @enum {string} */
+            flagged_by: "system" | "supervisor";
+            /** Format: date-time */
+            became_aware_at: string;
+            /** Format: date-time */
+            deadline_at: string;
+            /**
+             * Format: double
+             * @description Seconds to the deadline; negative past it.
+             */
+            time_to_deadline_s: number;
+            /** @description Not delivered and past its deadline. */
+            critical: boolean;
+            attempts: number;
+            last_error: string | null;
+            flight_ids: string[];
+            /** Format: date-time */
+            submitted_at?: string | null;
+            authority_ref?: string | null;
+            /** Format: date-time */
+            failed_at?: string | null;
+            /** Format: date-time */
+            next_at?: string | null;
+        };
+        StatusRequest: {
+            /** @enum {string} */
+            kind: "start" | "cease" | "restart";
+        };
+        StatusNotices: {
+            /** @description USSP_CERTIFICATE_ID (null when unset). */
+            certificate_id: string | null;
+            notices: components["schemas"]["StatusNotice"][];
+        };
+        StatusNotice: {
+            /** @enum {string} */
+            kind: "start" | "cease" | "restart";
+            /**
+             * Format: date-time
+             * @description The time the notice states, on the database clock.
+             */
+            at: string;
+            certificate_id: string;
+            /** @description This USSP's reference of the notice, sent with it. */
+            reference: string;
+            /** @description The staff account that asked for it. */
+            requested_by: string;
+            /** @enum {string} */
+            state: "pending" | "delivered" | "failed";
+            attempts: number;
+            /** Format: date-time */
+            next_at?: string | null;
+            last_error: string | null;
+            /** Format: date-time */
+            submitted_at: string | null;
+            /** @description The authority's notice id. */
+            authority_ref: string | null;
+            /** Format: date-time */
+            failed_at: string | null;
+            /** Format: date-time */
+            created_at: string;
         };
         /**
          * @description The ecosystem-wide error body (RFC 9457), the shape of
@@ -1917,6 +2401,216 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listCoordinationNotices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The open notices. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoordinationNotices"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getFlightRecord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                flight_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlightRecord"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getDailyRecords: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                date: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The bundle. */
+            200: {
+                headers: {
+                    /** @description The SHA-256 of the body, in hex, as record_bundles holds it. */
+                    "X-Content-SHA256"?: string;
+                    /** @description The number of records in the bundle. */
+                    "X-Record-Flights"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/gzip": string;
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listOccurrences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The reports not delivered. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OccurrenceReports"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    flagOccurrence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OccurrenceFlag"];
+            };
+        };
+        responses: {
+            /** @description The event was reported before; its report. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OccurrenceReportItem"];
+                };
+            };
+            /** @description The report as queued. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OccurrenceReportItem"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listStatusNotices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The notices. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusNotices"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    requestStatusNotice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StatusRequest"];
+            };
+        };
+        responses: {
+            /** @description The notice already stored for this request. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusNotice"];
+                };
+            };
+            /** @description The notice as stored. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusNotice"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
             503: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
         };
