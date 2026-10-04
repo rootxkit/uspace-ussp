@@ -229,6 +229,42 @@ func TestDSSBounds(t *testing.T) {
 	}
 }
 
+// TestPeerAndMannedBounds: a negative or non-finite manned margin, a
+// zero or non-finite silence or peer window and a flight cap outside 1
+// to its maximum are refused, each naming its field; the defaults and
+// the bounds themselves are accepted (E-01 pair).
+func TestPeerAndMannedBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		set   func(*Values)
+		field string
+	}{
+		{"negative margin", func(v *Values) { v.MannedMarginM = -1 }, "manned_margin_m"},
+		{"NaN margin", func(v *Values) { v.MannedMarginM = math.NaN() }, "manned_margin_m"},
+		{"no silence", func(v *Values) { v.MannedUnavailableS = 0 }, "manned_unavailable_s"},
+		{"infinite silence", func(v *Values) { v.MannedUnavailableS = math.Inf(1) }, "manned_unavailable_s"},
+		{"no peer window", func(v *Values) { v.PeerUnavailableS = 0 }, "peer_unavailable_s"},
+		{"no flight cap", func(v *Values) { v.PeerFlightsMax = 0 }, "peer_flights_max_count"},
+		{"too large a flight cap", func(v *Values) { v.PeerFlightsMax = MaxPeerFlightsMax + 1 }, "peer_flights_max_count"},
+	} {
+		v := Defaults()
+		tc.set(&v)
+		if err := v.Validate(); err == nil || !strings.Contains(err.Error(), tc.field) {
+			t.Errorf("%s: accepted or not named: %v", tc.name, err)
+		}
+	}
+	v := Defaults()
+	if v.MannedMarginM != 5000 || v.MannedUnavailableS != 10 || v.PeerUnavailableS != 60 || v.PeerFlightsMax != 1000 {
+		t.Errorf("peer and manned defaults %v %v %v %d", v.MannedMarginM, v.MannedUnavailableS, v.PeerUnavailableS, v.PeerFlightsMax)
+	}
+	for _, n := range []int{1, MaxPeerFlightsMax} {
+		v.MannedMarginM, v.PeerFlightsMax = 0, n
+		if err := v.Validate(); err != nil {
+			t.Errorf("bounds 0 m, %d flights refused: %v", n, err)
+		}
+	}
+}
+
 // E-01 pair, B-09: a failing projection refuses the write with the
 // 503-shaped error and leaves nothing; a succeeding one leaves one row
 // that Current and Load return.
