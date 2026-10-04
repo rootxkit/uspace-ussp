@@ -17,6 +17,7 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/intent"
 	"github.com/rootxkit/uspace-ussp/internal/national"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
+	"github.com/rootxkit/uspace-ussp/internal/store"
 	fakewx "github.com/rootxkit/uspace-ussp/internal/testfakes/weather"
 	"github.com/rootxkit/uspace-ussp/internal/weather"
 	weatherstore "github.com/rootxkit/uspace-ussp/internal/weather/pgstore"
@@ -256,5 +257,43 @@ func TestIntegrationIntentWeatherCheckedRef(t *testing.T) {
 	}
 	if n := count(t, relOwner(t), "SELECT count(*) FROM operational_intents WHERE id = $1::uuid AND weather_checked_ref IS NULL", r.str("intent_id")); n != 1 {
 		t.Fatal("a null weather_checked_ref is not stored as null")
+	}
+}
+
+// 00024's Down keeps the products and its Up reads their station and
+// kind back from what each row holds, so a rollback and a redeploy keep
+// the products the decisions name; a row that says neither is removed
+// (E-01 pair).
+func TestIntegrationWeatherMigrationDownAndUpKeepsProducts(t *testing.T) {
+	ctx := context.Background()
+	w := newWeatherRig(t, origin(t), "31013KT 9999 FEW030 17/05 Q1026")
+	if err := w.svc.Poll(ctx); err != nil {
+		t.Fatal(err)
+	}
+	name := w.svc.Source.Name()
+	owner := relOwner(t)
+	if _, err := owner.MigrateDown(ctx, store.TreeRelational, 23); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := relOwner(t).Migrate(context.Background(), store.TreeRelational); err != nil {
+			t.Errorf("restore the schema: %v", err)
+		}
+	})
+	if _, err := owner.Exec(ctx, `INSERT INTO weather_products (area, observed_at, valid_from, valid_to, source, product, fetched_at)
+		VALUES (ST_Buffer(ST_MakePoint(0, 0)::geography, 10), now(), now(), now() + interval '1 hour', $1, '{"raw":"garbled"}', now())`, name); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.Migrate(ctx, store.TreeRelational); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, owner, "SELECT count(*) FROM weather_products WHERE source = $1", name); n != 2 {
+		t.Fatalf("%d products after down and up, want the 2 stored", n)
+	}
+	if n := count(t, owner, "SELECT count(*) FROM weather_products WHERE source = $1 AND station = 'UGTB' AND kind IN ('metar', 'taf')", name); n != 2 {
+		t.Fatalf("%d products read back", n)
+	}
+	if a, err := w.svc.Answer(ctx, w.box(), time.Time{}); err != nil || len(a.Products) != 2 {
+		t.Fatalf("%+v %v", a, err)
 	}
 }
