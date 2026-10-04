@@ -86,10 +86,10 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_AUTHORITY_BASE_URL` | `api` |  |  |  | authority base URL (F8 registry, occurrences, status) |
 | `USSP_ANSP_BASE_URL` | `api` |  |  |  | ANSP base URL (Annex V coordination notices) |
 | `USSP_ANSP_STREAM_URL` | `monitor` |  |  |  | ANSP manned-traffic stream (F4) |
-| `USSP_MTLS_MODE` | `monitor` |  | `required` |  | mTLS towards the ANSP (M25); off only in the lab and on staging, and logged at error level |
-| `USSP_MTLS_CERT_FILE` | `monitor` |  |  |  | client certificate (PEM) for USSP_MTLS_MODE=required |
-| `USSP_MTLS_KEY_FILE` | `monitor` |  |  |  | client key (PEM) for USSP_MTLS_MODE=required |
-| `USSP_MTLS_CA_FILE` | `monitor` |  |  |  | CA bundle (PEM) the ANSP's certificate is checked against |
+| `USSP_MTLS_MODE` | `api,monitor` |  | `required` |  | mTLS towards the ANSP (M25): Annex V notices (api) and the manned-traffic stream (monitor); off only in the lab and on staging, and logged at error level |
+| `USSP_MTLS_CERT_FILE` | `api,monitor` |  |  |  | client certificate (PEM) for USSP_MTLS_MODE=required |
+| `USSP_MTLS_KEY_FILE` | `api,monitor` |  |  |  | client key (PEM) for USSP_MTLS_MODE=required |
+| `USSP_MTLS_CA_FILE` | `api,monitor` |  |  |  | CA bundle (PEM) the ANSP's certificate is checked against |
 | `USSP_ISSUER_KEY_FILE` | `api` |  |  |  | RSA key (PEM, at least 2048 bits) of this USSP's own token issuer (scripts/gen-issuer-key.sh); unset, api issues no token and starts no session, and says so on /readyz |
 | `USSP_ISSUER_PREVIOUS_KEY_FILE` | `api` |  |  |  | the previous issuer key (PEM) during a rotation: published in the JWKS and accepted, never used to sign |
 | `USSP_ISSUER_URL` | `api,telemetry-ingest` |  |  |  | iss of this USSP's own tokens; default https:// followed by the first USSP_AUDIENCES entry; telemetry-ingest honours operator scopes only on tokens of this iss (list it in USSP_TOKEN_ISSUERS with api's JWKS) |

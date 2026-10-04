@@ -16,6 +16,51 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for CoordinationNoticeItemKind.
+const (
+	Contingent     CoordinationNoticeItemKind = "contingent"
+	Ended          CoordinationNoticeItemKind = "ended"
+	IntentNotice   CoordinationNoticeItemKind = "intent_notice"
+	Nonconformance CoordinationNoticeItemKind = "nonconformance"
+)
+
+// Valid indicates whether the value is a known member of the CoordinationNoticeItemKind enum.
+func (e CoordinationNoticeItemKind) Valid() bool {
+	switch e {
+	case Contingent:
+		return true
+	case Ended:
+		return true
+	case IntentNotice:
+		return true
+	case Nonconformance:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CoordinationNoticeItemState.
+const (
+	Escalated CoordinationNoticeItemState = "escalated"
+	Failed    CoordinationNoticeItemState = "failed"
+	Pending   CoordinationNoticeItemState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the CoordinationNoticeItemState enum.
+func (e CoordinationNoticeItemState) Valid() bool {
+	switch e {
+	case Escalated:
+		return true
+	case Failed:
+		return true
+	case Pending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DependencyState.
 const (
 	DependencyStateDegraded DependencyState = "degraded"
@@ -582,6 +627,44 @@ type ClientSecret struct {
 	PreviousValidUntil *time.Time      `json:"previous_valid_until,omitempty"`
 	Scopes             []OperatorScope `json:"scopes"`
 	Status             string          `json:"status"`
+}
+
+// CoordinationNoticeItem One notice to the ANSP (coordination/annex_v/v1, owned by the
+// ANSP) as this USSP holds it. Times are the database clock.
+type CoordinationNoticeItem struct {
+	AckId *string `json:"ack_id"`
+
+	// AgeS Seconds since the receipt for an escalated notice, since it was queued otherwise.
+	AgeS        float64                    `json:"age_s"`
+	Attempts    int                        `json:"attempts"`
+	CreatedAt   time.Time                  `json:"created_at"`
+	EscalatedAt *time.Time                 `json:"escalated_at"`
+	FailedAt    *time.Time                 `json:"failed_at"`
+	FlightId    *openapi_types.UUID        `json:"flight_id"`
+	Id          int64                      `json:"id"`
+	IntentId    openapi_types.UUID         `json:"intent_id"`
+	Kind        CoordinationNoticeItemKind `json:"kind"`
+	LastError   *string                    `json:"last_error"`
+
+	// NextAt The next try of a pending notice.
+	NextAt     *time.Time                  `json:"next_at"`
+	NoticeRef  string                      `json:"notice_ref"`
+	ReceivedAt *time.Time                  `json:"received_at"`
+	State      CoordinationNoticeItemState `json:"state"`
+}
+
+// CoordinationNoticeItemKind defines model for CoordinationNoticeItem.Kind.
+type CoordinationNoticeItemKind string
+
+// CoordinationNoticeItemState defines model for CoordinationNoticeItem.State.
+type CoordinationNoticeItemState string
+
+// CoordinationNotices The Annex V notices the console must see (GET /v1/admin/coordination).
+type CoordinationNotices struct {
+	Notices []CoordinationNoticeItem `json:"notices"`
+
+	// Truncated More notices are open than the list holds.
+	Truncated bool `json:"truncated"`
 }
 
 // Dependency defines model for Dependency.
@@ -1577,6 +1660,9 @@ type ServerInterface interface {
 	// UnbindSerial Unbind a serial from a client
 	// (DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial})
 	UnbindSerial(w http.ResponseWriter, r *http.Request, operatorId OperatorID, clientId ClientID, serial string)
+	// ListCoordinationNotices The Annex V notices the console must see
+	// (GET /v1/admin/coordination)
+	ListCoordinationNotices(w http.ResponseWriter, r *http.Request)
 	// AckAlert Acknowledge an alert
 	// (POST /v1/alerts/{alert_id}/ack)
 	AckAlert(w http.ResponseWriter, r *http.Request, alertId AlertID)
@@ -1910,6 +1996,20 @@ func (siw *ServerInterfaceWrapper) UnbindSerial(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UnbindSerial(w, r, operatorId, clientId, serial)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListCoordinationNotices operation middleware
+func (siw *ServerInterfaceWrapper) ListCoordinationNotices(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListCoordinationNotices(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2372,6 +2472,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/geo", wrapper.GetGeo)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/geo/intents/{intent_id}", wrapper.GetGeoForIntent)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/alerts/{alert_id}/ack", wrapper.AckAlert)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/coordination", wrapper.ListCoordinationNotices)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/oauth/token", wrapper.RequestToken)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/jwks.json", wrapper.GetJWKS)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/login", wrapper.Login)

@@ -482,6 +482,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/coordination": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The Annex V notices the console must see
+         * @description Console session of a supervisor or support (served by api; spec
+         *     02 F13, Art. 13(2), cross-plan M2). Every notice to the ANSP's
+         *     coordination inbox that is not yet received (pending, with its
+         *     tries, last error and next try), was refused for good (failed)
+         *     or was not acknowledged by a person at the ANSP within the
+         *     policy's ats_ack_escalate_s (escalated, with its age since the
+         *     receipt), oldest first, at most 500 (truncated when there are
+         *     more). An empty list means no notice is waiting; it never stands
+         *     for a coordination that could not be read (503).
+         */
+        get: operations["listCoordinationNotices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/oauth/token": {
         parameters: {
             query?: never;
@@ -779,6 +807,50 @@ export interface components {
             acked_at: string;
             /** @description The client that first acknowledged it. */
             acked_by: string;
+        };
+        /** @description The Annex V notices the console must see (GET /v1/admin/coordination). */
+        CoordinationNotices: {
+            notices: components["schemas"]["CoordinationNoticeItem"][];
+            /** @description More notices are open than the list holds. */
+            truncated: boolean;
+        };
+        /**
+         * @description One notice to the ANSP (coordination/annex_v/v1, owned by the
+         *     ANSP) as this USSP holds it. Times are the database clock.
+         */
+        CoordinationNoticeItem: {
+            /** Format: int64 */
+            id: number;
+            notice_ref: string;
+            /** @enum {string} */
+            kind: "intent_notice" | "nonconformance" | "contingent" | "ended";
+            /** Format: uuid */
+            intent_id: string;
+            /** Format: uuid */
+            flight_id: string | null;
+            /** @enum {string} */
+            state: "pending" | "escalated" | "failed";
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: double
+             * @description Seconds since the receipt for an escalated notice, since it was queued otherwise.
+             */
+            age_s: number;
+            attempts: number;
+            last_error: string | null;
+            ack_id: string | null;
+            /** Format: date-time */
+            received_at: string | null;
+            /** Format: date-time */
+            escalated_at: string | null;
+            /** Format: date-time */
+            failed_at: string | null;
+            /**
+             * Format: date-time
+             * @description The next try of a pending notice.
+             */
+            next_at: string | null;
         };
         /**
          * @description The ecosystem-wide error body (RFC 9457), the shape of
@@ -1917,6 +1989,30 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listCoordinationNotices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The open notices. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoordinationNotices"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
             503: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
         };

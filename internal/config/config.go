@@ -112,10 +112,10 @@ type Config struct {
 	AuthorityBaseURL        string   `env:"USSP_AUTHORITY_BASE_URL" by:"api" kind:"url" help:"authority base URL (F8 registry, occurrences, status)"`
 	ANSPBaseURL             string   `env:"USSP_ANSP_BASE_URL" by:"api" kind:"url" help:"ANSP base URL (Annex V coordination notices)"`
 	ANSPStreamURL           string   `env:"USSP_ANSP_STREAM_URL" by:"monitor" kind:"url" help:"ANSP manned-traffic stream (F4)"`
-	MTLSMode                string   `env:"USSP_MTLS_MODE" default:"required" by:"monitor" enum:"required|off" help:"mTLS towards the ANSP (M25); off only in the lab and on staging, and logged at error level"`
-	MTLSCertFile            string   `env:"USSP_MTLS_CERT_FILE" by:"monitor" help:"client certificate (PEM) for USSP_MTLS_MODE=required"`
-	MTLSKeyFile             string   `env:"USSP_MTLS_KEY_FILE" by:"monitor" help:"client key (PEM) for USSP_MTLS_MODE=required"`
-	MTLSCAFile              string   `env:"USSP_MTLS_CA_FILE" by:"monitor" help:"CA bundle (PEM) the ANSP's certificate is checked against"`
+	MTLSMode                string   `env:"USSP_MTLS_MODE" default:"required" by:"api,monitor" enum:"required|off" help:"mTLS towards the ANSP (M25): Annex V notices (api) and the manned-traffic stream (monitor); off only in the lab and on staging, and logged at error level"`
+	MTLSCertFile            string   `env:"USSP_MTLS_CERT_FILE" by:"api,monitor" help:"client certificate (PEM) for USSP_MTLS_MODE=required"`
+	MTLSKeyFile             string   `env:"USSP_MTLS_KEY_FILE" by:"api,monitor" help:"client key (PEM) for USSP_MTLS_MODE=required"`
+	MTLSCAFile              string   `env:"USSP_MTLS_CA_FILE" by:"api,monitor" help:"CA bundle (PEM) the ANSP's certificate is checked against"`
 	IssuerKeyFile           string   `env:"USSP_ISSUER_KEY_FILE" by:"api" help:"RSA key (PEM, at least 2048 bits) of this USSP's own token issuer (scripts/gen-issuer-key.sh); unset, api issues no token and starts no session, and says so on /readyz"`
 	IssuerPreviousKeyFile   string   `env:"USSP_ISSUER_PREVIOUS_KEY_FILE" by:"api" help:"the previous issuer key (PEM) during a rotation: published in the JWKS and accepted, never used to sign"`
 	IssuerURL               string   `env:"USSP_ISSUER_URL" by:"api,telemetry-ingest" kind:"url" help:"iss of this USSP's own tokens; default https:// followed by the first USSP_AUDIENCES entry; telemetry-ingest honours operator scopes only on tokens of this iss (list it in USSP_TOKEN_ISSUERS with api's JWKS)"`

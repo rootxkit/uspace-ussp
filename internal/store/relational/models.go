@@ -104,6 +104,8 @@ type ConformanceState struct {
 	AtsNotifiedAt    *time.Time  `json:"ats_notified_at"`
 	AtsAckRef        *string     `json:"ats_ack_ref"`
 	NearbyNotified   []byte      `json:"nearby_notified"`
+	LastLatDeg       *float64    `json:"last_lat_deg"`
+	LastLngDeg       *float64    `json:"last_lng_deg"`
 }
 
 type Constraint struct {
@@ -117,6 +119,45 @@ type Constraint struct {
 	CisRestrictionID *string    `json:"cis_restriction_id"`
 	FetchedAt        time.Time  `json:"fetched_at"`
 	UssBaseUrl       *string    `json:"uss_base_url"`
+}
+
+type CoordinationCheck struct {
+	IntentID   pgtype.UUID `json:"intent_id"`
+	Controlled bool        `json:"controlled"`
+	// the U-space airspaces of the intent judged controlled (or unstated, or no longer held)
+	AirspaceIds []string `json:"airspace_ids"`
+	// of those, the ones whose in_controlled_airspace the CIS does not state or no longer holds
+	UnstatedIds []string  `json:"unstated_ids"`
+	CisVersion  *string   `json:"cis_version"`
+	CheckedAt   time.Time `json:"checked_at"`
+}
+
+type CoordinationNotice struct {
+	ID                 int64       `json:"id"`
+	NoticeRef          string      `json:"notice_ref"`
+	Kind               string      `json:"kind"`
+	IntentID           pgtype.UUID `json:"intent_id"`
+	FlightID           pgtype.UUID `json:"flight_id"`
+	ConformanceStateID *int64      `json:"conformance_state_id"`
+	Payload            []byte      `json:"payload"`
+	// the exact bytes POSTed; every retry sends these
+	Body               []byte     `json:"body"`
+	CreatedAt          time.Time  `json:"created_at"`
+	State              string     `json:"state"`
+	Attempts           int32      `json:"attempts"`
+	NextAt             time.Time  `json:"next_at"`
+	LastError          *string    `json:"last_error"`
+	AckID              *string    `json:"ack_id"`
+	ReceivedAt         *time.Time `json:"received_at"`
+	AnspReceivedAt     *time.Time `json:"ansp_received_at"`
+	AckRequired        bool       `json:"ack_required"`
+	Polls              int32      `json:"polls"`
+	PollNextAt         *time.Time `json:"poll_next_at"`
+	AcknowledgedAt     *time.Time `json:"acknowledged_at"`
+	AnspAcknowledgedAt *time.Time `json:"ansp_acknowledged_at"`
+	AcknowledgedBy     *string    `json:"acknowledged_by"`
+	EscalatedAt        *time.Time `json:"escalated_at"`
+	FailedAt           *time.Time `json:"failed_at"`
 }
 
 type DssExchange struct {

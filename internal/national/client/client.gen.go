@@ -18,6 +18,51 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for CoordinationNoticeItemKind.
+const (
+	Contingent     CoordinationNoticeItemKind = "contingent"
+	Ended          CoordinationNoticeItemKind = "ended"
+	IntentNotice   CoordinationNoticeItemKind = "intent_notice"
+	Nonconformance CoordinationNoticeItemKind = "nonconformance"
+)
+
+// Valid indicates whether the value is a known member of the CoordinationNoticeItemKind enum.
+func (e CoordinationNoticeItemKind) Valid() bool {
+	switch e {
+	case Contingent:
+		return true
+	case Ended:
+		return true
+	case IntentNotice:
+		return true
+	case Nonconformance:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CoordinationNoticeItemState.
+const (
+	Escalated CoordinationNoticeItemState = "escalated"
+	Failed    CoordinationNoticeItemState = "failed"
+	Pending   CoordinationNoticeItemState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the CoordinationNoticeItemState enum.
+func (e CoordinationNoticeItemState) Valid() bool {
+	switch e {
+	case Escalated:
+		return true
+	case Failed:
+		return true
+	case Pending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DependencyState.
 const (
 	DependencyStateDegraded DependencyState = "degraded"
@@ -584,6 +629,44 @@ type ClientSecret struct {
 	PreviousValidUntil *time.Time      `json:"previous_valid_until,omitempty"`
 	Scopes             []OperatorScope `json:"scopes"`
 	Status             string          `json:"status"`
+}
+
+// CoordinationNoticeItem One notice to the ANSP (coordination/annex_v/v1, owned by the
+// ANSP) as this USSP holds it. Times are the database clock.
+type CoordinationNoticeItem struct {
+	AckId *string `json:"ack_id"`
+
+	// AgeS Seconds since the receipt for an escalated notice, since it was queued otherwise.
+	AgeS        float64                    `json:"age_s"`
+	Attempts    int                        `json:"attempts"`
+	CreatedAt   time.Time                  `json:"created_at"`
+	EscalatedAt *time.Time                 `json:"escalated_at"`
+	FailedAt    *time.Time                 `json:"failed_at"`
+	FlightId    *openapi_types.UUID        `json:"flight_id"`
+	Id          int64                      `json:"id"`
+	IntentId    openapi_types.UUID         `json:"intent_id"`
+	Kind        CoordinationNoticeItemKind `json:"kind"`
+	LastError   *string                    `json:"last_error"`
+
+	// NextAt The next try of a pending notice.
+	NextAt     *time.Time                  `json:"next_at"`
+	NoticeRef  string                      `json:"notice_ref"`
+	ReceivedAt *time.Time                  `json:"received_at"`
+	State      CoordinationNoticeItemState `json:"state"`
+}
+
+// CoordinationNoticeItemKind defines model for CoordinationNoticeItem.Kind.
+type CoordinationNoticeItemKind string
+
+// CoordinationNoticeItemState defines model for CoordinationNoticeItem.State.
+type CoordinationNoticeItemState string
+
+// CoordinationNotices The Annex V notices the console must see (GET /v1/admin/coordination).
+type CoordinationNotices struct {
+	Notices []CoordinationNoticeItem `json:"notices"`
+
+	// Truncated More notices are open than the list holds.
+	Truncated bool `json:"truncated"`
 }
 
 // Dependency defines model for Dependency.
@@ -1892,6 +1975,21 @@ type ClientInterface interface {
 	// Corresponds with DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial} (the `UnbindSerial` operationId).
 	UnbindSerial(ctx context.Context, operatorId OperatorID, clientId ClientID, serial string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListCoordinationNotices The Annex V notices the console must see
+	//
+	// Console session of a supervisor or support (served by api; spec
+	// 02 F13, Art. 13(2), cross-plan M2). Every notice to the ANSP's
+	// coordination inbox that is not yet received (pending, with its
+	// tries, last error and next try), was refused for good (failed)
+	// or was not acknowledged by a person at the ANSP within the
+	// policy's ats_ack_escalate_s (escalated, with its age since the
+	// receipt), oldest first, at most 500 (truncated when there are
+	// more). An empty list means no notice is waiting; it never stands
+	// for a coordination that could not be read (503).
+	//
+	// Corresponds with GET /v1/admin/coordination (the `ListCoordinationNotices` operationId).
+	ListCoordinationNotices(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// OpenAlertStream Stream the alerts of one intent (WebSocket)
 	//
 	// A WebSocket upgrade (served by traffic-ws; Art. 13, spec 02 F5)
@@ -2655,6 +2753,31 @@ func (c *Client) BindSerial(ctx context.Context, operatorId OperatorID, clientId
 // Corresponds with DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial} (the `UnbindSerial` operationId).
 func (c *Client) UnbindSerial(ctx context.Context, operatorId OperatorID, clientId ClientID, serial string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUnbindSerialRequest(c.Server, operatorId, clientId, serial)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListCoordinationNotices The Annex V notices the console must see
+//
+// Console session of a supervisor or support (served by api; spec
+// 02 F13, Art. 13(2), cross-plan M2). Every notice to the ANSP's
+// coordination inbox that is not yet received (pending, with its
+// tries, last error and next try), was refused for good (failed)
+// or was not acknowledged by a person at the ANSP within the
+// policy's ats_ack_escalate_s (escalated, with its age since the
+// receipt), oldest first, at most 500 (truncated when there are
+// more). An empty list means no notice is waiting; it never stands
+// for a coordination that could not be read (503).
+//
+// Corresponds with GET /v1/admin/coordination (the `ListCoordinationNotices` operationId).
+func (c *Client) ListCoordinationNotices(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListCoordinationNoticesRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -3676,6 +3799,33 @@ func NewUnbindSerialRequest(server string, operatorId OperatorID, clientId Clien
 	}
 
 	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListCoordinationNoticesRequest constructs an http.Request for the ListCoordinationNotices method
+func NewListCoordinationNoticesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/coordination")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -4734,6 +4884,23 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial} (the `UnbindSerial` operationId).
 	UnbindSerialWithResponse(ctx context.Context, operatorId OperatorID, clientId ClientID, serial string, reqEditors ...RequestEditorFn) (*UnbindSerialResponse, error)
+
+	// ListCoordinationNoticesWithResponse The Annex V notices the console must see
+	//
+	// Console session of a supervisor or support (served by api; spec
+	// 02 F13, Art. 13(2), cross-plan M2). Every notice to the ANSP's
+	// coordination inbox that is not yet received (pending, with its
+	// tries, last error and next try), was refused for good (failed)
+	// or was not acknowledged by a person at the ANSP within the
+	// policy's ats_ack_escalate_s (escalated, with its age since the
+	// receipt), oldest first, at most 500 (truncated when there are
+	// more). An empty list means no notice is waiting; it never stands
+	// for a coordination that could not be read (503).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/admin/coordination (the `ListCoordinationNotices` operationId).
+	ListCoordinationNoticesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListCoordinationNoticesResponse, error)
 
 	// OpenAlertStreamWithResponse Stream the alerts of one intent (WebSocket)
 	//
@@ -6044,6 +6211,75 @@ func (r UnbindSerialResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r UnbindSerialResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListCoordinationNoticesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *CoordinationNotices
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListCoordinationNoticesResponse) GetJSON200() *CoordinationNotices {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ListCoordinationNoticesResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ListCoordinationNoticesResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ListCoordinationNoticesResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListCoordinationNoticesResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListCoordinationNoticesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListCoordinationNoticesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListCoordinationNoticesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListCoordinationNoticesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -7593,6 +7829,29 @@ func (c *ClientWithResponses) UnbindSerialWithResponse(ctx context.Context, oper
 	return ParseUnbindSerialResponse(rsp)
 }
 
+// ListCoordinationNoticesWithResponse The Annex V notices the console must see
+//
+// Console session of a supervisor or support (served by api; spec
+// 02 F13, Art. 13(2), cross-plan M2). Every notice to the ANSP's
+// coordination inbox that is not yet received (pending, with its
+// tries, last error and next try), was refused for good (failed)
+// or was not acknowledged by a person at the ANSP within the
+// policy's ats_ack_escalate_s (escalated, with its age since the
+// receipt), oldest first, at most 500 (truncated when there are
+// more). An empty list means no notice is waiting; it never stands
+// for a coordination that could not be read (503).
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/admin/coordination (the `ListCoordinationNotices` operationId).
+func (c *ClientWithResponses) ListCoordinationNoticesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListCoordinationNoticesResponse, error) {
+	rsp, err := c.ListCoordinationNotices(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListCoordinationNoticesResponse(rsp)
+}
+
 // OpenAlertStreamWithResponse Stream the alerts of one intent (WebSocket)
 //
 // A WebSocket upgrade (served by traffic-ws; Art. 13, spec 02 F5)
@@ -8827,6 +9086,60 @@ func ParseUnbindSerialResponse(rsp *http.Response) (*UnbindSerialResponse, error
 			return nil, err
 		}
 		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListCoordinationNoticesResponse parses an HTTP response from a ListCoordinationNoticesWithResponse call
+func ParseListCoordinationNoticesResponse(rsp *http.Response) (*ListCoordinationNoticesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListCoordinationNoticesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CoordinationNotices
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Problem

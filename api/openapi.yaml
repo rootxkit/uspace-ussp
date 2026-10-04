@@ -20,7 +20,8 @@ info:
     WP-8: operator telemetry (served by telemetry-ingest). WP-9: the
     optional authority flight push (served by rid-sp). WP-11: traffic
     information and the alert stream (served by traffic-ws), the alert
-    acknowledgement (api).
+    acknowledgement (api). WP-15: the console's list of Annex V notices
+    to the ANSP; the service records for the authority.
   license:
     name: Apache-2.0
 servers:
@@ -748,6 +749,39 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
 
+  /v1/admin/coordination:
+    get:
+      operationId: listCoordinationNotices
+      tags: [admin]
+      summary: The Annex V notices the console must see
+      description: |
+        Console session of a supervisor or support (served by api; spec
+        02 F13, Art. 13(2), cross-plan M2). Every notice to the ANSP's
+        coordination inbox that is not yet received (pending, with its
+        tries, last error and next try), was refused for good (failed)
+        or was not acknowledged by a person at the ANSP within the
+        policy's ats_ack_escalate_s (escalated, with its age since the
+        receipt), oldest first, at most 500 (truncated when there are
+        more). An empty list means no notice is waiting; it never stands
+        for a coordination that could not be read (503).
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The open notices.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoordinationNotices"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
   /oauth/token:
     post:
       operationId: requestToken
@@ -1240,6 +1274,54 @@ components:
         acked_by:
           type: string
           description: The client that first acknowledged it.
+    CoordinationNotices:
+      type: object
+      description: The Annex V notices the console must see (GET /v1/admin/coordination).
+      required: [notices, truncated]
+      properties:
+        notices:
+          type: array
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/CoordinationNoticeItem"
+        truncated:
+          type: boolean
+          description: More notices are open than the list holds.
+    CoordinationNoticeItem:
+      type: object
+      description: |
+        One notice to the ANSP (coordination/annex_v/v1, owned by the
+        ANSP) as this USSP holds it. Times are the database clock.
+      required: [id, notice_ref, kind, intent_id, flight_id, state, created_at, age_s, attempts, last_error, ack_id, received_at, escalated_at, failed_at, next_at]
+      properties:
+        id: {type: integer, format: int64}
+        notice_ref: {type: string, maxLength: 128}
+        kind:
+          type: string
+          enum: [intent_notice, nonconformance, contingent, ended]
+        intent_id: {type: string, format: uuid}
+        flight_id:
+          type: [string, "null"]
+          format: uuid
+        state:
+          type: string
+          enum: [pending, escalated, failed]
+        created_at: {type: string, format: date-time}
+        age_s:
+          type: number
+          format: double
+          minimum: 0
+          description: Seconds since the receipt for an escalated notice, since it was queued otherwise.
+        attempts: {type: integer, minimum: 0}
+        last_error: {type: [string, "null"]}
+        ack_id: {type: [string, "null"]}
+        received_at: {type: [string, "null"], format: date-time}
+        escalated_at: {type: [string, "null"], format: date-time}
+        failed_at: {type: [string, "null"], format: date-time}
+        next_at:
+          type: [string, "null"]
+          format: date-time
+          description: The next try of a pending notice.
     Problem:
       type: object
       description: |

@@ -19,7 +19,8 @@
 // (internal/dss): every intent the DSS must hold written to it after its
 // commit and authorised only once it is, the peers' notifications and
 // details, the subscriptions, the availability, the 24 h purge and the
-// exchange log.
+// exchange log; WP-15 the Annex V coordination with the ANSP
+// (internal/coordination) and GET /v1/admin/coordination.
 package api
 
 import (
@@ -206,9 +207,13 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	intents := startIntents(ctx, rt, pol, cisState, reg.Cache, kv, coord.gate)
 	alertSvc := startAlerts(ctx, rt, current)
 	geoState, rechecker := startGeo(ctx, rt, cisState, intents)
+	notices, err := startCoordination(ctx, rt, current, tokens, cisState)
+	if err != nil {
+		return err
+	}
 	cisState.Start(ctx, rt)
 	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc,
-		CIS: cisState.Receiver, Registry: reg.Cache, Intents: intents, Alerts: alertSvc, Geo: geoState, Logger: rt.Logger,
+		CIS: cisState.Receiver, Registry: reg.Cache, Intents: intents, Alerts: alertSvc, Geo: geoState, Coordination: notices, Logger: rt.Logger,
 		RegistryScope:   svc,
 		RegistryLimiter: httpx.NewRateLimiter(perMin(cfg.RegistryRatePerMin), burst(cfg.RegistryRatePerMin), 100_000, counters)}
 	if err := national.Register(mux, srv, guard.Require); err != nil {

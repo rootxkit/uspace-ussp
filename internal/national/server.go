@@ -64,8 +64,11 @@ type Server struct {
 	Alerts AlertAcker
 	// Geo answers /v1/geo* from the CIS cache; nil answers 503
 	// cis_unavailable.
-	Geo    *Geo
-	Logger *slog.Logger
+	Geo *Geo
+	// Coordination lists the Annex V notices for the console
+	// (internal/coordination); nil answers 503 coordination_unavailable.
+	Coordination CoordinationLister
+	Logger       *slog.Logger
 }
 
 // RegistryValidator is the cached, audited F8 lookup
@@ -85,6 +88,8 @@ var _ gen.ServerInterface = (*Server)(nil)
 var portalAdmin = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmPortal, Roles: []string{auth.RoleOperatorAdmin}}}}
 
 var anySession = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmPortal}, {Realm: auth.RealmConsole}}}
+
+var consoleStaff = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmConsole, Roles: []string{auth.RoleSupervisor, auth.RoleSupport}}}}
 
 // AccessTable is the access entry of every operation of
 // api/openapi.yaml this process serves, by ServeMux pattern. The
@@ -108,6 +113,7 @@ func AccessTable() map[string]httpx.Access {
 		"GET /v1/geo":                                       {Scopes: []string{auth.ScopeGeo}},
 		"GET /v1/geo/intents/{intent_id}":                   {Scopes: []string{auth.ScopeGeo}},
 		"POST /v1/alerts/{alert_id}/ack":                    {Scopes: []string{auth.ScopeTraffic}},
+		"GET /v1/admin/coordination":                        consoleStaff,
 		"POST /v1/accounts/logout":                          anySession,
 		"GET /v1/accounts/me":                               anySession,
 		"GET /v1/accounts/operators/{operator_id}":          portalAdmin,
