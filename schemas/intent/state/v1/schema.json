@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.uspace.ge/intent/state/v1.json",
   "title": "intent/state/v1",
-  "description": "An intent's state as the other processes read it (spec 04 §3.5, internal): the body of intent.v1.<state>.<intent_id> under the common envelope (envelope/v1, schema intent/state/v1) and the value of the KV bucket intent_active, which holds the intents in accepted, activated, nonconforming or contingent and nothing else. volumes are the F3548 volumes as authorised (W84, the outlines conformance judges against), volumes_amsl their bands in AMSL; flight_id is null until a flight binds (WP-8). category, class_label and ua_registration are the Annex IV item (4) and (10) declarations the F3411 flight details carry (eu_classification, uas_id.registration_id; WP-9); they are optional within v1.",
+  "description": "An intent's state as the other processes read it (spec 04 §3.5, internal): the body of intent.v1.<state>.<intent_id> under the common envelope (envelope/v1, schema intent/state/v1) and the value of the KV bucket intent_active, which holds the intents in accepted, activated, nonconforming or contingent and nothing else. volumes are the F3548 volumes as authorised (W84, the outlines conformance judges against), volumes_amsl their bands in AMSL; flight_id is null until a flight binds (WP-8). category, class_label and ua_registration are the Annex IV item (4) and (10) declarations the F3411 flight details carry (eu_classification, uas_id.registration_id; WP-9); they are optional within v1. operator_id and client_id are the intent's operator account and the client it was filed under (brief WP-17: traffic-ws admits a portal session of that operator and serves it as that client); optional within v1.",
   "type": "object",
   "additionalProperties": false,
   "required": ["intent_id", "version", "local_state", "dss_state", "priority", "exempt_art_1_3", "authorisation_number",
@@ -31,6 +31,8 @@
     "updated_at": { "type": "string", "format": "date-time" },
     "category": { "enum": ["open", "specific", "certified"] },
     "class_label": { "enum": ["C0", "C1", "C2", "C3", "C4", "C5", "C6", null] },
-    "ua_registration": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 }
+    "ua_registration": { "type": ["string", "null"], "minLength": 1, "maxLength": 64 },
+    "operator_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "client_id": { "type": "string", "minLength": 1, "maxLength": 128 }
   }
 }

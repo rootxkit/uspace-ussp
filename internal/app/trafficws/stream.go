@@ -64,12 +64,15 @@ const (
 )
 
 // The access of the operations (06 §3): an operator machine token of
-// this USSP granting ussp.traffic, or a console session (staff) for the
-// traffic picture; the alert stream is the operator's.
+// this USSP granting ussp.traffic or an operator portal session (brief
+// WP-17) for one of the operator's intents, or a console session (staff)
+// for the traffic picture; the alert stream is the operator's.
 var (
-	TrafficAccess  = httpx.Access{WebSocket: true, Scopes: []string{auth.ScopeTraffic}, Sessions: []httpx.SessionAccess{{Realm: auth.RealmConsole}}}
-	SnapshotAccess = httpx.Access{Scopes: []string{auth.ScopeTraffic}, Sessions: []httpx.SessionAccess{{Realm: auth.RealmConsole}}}
-	AlertsAccess   = httpx.Access{WebSocket: true, Scopes: []string{auth.ScopeTraffic}}
+	TrafficAccess = httpx.Access{WebSocket: true, Scopes: []string{auth.ScopeTraffic},
+		Sessions: []httpx.SessionAccess{{Realm: auth.RealmConsole}, {Realm: auth.RealmPortal}}}
+	SnapshotAccess = httpx.Access{Scopes: []string{auth.ScopeTraffic},
+		Sessions: []httpx.SessionAccess{{Realm: auth.RealmConsole}, {Realm: auth.RealmPortal}}}
+	AlertsAccess = httpx.Access{WebSocket: true, Scopes: []string{auth.ScopeTraffic}, Sessions: []httpx.SessionAccess{{Realm: auth.RealmPortal}}}
 )
 
 // AccessTable is the access entry of every operation traffic-ws serves
@@ -101,6 +104,11 @@ type Server struct {
 	// frame: one ended in api closes with 4401 (audit B2). nil checks
 	// sessions only at the upgrade (the guard's).
 	Sessions auth.SessionChecker
+	// PortalOperator is the operator of a live portal session by its jti
+	// (sessions_live, brief WP-17): found false for a session it does
+	// not hold, loaded false until the bucket was read. nil refuses
+	// every portal session.
+	PortalOperator func(jti string) (operatorID string, found, loaded bool)
 	// Ctx ends every open socket when the process stops.
 	Ctx context.Context
 	// ProductEvery, StatusEvery and RecordEvery override the periods
@@ -147,6 +155,9 @@ func Register(mux *http.ServeMux, s *Server, guard httpx.Guard) error {
 // subOf is the subscription a caller asks for, or why it is refused
 // (answered before any upgrade).
 func (s *Server) subOf(p auth.Principal, intentID *string, bbox *string, staffAllowed bool) (*Sub, *RefusalError) {
+	if p.Session && p.Claims.Realm == auth.RealmPortal {
+		return s.portalSub(p, intentID, bbox)
+	}
 	if p.Session {
 		if !staffAllowed || p.Claims.Realm != auth.RealmConsole {
 			return nil, &RefusalError{http.StatusForbidden, httpx.SlugForbidden, "a console session subscribes to the traffic picture only"}
@@ -171,6 +182,30 @@ func (s *Server) subOf(p auth.Principal, intentID *string, bbox *string, staffAl
 		return nil, ref
 	}
 	return &Sub{ClientID: p.Claims.Subject, IntentID: *intentID}, nil
+}
+
+// portalSub is an operator portal session's subscription (brief WP-17):
+// one intent of the session's operator, served as the client the intent
+// was filed under, its deliveries recorded under the portal user.
+func (s *Server) portalSub(p auth.Principal, intentID *string, bbox *string) (*Sub, *RefusalError) {
+	if intentID == nil || bbox != nil {
+		return nil, &RefusalError{http.StatusBadRequest, httpx.SlugValidation, "a portal session subscribes by intent_id"}
+	}
+	if s.PortalOperator == nil {
+		return nil, &RefusalError{http.StatusForbidden, httpx.SlugForbidden, "this process serves no portal session"}
+	}
+	op, found, loaded := s.PortalOperator(p.Claims.JTI)
+	switch {
+	case !loaded:
+		return nil, &RefusalError{http.StatusServiceUnavailable, "sessions_live_unavailable", "the live sessions are not read yet; retry"}
+	case !found || op == "":
+		return nil, &RefusalError{http.StatusForbidden, httpx.SlugForbidden, "the session names no operator"}
+	}
+	b, ref := s.Hub.OwnedBy(op, *intentID)
+	if ref != nil {
+		return nil, ref
+	}
+	return &Sub{ClientID: b.ClientID, IntentID: *intentID, Recipient: auth.ActorPortalUser + ":" + p.Claims.Subject}, nil
 }
 
 func writeRefusal(w http.ResponseWriter, r *http.Request, ref *RefusalError) {
@@ -799,7 +834,7 @@ func (s *Server) send(ctx context.Context, c *connState, e *traffic.Entry, alert
 	s.count(CounterAlertsSent)
 	sub := c.subscription()
 	if !sub.Staff {
-		s.Hub.Delivered(ctx, e, sub.ClientID)
+		s.Hub.Delivered(ctx, e, sub.recipient())
 	}
 	if alertsOnly && e.State != "cleared" && e.Severity == core.SeverityCritical && !e.Acked {
 		c.repeatAt[e.AlertID] = s.Hub.now().Add(s.repeatEvery())

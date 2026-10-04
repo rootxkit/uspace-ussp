@@ -46,6 +46,12 @@ type StateBody struct {
 	Category       string  `json:"category,omitempty"`
 	ClassLabel     *string `json:"class_label"`
 	UARegistration *string `json:"ua_registration"`
+	// OperatorID and ClientID are the intent's operator account and the
+	// client it was filed under (brief WP-17): traffic-ws admits a portal
+	// session of that operator to the intent's streams and serves it as
+	// that client. Optional within v1.
+	OperatorID string `json:"operator_id,omitempty"`
+	ClientID   string `json:"client_id,omitempty"`
 }
 
 // StateMessage is the message of intent.v1.<state>.<id>: the envelope
@@ -69,6 +75,7 @@ func StateOf(r *Record) StateBody {
 		CellSet: cells, TimeStart: r.TimeStart, TimeEnd: r.TimeEnd, InUSpaceAirspace: r.Decision.InUSpaceAirspace,
 		PolicyVersion: r.Decision.PolicyVersion, ChangeReason: r.Decision.ChangeReason, UpdatedAt: r.Decision.UpdatedAt,
 		Category: r.Request.Category, ClassLabel: optional(r.Request.ClassLabel), UARegistration: optional(r.Request.UARegistration),
+		OperatorID: r.OperatorID, ClientID: r.ClientID,
 	}
 }
 

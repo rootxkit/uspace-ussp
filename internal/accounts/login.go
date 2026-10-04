@@ -284,7 +284,7 @@ func (s *Service) startSession(ctx context.Context, realm string, acc account, m
 			return err
 		}
 		if err := s.projectSession(ctx, jti, auth.LiveSession{Subject: acc.id, Realm: realm, ExpiresAt: exp,
-			IdleUntil: now.Add(s.Config.SessionIdle)}); err != nil {
+			IdleUntil: now.Add(s.Config.SessionIdle), OperatorID: acc.operatorID}); err != nil {
 			return err
 		}
 		return s.audit(ctx, q, loginEvent(realm, acc.username, acc.id, EventLoginSucceeded, map[string]any{
@@ -378,8 +378,15 @@ func (s *Service) CheckSession(ctx context.Context, jti, sub string) error {
 		// The use moves the idle end in sessions_live too. A failure
 		// leaves the earlier end there: traffic-ws may then close the
 		// session's sockets early (sign in again), never late.
-		if err := s.projectSession(ctx, jti, auth.LiveSession{Subject: sub, Realm: sess.Realm, ExpiresAt: sess.ExpiresAt,
-			IdleUntil: now.Add(s.Config.SessionIdle)}); err != nil {
+		ls := auth.LiveSession{Subject: sub, Realm: sess.Realm, ExpiresAt: sess.ExpiresAt, IdleUntil: now.Add(s.Config.SessionIdle)}
+		if sess.Realm == auth.RealmPortal {
+			// The portal session's operator stays in sessions_live, where
+			// traffic-ws reads which intents it may follow (brief WP-17).
+			if u, err := s.Store.Queries().PortalUserByID(ctx, sess.AccountID); err == nil {
+				ls.OperatorID = store.UUIDText(u.OperatorID)
+			}
+		}
+		if err := s.projectSession(ctx, jti, ls); err != nil {
 			s.count(CounterSessionProjectionFailed)
 			obs.Error(ctx, s.logger(), "session use not projected; its idle end in sessions_live is the earlier one", err)
 		}

@@ -214,6 +214,10 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	srv := &Server{
 		Health: proc.HealthHandlers{Health: rt.Health}, Hub: hub, Geo: geoChanges,
 		WS: &auth.WSAuth{Guard: guard, AllowedOrigins: cfg.WSAllowedOrigins}, Sessions: sessions,
+		PortalOperator: func(jti string) (string, bool, bool) {
+			v, found, _, loaded := sessionsLive.Get(bus.KeyToken(jti))
+			return v.OperatorID, found, loaded
+		},
 		Ctx: ctx, ProductEvery: o.ProductEvery, StatusEvery: o.StatusEvery, RecordEvery: o.RecordEvery, RepeatEvery: o.RepeatEvery,
 		Degraded: func() []string { return rt.Health.Snapshot().Degraded }, Counters: hubCounters, Logger: logger,
 	}

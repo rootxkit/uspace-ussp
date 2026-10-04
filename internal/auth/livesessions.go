@@ -23,6 +23,10 @@ type LiveSession struct {
 	// IdleUntil is when the session ends unless it is used in api again
 	// (its last use plus the idle timeout).
 	IdleUntil time.Time `json:"idle_until"`
+	// OperatorID is the operator of a portal session (brief WP-17):
+	// traffic-ws admits it to the streams of that operator's intents
+	// only. Empty for a console session.
+	OperatorID string `json:"operator_id,omitempty"`
 }
 
 // SessionsProjector writes the sessions_live projection. The session
