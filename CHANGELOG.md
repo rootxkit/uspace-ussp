@@ -75,6 +75,34 @@ additively within `/v1`.
 
 ### Added
 
+- WP-16: weather information (Art. 12, optional; `internal/weather`).
+  METAR, SPECI and TAF of the policy's `weather_station_ids` from the
+  source of `USSP_WEATHER_SOURCE` (`awc:<base URL>`, the NOAA Aviation
+  Weather Center data API format), polled every `weather_refresh_s`,
+  every call bounded (10 s, 2 MiB, 1000 reports) and never redirected;
+  each report parsed whole from its groups into the Art. 12(2) fields
+  (`wind_dir_deg`, `wind_speed_ms`, `gust_ms`, `visibility_m`,
+  `ceiling` with `cloud_base_ft_agl`, `temp_c`, `dew_point_c`,
+  `qnh_hpa` with `qnh_area`, convective and precipitation indicators,
+  TAF and trend change groups) or refused and counted
+  (`weather_report_refused`), also when its station or times disagree
+  with the source's envelope; stored once per report
+  (`weather_products`, migration 00024) and pruned at
+  `record_retention_days`. `GET /v1/weather?bbox=&at=` (scope
+  `ussp.geo`): the newest product per station and kind with `age_s`
+  and `in_force`; no source is `503 weather_unavailable` with reason
+  `not_configured` (`no_stations`, `database`); a failing, never
+  fetched or late source (`weather_stale_s`) answers its last products
+  `stale` with the failure and its time, kept in
+  `weather_source_status` on the database clock so it survives a
+  restart; `weather` on `/readyz`. Every decision consults the products
+  in force over its volumes and window: their ids in
+  `weather_checked_ref` (column and decision), or null with the
+  condition `weather_unavailable`; `weather_stale` and
+  `weather_advisory` (`weather_advisory_wind_ms`) are conditions, never
+  a rejection. The station list, area radius (20 km), staleness
+  (1800 s), METAR validity (3600 s) and advisory wind (10 m/s) are
+  policy defaults pending GCAA.
 - WP-14: peer flights and manned traffic inputs (`internal/manned`,
   `internal/peers`, run inside monitor, each behind its own source
   switch and `/readyz` entry).

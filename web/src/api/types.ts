@@ -232,6 +232,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/weather": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Weather information for a box at an instant
+         * @description The optional weather information service (2021/664 Art. 12; brief
+         *     WP-16): the METAR, SPECI and TAF of the stations the policy lists
+         *     (weather_station_ids), fetched from the configured source
+         *     (USSP_WEATHER_SOURCE) every weather_refresh_s and stored, answered
+         *     from the store, never from the source in the request path. Each
+         *     product carries the Art. 12(2) minimum content with the unit in
+         *     every name: wind direction (degrees true), speed and gust in m/s;
+         *     the lowest broken or overcast layer in feet above the aerodrome
+         *     (reported in hundreds of feet); visibility in metres; temperature
+         *     and dew point in degrees Celsius; the convective (TS, CB, TCU) and
+         *     precipitation indicators; the observation or issue time and the
+         *     validity; the QNH with its area (the station). A product's area is
+         *     the circle of weather_area_radius_m around its station.
+         *
+         *     The answer is the newest product of each station and kind whose
+         *     area meets the box and that was issued at or before at, newest
+         *     first, with age_s and in_force. Nothing is hidden (E-02): no source
+         *     configured is 503 weather_unavailable with errors[] field
+         *     weather_source, reason not_configured (no_stations when the policy
+         *     lists none, database when the store cannot be read); a source that
+         *     is failing, has never delivered, or has not delivered within
+         *     weather_stale_s answers its last products with stale true and,
+         *     while failing, the failure and its time. The station list, the
+         *     area radius and the thresholds are policy values pending GCAA.
+         */
+        get: operations["getWeather"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/telemetry": {
         parameters: {
             query?: never;
@@ -1699,6 +1742,110 @@ export interface components {
             restrictions: components["schemas"]["GeoRestriction"][];
             truncated: boolean;
         };
+        /** @description GET /v1/weather's answer (internal/weather.Answer). */
+        WeatherAnswer: {
+            /** Format: date-time */
+            at: string;
+            /** @description The source is failing, has never delivered, or has not delivered within the policy's weather_stale_s. */
+            stale: boolean;
+            source: components["schemas"]["WeatherSource"];
+            policy_version: number;
+            products: components["schemas"]["WeatherProduct"][];
+        };
+        WeatherSource: {
+            /** @description adapter:host of USSP_WEATHER_SOURCE. */
+            name: string;
+            /** @enum {string} */
+            state: "up" | "failing" | "never_fetched";
+            /** Format: date-time */
+            last_success_at: string | null;
+            /** @description Seconds since the last successful fetch. */
+            age_s: number | null;
+            /**
+             * Format: date-time
+             * @description Set while failing.
+             */
+            last_failure_at: string | null;
+            /** @description Set while failing. */
+            failure: string | null;
+        };
+        WeatherProduct: {
+            /** Format: uuid */
+            id: string;
+            station: string;
+            /** @enum {string} */
+            kind: "metar" | "speci" | "taf";
+            source: string;
+            /**
+             * Format: date-time
+             * @description The observation of a METAR or SPECI
+             */
+            observed_at: string;
+            /** Format: date-time */
+            valid_from: string;
+            /**
+             * Format: date-time
+             * @description A TAF's validity end; a METAR or SPECI is in force for the policy's weather_observation_valid_s.
+             */
+            valid_to: string;
+            /** Format: date-time */
+            fetched_at: string;
+            /** @description Seconds since observed_at on the database clock. */
+            age_s: number;
+            /** @description valid_from <= at <= valid_to. */
+            in_force: boolean;
+            /** @description The answer's stale. */
+            stale: boolean;
+            area: components["schemas"]["WeatherArea"];
+            /** @description The station whose area the QNH is for. */
+            qnh_area: string;
+            fields: components["schemas"]["WeatherFields"];
+            changes: components["schemas"]["WeatherChange"][];
+            /** @description The report as received. */
+            raw: string;
+        };
+        WeatherArea: {
+            station: string;
+            lat_deg: number;
+            lon_deg: number;
+            radius_m: number;
+        };
+        WeatherChange: {
+            /** @description FM, BECMG, TEMPO, PROB30, PROB40, PROB30 TEMPO or PROB40 TEMPO. */
+            kind: string;
+            /** Format: date-time */
+            valid_from: string;
+            /** Format: date-time */
+            valid_to: string | null;
+            fields: components["schemas"]["WeatherFields"];
+        };
+        /** @description The Art. 12(2) minimum content; null is not reported (in a change group, not changed). */
+        WeatherFields: {
+            /** @description Degrees true the wind comes from. */
+            wind_dir_deg: number | null;
+            wind_variable: boolean;
+            wind_var_from_deg: number | null;
+            wind_var_to_deg: number | null;
+            wind_speed_ms: number | null;
+            gust_ms: number | null;
+            visibility_m: number | null;
+            /** @description visibility_m is a lower bound (9999, P6SM, CAVOK). */
+            visibility_at_least: boolean;
+            /**
+             * @description What the cloud groups say of the lowest broken or overcast layer; not_reported is never read as none.
+             * @enum {string}
+             */
+            ceiling: "layer" | "vertical_visibility" | "none" | "not_reported";
+            /** @description In feet above the aerodrome, reported in hundreds of feet (Art. 12(2)(b)). */
+            cloud_base_ft_agl: number | null;
+            cavok: boolean;
+            temp_c: number | null;
+            dew_point_c: number | null;
+            qnh_hpa: number | null;
+            weather: string[];
+            convective: ("TS" | "CB" | "TCU")[];
+            precipitation: ("DZ" | "RA" | "SN" | "SG" | "IC" | "PL" | "GR" | "GS" | "UP")[];
+        };
         /** @description intent/decision/v1 (schemas/intent/decision/v1/schema.json, the source of truth). */
         IntentDecision: {
             /** @description UUID, also the DSS entity id. */
@@ -1750,7 +1897,7 @@ export interface components {
             /** Format: date-time */
             registry_checked_at: string | null;
             policy_version: number;
-            /** @description Art. 10(3); null until weather (WP-16). */
+            /** @description Art. 10(3) (WP-16): the ids of the weather products in force over the volumes and their window that the decision consulted, comma-separated, newest first (at most 16); null when none was, with the condition weather_unavailable. Weather never rejects: weather_stale and weather_advisory are conditions. */
             weather_checked_ref: string | null;
             change_reason: string | null;
             /** Format: date-time */
@@ -2213,6 +2360,36 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getWeather: {
+        parameters: {
+            query: {
+                /** @description west,south,east,north in WGS84 degrees; at most 5 degrees a side. */
+                bbox: string;
+                /** @description The instant (RFC 3339); now (the database clock) when absent. */
+                at?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The products, with the source's state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WeatherAnswer"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
             503: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
         };

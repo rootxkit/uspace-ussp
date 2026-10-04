@@ -52,7 +52,7 @@ func TestSubmitAuthorisesAndProjects(t *testing.T) {
 		!strings.HasPrefix(*d.AuthorisationNumber, "USSP-DEV-GEOTESTOP0001-") || len(*d.AuthorisationNumber) != len("USSP-DEV-GEOTESTOP0001-")+26 ||
 		d.DeviationThresholds == nil || *d.DeviationThresholds != (Thresholds{HM: 50, VM: 15, TS: 60}) ||
 		string(d.Alternative) != "null" || d.PolicyVersion != 7 || d.CISVersionChecked == nil || *d.CISVersionChecked != freshBasis().CISVersion ||
-		d.RegistryCheckedAt == nil || !d.RegistryCheckedAt.Equal(testNow) || d.WeatherCheckedRef != nil || d.ExemptArt13 || d.InUSpaceAirspace ||
+		d.RegistryCheckedAt == nil || !d.RegistryCheckedAt.Equal(testNow) || d.WeatherCheckedRef == nil || *d.WeatherCheckedRef != testWeatherRef || d.ExemptArt13 || d.InUSpaceAirspace ||
 		!d.ValidFrom.Equal(t0) || !d.ValidTo.Equal(t1) || !d.DecidedAt.Equal(testNow) || len(d.VolumesAMSL) != 1 || d.VolumesAMSL[0].LowerAMSLM != 480 ||
 		len(d.Conflicts) != 0 || len(d.Conditions) != 1 || d.Conditions[0].Code != CondLocalDeconfliction || !validUUID(d.IntentID) {
 		raw, _ := json.MarshalIndent(d, "", " ")

@@ -111,7 +111,7 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_CELL_OWNERSHIP` | `monitor` |  | `all` |  | cells this monitor instance owns: all, or a comma list of c3 cells |
 | `USSP_AUTHORITY_PUSH` | `rid-sp` |  | `off` |  | the optional WS /v1/authority/flights extension (D12) |
 | `USSP_RECORDS_DIR` | `api` |  |  |  | directory (a local volume) the daily record bundles are written to and served from (GET /v1/records/daily/{date}); unset, no bundle is built and /readyz says so |
-| `USSP_WEATHER_SOURCE` | `api` |  |  |  | weather source adapter and URL; unset means weather answers 503 weather_unavailable |
+| `USSP_WEATHER_SOURCE` | `api` |  |  |  | weather source as awc:<base URL> (the NOAA Aviation Weather Center data API format: <base>/metar and <base>/taf with ids= and format=json, for the policy's weather_station_ids); unset means GET /v1/weather answers 503 weather_unavailable (reason not_configured) and every decision carries weather_unavailable; a malformed value refuses the start |
 | `USSP_ADSB_SOURCE` | `monitor` |  |  |  | e-conspicuity receiver feed: http(s)://<host>/data/aircraft.json (readsb/dump1090, polled at 1 Hz), sbs://<host>:<port> (BaseStation lines) or file://<path>.jsonl (a recorded aircraft.json replay, timestamps re-based); unset means no receiver, shown as such |
 | `USSP_ADSB_RECEIVER_ID` | `monitor` |  | `adsb-rx-1` |  | the e-conspicuity receiver's id: source_instance of its tracks and the instance of its adsb_rx source switch |
 | `USSP_TRAFFIC_INPUT_BBOX` | `monitor` |  |  |  | box of the manned and peer inputs as min_lng,min_lat,max_lng,max_lat in WGS84 degrees: the ANSP stream's bbox and the peer Display Provider's area; empty is every U-space airspace of cis_current, padded |

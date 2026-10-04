@@ -412,7 +412,7 @@ func (t tx) Insert(ctx context.Context, r *intent.Record) error {
 		UspaceAirspaceIds: d.USpaceAirspaceIDs, ExemptArt13: r.Exempt, Decision: str(d.Decision),
 		AuthorisationNumber: d.AuthorisationNumber, DeviationThresholds: c.thresholds, Alternative: []byte("null"),
 		Conflicts: c.conflicts, Conditions: c.conditions, CisVersionChecked: d.CISVersionChecked,
-		RegistryCheckedAt: d.RegistryCheckedAt, PolicyVersion: &d.PolicyVersion, Version: int32(r.Version),
+		RegistryCheckedAt: d.RegistryCheckedAt, WeatherCheckedRef: d.WeatherCheckedRef, PolicyVersion: &d.PolicyVersion, Version: int32(r.Version),
 		Request: c.request, RequestHash: str(r.RequestHash), DecisionBody: c.decisionBody, FiledAt: r.FiledAt,
 		CellSet: r.Cells, CreatedAt: r.CreatedAt,
 	})
@@ -442,7 +442,7 @@ func (t tx) Update(ctx context.Context, r *intent.Record, event string) error {
 		InUspaceAirspace: &d.InUSpaceAirspace, UspaceAirspaceIds: d.USpaceAirspaceIDs, ExemptArt13: r.Exempt,
 		Decision: str(d.Decision), AuthorisationNumber: d.AuthorisationNumber, DeviationThresholds: c.thresholds,
 		Conflicts: c.conflicts, Conditions: c.conditions, CisVersionChecked: d.CISVersionChecked,
-		RegistryCheckedAt: d.RegistryCheckedAt, PolicyVersion: &d.PolicyVersion, Version: int32(r.Version),
+		RegistryCheckedAt: d.RegistryCheckedAt, WeatherCheckedRef: d.WeatherCheckedRef, PolicyVersion: &d.PolicyVersion, Version: int32(r.Version),
 		Request: c.request, DecisionBody: c.decisionBody, FiledAt: r.FiledAt, CellSet: r.Cells, UpdatedAt: d.UpdatedAt, ID: id,
 	})
 	if err != nil {

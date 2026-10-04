@@ -353,7 +353,7 @@ INSERT INTO operational_intents (
     privately_built, mtom_kg, identification_technology, connectivity_methods, endurance_s, loss_of_c2_procedure,
     operator_reg, ua_registration, contingency, emergency_contact_ref, authorisation_ref, client_ref,
     in_uspace_airspace, uspace_airspace_ids, exempt_art_1_3, decision, authorisation_number, deviation_thresholds,
-    alternative, conflicts, conditions, cis_version_checked, registry_checked_at, policy_version,
+    alternative, conflicts, conditions, cis_version_checked, registry_checked_at, weather_checked_ref, policy_version,
     version, request, request_hash, decision_body, filed_at, cell_set, created_at, updated_at)
 VALUES (
     $1, $2, $3, $4, $5,
@@ -366,8 +366,8 @@ VALUES (
     $31, $32, $33, $34,
     $35, $36, $37, $38,
     $39, $40, $41, $42,
-    $43, $44, $45, $46, $47,
-    $48, $49, $50, $50)
+    $43, $44, $45, $46, $47, $48,
+    $49, $50, $51, $51)
 `
 
 type IntentInsertParams struct {
@@ -413,6 +413,7 @@ type IntentInsertParams struct {
 	Conditions               []string    `json:"conditions"`
 	CisVersionChecked        *string     `json:"cis_version_checked"`
 	RegistryCheckedAt        *time.Time  `json:"registry_checked_at"`
+	WeatherCheckedRef        *string     `json:"weather_checked_ref"`
 	PolicyVersion            *int64      `json:"policy_version"`
 	Version                  int32       `json:"version"`
 	Request                  []byte      `json:"request"`
@@ -467,6 +468,7 @@ func (q *Queries) IntentInsert(ctx context.Context, arg IntentInsertParams) erro
 		arg.Conditions,
 		arg.CisVersionChecked,
 		arg.RegistryCheckedAt,
+		arg.WeatherCheckedRef,
 		arg.PolicyVersion,
 		arg.Version,
 		arg.Request,
@@ -891,10 +893,11 @@ UPDATE operational_intents SET
     decision = $12, authorisation_number = $13,
     deviation_thresholds = $14, conflicts = $15,
     conditions = $16, cis_version_checked = $17,
-    registry_checked_at = $18, policy_version = $19,
-    version = $20, request = $21, decision_body = $22,
-    filed_at = $23, cell_set = $24, updated_at = $25
- WHERE id = $26 AND version = $20 - 1
+    registry_checked_at = $18, weather_checked_ref = $19,
+    policy_version = $20,
+    version = $21, request = $22, decision_body = $23,
+    filed_at = $24, cell_set = $25, updated_at = $26
+ WHERE id = $27 AND version = $21 - 1
 `
 
 type IntentUpdateParams struct {
@@ -916,6 +919,7 @@ type IntentUpdateParams struct {
 	Conditions          []string    `json:"conditions"`
 	CisVersionChecked   *string     `json:"cis_version_checked"`
 	RegistryCheckedAt   *time.Time  `json:"registry_checked_at"`
+	WeatherCheckedRef   *string     `json:"weather_checked_ref"`
 	PolicyVersion       *int64      `json:"policy_version"`
 	Version             int32       `json:"version"`
 	Request             []byte      `json:"request"`
@@ -948,6 +952,7 @@ func (q *Queries) IntentUpdate(ctx context.Context, arg IntentUpdateParams) (int
 		arg.Conditions,
 		arg.CisVersionChecked,
 		arg.RegistryCheckedAt,
+		arg.WeatherCheckedRef,
 		arg.PolicyVersion,
 		arg.Version,
 		arg.Request,

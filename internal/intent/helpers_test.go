@@ -217,6 +217,24 @@ type fakeDSS struct {
 
 func (d fakeDSS) Available(context.Context) (bool, string) { return d.ok, d.reason }
 
+// fakeWeather is the weather service: a product in force, its ref
+// testWeatherRef, unless check says otherwise; it records the windows
+// it was asked about.
+type fakeWeather struct {
+	check *WeatherCheck
+	asked []time.Time
+}
+
+const testWeatherRef = "00000000-0000-4000-8000-000000000001"
+
+func (w *fakeWeather) Check(_ context.Context, _ []geodesy.BBox, from, to time.Time) WeatherCheck {
+	w.asked = append(w.asked, from, to)
+	if w.check != nil {
+		return *w.check
+	}
+	return WeatherCheck{Ref: ptr(testWeatherRef)}
+}
+
 // freshBasis is a CIS basis that is current.
 func freshBasis() cis.Basis {
 	return cis.Basis{CISVersion: "zones:1,uspace_airspace:1,restrictions:1", CISAgeS: 3}
@@ -237,7 +255,7 @@ func newRig() *rig {
 	reg := &fakeRegistry{status: map[string]registry.Status{}}
 	counters := &core.Counters{}
 	return &rig{cis: c, reg: reg, counters: counters, decider: &Decider{
-		CIS: c, Integrity: fakeIntegrity{}, Registry: reg, DSS: fakeDSS{ok: true},
+		CIS: c, Integrity: fakeIntegrity{}, Registry: reg, DSS: fakeDSS{ok: true}, Weather: &fakeWeather{},
 		Terrain: fakeTerrain{minM: 400, maxM: 450, ok: true}, SystemID: testSystem, Counters: counters,
 	}}
 }

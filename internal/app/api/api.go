@@ -24,7 +24,10 @@
 // service records (internal/records): /v1/records, the daily bundles and
 // the gap records of telemetry-ingest; the occurrence reports
 // (internal/occurrence) with /v1/admin/occurrences; and the Art. 7(6)
-// operating-status notices (internal/status) with /v1/admin/status.
+// operating-status notices (internal/status) with /v1/admin/status;
+// WP-16 the optional weather information (internal/weather): the
+// configured source polled, GET /v1/weather, and the products every
+// decision consults (weather_checked_ref).
 package api
 
 import (
@@ -208,7 +211,11 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 		Counters:      counters, Logger: rt.Logger,
 	}
 	coord := newStrategic(rt, tokens)
-	intents := startIntents(ctx, rt, pol, cisState, reg.Cache, kv, coord.gate)
+	wx, err := startWeather(ctx, rt, pol)
+	if err != nil {
+		return err
+	}
+	intents := startIntents(ctx, rt, pol, cisState, reg.Cache, kv, coord.gate, weatherCheck{wx})
 	alertSvc := startAlerts(ctx, rt, current)
 	geoState, rechecker := startGeo(ctx, rt, cisState, intents)
 	notices, err := startCoordination(ctx, rt, current, tokens, cisState)
@@ -225,7 +232,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc,
 		CIS: cisState.Receiver, Registry: reg.Cache, Intents: intents, Alerts: alertSvc, Geo: geoState, Coordination: coordinationList{Store: notices}, Records: recordsAPI, Logger: rt.Logger,
 		Occurrences: occurrencesAPI(occurrences),
-		Status:      statusNotices{Service: statusSvc}, CertificateID: cfg.CertificateID,
+		Status:      statusNotices{Service: statusSvc}, CertificateID: cfg.CertificateID, Weather: wx,
 		RegistryScope:   svc,
 		RegistryLimiter: httpx.NewRateLimiter(perMin(cfg.RegistryRatePerMin), burst(cfg.RegistryRatePerMin), 100_000, counters)}
 	if err := national.Register(mux, srv, guard.Require); err != nil {

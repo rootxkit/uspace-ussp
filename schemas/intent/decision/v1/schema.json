@@ -67,7 +67,7 @@
     "cis_age_s": { "type": ["number", "null"], "minimum": 0 },
     "registry_checked_at": { "type": ["string", "null"], "format": "date-time" },
     "policy_version": { "type": "integer", "minimum": 0 },
-    "weather_checked_ref": { "description": "Art. 10(3); null until weather (WP-16).", "type": ["string", "null"] },
+    "weather_checked_ref": { "description": "Art. 10(3) (WP-16): the ids of the weather products in force over the volumes and their window that the decision consulted, comma-separated, newest first (at most 16); null when none was, with the condition weather_unavailable. Weather never rejects: weather_stale and weather_advisory are conditions.", "type": ["string", "null"], "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(,[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}){0,15}$" },
     "change_reason": { "type": ["string", "null"] },
     "decided_at": { "type": "string", "format": "date-time" },
     "updated_at": { "type": "string", "format": "date-time" }

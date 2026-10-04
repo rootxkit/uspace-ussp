@@ -197,8 +197,11 @@ func runDecision(t *testing.T, c vectors.Case, fx fixtures) {
 			reg.status[k] = registry.Status(v)
 		}
 	}
+	// The vectors judge deconfliction and predate weather (WP-16): their
+	// world has a weather product in force, so no weather condition is
+	// added to what they pin.
 	d := &Decider{CIS: fc, Integrity: fakeIntegrity{out: dec.CIS.Outdated}, Registry: reg, DSS: fakeDSS{ok: dec.DSSAvailable, reason: "the DSS is down (vector)"},
-		SystemID: fx.SystemID, Counters: &core.Counters{}}
+		Weather: &fakeWeather{}, SystemID: fx.SystemID, Counters: &core.Counters{}}
 	if dec.Terrain != nil {
 		d.Terrain = fakeTerrain{minM: dec.Terrain.MinM, maxM: dec.Terrain.MaxM, ok: true}
 	}

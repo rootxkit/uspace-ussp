@@ -52,7 +52,12 @@
       "detail": "the volume conflicts with an authorised intent that has precedence (first_come_first_served)"
     }
   ],
-  "conditions": [],
+  "conditions": [
+    {
+      "code": "weather_unavailable",
+      "detail": "no weather product of the source is in force over the volumes and their window"
+    }
+  ],
   "volumes_amsl": [
     {
       "lower_amsl_m": 480,

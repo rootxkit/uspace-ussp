@@ -77,7 +77,10 @@ type Server struct {
 	// USSP_CERTIFICATE_ID); nil answers 503 status_unavailable.
 	Status        StatusNotices
 	CertificateID string
-	Logger        *slog.Logger
+	// Weather answers GET /v1/weather (internal/weather.Service); nil
+	// answers 503 weather_unavailable with reason not_configured.
+	Weather WeatherAnswerer
+	Logger  *slog.Logger
 }
 
 // RegistryValidator is the cached, audited F8 lookup
@@ -127,6 +130,7 @@ func AccessTable() map[string]httpx.Access {
 		"PATCH /v1/intents/{intent_id}":                     {Scopes: []string{auth.ScopeIntents}},
 		"GET /v1/geo":                                       {Scopes: []string{auth.ScopeGeo}},
 		"GET /v1/geo/intents/{intent_id}":                   {Scopes: []string{auth.ScopeGeo}},
+		"GET /v1/weather":                                   {Scopes: []string{auth.ScopeGeo}},
 		"POST /v1/alerts/{alert_id}/ack":                    {Scopes: []string{auth.ScopeTraffic}},
 		"GET /v1/admin/coordination":                        consoleStaff,
 		"GET /v1/admin/occurrences":                         consoleStaff,
