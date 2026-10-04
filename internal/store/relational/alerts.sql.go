@@ -100,7 +100,7 @@ WHERE a.id = $2::uuid
       SELECT owner.operator_id FROM oauth_clients owner
       WHERE owner.client_id = COALESCE(
           (SELECT f.client_id FROM flights f WHERE f.id = a.flight_id),
-          (SELECT oi.client_id FROM operational_intents oi WHERE oi.id = a.intent_id AND a.flight_id IS NULL)))
+          (SELECT oi.client_id FROM operational_intents oi WHERE oi.id = a.intent_id)))
 RETURNING a.id, a.kind, a.flight_id, a.intent_id, a.authorisation_number, a.severity, a.state, a.raised_at, a.updated_at,
           a.cleared_at, a.clear_reason, a.detail, a.captured_at, a.policy_version, a.acked_at, a.acked_by, a.escalated_at, a.cell5
 `
@@ -134,9 +134,10 @@ type AckAlertForOperatorRow struct {
 
 // The acknowledgement by a portal user of the operator (brief WP-17;
 // actor = operator_user:<account id>) of an alert of one of the
-// operator's flights, or of its intents for an alert without a flight,
-// on the database clock; a repeat keeps the first. No row: not this
-// operator's alert, or no such alert.
+// operator's flights, or of its intents (an alert without a flight, or
+// one whose flight api has not recorded yet: the alert names the intent
+// the flight flies), on the database clock; a repeat keeps the first. No
+// row: not this operator's alert, or no such alert.
 func (q *Queries) AckAlertForOperator(ctx context.Context, arg AckAlertForOperatorParams) (AckAlertForOperatorRow, error) {
 	row := q.db.QueryRow(ctx, ackAlertForOperator, arg.Actor, arg.ID, arg.OperatorID)
 	var i AckAlertForOperatorRow
