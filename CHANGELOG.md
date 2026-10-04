@@ -15,6 +15,24 @@ additively within `/v1`.
   lab issuer lists `ussp-USSP-DEV-01`, so the lower-cased id could never
   be registered and every outgoing call (the CIS) had no token. Found at
   the first staging deploy: `POST /v1/oauth/clients` refused it.
+- WP-15 review follow-ups:
+  - the occurrence holds are projected in pages of `HoldsBatch` without
+    the lock a supervisor's flag takes, so a slow KV no longer holds up
+    `POST /v1/admin/occurrences`;
+  - the remote pilot's position is removed from old telemetry one
+    1-day window per statement, not in one transaction over the history;
+  - `alerts_kind_raised_idx` moves from 00020 to 00022 and is built
+    `CONCURRENTLY` outside a transaction (alerts is live); a layout test
+    holds later migrations to that rule;
+  - 00021 fails an undelivered pre-existing status notice instead of
+    leaving it pending with a made-up certificate id;
+  - concurrent requests for the same cease or restart store one notice
+    (00023: `follows` and a unique index on it);
+  - fuzz targets for `records.DecodeGap`, the ANSP feed's frames,
+    `checkVolumes` and the coordination client's decoders; they found an
+    overflowing `Retry-After`, a problem detail cut inside a UTF-8
+    character, and a circle radius in a unit other than metres that the
+    Annex V schema refuses.
 
 ### Added
 
