@@ -16,6 +16,7 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/policy"
 	"github.com/rootxkit/uspace-ussp/internal/sources"
 	"github.com/rootxkit/uspace-ussp/internal/store"
+	"github.com/rootxkit/uspace-ussp/internal/store/relational"
 )
 
 // PolicyPutter stores a policy version (policy.Service.Put): validated,
@@ -127,7 +128,17 @@ func (s *Service) Policy(ctx context.Context) (Policy, error) {
 	for _, r := range rows {
 		actors = append(actors, r.Actor)
 	}
-	names := s.staffNames(ctx, actors)
+	return policyHistory(rows, s.staffNames(ctx, actors))
+}
+
+// policyHistory is the policy page of rows, the newest versions newest
+// first as AdminPolicyHistory reads at most MaxPolicies+1 of them. Each
+// version's changes are from the one before it; the first version ever
+// stored (the oldest row when fewer than MaxPolicies+1 were read) has
+// its changes from the defaults, version 0, as PutPolicy answered when
+// it was stored. The version past MaxPolicies is read only for the
+// changes of the oldest one shown.
+func policyHistory(rows []relational.Policy, names func(string) string) (Policy, error) {
 	maps := make([]map[string]any, len(rows))
 	for i, r := range rows {
 		// Decoded onto the defaults, as internal/store reads a version: a
@@ -138,14 +149,17 @@ func (s *Service) Policy(ctx context.Context) (Policy, error) {
 		}
 		maps[i] = valuesMap(v)
 	}
+	defaults := valuesMap(policy.Defaults())
 	out := Policy{History: make([]PolicyVersion, 0, min(len(rows), MaxPolicies)), PendingGCAA: slices.Clone(policy.PendingGCAA)}
 	for i, r := range rows {
 		if i == MaxPolicies {
 			break
 		}
-		ch := []Change{}
+		var ch []Change
 		if i+1 < len(rows) {
 			ch = changes(maps[i+1], maps[i])
+		} else {
+			ch = changes(defaults, maps[i])
 		}
 		at := r.CreatedAt.UTC()
 		actor, why := names(r.Actor), r.Reason
@@ -154,7 +168,7 @@ func (s *Service) Policy(ctx context.Context) (Policy, error) {
 	if len(out.History) > 0 {
 		out.Current = out.History[0]
 	} else {
-		out.Current = PolicyVersion{Version: 0, Values: valuesMap(policy.Defaults()), Changes: []Change{}}
+		out.Current = PolicyVersion{Version: 0, Values: defaults, Changes: []Change{}}
 	}
 	return out, nil
 }

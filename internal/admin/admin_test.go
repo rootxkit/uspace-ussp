@@ -12,6 +12,7 @@ import (
 
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
+	"github.com/rootxkit/uspace-ussp/internal/store/relational"
 )
 
 var t0 = time.Date(2026, 10, 5, 9, 0, 0, 0, time.UTC)
@@ -200,6 +201,64 @@ func TestPolicyChanges(t *testing.T) {
 	ch := changes(a, valuesMap(v))
 	if len(ch) != 2 || ch[0].Field != "cis_stale_s" || ch[0].From != 300.0 || ch[0].To != 600.0 || ch[1].Field != "emergency_checklist_ids" {
 		t.Fatalf("changes %+v", ch)
+	}
+}
+
+// policyRow is a stored version whose cis_stale_s is staleS.
+func policyRow(t *testing.T, version int64, staleS float64) relational.Policy {
+	t.Helper()
+	v := policy.Defaults()
+	v.CISStaleS = staleS
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return relational.Policy{Version: version, CreatedAt: t0, Actor: "staff-1", Reason: "r", Values: raw}
+}
+
+// The first version ever stored has its changes from the defaults, as
+// PutPolicy answered when it stored it (a fresh database showed it with
+// none); a version with one before it in the rows has its changes from
+// that one, and the row past MaxPolicies only gives the oldest shown
+// its changes.
+func TestPolicyHistoryChanges(t *testing.T) {
+	def := policy.Defaults().CISStaleS
+	same := func(s string) string { return s }
+	p, err := policyHistory([]relational.Policy{policyRow(t, 1, def+1)}, same)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch := p.History[0].Changes; len(ch) != 1 || ch[0].Field != "cis_stale_s" || ch[0].From != def || ch[0].To != def+1 {
+		t.Fatalf("the first version: %+v", ch)
+	}
+	if p.Current.Version != 1 || len(p.Current.Changes) != 1 {
+		t.Fatalf("current %+v", p.Current)
+	}
+	p, err = policyHistory([]relational.Policy{policyRow(t, 2, def+2), policyRow(t, 1, def+1)}, same)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch := p.History[0].Changes; len(ch) != 1 || ch[0].From != def+1 || ch[0].To != def+2 {
+		t.Fatalf("the second version: %+v", ch)
+	}
+	if ch := p.History[1].Changes; len(ch) != 1 || ch[0].From != def || ch[0].To != def+1 {
+		t.Fatalf("the first of two: %+v", ch)
+	}
+	rows := make([]relational.Policy, 0, MaxPolicies+1)
+	for i := MaxPolicies + 1; i >= 1; i-- {
+		rows = append(rows, policyRow(t, int64(i), def+float64(i)))
+	}
+	p, err = policyHistory(rows, same)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := p.History[len(p.History)-1]
+	if len(p.History) != MaxPolicies || last.Version != 2 || len(last.Changes) != 1 || last.Changes[0].From != def+1 {
+		t.Fatalf("the oldest shown of %d: %d versions, %+v", len(rows), len(p.History), last)
+	}
+	p, err = policyHistory(nil, same)
+	if err != nil || p.Current.Version != 0 || len(p.Current.Changes) != 0 || len(p.History) != 0 {
+		t.Fatalf("no version stored: %+v %v", p, err)
 	}
 }
 
