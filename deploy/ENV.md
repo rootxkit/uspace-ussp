@@ -125,8 +125,11 @@ The Next.js server of `web/` reads its own variables at request time;
 they are documented with their defaults in `web/README.md`
 (Configuration): `USSP_WEB_API_URL`, `USSP_WEB_SESSION_SECURE`,
 `USSP_WEB_TRUSTED_PROXY_HOPS` (required with a secure session),
-`USSP_WEB_BFF_TIMEOUT_MS`, `USSP_WEB_MAP_CENTER`, `USSP_WEB_MAP_ZOOM`
-and the kit's `UI_BRAND_*`. List the web container in the API's
+`USSP_WEB_BFF_TIMEOUT_MS`, `USSP_WEB_MAP_CENTER`, `USSP_WEB_MAP_ZOOM`,
+`USSP_WEB_BFF_SECRET` (at least 32 bytes from the secret store: it seals
+a staff admin's MFA challenge between the console's two sign-in steps;
+without it an admin cannot sign in to the console) and the kit's
+`UI_BRAND_*`. List the web container in the API's
 `USSP_TRUSTED_PROXIES`, so the sign-in limits key on the client the BFF
 names. The browser reaches traffic-ws's `WS /v1/traffic` and
 `WS /v1/alerts` on the same origin, so its origin belongs in
