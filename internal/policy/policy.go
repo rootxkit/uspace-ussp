@@ -220,7 +220,29 @@ type Values struct {
 	// exchange (and the reports peers sent).
 	PeerSubscriptionMarginM  float64 `json:"peer_subscription_margin_m"`
 	DSSExchangeRetentionDays int     `json:"dss_exchange_retention_days"`
+
+	// Coordination with the ANSP, records and occurrences (WP-15).
+	// ATSAckPollS is how often a notice that needs a person's
+	// acknowledgement is read back from the ANSP and ATSAckEscalateS how
+	// long it may stay unacknowledged before the console escalates it
+	// (cross-plan M2: every 10 s for 5 min). RecordGapS is the silence
+	// that cuts a flight's track into a hole in its service record (B-13:
+	// more than 3 s). OperatorPositionRetentionDays is how long the
+	// remote pilot's position stays on the telemetry of a flight no
+	// occurrence report holds (spec 05 §4: 90 days). AirproxReportM and
+	// AirproxReportVM are the closest approach, horizontal and vertical,
+	// below which a proximity alert is reported to the authority as an
+	// airprox occurrence (defaults: the CPA minima).
+	ATSAckPollS                   float64 `json:"ats_ack_poll_s"`
+	ATSAckEscalateS               float64 `json:"ats_ack_escalate_s"`
+	RecordGapS                    float64 `json:"record_gap_s"`
+	OperatorPositionRetentionDays int     `json:"operator_position_retention_days"`
+	AirproxReportM                float64 `json:"airprox_report_m"`
+	AirproxReportVM               float64 `json:"airprox_report_v_m"`
 }
+
+// MaxOperatorPositionRetentionDays bounds OperatorPositionRetentionDays.
+const MaxOperatorPositionRetentionDays = 3660
 
 // MaxCPAPairBudget bounds CPAPairBudget.
 const MaxCPAPairBudget = 10_000_000
@@ -301,6 +323,11 @@ const TelemetryRetentionFloorDays = 30
 // figures (alerting.DefaultConfig: 3 s hysteresis, 10 s live age) and
 // its pressure margin (zones.DefaultPolicy: 250 m), so a conformance
 // judgement and a zone judgement treat one sample alike.
+//
+// The coordination and record defaults (WP-15) are cross-plan M2's poll
+// of an ANSP notice every 10 s for 5 min, B-13's 3 s silence, spec 05
+// §4's 90 days for the remote pilot's position and, for an airprox
+// report, the CPA minima.
 func Defaults() Values {
 	c := cpa.DefaultPolicy
 	alt := rid.DefaultAltPolicy()
@@ -372,6 +399,13 @@ func Defaults() Values {
 
 		PeerSubscriptionMarginM:  2000,
 		DSSExchangeRetentionDays: 7,
+
+		ATSAckPollS:                   10,
+		ATSAckEscalateS:               300,
+		RecordGapS:                    3,
+		OperatorPositionRetentionDays: 90,
+		AirproxReportM:                c.DHorizontalMinM,
+		AirproxReportVM:               c.DVerticalMinM,
 	}
 }
 
@@ -444,6 +478,8 @@ func (v Values) Validate() error {
 		{"traffic_stale_after_s", v.TrafficStaleAfterS}, {"traffic_drop_after_s", v.TrafficDropAfterS},
 		{"traffic_record_every_s", v.TrafficRecordEveryS}, {"escalation_after_s", v.EscalationAfterS},
 		{"zone_clear_after_s", v.ZoneClearAfterS}, {"zone_stale_after_s", v.ZoneStaleAfterS},
+		{"ats_ack_poll_s", v.ATSAckPollS}, {"ats_ack_escalate_s", v.ATSAckEscalateS}, {"record_gap_s", v.RecordGapS},
+		{"airprox_report_m", v.AirproxReportM}, {"airprox_report_v_m", v.AirproxReportVM},
 	}
 	for _, f := range positive {
 		if !finite(f.v) || f.v <= 0 {
@@ -471,6 +507,12 @@ func (v Values) Validate() error {
 	}
 	if v.DSSExchangeRetentionDays < 1 || v.DSSExchangeRetentionDays > MaxDSSExchangeRetentionDays {
 		errs = append(errs, core.Fieldf("dss_exchange_retention_days", "must be from 1 to %d, got %d", MaxDSSExchangeRetentionDays, v.DSSExchangeRetentionDays))
+	}
+	if v.OperatorPositionRetentionDays < 1 || v.OperatorPositionRetentionDays > MaxOperatorPositionRetentionDays {
+		errs = append(errs, core.Fieldf("operator_position_retention_days", "must be from 1 to %d, got %d", MaxOperatorPositionRetentionDays, v.OperatorPositionRetentionDays))
+	}
+	if finite(v.ATSAckEscalateS) && finite(v.ATSAckPollS) && v.ATSAckEscalateS < v.ATSAckPollS {
+		errs = append(errs, core.Fieldf("ats_ack_escalate_s", "must be at least ats_ack_poll_s (%v), got %v", v.ATSAckPollS, v.ATSAckEscalateS))
 	}
 	if v.OperatorTokenTTLS < 60 || v.OperatorTokenTTLS > MaxOperatorTokenTTLS {
 		errs = append(errs, core.Fieldf("operator_token_ttl_s", "must be from 60 to %d, got %d", MaxOperatorTokenTTLS, v.OperatorTokenTTLS))

@@ -6,7 +6,7 @@
 # read as a generic API key; the line was rewritten in the next commit.
 62f93f73aa3c8c7e885cc74b381be2d42c07924c:internal/national/registry_test.go:generic-api-key:97
 #
-# "ANSP_INSTANCE=lab", the ANSP binary's instance name passed as an
-# environment variable in the lab run of WP-15 (PR #24), read as a
-# generic API key; it is a fixed, public configuration value.
+# The lab test's environment for the ANSP binary: "ANSP_INSTANCE=lab"
+# among the quoted variables, read as a generic API key; the instance
+# name moved to a constant in the next commit.
 3cd2e966aabd63797b032ac3fdd5dcbfdf0b99ad:test/integration/lab_ansp_test.go:generic-api-key:186

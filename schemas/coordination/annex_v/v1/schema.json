@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.uspace.ge/coordination/annex_v/v1.json",
+  "title": "coordination/annex_v/v1",
+  "description": "An Annex V notice from a USSP to the ANSP (spec 02 F13, 04 §3.5; Reg. (EU) 2021/664 Art. 13(2), Annex V): intents touching controlled U-space airspace, non-conformance notices, contingent and ended notices, each with the intents' F3548 references, authorisation numbers, times and volumes. The request body of POST /v1/coordination/notices; uspace-ansp owns this schema because its API carries the body (decision record M14) and the USSP consumes it. This is an HTTP body, not an envelope message; it carries `schema` as every 04 message does. Volumes are F3548 Volume4D as uspace-core/f3548 generates them from the standard (W84 altitudes in metres, RFC3339 times). The schema is written without $defs so that api/openapi.yaml references it as a whole. Unknown members are ignored within the major (04 §4). A notice of kind nonconformance carries `nonconformance`.",
+  "type": "object",
+  "required": ["schema", "notice_ref", "kind", "ussp_id", "sent_at", "intents"],
+  "properties": {
+    "schema": {
+      "description": "The name of this schema.",
+      "type": "string",
+      "const": "coordination/annex_v/v1"
+    },
+    "notice_ref": {
+      "description": "The sender's reference of this notice; a repeat with the same reference from the same sender answers the first receipt.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "kind": {
+      "description": "intent_notice: intents touching controlled U-space airspace; nonconformance: an intent deviated (Art. 13(2)); contingent: an intent is Contingent; ended: the intents ended.",
+      "type": "string",
+      "enum": ["intent_notice", "nonconformance", "contingent", "ended"]
+    },
+    "ussp_id": {
+      "description": "The sender's identifier on the CIS USSP list.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "sent_at": {
+      "description": "When the USSP sent the notice, RFC 3339 UTC with Z (02 §1).",
+      "type": "string",
+      "format": "date-time"
+    },
+    "intents": {
+      "description": "The intents the notice is about.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "required": ["intent_ref", "authorisation_number", "state", "time_start", "time_end", "volumes"],
+        "properties": {
+          "intent_ref": {
+            "description": "The F3548 entity id of the operational intent (UUIDv4).",
+            "type": "string",
+            "format": "uuid"
+          },
+          "authorisation_number": {
+            "description": "The UAS flight authorisation number the USSP issued (Art. 10(11)).",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "state": {
+            "description": "The F3548 state of the operational intent (an ended intent keeps its last state; kind ended says it ended).",
+            "type": "string",
+            "enum": ["Accepted", "Activated", "Nonconforming", "Contingent"]
+          },
+          "time_start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "time_end": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "volumes": {
+            "description": "The intent's F3548 Volume4D list.",
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "required": ["volume"],
+              "properties": {
+                "volume": {
+                  "type": "object",
+                  "description": "F3548 Volume3D: exactly one outline, altitudes W84 in metres.",
+                  "properties": {
+                    "outline_polygon": {
+                      "type": "object",
+                      "required": ["vertices"],
+                      "properties": {
+                        "vertices": {
+                          "type": "array",
+                          "minItems": 3,
+                          "maxItems": 1000,
+                          "items": {
+                            "type": "object",
+                            "required": ["lat", "lng"],
+                            "properties": {
+                              "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+                              "lng": { "type": "number", "minimum": -180, "maximum": 180 }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "outline_circle": {
+                      "type": "object",
+                      "required": ["center", "radius"],
+                      "properties": {
+                        "center": {
+                          "type": "object",
+                          "required": ["lat", "lng"],
+                          "properties": {
+                            "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+                            "lng": { "type": "number", "minimum": -180, "maximum": 180 }
+                          }
+                        },
+                        "radius": {
+                          "type": "object",
+                          "required": ["value", "units"],
+                          "properties": {
+                            "value": { "type": "number", "exclusiveMinimum": 0 },
+                            "units": { "type": "string", "enum": ["M"] }
+                          }
+                        }
+                      }
+                    },
+                    "altitude_lower": {
+                      "type": "object",
+                      "required": ["value", "reference", "units"],
+                      "properties": {
+                        "value": { "type": "number" },
+                        "reference": { "type": "string", "enum": ["W84"] },
+                        "units": { "type": "string", "enum": ["M"] }
+                      }
+                    },
+                    "altitude_upper": {
+                      "type": "object",
+                      "required": ["value", "reference", "units"],
+                      "properties": {
+                        "value": { "type": "number" },
+                        "reference": { "type": "string", "enum": ["W84"] },
+                        "units": { "type": "string", "enum": ["M"] }
+                      }
+                    }
+                  }
+                },
+                "time_start": {
+                  "type": "object",
+                  "required": ["value", "format"],
+                  "properties": {
+                    "value": { "type": "string", "format": "date-time" },
+                    "format": { "type": "string", "enum": ["RFC3339"] }
+                  }
+                },
+                "time_end": {
+                  "type": "object",
+                  "required": ["value", "format"],
+                  "properties": {
+                    "value": { "type": "string", "format": "date-time" },
+                    "format": { "type": "string", "enum": ["RFC3339"] }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "nonconformance": {
+      "description": "The deviation, for kind nonconformance (Art. 13(2)).",
+      "type": "object",
+      "required": ["intent_ref", "authorisation_number", "detected_at", "reason"],
+      "properties": {
+        "intent_ref": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "authorisation_number": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "detected_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reason": {
+          "description": "Why the flight is non-conforming, as the USSP's alert/v1 names it.",
+          "type": "string",
+          "enum": ["threshold_exceeded", "constraint_breached", "lost_link", "other"]
+        },
+        "distance_outside_m": {
+          "type": "number",
+          "minimum": 0
+        },
+        "height_over_m": {
+          "type": "number",
+          "minimum": 0
+        },
+        "position": {
+          "description": "The last position, WGS84 decimal degrees.",
+          "type": "object",
+          "required": ["lat", "lng"],
+          "properties": {
+            "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+            "lng": { "type": "number", "minimum": -180, "maximum": 180 }
+          }
+        },
+        "alt_wgs84_m": {
+          "description": "The last geometric altitude above the WGS84 ellipsoid.",
+          "type": "number"
+        }
+      }
+    },
+    "remarks": {
+      "description": "Free text from the USSP.",
+      "type": "string",
+      "maxLength": 1000
+    }
+  },
+  "if": {
+    "properties": { "kind": { "const": "nonconformance" } },
+    "required": ["kind"]
+  },
+  "then": {
+    "required": ["nonconformance"]
+  }
+}

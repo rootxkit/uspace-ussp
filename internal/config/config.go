@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -96,10 +97,11 @@ type Config struct {
 	ConformanceStateBucketMaxBytes int    `env:"USSP_CONFORMANCE_STATE_BUCKET_MAX_BYTES" default:"536870912" by:"all" min:"1048576" max:"1099511627776" unit:"bytes" help:"size bound of the conformance_state bucket, reserved in the JetStream file store; a full bucket refuses puts"`
 	ProximityStateBucketMaxBytes   int    `env:"USSP_PROXIMITY_STATE_BUCKET_MAX_BYTES" default:"67108864" by:"all" min:"1048576" max:"1099511627776" unit:"bytes" help:"size bound of the proximity_state bucket, reserved in the JetStream file store; a full bucket refuses puts"`
 	SessionsLiveBucketMaxBytes     int    `env:"USSP_SESSIONS_LIVE_BUCKET_MAX_BYTES" default:"67108864" by:"all" min:"1048576" max:"1099511627776" unit:"bytes" help:"size bound of the sessions_live bucket, reserved in the JetStream file store; a full bucket refuses puts"`
+	RecordHoldsBucketMaxBytes      int    `env:"USSP_RECORD_HOLDS_BUCKET_MAX_BYTES" default:"16777216" by:"all" min:"1048576" max:"1099511627776" unit:"bytes" help:"size bound of the record_holds bucket, reserved in the JetStream file store; a full bucket refuses puts"`
 
-	SystemID                string   `env:"USSP_SYSTEM_ID" default:"USSP-DEV" by:"api,rid-sp,dss-sync" help:"the USSP code from the authority's certificate (M8); never an audience"`
+	SystemID                string   `env:"USSP_SYSTEM_ID" default:"USSP-DEV" by:"api,rid-sp,monitor,dss-sync" help:"the USSP code from the authority's certificate (M8); never an audience"`
 	Audiences               []string `env:"USSP_AUDIENCES" by:"api,telemetry-ingest,rid-sp,traffic-ws" help:"hosts accepted as JWT aud, comma-separated: the public host and a lab alias (M18)"`
-	TokenIssuers            []string `env:"USSP_TOKEN_ISSUERS" by:"api,telemetry-ingest,rid-sp,traffic-ws" kind:"issuers" help:"allow-listed token issuers as iss=jwks_url, comma-separated; the first is the token service for outgoing calls"`
+	TokenIssuers            []string `env:"USSP_TOKEN_ISSUERS" by:"api,telemetry-ingest,rid-sp,monitor,traffic-ws" kind:"issuers" help:"allow-listed token issuers as iss=jwks_url, comma-separated; the first is the token service for outgoing calls"`
 	CISNotifyIssuers        []string `env:"USSP_CIS_NOTIFY_ISSUERS" by:"api" kind:"issuers" help:"issuers of CIS change notifications (the CISP, the ANSP) as iss=jwks_url, comma-separated"`
 	USSBaseURL              string   `env:"USSP_USS_BASE_URL" by:"api,rid-sp,dss-sync" kind:"url" help:"this USSP's published base URL (uss_base_url in the DSS)"`
 	DSSBaseURL              string   `env:"USSP_DSS_BASE_URL" by:"api,rid-sp,dss-sync" kind:"url" help:"InterUSS DSS base URL; its host is the outgoing aud"`
@@ -109,13 +111,14 @@ type Config struct {
 	CISPublisherKeys        []string `env:"USSP_CIS_PUBLISHER_KEYS" by:"api" kind:"issuers" help:"JWKS of the CIS publishers as authority=jwks_url,ansp=jwks_url: a dataset version is used only when its X-Publisher-Signature verifies with its publisher's key (the authority for zones, uspace_airspace and ussp_list, the ANSP for restrictions); otherwise it is held"`
 	CISPublisherSigMaxAgeS  int      `env:"USSP_CIS_PUBLISHER_SIG_MAX_AGE_S" default:"31622400" by:"api" min:"300" max:"315360000" unit:"s" help:"how old the iat of a publisher signature may be when this USSP first reads its version; the CISP forwards the signature made at publication, so it is as old as the version (default 366 days)"`
 	CISReconcileS           int      `env:"USSP_CIS_RECONCILE_S" default:"60" by:"api" min:"5" max:"60" unit:"s" help:"period of the conditional pull of every CIS dataset that bounds what a missed change notification costs (spec 02 F3: at most 60 s)"`
+	CertificateID           string   `env:"USSP_CERTIFICATE_ID" by:"api" help:"the id of this USSP's certificate at the authority (32 hex characters), named by the Art. 7(6) operating-status notices; unset, no notice can be sent and /readyz says so"`
 	AuthorityBaseURL        string   `env:"USSP_AUTHORITY_BASE_URL" by:"api" kind:"url" help:"authority base URL (F8 registry, occurrences, status)"`
 	ANSPBaseURL             string   `env:"USSP_ANSP_BASE_URL" by:"api" kind:"url" help:"ANSP base URL (Annex V coordination notices)"`
-	ANSPStreamURL           string   `env:"USSP_ANSP_STREAM_URL" by:"monitor" kind:"url" help:"ANSP manned-traffic stream (F4)"`
-	MTLSMode                string   `env:"USSP_MTLS_MODE" default:"required" by:"monitor" enum:"required|off" help:"mTLS towards the ANSP (M25); off only in the lab and on staging, and logged at error level"`
-	MTLSCertFile            string   `env:"USSP_MTLS_CERT_FILE" by:"monitor" help:"client certificate (PEM) for USSP_MTLS_MODE=required"`
-	MTLSKeyFile             string   `env:"USSP_MTLS_KEY_FILE" by:"monitor" help:"client key (PEM) for USSP_MTLS_MODE=required"`
-	MTLSCAFile              string   `env:"USSP_MTLS_CA_FILE" by:"monitor" help:"CA bundle (PEM) the ANSP's certificate is checked against"`
+	ANSPStreamURL           string   `env:"USSP_ANSP_STREAM_URL" by:"monitor" kind:"url" help:"ANSP manned-traffic stream (F4, wss://<ansp>/v1/manned-traffic/stream): monitor reads it with a token of scope ansp.traffic and mTLS per USSP_MTLS_MODE and reports it as ansp_feed on /readyz; the manned tracks are held, not published to man.v1, until WP-14's echo guard (PLAN §15 Q23)"`
+	MTLSMode                string   `env:"USSP_MTLS_MODE" default:"required" by:"api,monitor" enum:"required|off" help:"mTLS towards the ANSP (M25): Annex V notices (api) and the manned-traffic stream (monitor); off only in the lab and on staging, and logged at error level"`
+	MTLSCertFile            string   `env:"USSP_MTLS_CERT_FILE" by:"api,monitor" help:"client certificate (PEM) for USSP_MTLS_MODE=required"`
+	MTLSKeyFile             string   `env:"USSP_MTLS_KEY_FILE" by:"api,monitor" help:"client key (PEM) for USSP_MTLS_MODE=required"`
+	MTLSCAFile              string   `env:"USSP_MTLS_CA_FILE" by:"api,monitor" help:"CA bundle (PEM) the ANSP's certificate is checked against"`
 	IssuerKeyFile           string   `env:"USSP_ISSUER_KEY_FILE" by:"api" help:"RSA key (PEM, at least 2048 bits) of this USSP's own token issuer (scripts/gen-issuer-key.sh); unset, api issues no token and starts no session, and says so on /readyz"`
 	IssuerPreviousKeyFile   string   `env:"USSP_ISSUER_PREVIOUS_KEY_FILE" by:"api" help:"the previous issuer key (PEM) during a rotation: published in the JWKS and accepted, never used to sign"`
 	IssuerURL               string   `env:"USSP_ISSUER_URL" by:"api,telemetry-ingest" kind:"url" help:"iss of this USSP's own tokens; default https:// followed by the first USSP_AUDIENCES entry; telemetry-ingest honours operator scopes only on tokens of this iss (list it in USSP_TOKEN_ISSUERS with api's JWKS)"`
@@ -133,6 +136,7 @@ type Config struct {
 	TerrainDir              string   `env:"USSP_TERRAIN_DIR" by:"monitor" help:"directory of terrain tiles"`
 	CellOwnership           string   `env:"USSP_CELL_OWNERSHIP" default:"all" by:"monitor" help:"cells this monitor instance owns: all, or a comma list of c3 cells"`
 	AuthorityPush           string   `env:"USSP_AUTHORITY_PUSH" default:"off" by:"rid-sp" enum:"on|off" help:"the optional WS /v1/authority/flights extension (D12)"`
+	RecordsDir              string   `env:"USSP_RECORDS_DIR" by:"api" help:"directory (a local volume) the daily record bundles are written to and served from (GET /v1/records/daily/{date}); unset, no bundle is built and /readyz says so"`
 	WeatherSource           string   `env:"USSP_WEATHER_SOURCE" by:"api" help:"weather source adapter and URL; unset means weather answers 503 weather_unavailable"`
 	ADSBSource              string   `env:"USSP_ADSB_SOURCE" by:"monitor" help:"e-conspicuity receiver feed; unset means no receiver, shown as such"`
 	WSAllowedOrigins        []string `env:"USSP_WS_ALLOWED_ORIGINS" by:"telemetry-ingest,traffic-ws" help:"Origin allow-list of browser WebSocket upgrades (M22), comma-separated"`
@@ -224,6 +228,9 @@ func (c Config) validate() error {
 		// CLAUDE.md rule 10: two trees, two databases, never one.
 		errs = append(errs, &core.FieldError{Field: "USSP_TS_URL", Reason: "must name a different database from USSP_PG_URL"})
 	}
+	if c.CertificateID != "" && !certificateIDRe.MatchString(c.CertificateID) {
+		errs = append(errs, core.Fieldf("USSP_CERTIFICATE_ID", "must be the 32 hexadecimal characters of the authority's certificate id"))
+	}
 	addrs := map[string]string{}
 	for _, p := range Processes {
 		a := c.Addr(p)
@@ -234,6 +241,9 @@ func (c Config) validate() error {
 	}
 	return errors.Join(errs...)
 }
+
+// certificateIDRe is the authority's CertificateID (its OpenAPI).
+var certificateIDRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 func addrVar(process string) string {
 	return "USSP_" + strings.ToUpper(strings.ReplaceAll(process, "-", "_")) + "_ADDR"

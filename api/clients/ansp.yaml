@@ -1,0 +1,4636 @@
+openapi: 3.1.0
+info:
+  title: uspace-ansp national API
+  version: 1.0.0
+  description: |
+    The U-space interface of the air navigation service provider in the
+    Georgian U-space system-of-systems (Reg. (EU) 2021/664, 2021/665):
+    dynamic airspace reconfiguration (ATS.TR.237), the manned traffic
+    information service (ATS.OR.127), the Annex V coordination inbox
+    (Art. 13(2)) and the accounts of the dispatcher console.
+
+    This file is the contract (CLAUDE.md rule 7): an endpoint that is
+    not in it does not exist; the server interface, the models and the
+    Go client in api/gen are generated from it and committed, and CI
+    fails on a stale generation. Changes within /v1 are additive only
+    (spec 00 §7, 02 §1): new optional fields, new operations, new enum
+    values announced one minor ahead; a breaking change is a /v2 served
+    in parallel. Inbound bodies leave additionalProperties open: unknown
+    members are ignored, never refused (02 §1).
+
+    Conventions (02 §1): every time is RFC 3339 UTC with Z and
+    millisecond precision; every geometry is GeoJSON in WGS84 (SRID
+    4326) with positions [lng, lat]; every distance is in metres and
+    every altitude is a number in metres with its reference in a _ref
+    member (AMSL or WGS84; AGL is refused for a dynamic restriction in
+    this release, D3). Every error is application/problem+json in the
+    one body of the ecosystem (Problem, M28), and every 429 and 503
+    carries Retry-After.
+
+    Each operation carries x-process (the process that serves it: api,
+    manned-feed, or each for the health endpoints every process serves),
+    x-spec (the spec section) and x-auth, the access rule the server
+    enforces before any handler runs (internal/auth ParseAccess):
+    public; jws:cisp (a compact JWS body verified by the handler);
+    session (any console role); session:<role>[|<role>] (a console
+    session with one of those roles); token:<scope>[+<scope>] (an
+    ecosystem token granting every scope), with +mtls when the client
+    certificate is bound (ANSP_MTLS_MODE); alternatives joined by " or ".
+    Operations marked x-websocket are WebSocket upgrades: the GET is the
+    handshake, 101 its success, and the 101 content is the schema of
+    every frame the server sends (the 04 §2 envelope with a body named
+    by schema, M29).
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: /
+tags:
+  - name: restrictions
+    description: Dynamic airspace reconfiguration (ATS.TR.237, 02 F2).
+  - name: restriction-requests
+    description: Restriction requests from the authority (02 F11).
+  - name: coordination
+    description: The Annex V inbox of USSP notices (02 F13, Art. 13(2)).
+  - name: manned-traffic
+    description: The manned traffic information service (ATS.OR.127, 02 F4).
+  - name: adapters
+    description: The surveillance adapters.
+  - name: sources
+    description: Source switches (04 §3.6, U-15).
+  - name: policy
+    description: The thresholds row (INV-03).
+  - name: occurrences
+    description: Occurrence reports of ANSP staff (376/2014 Art. 4(8)).
+  - name: audit
+    description: The append-only audit log (01 N4).
+  - name: auth
+    description: Console sign-in, accounts and the signing keys (06 §3).
+  - name: uss
+    description: The F3548 USS endpoint of the constraint manager.
+  - name: cis
+    description: CIS change notifications (02 F3 push).
+  - name: health
+    description: Liveness, readiness and metrics of each process.
+
+components:
+  securitySchemes:
+    ecosystemToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        An ecosystem RS256 token from the authority's token service (or
+        the lab issuer), verified by uspace-core/auth: iss on
+        ANSP_TOKEN_ISSUERS, aud a host of ANSP_AUDIENCES (M18), exp with
+        30 s skew, the scopes the operation names.
+    consoleSession:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        A console session issued by this system at POST /v1/auth/mfa
+        (scope session, roles [role], realm console, aud this system's
+        host; M20), forwarded by the BFF as a bearer.
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: uspace_session
+      description: |
+        The same session in the uspace_session cookie, accepted only on a
+        same-origin WebSocket upgrade whose Origin is on
+        ANSP_WS_ALLOWED_ORIGINS (M22).
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: The client's reference of the request; a repeat answers the first result.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: "^[A-Za-z0-9._:-]+$"
+      example: console-7f3a9c
+    RestrictionID:
+      name: id
+      in: path
+      required: true
+      description: The restriction id (ULID).
+      schema:
+        $ref: "#/components/schemas/ULID"
+      example: 01K6P0A1B2C3D4E5F6G7H8J9KM
+    Version:
+      name: version
+      in: path
+      required: true
+      description: The ansp_version.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+      example: 2
+    RequestID:
+      name: id
+      in: path
+      required: true
+      description: The restriction request id (ULID).
+      schema:
+        $ref: "#/components/schemas/ULID"
+      example: 01K6P2M3N4P5Q6R7S8T9V0W1X2
+    AckID:
+      name: ack_id
+      in: path
+      required: true
+      description: The ack_id of the receipt.
+      schema:
+        $ref: "#/components/schemas/ULID"
+      example: 01K6P3Q8Y2D6W4Z1V7R5T9X3MB
+    AlarmID:
+      name: id
+      in: path
+      required: true
+      description: The id of the delivery alarm.
+      schema:
+        $ref: "#/components/schemas/ULID"
+      example: 01K6P0A9QZ3V1H8M2T6R4W5X7C
+    NoticeID:
+      name: id
+      in: path
+      required: true
+      description: The ack_id of the notice.
+      schema:
+        $ref: "#/components/schemas/ULID"
+      example: 01K6P3Q8Y2D6W4Z1V7R5T9X3MB
+    AdapterID:
+      name: id
+      in: path
+      required: true
+      description: The adapter instance slug.
+      schema:
+        $ref: "#/components/schemas/AdapterSlug"
+      example: adsb-tbs
+    SourceType:
+      name: type
+      in: path
+      required: true
+      description: The source type; this system has one, manned.
+      schema:
+        type: string
+        enum: [manned]
+      example: manned
+    SourceInstance:
+      name: instance
+      in: path
+      required: true
+      description: An adapter id, or * for the type as a whole.
+      schema:
+        type: string
+        pattern: "^(\\*|[a-z][a-z0-9]*(-[a-z0-9]+)*)$"
+        maxLength: 64
+      example: adsb-tbs
+    UserID:
+      name: id
+      in: path
+      required: true
+      description: The account id (ULID).
+      schema:
+        $ref: "#/components/schemas/ULID"
+      example: 01K6NZ8Q2W3E4R5T6Y7V8W9X0Z
+    BBox:
+      name: bbox
+      in: query
+      required: false
+      description: |
+        A bounding box west,south,east,north in WGS84 degrees (RFC 7946
+        §5 order, [lng, lat]); west > east crosses the antimeridian.
+      schema:
+        type: string
+        maxLength: 96
+        pattern: "^-?[0-9]+(\\.[0-9]+)?(,-?[0-9]+(\\.[0-9]+)?){3}$"
+      example: "44.60,41.60,45.00,41.90"
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: At most this many items (default 100); truncated says when more existed.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+      example: 100
+
+  responses:
+    BadRequest:
+      description: The request is not valid; errors names every field at fault.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://schemas.uspace.ge/problems/invalid_request
+            title: Bad Request
+            status: 400
+            detail: the request is not valid
+            instance: /v1/restrictions
+            errors:
+              - field: lower_ref
+                reason: AGL is not supported for a dynamic restriction in this release
+    Unauthorized:
+      description: No credential, or one that is refused; type names core's counter (rejected_audience, rejected_expired, ...).
+      headers:
+        WWW-Authenticate:
+          description: Bearer, with error="invalid_token" for a refused token.
+          schema:
+            type: string
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://schemas.uspace.ge/problems/unauthenticated
+            title: Unauthorized
+            status: 401
+            detail: no bearer token
+            instance: /v1/restrictions
+            errors:
+              - field: Authorization
+                reason: no bearer token
+    Forbidden:
+      description: The caller lacks a scope or a role, or its certificate binding is refused.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://schemas.uspace.ge/problems/forbidden
+            title: Forbidden
+            status: 403
+            detail: the token does not grant a scope this operation requires
+            instance: /v1/coordination/notices
+            errors:
+              - field: scope
+                reason: missing ansp.coordination
+    NotFound:
+      description: No such resource.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://schemas.uspace.ge/problems/not_found
+            title: Not Found
+            status: 404
+            detail: no restriction has this id
+            instance: /v1/restrictions/01K6P0A1B2C3D4E5F6G7H8J9KM
+            errors: []
+    Conflict:
+      description: The resource is not in a state that allows this, or the key was used with another body.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://schemas.uspace.ge/problems/conflict
+            title: Conflict
+            status: 409
+            detail: the restriction is active; only a planned restriction can be cancelled
+            instance: /v1/restrictions/01K6P0A1B2C3D4E5F6G7H8J9KM/cancel
+            errors:
+              - field: state
+                reason: is active
+    TooLarge:
+      description: The body is larger than the operation accepts.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://schemas.uspace.ge/problems/body_too_large
+            title: Request Entity Too Large
+            status: 413
+            detail: the body is larger than 1048576 bytes
+            instance: /v1/coordination/notices
+            errors:
+              - field: body
+                reason: larger than 1048576 bytes
+    UnsupportedMediaType:
+      description: The body is not of the media type the operation takes.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://schemas.uspace.ge/problems/unsupported_media_type
+            title: Unsupported Media Type
+            status: 415
+            detail: the body must be application/jose
+            instance: /v1/cis/notifications
+            errors:
+              - field: Content-Type
+                reason: must be application/jose
+    UpgradeRequired:
+      description: A plain GET on a WebSocket endpoint.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://schemas.uspace.ge/problems/upgrade_required
+            title: Upgrade Required
+            status: 426
+            detail: this endpoint is a WebSocket upgrade
+            instance: /v1/manned-traffic/stream
+            errors:
+              - field: Upgrade
+                reason: must be websocket
+    RateLimited:
+      description: Too many requests; come back after Retry-After seconds.
+      headers:
+        Retry-After:
+          description: Seconds to wait, at least 1.
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://schemas.uspace.ge/problems/rate_limited
+            title: Too Many Requests
+            status: 429
+            detail: too many requests; retry later
+            instance: /v1/auth/login
+            errors: []
+    Internal:
+      description: The request could not be completed; no detail of the cause is given.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://schemas.uspace.ge/problems/internal
+            title: Internal Server Error
+            status: 500
+            detail: the request could not be completed
+            instance: /.well-known/jwks.json
+            errors: []
+    Unavailable:
+      description: |
+        A dependency cannot answer now (the database, NATS KV, the CIS
+        projection: cis_stale, the session store); nothing was changed.
+        Come back after Retry-After seconds.
+      headers:
+        Retry-After:
+          description: Seconds to wait, at least 1.
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://schemas.uspace.ge/problems/cis_stale
+            title: Service Unavailable
+            status: 503
+            detail: the CIS projection is older than cis_stale_bound_s
+            instance: /v1/restrictions
+            errors:
+              - field: cis_age_s
+                reason: 412 s is older than 300 s
+
+  examples:
+    DeliveryAlarmOpen:
+      summary: A restriction not yet published to the CISP (synthetic example)
+      value: &DeliveryAlarmOpen
+        id: 01K6P0A9QZ3V1H8M2T6R4W5X7C
+        kind: cisp_not_published
+        state: open
+        restriction_id: 01K6P0A1B2C3D4E5F6G7H8J9KM
+        ansp_version: 2
+        since: "2026-10-02T12:00:00.000Z"
+        raised_at: "2026-10-02T12:00:10.120Z"
+        detail: restriction DAR7K2Q (version 2) is active and not yet published to the CISP since 2026-10-02T12:00:00.000Z; delivering it directly to the USSPs and the authority
+    DeliveryAlarmAcknowledged:
+      summary: A failed CISP publication, acknowledged (synthetic example)
+      value: &DeliveryAlarmAcknowledged
+        id: 01K6P0B4M8N2Q6R0S4T8V2W6X0
+        kind: delivery_failed
+        state: cleared
+        restriction_id: 01K6P0A1B2C3D4E5F6G7H8J9KM
+        ansp_version: 2
+        delivery_id: 01K6P0A2C4E6G8J0K2M4N6P8Q0
+        since: "2026-10-02T12:00:00.020Z"
+        raised_at: "2026-10-02T12:00:00.210Z"
+        detail: "cisp_publish to cisp (activate of version 2) failed: HTTP 400 restriction_refused"
+        cleared_at: "2026-10-02T12:03:00.000Z"
+        clear_reason: acknowledged
+        duration_s: 179.98
+        acknowledged_by: watch_supervisor
+        acknowledged_at: "2026-10-02T12:03:00.000Z"
+        ack_reason: The CISP operator confirmed the 400; the restriction is planned again
+    Ed318Feature:
+      summary: The ED-318 feature of a restriction (D4)
+      value: &Ed318Feature
+        type: Feature
+        id: DAR7K2Q
+        geometry:
+          type: Polygon
+          coordinates: [[[44.78, 41.70], [44.82, 41.70], [44.82, 41.73], [44.78, 41.73], [44.78, 41.70]]]
+          layer:
+            upper: 1200
+            upperReference: AMSL
+            lower: 0
+            lowerReference: AMSL
+            uom: m
+        properties:
+          identifier: DAR7K2Q
+          country: GEO
+          type: PROHIBITED
+          variant: COMMON
+          reason: [DAR]
+          name:
+            - text: Dynamic restriction (synthetic example)
+              lang: en-GB
+          limitedApplicability:
+            - startDateTime: "2026-10-02T12:00:00.000Z"
+              endDateTime: "2026-10-02T16:00:00.000Z"
+          zoneAuthority:
+            - name:
+                - text: Test ANSP
+                  lang: en-GB
+              purpose: AUTHORIZATION
+    ConstraintReference:
+      summary: An F3548 constraint reference
+      value: &ConstraintReference
+        id: 2f8343be-6482-4d1b-a474-16847e01af1e
+        manager: ansp-01
+        uss_availability: Normal
+        version: 1
+        time_start:
+          value: "2026-10-02T12:00:00.000Z"
+          format: RFC3339
+        time_end:
+          value: "2026-10-02T16:00:00.000Z"
+          format: RFC3339
+        uss_base_url: https://ansp.example.ge
+    Volume4D:
+      summary: An F3548 Volume4D
+      value: &Volume4D
+        volume:
+          outline_polygon:
+            vertices:
+              - lat: 41.70
+                lng: 44.78
+              - lat: 41.70
+                lng: 44.82
+              - lat: 41.73
+                lng: 44.82
+              - lat: 41.73
+                lng: 44.78
+          altitude_lower:
+            value: 0
+            reference: W84
+            units: M
+          altitude_upper:
+            value: 1218
+            reference: W84
+            units: M
+        time_start:
+          value: "2026-10-02T12:00:00.000Z"
+          format: RFC3339
+        time_end:
+          value: "2026-10-02T16:00:00.000Z"
+          format: RFC3339
+    User:
+      summary: A console account
+      value: &User
+        id: 01K6NZ8Q2W3E4R5T6Y7V8W9X0Z
+        username: supervisor1
+        role: watch_supervisor
+        status: active
+        created_at: "2026-09-30T08:00:00.000Z"
+        last_login_at: "2026-10-02T12:00:00.000Z"
+    MannedTrack:
+      summary: A live manned track
+      value: &MannedTrack
+        icao24: 4ca7b5
+        callsign: TST123
+        position:
+          lat: 41.7210
+          lng: 44.7930
+        alt_pressure_m: 1524
+        alt_wgs84_m: 1561
+        gs_ms: 72.5
+        track_deg: 134
+        vrate_ms: -2.5
+        emergency: false
+        squawk: "4521"
+        source_class: ads_b
+        quality:
+          nic: 8
+          nacp: 9
+        trust: surveillance
+        source: ansp_feed
+        source_instance: adsb-tbs
+        state: live
+        relevant: true
+        policy_version: "1"
+    MannedTrackFrame:
+      summary: A track/manned/v1 frame
+      value: &MannedTrackFrame
+        schema: track/manned/v1
+        msg_id: 01K6N5SXS5AA819X9YP981068V
+        producer: ansp/manned-feed
+        ts: "2026-10-02T12:00:00.000Z"
+        rx_ts: "2026-10-02T12:00:00.180Z"
+        captured_at: "2026-10-02T12:00:00.000Z"
+        time_source: receiver
+        backlog: false
+        body: *MannedTrack
+    RestrictionRequestCreate:
+      summary: A request from the authority
+      value: &RestrictionRequestCreate
+        client_ref: GCAA-2026-0113
+        case_ref: EVT-2026-0042
+        uspace_airspace_id: GEOTU01
+        geometry:
+          type: Polygon
+          coordinates: [[[44.78, 41.70], [44.82, 41.70], [44.82, 41.73], [44.78, 41.73], [44.78, 41.70]]]
+        lower_m: 0
+        lower_ref: AMSL
+        upper_m: 600
+        upper_ref: AMSL
+        starts_at: "2026-10-03T08:00:00.000Z"
+        ends_at: "2026-10-03T12:00:00.000Z"
+        reason_text: Public event (synthetic example)
+    AnnexVNonconformance:
+      summary: A non-conformance notice
+      value: &AnnexVNonconformance
+        schema: coordination/annex_v/v1
+        notice_ref: ussp-01-nc-000183
+        kind: nonconformance
+        ussp_id: ussp-01
+        sent_at: "2026-10-02T12:31:01.904Z"
+        intents:
+          - intent_ref: 6d1c2b4e-9a0f-4e3b-8c7d-2a1b0c9d8e7f
+            authorisation_number: GEO-UAS-2026-000183
+            state: Nonconforming
+            time_start: "2026-10-02T12:15:00.000Z"
+            time_end: "2026-10-02T12:45:00.000Z"
+            volumes:
+              - *Volume4D
+        nonconformance:
+          intent_ref: 6d1c2b4e-9a0f-4e3b-8c7d-2a1b0c9d8e7f
+          authorisation_number: GEO-UAS-2026-000183
+          detected_at: "2026-10-02T12:31:00.500Z"
+          reason: threshold_exceeded
+          distance_outside_m: 85
+          height_over_m: 0
+          position:
+            lat: 41.7151
+            lng: 44.8271
+          alt_wgs84_m: 612
+    CoordinationNoticeReceived:
+      summary: A received notice in the inbox
+      value: &CoordinationNoticeReceived
+        ack_id: 01K6P3Q8Y2D6W4Z1V7R5T9X3MB
+        kind: nonconformance
+        sender_client_id: ussp-01
+        ussp_id: ussp-01
+        notice_ref: ussp-01-nc-000183
+        intent_refs: [6d1c2b4e-9a0f-4e3b-8c7d-2a1b0c9d8e7f]
+        authorisation_numbers: [GEO-UAS-2026-000183]
+        received_at: "2026-10-02T12:31:02.118Z"
+        state: received
+        acknowledgement_required: true
+        sender_unverified: false
+        escalations: 0
+        restriction_ids: [01K6P0A1B2C3D4E5F6G7H8J9KM]
+        payload: *AnnexVNonconformance
+    CoordinationNoticeAcknowledged:
+      summary: An acknowledged notice as the sender polls it
+      value: &CoordinationNoticeAcknowledged
+        ack_id: 01K6P3Q8Y2D6W4Z1V7R5T9X3MB
+        kind: nonconformance
+        sender_client_id: ussp-01
+        ussp_id: ussp-01
+        notice_ref: ussp-01-nc-000183
+        intent_refs: [6d1c2b4e-9a0f-4e3b-8c7d-2a1b0c9d8e7f]
+        authorisation_numbers: [GEO-UAS-2026-000183]
+        received_at: "2026-10-02T12:31:02.118Z"
+        state: acknowledged
+        acknowledgement_required: true
+        sender_unverified: false
+        acknowledged_by: watch_supervisor
+        acknowledged_at: "2026-10-02T12:31:40.000Z"
+        escalations: 0
+        restriction_ids: [01K6P0A1B2C3D4E5F6G7H8J9KM]
+    RestrictionPlanned:
+      summary: A planned restriction
+      value: &RestrictionPlanned
+        id: 01K6P0A1B2C3D4E5F6G7H8J9KM
+        ansp_ref: ansp-01:01K6P0A1B2C3D4E5F6G7H8J9KM
+        identifier: DAR7K2Q
+        uspace_airspace_id: GEOTU01
+        zone_type: PROHIBITED
+        geometry:
+          type: Polygon
+          coordinates: [[[44.78, 41.70], [44.82, 41.70], [44.82, 41.73], [44.78, 41.73], [44.78, 41.70]]]
+        radius_m: null
+        lower_m: 0
+        lower_ref: AMSL
+        upper_m: 1200
+        upper_ref: AMSL
+        starts_at: "2026-10-02T12:00:00.000Z"
+        ends_at: "2026-10-02T16:00:00.000Z"
+        reason_text: Search and rescue operation (synthetic example)
+        state: planned
+        ansp_version: 1
+        created_by: watch_supervisor
+        created_at: "2026-10-02T11:50:00.000Z"
+        activated_at: null
+        ended_at_actual: null
+        request_id: null
+        published_version: null
+        supersedes_id: null
+        dss_constraint_id: 2f8343be-6482-4d1b-a474-16847e01af1e
+        dss_version: null
+        feature: *Ed318Feature
+        constraint_reference: null
+        deliveries:
+          cisp:
+            state: none
+            attempts: 0
+          dss:
+            state: none
+            attempts: 0
+          uss_notify:
+            state: none
+            attempts: 0
+          direct_degraded:
+            state: none
+            attempts: 0
+        cis_version: "42"
+        cis_age_s: 12.5
+    RestrictionActive:
+      summary: An active restriction, published to the CISP and the DSS
+      value: &RestrictionActive
+        id: 01K6P0A1B2C3D4E5F6G7H8J9KM
+        ansp_ref: ansp-01:01K6P0A1B2C3D4E5F6G7H8J9KM
+        identifier: DAR7K2Q
+        uspace_airspace_id: GEOTU01
+        zone_type: PROHIBITED
+        geometry:
+          type: Polygon
+          coordinates: [[[44.78, 41.70], [44.82, 41.70], [44.82, 41.73], [44.78, 41.73], [44.78, 41.70]]]
+        radius_m: null
+        lower_m: 0
+        lower_ref: AMSL
+        upper_m: 1200
+        upper_ref: AMSL
+        starts_at: "2026-10-02T12:00:00.000Z"
+        ends_at: "2026-10-02T16:00:00.000Z"
+        reason_text: Search and rescue operation (synthetic example)
+        state: active
+        ansp_version: 2
+        created_by: watch_supervisor
+        activated_by: watch_supervisor
+        created_at: "2026-10-02T11:50:00.000Z"
+        activated_at: "2026-10-02T12:00:00.000Z"
+        ended_at_actual: null
+        request_id: null
+        published_version: 2
+        supersedes_id: null
+        dss_constraint_id: 2f8343be-6482-4d1b-a474-16847e01af1e
+        dss_version: 1
+        feature: *Ed318Feature
+        constraint_reference: *ConstraintReference
+        deliveries:
+          cisp:
+            state: sent
+            attempts: 1
+            last_attempt_at: "2026-10-02T12:00:00.180Z"
+            last_status_code: 201
+          dss:
+            state: sent
+            attempts: 1
+            last_attempt_at: "2026-10-02T12:00:00.240Z"
+            last_status_code: 200
+          uss_notify:
+            state: sent
+            attempts: 2
+            last_attempt_at: "2026-10-02T12:00:01.020Z"
+            last_status_code: 204
+          direct_degraded:
+            state: none
+            attempts: 0
+        cis_version: "42"
+        cis_age_s: 12.5
+    RestrictionEnded:
+      summary: An ended restriction
+      value: &RestrictionEnded
+        id: 01K6P0A1B2C3D4E5F6G7H8J9KM
+        ansp_ref: ansp-01:01K6P0A1B2C3D4E5F6G7H8J9KM
+        identifier: DAR7K2Q
+        uspace_airspace_id: GEOTU01
+        zone_type: PROHIBITED
+        geometry:
+          type: Polygon
+          coordinates: [[[44.78, 41.70], [44.82, 41.70], [44.82, 41.73], [44.78, 41.73], [44.78, 41.70]]]
+        lower_m: 0
+        lower_ref: AMSL
+        upper_m: 1200
+        upper_ref: AMSL
+        starts_at: "2026-10-02T12:00:00.000Z"
+        ends_at: "2026-10-02T16:00:00.000Z"
+        reason_text: Search and rescue operation (synthetic example)
+        state: ended
+        ansp_version: 3
+        created_by: watch_supervisor
+        activated_by: watch_supervisor
+        ended_by: watch_supervisor
+        created_at: "2026-10-02T11:50:00.000Z"
+        activated_at: "2026-10-02T12:00:00.000Z"
+        ended_at_actual: "2026-10-02T14:10:00.000Z"
+        published_version: 3
+        dss_constraint_id: 2f8343be-6482-4d1b-a474-16847e01af1e
+        dss_version: 2
+        feature: *Ed318Feature
+        deliveries:
+          cisp:
+            state: sent
+            attempts: 1
+          dss:
+            state: sent
+            attempts: 1
+          uss_notify:
+            state: sent
+            attempts: 2
+          direct_degraded:
+            state: none
+            attempts: 0
+        cis_version: "42"
+        cis_age_s: 3
+    RestrictionCancelled:
+      summary: A cancelled restriction
+      value: &RestrictionCancelled
+        id: 01K6P0A1B2C3D4E5F6G7H8J9KM
+        ansp_ref: ansp-01:01K6P0A1B2C3D4E5F6G7H8J9KM
+        identifier: DAR7K2Q
+        uspace_airspace_id: GEOTU01
+        zone_type: PROHIBITED
+        geometry:
+          type: Point
+          coordinates: [44.80, 41.71]
+        radius_m: 1500
+        lower_m: 0
+        lower_ref: WGS84
+        upper_m: 900
+        upper_ref: WGS84
+        starts_at: "2026-10-02T12:00:00.000Z"
+        ends_at: "2026-10-02T16:00:00.000Z"
+        reason_text: Planned in error (synthetic example)
+        state: cancelled
+        ansp_version: 2
+        created_by: watch_supervisor
+        cancelled_by: watch_supervisor
+        created_at: "2026-10-02T11:50:00.000Z"
+        dss_constraint_id: 2f8343be-6482-4d1b-a474-16847e01af1e
+        feature: *Ed318Feature
+        deliveries:
+          cisp:
+            state: none
+            attempts: 0
+          dss:
+            state: none
+            attempts: 0
+          uss_notify:
+            state: none
+            attempts: 0
+          direct_degraded:
+            state: none
+            attempts: 0
+        cis_version: "42"
+        cis_age_s: 3
+    RestrictionVersion:
+      summary: One version as published
+      value: &RestrictionVersion
+        restriction_id: 01K6P0A1B2C3D4E5F6G7H8J9KM
+        version: 2
+        state: active
+        feature: *Ed318Feature
+        constraint:
+          reference: *ConstraintReference
+          details:
+            type: DAR
+            volumes:
+              - *Volume4D
+        changed_by: watch_supervisor
+        changed_at: "2026-10-02T12:00:00.000Z"
+        change_reason: Rescue helicopter on scene
+    RestrictionRequestReceived:
+      summary: A received request
+      value: &RestrictionRequestReceived
+        id: 01K6P2M3N4P5Q6R7S8T9V0W1X2
+        requester: authority-01
+        source: authority
+        payload: *RestrictionRequestCreate
+        received_at: "2026-10-02T12:20:00.000Z"
+        state: received
+    RestrictionRequestAccepted:
+      summary: An accepted request
+      value: &RestrictionRequestAccepted
+        id: 01K6P2M3N4P5Q6R7S8T9V0W1X2
+        requester: authority-01
+        source: authority
+        payload: *RestrictionRequestCreate
+        received_at: "2026-10-02T12:20:00.000Z"
+        state: accepted
+        decided_by: watch_supervisor
+        decided_at: "2026-10-02T12:24:00.000Z"
+        decision_reason: Requested by the authority for the event
+        restriction_id: 01K6P0A1B2C3D4E5F6G7H8J9KM
+    RestrictionRequestDeclined:
+      summary: A declined request
+      value: &RestrictionRequestDeclined
+        id: 01K6P2M3N4P5Q6R7S8T9V0W1X2
+        requester: authority-01
+        source: authority
+        payload: *RestrictionRequestCreate
+        received_at: "2026-10-02T12:20:00.000Z"
+        state: declined
+        decided_by: watch_supervisor
+        decided_at: "2026-10-02T12:24:00.000Z"
+        decision_reason: The area lies outside controlled airspace
+    Adapter:
+      summary: A running ADS-B adapter
+      value: &Adapter
+        id: adsb-tbs
+        kind: dump1090_json
+        display_name: ADS-B receiver (synthetic)
+        source_class: ads_b
+        status: running
+        enabled: true
+        last_frame_at: "2026-10-02T12:00:00.000Z"
+        last_status_at: "2026-10-02T12:00:01.000Z"
+        counters:
+          accepted: 99812
+          refused: 3
+          dropped: 0
+          stalled: 0
+    SourceControl:
+      summary: A disabled adapter
+      value: &SourceControl
+        source_type: manned
+        instance_id: adsb-tbs
+        enabled: false
+        reason: Receiver maintenance window
+        actor: admin1
+        changed_at: "2026-10-02T09:00:00.000Z"
+        version: 7
+        epoch: 0d6c1f4e-3b2a-4c5d-8e9f-a0b1c2d3e4f5
+    Policy:
+      summary: The default policy
+      value: &Policy
+        policy_version: 1
+        feed_margin_lateral_m: 5000
+        feed_margin_vertical_m: 1500
+        stale_after_s: 15
+        source_liveness_s: 15
+        cisp_alarm_after_s: 10
+        cisp_heartbeat_s: 15
+        cis_reconcile_s: 60
+        cis_stale_bound_s: 300
+        notice_escalation_s: 60
+        default_zone_type: PROHIBITED
+        country: GEO
+        changed_by: migration
+        changed_at: "2026-09-30T08:00:00.000Z"
+    MannedSnapshot:
+      summary: A snapshot with one aircraft
+      value: &MannedSnapshot
+        tracks: []
+        alerts: []
+        manned:
+          - *MannedTrackFrame
+        zones_version: "42"
+        degraded: []
+        adapters:
+          - id: adsb-tbs
+            state: live
+            enabled: true
+            last_frame_at: "2026-10-02T12:00:00.000Z"
+            age_s: 0.4
+        cis_version: "42"
+        cis_age_s: 12.5
+        policy_version: "1"
+    RestrictionStateFrame:
+      summary: A restriction/state/v1 frame
+      value: &RestrictionStateFrame
+        schema: restriction/state/v1
+        msg_id: 01K6P0B9C8D7E6F5G4H3J2K1M0
+        producer: ansp/api
+        ts: "2026-10-02T12:00:00.000Z"
+        rx_ts: "2026-10-02T12:00:00.000Z"
+        captured_at: "2026-10-02T12:00:00.000Z"
+        time_source: system
+        backlog: false
+        body:
+          restriction_id: 01K6P0A1B2C3D4E5F6G7H8J9KM
+          ansp_ref: ansp-01:01K6P0A1B2C3D4E5F6G7H8J9KM
+          state: active
+          starts_at: "2026-10-02T12:00:00.000Z"
+          ends_at: "2026-10-02T16:00:00.000Z"
+          ansp_version: 2
+          feature: *Ed318Feature
+    CoordinationNoticeFrame:
+      summary: A coordination/notice/v1 frame of the console stream
+      value: &CoordinationNoticeFrame
+        schema: coordination/notice/v1
+        msg_id: 01K6P3Q8Y2D6W4Z1V7R5T9X3MC
+        producer: ansp/api
+        ts: "2026-10-02T12:31:02.118Z"
+        rx_ts: "2026-10-02T12:31:02.118Z"
+        captured_at: "2026-10-02T12:31:02.118Z"
+        time_source: system
+        backlog: false
+        body: *CoordinationNoticeReceived
+
+  schemas:
+    ULID:
+      type: string
+      description: Crockford base32, 26 characters (04 §2).
+      pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+    AdapterSlug:
+      type: string
+      description: An adapter instance slug.
+      pattern: "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+      maxLength: 64
+    Timestamp:
+      type: string
+      format: date-time
+      description: RFC 3339 UTC with Z, millisecond precision (02 §1).
+    Role:
+      type: string
+      description: A console role (01 §4).
+      enum: [watch_supervisor, viewer, admin]
+    ChangedBy:
+      type: string
+      description: |
+        Who made a restriction change: the console role of the person, or
+        system for the ticker's scheduled activation at starts_at and its
+        expiry at ends_at (never a name).
+      enum: [watch_supervisor, viewer, admin, system]
+
+    Problem:
+      type: object
+      description: |
+        The ecosystem's one error body (RFC 9457, M28), the shape of
+        uspace-lab schemas/common/problem/v1 (pinned under
+        schemas/common/problem/v1/). errors is capped at 100 with
+        truncated set when more existed.
+      required: [type, title, status, errors]
+      properties:
+        type:
+          type: string
+          description: https://schemas.uspace.ge/problems/<slug>, the slug the counter or refusal name.
+          pattern: "^https://schemas\\.uspace\\.ge/problems/[a-z_]+$"
+        title:
+          type: string
+          minLength: 1
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: [string, "null"]
+        instance:
+          type: [string, "null"]
+          description: The request path.
+        errors:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/FieldProblem"
+        truncated:
+          type: boolean
+    FieldProblem:
+      type: object
+      required: [field, reason]
+      properties:
+        field:
+          type: string
+          description: The JSON path (as core.FieldError writes it), or the parameter or header name.
+        reason:
+          type: string
+          minLength: 1
+
+    VerticalRef:
+      type: string
+      description: |
+        The vertical reference of a restriction limit: AMSL or WGS84
+        (ellipsoid). AGL is refused for a dynamic restriction in this
+        release (D3, §15 gap 3) with the reason "AGL is not supported for
+        a dynamic restriction in this release".
+      enum: [AMSL, WGS84]
+    ZoneType:
+      type: string
+      description: The ED-318 zone type of a restriction (D4); the default is the policy's default_zone_type.
+      enum: [PROHIBITED, REQ_AUTHORIZATION]
+    RestrictionState:
+      type: string
+      description: planned, active, ended or cancelled (02 F2, ATS.TR.237(b)).
+      enum: [planned, active, ended, cancelled]
+    LngLat:
+      type: array
+      description: A GeoJSON position [lng, lat] in WGS84 degrees (SRID 4326).
+      minItems: 2
+      maxItems: 2
+      items:
+        type: number
+    GeoJSONPolygon:
+      type: object
+      description: A GeoJSON Polygon (RFC 7946) in WGS84 (SRID 4326), positions [lng, lat], exterior ring first, rings closed.
+      required: [type, coordinates]
+      properties:
+        type:
+          type: string
+          enum: [Polygon]
+        coordinates:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            type: array
+            minItems: 4
+            maxItems: 1000
+            items:
+              $ref: "#/components/schemas/LngLat"
+    GeoJSONPoint:
+      type: object
+      description: A GeoJSON Point (RFC 7946) in WGS84 (SRID 4326), [lng, lat]; the centre of a circle of radius_m.
+      required: [type, coordinates]
+      properties:
+        type:
+          type: string
+          enum: [Point]
+        coordinates:
+          $ref: "#/components/schemas/LngLat"
+    RestrictionGeometry:
+      description: The area of a restriction, a Polygon, or a Point with radius_m (a circle).
+      oneOf:
+        - $ref: "#/components/schemas/GeoJSONPolygon"
+        - $ref: "#/components/schemas/GeoJSONPoint"
+    RestrictionArea:
+      type: object
+      description: The area, limits and window of a restriction (or of a request for one).
+      required: [geometry, lower_m, lower_ref, upper_m, upper_ref, starts_at, ends_at, reason_text]
+      properties:
+        uspace_airspace_id:
+          type: string
+          description: The ED-318 identifier of the current USPACE feature of the CIS the restriction lies in (M9).
+          minLength: 1
+          maxLength: 7
+        geometry:
+          $ref: "#/components/schemas/RestrictionGeometry"
+        radius_m:
+          type: [number, "null"]
+          description: The circle's radius in metres; required with a Point, absent or null with a Polygon.
+          exclusiveMinimum: 0
+        lower_m:
+          type: number
+          description: The lower limit in metres above lower_ref.
+        lower_ref:
+          $ref: "#/components/schemas/VerticalRef"
+        upper_m:
+          type: number
+          description: The upper limit in metres above upper_ref; above lower_m.
+        upper_ref:
+          $ref: "#/components/schemas/VerticalRef"
+        starts_at:
+          $ref: "#/components/schemas/Timestamp"
+        ends_at:
+          $ref: "#/components/schemas/Timestamp"
+        reason_text:
+          type: string
+          description: Why, as the supervisor states it (the N4 record).
+          minLength: 1
+          maxLength: 500
+    RestrictionCreate:
+      description: |
+        A restriction to plan. A window longer than F3548
+        CstrMaxDurationHours is refused 400 chain_required with the
+        re-issues it would make in errors[] (chain[i]); sent again with
+        confirm_chain true, the chain is planned as linked restrictions
+        (supersedes_id) and the answer is the first.
+      allOf:
+        - $ref: "#/components/schemas/RestrictionArea"
+        - type: object
+          required: [uspace_airspace_id]
+          properties:
+            zone_type:
+              $ref: "#/components/schemas/ZoneType"
+            confirm_chain:
+              type: boolean
+              description: Plan a window longer than CstrMaxDurationHours as the chain of linked re-issues it was refused with.
+    Restriction:
+      description: |
+        A restriction as the client sees it (docs/PLAN.md §5.1): its
+        area, limits and window, its state and versions, who did what
+        when, its current ED-318 feature, its F3548 constraint reference
+        and its deliveries summary, with the CIS version it was placed
+        against and the age of that projection.
+      allOf:
+        - $ref: "#/components/schemas/RestrictionArea"
+        - type: object
+          required: [id, ansp_ref, identifier, uspace_airspace_id, zone_type, state, ansp_version, created_by, created_at, dss_constraint_id, feature, deliveries, cis_version, cis_age_s]
+          properties:
+            id:
+              $ref: "#/components/schemas/ULID"
+            ansp_ref:
+              type: string
+              description: The ANSP reference; with ansp_version the idempotency key towards the CISP and the DSS (D5, M4).
+            identifier:
+              type: string
+              description: The ED-318 identifier, DAR plus 4 base-36 characters (D4).
+              pattern: "^DAR[0-9A-Z]{4}$"
+            zone_type:
+              $ref: "#/components/schemas/ZoneType"
+            state:
+              $ref: "#/components/schemas/RestrictionState"
+            ansp_version:
+              type: integer
+              format: int64
+              minimum: 1
+              description: Monotonic per restriction, bumped on every change (M4).
+            created_by:
+              $ref: "#/components/schemas/ChangedBy"
+            activated_by:
+              $ref: "#/components/schemas/ChangedBy"
+            ended_by:
+              $ref: "#/components/schemas/ChangedBy"
+            cancelled_by:
+              $ref: "#/components/schemas/ChangedBy"
+            created_at:
+              $ref: "#/components/schemas/Timestamp"
+            activated_at:
+              type: [string, "null"]
+              format: date-time
+            activate_at:
+              type: [string, "null"]
+              format: date-time
+              description: |
+                While a planned restriction waits to be activated at its
+                starts_at (an activation asked for before then): the
+                instant the ticker activates it, on the database's clock.
+            ended_at_actual:
+              type: [string, "null"]
+              format: date-time
+            request_id:
+              type: [string, "null"]
+              description: The restriction request it came from (F11).
+            published_version:
+              type: [integer, "null"]
+              format: int64
+              description: The ansp_version the CISP confirmed.
+            supersedes_id:
+              type: [string, "null"]
+              description: The restriction this re-issue continues (longer than CstrMaxDurationHours).
+            dss_constraint_id:
+              type: string
+              format: uuid
+              description: The F3548 entity id, minted here.
+            dss_version:
+              type: [integer, "null"]
+              format: int32
+            feature:
+              $ref: "#/components/schemas/Ed318Feature"
+            constraint_reference:
+              description: The F3548 reference as the DSS last accepted it (its ovn included; this system is the manager); null before the first DSS write.
+              oneOf:
+                - $ref: "#/components/schemas/ConstraintReference"
+                - type: "null"
+            dss:
+              $ref: "#/components/schemas/DssStatus"
+            deliveries:
+              $ref: "#/components/schemas/DeliveriesSummary"
+            cis_version:
+              type: [string, "null"]
+              description: The CIS version of the projection; null before the first pull.
+            cis_age_s:
+              type: [number, "null"]
+              minimum: 0
+              description: Age of the CIS projection in seconds; null before the first pull.
+    RestrictionList:
+      type: object
+      required: [restrictions, cis_version, cis_age_s]
+      properties:
+        restrictions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Restriction"
+        truncated:
+          type: boolean
+        cis_version:
+          type: [string, "null"]
+        cis_age_s:
+          type: [number, "null"]
+          minimum: 0
+    DeliveryChannel:
+      type: object
+      description: The outbox state of one channel (D5).
+      required: [state, attempts]
+      properties:
+        state:
+          type: string
+          enum: [none, queued, sent, failed, abandoned]
+        attempts:
+          type: integer
+          minimum: 0
+        last_attempt_at:
+          $ref: "#/components/schemas/Timestamp"
+        last_status_code:
+          type: integer
+        next_retry_at:
+          $ref: "#/components/schemas/Timestamp"
+    DeliveriesSummary:
+      type: object
+      description: |
+        The deliveries of the current version: the CISP publication (the
+        regulatory channel), the DSS write, the subscriber notifications
+        and the degraded direct path (02 F2, D6).
+      required: [cisp, dss, uss_notify, direct_degraded]
+      properties:
+        cisp:
+          $ref: "#/components/schemas/DeliveryChannel"
+        dss:
+          $ref: "#/components/schemas/DeliveryChannel"
+        uss_notify:
+          $ref: "#/components/schemas/DeliveryChannel"
+        direct_degraded:
+          $ref: "#/components/schemas/DeliveryChannel"
+    RestrictionVersion:
+      type: object
+      required: [restriction_id, version, state, feature, changed_by, changed_at, change_reason]
+      properties:
+        restriction_id:
+          $ref: "#/components/schemas/ULID"
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        state:
+          $ref: "#/components/schemas/RestrictionState"
+        feature:
+          $ref: "#/components/schemas/Ed318Feature"
+        constraint:
+          description: The F3548 Constraint as written to the DSS for this version, when it was.
+          oneOf:
+            - $ref: "#/components/schemas/Constraint"
+            - type: "null"
+        changed_by:
+          $ref: "#/components/schemas/ChangedBy"
+        changed_at:
+          $ref: "#/components/schemas/Timestamp"
+        change_reason:
+          type: string
+    RestrictionVersionList:
+      type: object
+      required: [versions]
+      properties:
+        versions:
+          type: array
+          items:
+            $ref: "#/components/schemas/RestrictionVersion"
+    ReasonRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    ExtendRequest:
+      type: object
+      required: [ends_at, reason]
+      properties:
+        ends_at:
+          $ref: "#/components/schemas/Timestamp"
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    Ed318Text:
+      type: object
+      description: ED-318 textShortType.
+      required: [lang]
+      properties:
+        text:
+          type: string
+          maxLength: 200
+        lang:
+          type: string
+          maxLength: 5
+    Ed318Feature:
+      type: object
+      description: |
+        The ED-318 Feature of a restriction as published to the CISP: a
+        GeoJSON Feature whose properties are a UASZone, with reason
+        [DAR], variant COMMON, identifier DAR plus 4 base-36 characters
+        and the window in limitedApplicability (02 F2, D4). Member names
+        mirror uspace-core/ed318 (model.go), which reads and writes them;
+        this schema names the members a client relies on and leaves the
+        rest open. From uspace-core/ed318 doc.go: UNVERIFIED: the names
+        of a zone's vertical limits (the geometry's layer object with
+        upper, upperReference, lower, lowerReference and uom, as the
+        ED-318 JSON schema and uas_standards show them); UNVERIFIED: an
+        absent uom means metres; UNVERIFIED: the unit of a circle's
+        radius (always metres, owner decision on uspace-core PR #16).
+        The EUROCAE ED-318 text is not available to the project (spec 09
+        §3).
+      required: [type, geometry, properties]
+      properties:
+        type:
+          type: string
+          enum: [Feature]
+        id:
+          type: string
+        geometry:
+          type: object
+          required: [type]
+          properties:
+            type:
+              type: string
+              enum: [Polygon, Point, GeometryCollection]
+            coordinates:
+              type: array
+              items: {}
+            extent:
+              type: object
+              properties:
+                subType:
+                  type: string
+                radius:
+                  type: number
+            layer:
+              type: object
+              properties:
+                upper:
+                  type: number
+                upperReference:
+                  type: string
+                  enum: [AGL, AMSL, WGS84]
+                lower:
+                  type: number
+                lowerReference:
+                  type: string
+                  enum: [AGL, AMSL, WGS84]
+                uom:
+                  type: string
+                  enum: [m, ft]
+        properties:
+          type: object
+          required: [identifier, country, type, variant]
+          properties:
+            identifier:
+              type: string
+              maxLength: 7
+            country:
+              type: string
+              pattern: "^[A-Z]{3}$"
+            name:
+              type: array
+              items:
+                $ref: "#/components/schemas/Ed318Text"
+            type:
+              type: string
+              enum: [COMMON, CUSTOMIZED, PROHIBITED, REQ_AUTHORIZATION, CONDITIONAL, NO_RESTRICTION]
+            variant:
+              type: string
+            reason:
+              type: array
+              items:
+                type: string
+            message:
+              type: array
+              items:
+                $ref: "#/components/schemas/Ed318Text"
+            extendedProperties:
+              type: object
+            limitedApplicability:
+              type: array
+              items:
+                type: object
+                properties:
+                  startDateTime:
+                    type: string
+                    format: date-time
+                  endDateTime:
+                    type: string
+                    format: date-time
+            zoneAuthority:
+              type: array
+              items:
+                type: object
+                required: [purpose]
+                properties:
+                  name:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Ed318Text"
+                  purpose:
+                    type: string
+                    enum: [AUTHORIZATION, NOTIFICATION, INFORMATION]
+
+    F3548Time:
+      type: object
+      description: F3548 Time (uspace-core/f3548.Time).
+      x-go-type: f3548.Time
+      x-go-type-import:
+        path: github.com/rootxkit/uspace-core/f3548
+      required: [value, format]
+      properties:
+        value:
+          type: string
+          format: date-time
+        format:
+          type: string
+          enum: [RFC3339]
+    F3548Altitude:
+      type: object
+      description: F3548 Altitude, W84 metres (uspace-core/f3548.Altitude).
+      x-go-type: f3548.Altitude
+      x-go-type-import:
+        path: github.com/rootxkit/uspace-core/f3548
+      required: [value, reference, units]
+      properties:
+        value:
+          type: number
+        reference:
+          type: string
+          enum: [W84]
+        units:
+          type: string
+          enum: [M]
+    F3548LatLngPoint:
+      type: object
+      x-go-type: f3548.LatLngPoint
+      x-go-type-import:
+        path: github.com/rootxkit/uspace-core/f3548
+      required: [lat, lng]
+      properties:
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lng:
+          type: number
+          minimum: -180
+          maximum: 180
+    Volume4D:
+      type: object
+      description: |
+        F3548 Volume4D as uspace-core/f3548 generates it from the
+        standard's utm.yaml (x-standard of getConstraintDetails); the Go
+        type is uspace-core's.
+      x-go-type: f3548.Volume4D
+      x-go-type-import:
+        path: github.com/rootxkit/uspace-core/f3548
+      required: [volume]
+      properties:
+        volume:
+          type: object
+          properties:
+            outline_polygon:
+              type: object
+              required: [vertices]
+              properties:
+                vertices:
+                  type: array
+                  minItems: 3
+                  items:
+                    $ref: "#/components/schemas/F3548LatLngPoint"
+            outline_circle:
+              type: object
+              properties:
+                center:
+                  $ref: "#/components/schemas/F3548LatLngPoint"
+                radius:
+                  type: object
+                  required: [value, units]
+                  properties:
+                    value:
+                      type: number
+                      exclusiveMinimum: 0
+                    units:
+                      type: string
+                      enum: [M]
+            altitude_lower:
+              $ref: "#/components/schemas/F3548Altitude"
+            altitude_upper:
+              $ref: "#/components/schemas/F3548Altitude"
+        time_start:
+          $ref: "#/components/schemas/F3548Time"
+        time_end:
+          $ref: "#/components/schemas/F3548Time"
+    ConstraintReference:
+      type: object
+      description: F3548 ConstraintReference; the Go type is uspace-core/f3548's.
+      x-go-type: f3548.ConstraintReference
+      x-go-type-import:
+        path: github.com/rootxkit/uspace-core/f3548
+      required: [id, manager, uss_availability, version, time_start, time_end, uss_base_url]
+      properties:
+        id:
+          type: string
+          format: uuid
+        manager:
+          type: string
+        uss_availability:
+          type: string
+          enum: [Unknown, Normal, Down]
+        version:
+          type: integer
+          format: int32
+        ovn:
+          type: string
+        time_start:
+          $ref: "#/components/schemas/F3548Time"
+        time_end:
+          $ref: "#/components/schemas/F3548Time"
+        uss_base_url:
+          type: string
+          format: uri
+    ConstraintDetails:
+      type: object
+      description: F3548 ConstraintDetails; type DAR (§15 gap 16); the Go type is uspace-core/f3548's.
+      x-go-type: f3548.ConstraintDetails
+      x-go-type-import:
+        path: github.com/rootxkit/uspace-core/f3548
+      required: [volumes]
+      properties:
+        volumes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Volume4D"
+        type:
+          type: string
+        geozone:
+          type: object
+    Constraint:
+      type: object
+      description: F3548 Constraint; the Go type is uspace-core/f3548's.
+      x-go-type: f3548.Constraint
+      x-go-type-import:
+        path: github.com/rootxkit/uspace-core/f3548
+      required: [reference, details]
+      properties:
+        reference:
+          $ref: "#/components/schemas/ConstraintReference"
+        details:
+          $ref: "#/components/schemas/ConstraintDetails"
+    ConstraintDetailsResponse:
+      type: object
+      description: F3548 GetConstraintDetailsResponse; the Go type is uspace-core/f3548's (one struct, D7).
+      x-go-type: f3548.GetConstraintDetailsResponse
+      x-go-type-import:
+        path: github.com/rootxkit/uspace-core/f3548
+      required: [constraint]
+      properties:
+        constraint:
+          $ref: "#/components/schemas/Constraint"
+
+    RestrictionRequestCreate:
+      description: A request for a restriction (02 F11).
+      allOf:
+        - $ref: "#/components/schemas/RestrictionArea"
+        - type: object
+          required: [client_ref]
+          properties:
+            client_ref:
+              type: string
+              description: The requester's reference; a repeat with the same one answers the first request.
+              minLength: 1
+              maxLength: 128
+            case_ref:
+              type: string
+              description: The requester's case reference (an event, an incident).
+              maxLength: 128
+    RestrictionRequest:
+      type: object
+      required: [id, requester, source, payload, received_at, state]
+      properties:
+        id:
+          $ref: "#/components/schemas/ULID"
+        requester:
+          type: string
+          description: The client id of the requesting system, or the console account id.
+        source:
+          type: string
+          enum: [authority, console]
+        payload:
+          $ref: "#/components/schemas/RestrictionRequestCreate"
+        received_at:
+          $ref: "#/components/schemas/Timestamp"
+        state:
+          type: string
+          enum: [received, accepted, declined]
+        decided_by:
+          $ref: "#/components/schemas/Role"
+        decided_at:
+          $ref: "#/components/schemas/Timestamp"
+        decision_reason:
+          type: string
+        restriction_id:
+          $ref: "#/components/schemas/ULID"
+    AcceptRequest:
+      type: object
+      properties:
+        zone_type:
+          $ref: "#/components/schemas/ZoneType"
+        reason:
+          type: string
+          maxLength: 500
+
+    AnnexVNotice:
+      $ref: "../schemas/coordination/annex_v/v1.json"
+    NoticeState:
+      type: string
+      description: received (the receipt), acknowledged (by a person, Art. 13(2)) or escalated (unacknowledged after notice_escalation_s).
+      enum: [received, acknowledged, escalated]
+    NoticeReceipt:
+      type: object
+      required: [ack_id, state, received_at]
+      properties:
+        ack_id:
+          $ref: "#/components/schemas/ULID"
+        state:
+          type: string
+          enum: [received]
+        received_at:
+          $ref: "#/components/schemas/Timestamp"
+    CoordinationNotice:
+      type: object
+      description: |
+        A notice as received and its state (the body of
+        coordination/notice/v1, schemas/coordination/notice/v1.json).
+        acknowledged_by is the role of the person, never a name. payload
+        (the notice as received) and acknowledgement_note are given to
+        console sessions only. acknowledgement_required is true for a
+        nonconformance or contingent notice, which escalates when no person
+        acknowledges it within notice_escalation_s (escalated_at, then
+        again every 30 s: last_escalated_at, escalations); an intent_notice
+        or ended notice is informational. sender_unverified is true for a
+        notice accepted while no CIS USSP list was projected (WP-10).
+      required: [ack_id, kind, sender_client_id, ussp_id, notice_ref, intent_refs, authorisation_numbers, received_at, state]
+      properties:
+        ack_id:
+          $ref: "#/components/schemas/ULID"
+        kind:
+          type: string
+          enum: [intent_notice, nonconformance, contingent, ended]
+        sender_client_id:
+          type: string
+        ussp_id:
+          type: string
+        notice_ref:
+          type: string
+        intent_refs:
+          type: array
+          items:
+            type: string
+            format: uuid
+        authorisation_numbers:
+          type: array
+          items:
+            type: string
+        received_at:
+          $ref: "#/components/schemas/Timestamp"
+        state:
+          $ref: "#/components/schemas/NoticeState"
+        acknowledged_by:
+          $ref: "#/components/schemas/Role"
+        acknowledged_at:
+          $ref: "#/components/schemas/Timestamp"
+        escalated_at:
+          $ref: "#/components/schemas/Timestamp"
+        acknowledgement_required:
+          type: boolean
+        sender_unverified:
+          type: boolean
+        acknowledgement_note:
+          type: string
+          maxLength: 500
+        last_escalated_at:
+          $ref: "#/components/schemas/Timestamp"
+        escalations:
+          type: integer
+          minimum: 0
+        restriction_ids:
+          type: array
+          description: The restrictions the notice's volumes intersect, computed at receipt.
+          items:
+            $ref: "#/components/schemas/ULID"
+        payload:
+          $ref: "#/components/schemas/AnnexVNotice"
+    CoordinationInbox:
+      type: object
+      required: [notices]
+      properties:
+        notices:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoordinationNotice"
+        truncated:
+          type: boolean
+    AcknowledgeRequest:
+      type: object
+      properties:
+        note:
+          type: string
+          maxLength: 500
+
+    Adapter:
+      type: object
+      required: [id, kind, display_name, source_class, status, enabled, counters]
+      properties:
+        id:
+          $ref: "#/components/schemas/AdapterSlug"
+        kind:
+          type: string
+          enum: [replay, dump1090_sbs, dump1090_json, asterix_cat021, atm_api]
+        display_name:
+          type: string
+        source_class:
+          $ref: "#/components/schemas/SourceClass"
+        status:
+          type: string
+          description: configured (never heard), running, silent (no status within source_liveness_s) or disabled (by a source switch).
+          enum: [configured, running, silent, disabled]
+        enabled:
+          type: boolean
+        last_frame_at:
+          type: [string, "null"]
+          format: date-time
+        last_status_at:
+          type: [string, "null"]
+          format: date-time
+        counters:
+          type: object
+          description: The adapter's counters from src.v1.manned.<id>, by their snake_case names.
+          additionalProperties:
+            type: integer
+            minimum: 0
+    AdapterList:
+      type: object
+      required: [adapters]
+      properties:
+        adapters:
+          type: array
+          items:
+            $ref: "#/components/schemas/Adapter"
+    SourceClass:
+      type: string
+      enum: [ads_b, mode_s, ssr, atm_feed, ads_l]
+    SourceControl:
+      type: object
+      required: [source_type, instance_id, enabled, reason, actor, changed_at, version, epoch]
+      properties:
+        source_type:
+          type: string
+          enum: [manned]
+        instance_id:
+          type: string
+        enabled:
+          type: boolean
+        reason:
+          type: string
+        actor:
+          type: string
+        changed_at:
+          $ref: "#/components/schemas/Timestamp"
+        version:
+          type: integer
+          format: int64
+        epoch:
+          type: string
+          format: uuid
+    SourceControlList:
+      type: object
+      required: [sources]
+      properties:
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceControl"
+    SourceControlUpdate:
+      type: object
+      required: [enabled, reason]
+      properties:
+        enabled:
+          type: boolean
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    PolicyUpdate:
+      type: object
+      description: The thresholds (INV-03); every one finite and positive.
+      required: [feed_margin_lateral_m, feed_margin_vertical_m, stale_after_s, source_liveness_s, cisp_alarm_after_s, cisp_heartbeat_s, cis_reconcile_s, cis_stale_bound_s, notice_escalation_s, default_zone_type, country]
+      properties:
+        feed_margin_lateral_m:
+          type: number
+          exclusiveMinimum: 0
+        feed_margin_vertical_m:
+          type: number
+          exclusiveMinimum: 0
+        stale_after_s:
+          type: number
+          exclusiveMinimum: 0
+        source_liveness_s:
+          type: number
+          exclusiveMinimum: 0
+        cisp_alarm_after_s:
+          type: number
+          exclusiveMinimum: 0
+        cisp_heartbeat_s:
+          type: number
+          exclusiveMinimum: 0
+        cis_reconcile_s:
+          type: number
+          exclusiveMinimum: 0
+        cis_stale_bound_s:
+          type: number
+          exclusiveMinimum: 0
+        notice_escalation_s:
+          type: number
+          exclusiveMinimum: 0
+        default_zone_type:
+          $ref: "#/components/schemas/ZoneType"
+        country:
+          type: string
+          pattern: "^[A-Z]{3}$"
+    Policy:
+      allOf:
+        - $ref: "#/components/schemas/PolicyUpdate"
+        - type: object
+          required: [policy_version, changed_by, changed_at]
+          properties:
+            policy_version:
+              type: integer
+              format: int64
+              minimum: 1
+            changed_by:
+              type: string
+            changed_at:
+              $ref: "#/components/schemas/Timestamp"
+
+    OccurrenceCreate:
+      type: object
+      description: |
+        An occurrence report (04 §3.3 occurrence/v1 field list; the
+        authority owns the schema). reporter_person_ref is an opaque
+        reference, sealed at rest and never logged.
+      required: [channel, occurred_at, became_aware_at, category, narrative]
+      properties:
+        channel:
+          type: string
+          enum: [mandatory, voluntary]
+        occurred_at:
+          $ref: "#/components/schemas/Timestamp"
+        became_aware_at:
+          $ref: "#/components/schemas/Timestamp"
+        category:
+          type: string
+          enum: [airprox, nonconformance_in_prohibited, lost_link_in_uspace, emergency, other]
+        aircraft:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            properties:
+              serial:
+                type: string
+              operator_reg:
+                type: string
+              flight_id:
+                type: string
+              authorisation_number:
+                type: string
+        manned:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            properties:
+              icao24:
+                type: string
+                pattern: "^[0-9a-f]{6}$"
+              callsign:
+                type: string
+        intent_refs:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            format: uuid
+        min_separation:
+          type: object
+          properties:
+            h_m:
+              type: number
+              minimum: 0
+            v_m:
+              type: number
+              minimum: 0
+            at:
+              $ref: "#/components/schemas/Timestamp"
+        narrative:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        reporter_person_ref:
+          type: string
+          maxLength: 128
+    OccurrenceQueued:
+      type: object
+      required: [id, report_ref, state, deadline_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/ULID"
+        report_ref:
+          type: string
+        state:
+          type: string
+          enum: [queued]
+        deadline_at:
+          $ref: "#/components/schemas/Timestamp"
+
+    AuditEvent:
+      type: object
+      required: [id, ts, actor_type, actor_id, purpose, entity_type, entity_id, event_type, payload, prev_hash, hash]
+      properties:
+        id:
+          type: integer
+          format: int64
+        ts:
+          $ref: "#/components/schemas/Timestamp"
+        actor_type:
+          type: string
+          enum: [user, client, system]
+        actor_id:
+          type: string
+        purpose:
+          type: string
+        entity_type:
+          type: string
+        entity_id:
+          type: string
+        event_type:
+          type: string
+        payload:
+          type: object
+        prev_hash:
+          type: string
+        hash:
+          type: string
+    AuditList:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+        truncated:
+          type: boolean
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 64
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+    LoginChallenge:
+      type: object
+      required: [mfa_token, expires_at]
+      properties:
+        mfa_token:
+          type: string
+          description: Single use, 5 minutes, at most 5 codes.
+        expires_at:
+          $ref: "#/components/schemas/Timestamp"
+        enrolment:
+          type: object
+          description: Present once, for an account without TOTP.
+          required: [secret, otpauth_uri]
+          properties:
+            secret:
+              type: string
+            otpauth_uri:
+              type: string
+    MfaRequest:
+      type: object
+      required: [mfa_token, code]
+      properties:
+        mfa_token:
+          type: string
+          minLength: 1
+          maxLength: 256
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+    SessionResponse:
+      type: object
+      required: [token, token_type, expires_at, idle_timeout_s, user]
+      properties:
+        token:
+          type: string
+          description: The session JWT (M20).
+        token_type:
+          type: string
+          enum: [Bearer]
+        expires_at:
+          $ref: "#/components/schemas/Timestamp"
+        idle_timeout_s:
+          type: integer
+          minimum: 1
+        user:
+          $ref: "#/components/schemas/User"
+    User:
+      type: object
+      required: [id, username, role, status, created_at, last_login_at]
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        role:
+          $ref: "#/components/schemas/Role"
+        status:
+          type: string
+          enum: [active, disabled]
+        created_at:
+          $ref: "#/components/schemas/Timestamp"
+        last_login_at:
+          type: [string, "null"]
+          format: date-time
+    Me:
+      allOf:
+        - $ref: "#/components/schemas/User"
+        - type: object
+          required: [session_expires_at]
+          properties:
+            session_expires_at:
+              $ref: "#/components/schemas/Timestamp"
+    UserList:
+      type: object
+      required: [users]
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+    UserCreate:
+      type: object
+      required: [username, password, role]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 64
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        role:
+          $ref: "#/components/schemas/Role"
+    JWKS:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+            required: [kty, kid, use, alg, n, e]
+            properties:
+              kty:
+                type: string
+                enum: [RSA]
+              kid:
+                type: string
+              use:
+                type: string
+                enum: [sig]
+              alg:
+                type: string
+                enum: [RS256]
+              n:
+                type: string
+              e:
+                type: string
+
+    Liveness:
+      type: object
+      required: [status, process, instance]
+      properties:
+        status:
+          type: string
+          enum: [alive]
+        process:
+          type: string
+        instance:
+          type: string
+    Readiness:
+      type: object
+      required: [process, instance, status, checked_at, checks, summary]
+      properties:
+        process:
+          type: string
+        instance:
+          type: string
+        status:
+          type: string
+          enum: [ready, not_ready]
+        checked_at:
+          $ref: "#/components/schemas/Timestamp"
+        checks:
+          type: array
+          items:
+            type: object
+            required: [name, state, required]
+            properties:
+              name:
+                type: string
+              state:
+                type: string
+                enum: [ok, degraded, down]
+              required:
+                type: boolean
+              reason:
+                type: string
+        summary:
+          type: array
+          items:
+            type: string
+
+    EnvelopeHeader:
+      type: object
+      description: |
+        The 04 §2 envelope fields of every frame and every catalogued
+        message, as uspace-lab schemas/common/envelope/v1 defines them
+        (pinned under schemas/common/envelope/v1/); schema and body are
+        added by each message.
+      required: [msg_id, producer, rx_ts, captured_at, time_source, backlog]
+      properties:
+        msg_id:
+          $ref: "#/components/schemas/ULID"
+        producer:
+          type: string
+          pattern: "^(authority|cisp|ussp|ansp|lab)(/[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*|-[0-9]+/[a-z][a-z0-9]*(-[a-z][a-z0-9]*)*-[0-9]+)$"
+        ts:
+          type: [string, "null"]
+          format: date-time
+          description: Capture time on the source's clock; null when the record carried none.
+        rx_ts:
+          $ref: "#/components/schemas/Timestamp"
+        captured_at:
+          $ref: "#/components/schemas/Timestamp"
+        time_source:
+          type: string
+          enum: [source_clock, broadcast, receiver, provider, system]
+        backlog:
+          type: boolean
+    MannedTrack:
+      type: object
+      description: |
+        The body of track/manned/v1 (04 §3.1, schemas/track/manned/v1.json
+        owned here): one manned aircraft as handed to U-space under
+        ATS.OR.127(a). alt_pressure_m is pressure altitude (ISA 1013.25
+        hPa), never AMSL; alt_wgs84_m is geometric height above the
+        ellipsoid when known. state is live, or stale (no sample within
+        stale_after_s) or source_disabled (its adapter was switched off)
+        as the aircraft ages out, never dropped silently.
+      required: [icao24, position, alt_pressure_m, alt_wgs84_m, gs_ms, track_deg, vrate_ms, source_class, trust, source, source_instance, state]
+      properties:
+        icao24:
+          type: string
+          description: ICAO 24-bit address, lower-case hex.
+          pattern: "^[0-9a-f]{6}$"
+        callsign:
+          type: [string, "null"]
+          maxLength: 8
+        position:
+          type: object
+          description: WGS84 decimal degrees.
+          required: [lat, lng]
+          properties:
+            lat:
+              type: number
+              minimum: -90
+              maximum: 90
+            lng:
+              type: number
+              minimum: -180
+              maximum: 180
+        alt_pressure_m:
+          type: [number, "null"]
+        alt_wgs84_m:
+          type: [number, "null"]
+        gs_ms:
+          type: [number, "null"]
+          minimum: 0
+        track_deg:
+          type: [number, "null"]
+          minimum: 0
+          exclusiveMaximum: 360
+        vrate_ms:
+          type: [number, "null"]
+        emergency:
+          type: [boolean, "null"]
+        spi:
+          type: [boolean, "null"]
+        squawk:
+          type: [string, "null"]
+          pattern: "^[0-7]{4}$"
+        source_class:
+          $ref: "#/components/schemas/SourceClass"
+        quality:
+          type: object
+          description: NIC/NACp or the adapter's quality block as received.
+        trust:
+          type: string
+          enum: [surveillance]
+        source:
+          type: string
+          enum: [ansp_feed]
+        source_instance:
+          $ref: "#/components/schemas/AdapterSlug"
+        state:
+          type: string
+          enum: [live, stale, source_disabled]
+        relevant:
+          type: boolean
+          description: Inside a U-space volume plus the policy margin at capture.
+        policy_version:
+          type: string
+        age_s:
+          type: number
+          minimum: 0
+          description: Seconds since captured_at when manned-feed wrote the frame (B-13); absent on the adapter's internal subject.
+    MannedTrackMessage:
+      description: A track/manned/v1 frame or NATS message (04 §2 envelope with a MannedTrack body).
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeHeader"
+        - type: object
+          required: [schema, body]
+          properties:
+            schema:
+              type: string
+              enum: [track/manned/v1]
+            body:
+              $ref: "#/components/schemas/MannedTrack"
+    RestrictionStateBody:
+      type: object
+      description: |
+        The body of restriction/state/v1 (04 §3.4, schemas/restriction/state/v1.json
+        owned here): a restriction's state change, with the deliveries of
+        its current version when the change is a delivery outcome.
+      required: [restriction_id, ansp_ref, state, starts_at, ends_at, ansp_version, feature]
+      properties:
+        restriction_id:
+          $ref: "#/components/schemas/ULID"
+        ansp_ref:
+          type: string
+        state:
+          $ref: "#/components/schemas/RestrictionState"
+        starts_at:
+          $ref: "#/components/schemas/Timestamp"
+        ends_at:
+          $ref: "#/components/schemas/Timestamp"
+        ansp_version:
+          type: integer
+          format: int64
+          minimum: 1
+        feature:
+          $ref: "#/components/schemas/Ed318Feature"
+        deliveries:
+          $ref: "#/components/schemas/DeliveriesSummary"
+        published:
+          type: boolean
+          description: On a delivery outcome, whether the CISP holds the current version (WP-8).
+        alarm:
+          $ref: "#/components/schemas/DeliveryAlarm"
+        dss:
+          $ref: "#/components/schemas/DssStatus"
+    DssStatus:
+      type: object
+      description: |
+        A restriction's standing in the DSS (WP-9, 02 F2, 02 F6): none
+        (never written: planned or cancelled), pending since T while a
+        DSS write of it is queued (a DSS outage never holds the CISP
+        publication, D6), written, deleted, or failed since T (the DSS
+        refused it; a delivery alarm says why). ansp_version is the
+        version the DSS last accepted a put of, dss_version the DSS's
+        version of the reference.
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [none, pending, written, deleted, failed]
+        since:
+          $ref: "#/components/schemas/Timestamp"
+        ansp_version:
+          type: integer
+          format: int64
+          minimum: 1
+        dss_version:
+          type: integer
+          format: int64
+          minimum: 0
+    DeliveryAlarm:
+      type: object
+      description: |
+        An alarm of the outbox (WP-8, 02 F2 failure rule): the alarm member
+        of a restriction/state/v1 body and an item of GET
+        /v1/delivery-alarms. state is open, acknowledged (an open
+        cisp_not_published or uss_notify_late a person has seen) or
+        cleared; duration_s is cleared_at minus since. uss_notify_late
+        (WP-9) is a subscriber notification the DSS named not delivered
+        within CstrPublishedNotificationLatencySeconds of the DSS's
+        answer; it clears when the notification is delivered, superseded
+        or given up. occurrence_undelivered (WP-10) is an occurrence report
+        not delivered to the authority 60 h after its reporter became aware
+        (12 h before the 72 h of 376/2014 Art. 4(8)); a person's
+        acknowledgement leaves it open until the delivery is sent. The
+        text never says "lost" (C-12).
+      required: [id, kind, state, since, raised_at, detail]
+      properties:
+        id:
+          $ref: "#/components/schemas/ULID"
+        kind:
+          type: string
+          enum: [cisp_not_published, delivery_failed, delivery_abandoned, uss_notify_late, occurrence_undelivered]
+        state:
+          type: string
+          enum: [open, acknowledged, cleared]
+        restriction_id:
+          $ref: "#/components/schemas/ULID"
+        ansp_version:
+          type: integer
+          format: int64
+          minimum: 1
+        delivery_id:
+          $ref: "#/components/schemas/ULID"
+        since:
+          $ref: "#/components/schemas/Timestamp"
+        raised_at:
+          $ref: "#/components/schemas/Timestamp"
+        detail:
+          type: string
+          maxLength: 1024
+        cleared_at:
+          $ref: "#/components/schemas/Timestamp"
+        clear_reason:
+          type: string
+          description: published, restriction_not_active or acknowledged; for uss_notify_late delivered, superseded, delivery_failed or delivery_abandoned; for occurrence_undelivered delivered.
+        duration_s:
+          type: number
+          minimum: 0
+        acknowledged_by:
+          $ref: "#/components/schemas/Role"
+        acknowledged_at:
+          $ref: "#/components/schemas/Timestamp"
+        ack_reason:
+          type: string
+          maxLength: 1000
+    DeliveryAlarmList:
+      type: object
+      required: [alarms]
+      properties:
+        alarms:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeliveryAlarm"
+        truncated:
+          type: boolean
+    AlarmAcknowledgeRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+    RestrictionStateMessage:
+      description: A restriction/state/v1 frame or NATS message.
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeHeader"
+        - type: object
+          required: [schema, body]
+          properties:
+            schema:
+              type: string
+              enum: [restriction/state/v1]
+            body:
+              $ref: "#/components/schemas/RestrictionStateBody"
+    CoordinationNoticeMessage:
+      description: |
+        A coordination/notice/v1 frame of the console stream and of
+        coord.v1: the body is the inbox item (CoordinationNotice), not the
+        USSP's coordination/annex_v/v1 request body, which it carries as
+        payload (docs/PLAN.md section 15 row 24).
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeHeader"
+        - type: object
+          required: [schema, body]
+          properties:
+            schema:
+              type: string
+              enum: [coordination/notice/v1]
+            body:
+              $ref: "#/components/schemas/CoordinationNotice"
+    SourceStatusBody:
+      type: object
+      description: The body of source/status/v1 (uspace-lab schemas/common, pinned under schemas/common/source/status/v1/).
+      required: [source, source_instance, state, since, age_s, disabled_by, counters]
+      properties:
+        source:
+          type: string
+          enum: [operator_ws, network_rid, direct_rid, ansp_feed, adsb_rx, sitl]
+        source_instance:
+          type: [string, "null"]
+        state:
+          type: string
+          enum: [live, stale, disabled, down, unknown]
+        since:
+          $ref: "#/components/schemas/Timestamp"
+        age_s:
+          type: [number, "null"]
+          minimum: 0
+        disabled_by:
+          type: [string, "null"]
+          enum: [type, instance, default_deny, null]
+        disabled_by_who:
+          type: [string, "null"]
+        counters:
+          type: object
+          required: [accepted, refused]
+          properties:
+            accepted:
+              type: integer
+              minimum: 0
+            refused:
+              type: integer
+              minimum: 0
+          additionalProperties:
+            type: integer
+            minimum: 0
+    AdapterState:
+      type: object
+      description: This system's extra of console/status/v1 and of the snapshot, one per adapter.
+      required: [id, state, enabled]
+      properties:
+        id:
+          $ref: "#/components/schemas/AdapterSlug"
+        state:
+          type: string
+          enum: [live, stale, disabled, down, unknown]
+        enabled:
+          type: boolean
+        last_frame_at:
+          type: [string, "null"]
+          format: date-time
+        age_s:
+          type: [number, "null"]
+          minimum: 0
+    ConsoleStatus:
+      type: object
+      description: |
+        The body of console/status/v1 (uspace-lab schemas/common, pinned
+        under schemas/common/console/status/v1/), with this system's
+        extras adapters[], cis_version, cis_age_s and nats (M29).
+      required: [connection_id, server_ts, policy_version, stale_after_s, live_max_age_s, dropped_frames, degraded, sources]
+      properties:
+        connection_id:
+          type: string
+          minLength: 1
+        server_ts:
+          $ref: "#/components/schemas/Timestamp"
+        policy_version:
+          type: string
+          minLength: 1
+        stale_after_s:
+          type: number
+          exclusiveMinimum: 0
+        live_max_age_s:
+          type: number
+          exclusiveMinimum: 0
+        dropped_frames:
+          type: integer
+          minimum: 0
+        degraded:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            pattern: "^[a-z][a-z0-9_]*$"
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceStatusBody"
+        adapters:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdapterState"
+        cis_version:
+          type: string
+          minLength: 1
+        cis_age_s:
+          type: number
+          minimum: 0
+        nats:
+          type: string
+          pattern: "^[a-z][a-z0-9_]*$"
+    ConsoleStatusMessage:
+      description: A console/status/v1 frame.
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeHeader"
+        - type: object
+          required: [schema, body]
+          properties:
+            schema:
+              type: string
+              enum: [console/status/v1]
+            body:
+              $ref: "#/components/schemas/ConsoleStatus"
+    ConsoleSnapshot:
+      type: object
+      description: |
+        The body of console/snapshot/v1 (uspace-lab schemas/common, pinned
+        under schemas/common/console/snapshot/v1/): tracks and alerts are
+        always empty here (this system carries no UAS), manned holds the
+        track/manned/v1 messages; restrictions and notices are this
+        system's extras for its console streams.
+      required: [tracks, alerts, manned, zones_version]
+      properties:
+        tracks:
+          type: array
+          maxItems: 0
+          items:
+            type: object
+        alerts:
+          type: array
+          maxItems: 0
+          items:
+            type: object
+        manned:
+          type: array
+          items:
+            $ref: "#/components/schemas/MannedTrackMessage"
+        zones_version:
+          type: [string, "null"]
+        restrictions:
+          type: array
+          items:
+            $ref: "#/components/schemas/RestrictionStateMessage"
+        notices:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoordinationNoticeMessage"
+    ConsoleSnapshotMessage:
+      description: A console/snapshot/v1 frame.
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeHeader"
+        - type: object
+          required: [schema, body]
+          properties:
+            schema:
+              type: string
+              enum: [console/snapshot/v1]
+            body:
+              $ref: "#/components/schemas/ConsoleSnapshot"
+    ConsoleSubscribeFrame:
+      type: object
+      description: |
+        The one client-to-server frame, console/subscribe/v1 (uspace-lab
+        schemas/common, pinned under schemas/common/console/subscribe/v1/):
+        sent on open and whenever the viewport changes; the server
+        answers with a console/snapshot/v1. Named by x-client-frame on
+        each WebSocket operation.
+      required: [schema, body]
+      properties:
+        schema:
+          type: string
+          enum: [console/subscribe/v1]
+        msg_id:
+          $ref: "#/components/schemas/ULID"
+        body:
+          type: object
+          required: [bbox, layers]
+          properties:
+            bbox:
+              type: array
+              description: "[west, south, east, north] in WGS84 degrees; west > east crosses the antimeridian."
+              minItems: 4
+              maxItems: 4
+              items:
+                type: number
+            layers:
+              type: array
+              uniqueItems: true
+              items:
+                type: string
+                enum: [tracks, manned, alerts, zones]
+    MannedSnapshot:
+      description: |
+        The bootstrap of the manned picture: the console/snapshot/v1 body
+        plus what is degraded, every adapter's state, the CIS version the
+        relevance filter used and its age, and the policy_version.
+      allOf:
+        - $ref: "#/components/schemas/ConsoleSnapshot"
+        - type: object
+          required: [degraded, adapters, cis_version, cis_age_s, policy_version]
+          properties:
+            degraded:
+              type: array
+              uniqueItems: true
+              items:
+                type: string
+                pattern: "^[a-z][a-z0-9_]*$"
+            adapters:
+              type: array
+              items:
+                $ref: "#/components/schemas/AdapterState"
+            cis_version:
+              type: [string, "null"]
+            cis_age_s:
+              type: [number, "null"]
+              minimum: 0
+            policy_version:
+              type: string
+    MannedStreamFrame:
+      description: One server frame of GET /v1/manned-traffic/stream, dispatched on schema.
+      oneOf:
+        - $ref: "#/components/schemas/MannedTrackMessage"
+        - $ref: "#/components/schemas/ConsoleStatusMessage"
+        - $ref: "#/components/schemas/ConsoleSnapshotMessage"
+      discriminator:
+        propertyName: schema
+        mapping:
+          track/manned/v1: "#/components/schemas/MannedTrackMessage"
+          console/status/v1: "#/components/schemas/ConsoleStatusMessage"
+          console/snapshot/v1: "#/components/schemas/ConsoleSnapshotMessage"
+    RestrictionStreamFrame:
+      description: One server frame of GET /v1/restrictions/stream, dispatched on schema.
+      oneOf:
+        - $ref: "#/components/schemas/RestrictionStateMessage"
+        - $ref: "#/components/schemas/ConsoleStatusMessage"
+        - $ref: "#/components/schemas/ConsoleSnapshotMessage"
+      discriminator:
+        propertyName: schema
+        mapping:
+          restriction/state/v1: "#/components/schemas/RestrictionStateMessage"
+          console/status/v1: "#/components/schemas/ConsoleStatusMessage"
+          console/snapshot/v1: "#/components/schemas/ConsoleSnapshotMessage"
+    CoordinationStreamFrame:
+      description: One server frame of GET /v1/coordination/stream, dispatched on schema.
+      oneOf:
+        - $ref: "#/components/schemas/CoordinationNoticeMessage"
+        - $ref: "#/components/schemas/ConsoleStatusMessage"
+        - $ref: "#/components/schemas/ConsoleSnapshotMessage"
+      discriminator:
+        propertyName: schema
+        mapping:
+          coordination/notice/v1: "#/components/schemas/CoordinationNoticeMessage"
+          console/status/v1: "#/components/schemas/ConsoleStatusMessage"
+          console/snapshot/v1: "#/components/schemas/ConsoleSnapshotMessage"
+
+paths:
+  /v1/restrictions:
+    post:
+      operationId: createRestriction
+      tags: [restrictions]
+      summary: Plan a restriction
+      x-process: api
+      x-spec: 02 §3 ansp, 02 F2, 01 N1
+      x-auth: session:watch_supervisor
+      description: |
+        Plans a dynamic restriction (state planned) inside a designated
+        U-space airspace (2021/665 ATS.TR.237(a); 2021/664 Art. 4). The
+        restriction must intersect a current USPACE feature of the CIS
+        projection and name it in uspace_airspace_id (M9); with a stale
+        projection the answer is 503 cis_stale. The window and the area
+        are checked against the F3548 constraint limits of uspace-core
+        (CstrMaxDurationHours, CstrMaxPlanningHorizonDays, CstrMaxAreaKm2,
+        CstrMaxVertices). Vertical limits are in AMSL or WGS84; AGL is
+        refused with "lower_ref: AGL is not supported for a dynamic
+        restriction in this release" (D3). Idempotency-Key is the
+        client's reference: a repeat with the same key and body answers
+        200 with the restriction first created; with another body, 409.
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RestrictionCreate"
+            example:
+              uspace_airspace_id: GEOTU01
+              zone_type: PROHIBITED
+              geometry:
+                type: Polygon
+                coordinates: [[[44.78, 41.70], [44.82, 41.70], [44.82, 41.73], [44.78, 41.73], [44.78, 41.70]]]
+              lower_m: 0
+              lower_ref: AMSL
+              upper_m: 1200
+              upper_ref: AMSL
+              starts_at: "2026-10-02T12:00:00.000Z"
+              ends_at: "2026-10-02T16:00:00.000Z"
+              reason_text: Search and rescue operation (synthetic example)
+      responses:
+        "201":
+          description: Planned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Restriction"
+              example: *RestrictionPlanned
+        "200":
+          description: A repeat of an earlier request with the same Idempotency-Key and body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Restriction"
+              example: *RestrictionPlanned
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    get:
+      operationId: listRestrictions
+      tags: [restrictions]
+      summary: List restrictions
+      x-process: api
+      x-spec: 02 §3 ansp
+      x-auth: token:ansp.coordination or session
+      description: |
+        The restrictions with their states and delivery status
+        (ATS.TR.237(b)), newest first, filtered by state, by the instant
+        at which they apply and by a bounding box. Answers carry the CIS
+        version the restrictions were placed against and its age.
+      security:
+        - consoleSession: []
+        - ecosystemToken: [ansp.coordination]
+      parameters:
+        - name: state
+          in: query
+          required: false
+          description: Only restrictions in this state.
+          schema:
+            $ref: "#/components/schemas/RestrictionState"
+          example: active
+        - name: at
+          in: query
+          required: false
+          description: Only restrictions whose window contains this instant.
+          schema:
+            type: string
+            format: date-time
+          example: "2026-10-02T13:00:00.000Z"
+        - $ref: "#/components/parameters/BBox"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The restrictions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestrictionList"
+              example:
+                restrictions:
+                  - *RestrictionActive
+                cis_version: "42"
+                cis_age_s: 12.5
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/restrictions/stream:
+    get:
+      operationId: streamRestrictions
+      tags: [restrictions]
+      summary: Restriction state changes for the console (WebSocket)
+      x-process: api
+      x-spec: 02 §3 ansp (console), 04 §3.4
+      x-auth: session
+      x-websocket: true
+      description: |
+        A WebSocket upgrade for the dispatcher console. The browser
+        authenticates with the uspace_session cookie on a same-origin
+        upgrade whose Origin is on ANSP_WS_ALLOWED_ORIGINS (M22); a
+        machine client sends a bearer. There is no ticket. Frames: a
+        console/snapshot/v1 on connect and on every console/subscribe/v1
+        the client sends, restriction/state/v1 for every state change
+        and delivery outcome (ATS.TR.237(b)), and console/status/v1 on
+        connect and every 2 s. A session that ends while connected is
+        closed with code 4401 (re-login). A plain GET is 426.
+      security:
+        - consoleSession: []
+        - sessionCookie: []
+      x-client-frame: "#/components/schemas/ConsoleSubscribeFrame"
+      responses:
+        "101":
+          description: Switched to the WebSocket protocol; every server message is one RestrictionStreamFrame.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestrictionStreamFrame"
+              example: *RestrictionStateFrame
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/restrictions/{id}:
+    get:
+      operationId: getRestriction
+      tags: [restrictions]
+      summary: One restriction
+      x-process: api
+      x-spec: 02 §3 ansp
+      x-auth: token:ansp.coordination or session
+      description: |
+        The restriction, its current ED-318 feature, its F3548 constraint
+        reference and its deliveries summary (ATS.TR.237(b)). This is
+        also the pull_url of a degraded direct delivery (02 F2 failure
+        rule, M5).
+      security:
+        - consoleSession: []
+        - ecosystemToken: [ansp.coordination]
+      parameters:
+        - $ref: "#/components/parameters/RestrictionID"
+      responses:
+        "200":
+          description: The restriction.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Restriction"
+              example: *RestrictionActive
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/restrictions/{id}/versions:
+    get:
+      operationId: listRestrictionVersions
+      tags: [restrictions]
+      summary: Every version of a restriction
+      x-process: api
+      x-spec: 01 N4, 02 §3 ansp
+      x-auth: session
+      description: |
+        Every version as published, oldest first: who changed it, when
+        and why, until when (Annex V(1), the N4 record of every
+        reconfiguration).
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/RestrictionID"
+      responses:
+        "200":
+          description: The versions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestrictionVersionList"
+              example:
+                versions:
+                  - *RestrictionVersion
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/restrictions/{id}/versions/{version}:
+    get:
+      operationId: getRestrictionVersion
+      tags: [restrictions]
+      summary: One version of a restriction
+      x-process: api
+      x-spec: 01 N4, 02 §3 ansp
+      x-auth: session
+      description: The version as published (Annex V(1)).
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/RestrictionID"
+        - $ref: "#/components/parameters/Version"
+      responses:
+        "200":
+          description: The version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestrictionVersion"
+              example: *RestrictionVersion
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/restrictions/{id}/activate:
+    post:
+      operationId: activateRestriction
+      tags: [restrictions]
+      summary: Activate a planned restriction
+      x-process: api
+      x-spec: ATS.TR.237(b) activation
+      x-auth: session:watch_supervisor
+      description: |
+        planned → active, at once or at starts_at when that is in the
+        future (2021/665 ATS.TR.237(b): activation). Starts the outbox:
+        the CISP publication and the DSS constraint are written in
+        parallel (D6), each idempotent on (ansp_ref, ansp_version).
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/RestrictionID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReasonRequest"
+            example:
+              reason: Rescue helicopter on scene
+      responses:
+        "200":
+          description: Active (or scheduled to activate at starts_at).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Restriction"
+              example: *RestrictionActive
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/restrictions/{id}/extend:
+    post:
+      operationId: extendRestriction
+      tags: [restrictions]
+      summary: Extend a restriction
+      x-process: api
+      x-spec: ATS.TR.237(b) temporary limitation
+      x-auth: session:watch_supervisor
+      description: |
+        A new ends_at (2021/665 ATS.TR.237(b): temporary limitation).
+        Within CstrMaxDurationHours of starts_at the restriction gets a
+        new ansp_version; beyond it a re-issue is created and linked by
+        supersedes_id, and the answer is that re-issue.
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/RestrictionID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExtendRequest"
+            example:
+              ends_at: "2026-10-02T18:00:00.000Z"
+              reason: Operation continues
+      responses:
+        "200":
+          description: Extended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Restriction"
+              example: *RestrictionActive
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/restrictions/{id}/end:
+    post:
+      operationId: endRestriction
+      tags: [restrictions]
+      summary: End an active restriction now
+      x-process: api
+      x-spec: ATS.TR.237(b) deactivation
+      x-auth: session:watch_supervisor
+      description: "active → ended now (2021/665 ATS.TR.237(b): deactivation)."
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/RestrictionID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReasonRequest"
+            example:
+              reason: Rescue completed
+      responses:
+        "200":
+          description: Ended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Restriction"
+              example: *RestrictionEnded
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/restrictions/{id}/cancel:
+    post:
+      operationId: cancelRestriction
+      tags: [restrictions]
+      summary: Cancel a planned restriction
+      x-process: api
+      x-spec: 02 F2 states
+      x-auth: session:watch_supervisor
+      description: planned → cancelled; a restriction never activated is withdrawn (02 F2 states).
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/RestrictionID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReasonRequest"
+            example:
+              reason: Planned in error
+      responses:
+        "200":
+          description: Cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Restriction"
+              example: *RestrictionCancelled
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /v1/delivery-alarms:
+    get:
+      operationId: listDeliveryAlarms
+      tags: [restrictions]
+      summary: The delivery alarms
+      x-process: api
+      x-spec: 02 F2 failure rule
+      x-auth: session
+      description: |
+        The alarms of the outbox (WP-8), newest first: cisp_not_published
+        (a restriction active here and not yet published to the CISP for
+        its current version after cisp_alarm_after_s; cleared with its
+        duration when the publication succeeds or the restriction is no
+        longer active), delivery_failed (a 4xx answer, not retried) and
+        delivery_abandoned (retried for the whole window). A failed or
+        abandoned delivery's alarm stays open until a watch supervisor
+        acknowledges it with a reason. Without all, the open alarms only.
+      security:
+        - consoleSession: []
+      parameters:
+        - name: all
+          in: query
+          required: false
+          description: Also the cleared alarms.
+          schema:
+            type: boolean
+            default: false
+          example: false
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The alarms.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeliveryAlarmList"
+              example:
+                alarms:
+                  - *DeliveryAlarmOpen
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/delivery-alarms/{id}/acknowledge:
+    post:
+      operationId: acknowledgeDeliveryAlarm
+      tags: [restrictions]
+      summary: Acknowledge a delivery alarm
+      x-process: api
+      x-spec: 02 F2 failure rule
+      x-auth: session:watch_supervisor
+      description: |
+        A person's acknowledgement of an alarm, with a reason (audited).
+        It closes a delivery_failed or delivery_abandoned alarm; a
+        cisp_not_published alarm is marked acknowledged and stays open
+        until the publication or the end of the restriction clears it.
+        An alarm already acknowledged or cleared is 409.
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/AlarmID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlarmAcknowledgeRequest"
+            example:
+              reason: The CISP operator confirmed the 400; the restriction is planned again
+      responses:
+        "200":
+          description: Acknowledged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeliveryAlarm"
+              example: *DeliveryAlarmAcknowledged
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/restriction-requests:
+    post:
+      operationId: createRestrictionRequest
+      tags: [restriction-requests]
+      summary: Request a restriction
+      x-process: api
+      x-spec: 02 F11
+      x-auth: token:ansp.requests or session
+      description: |
+        A request from the authority (or a console user) for a
+        restriction over an area and a window (02 F11; the coordination
+        duty of 2021/664 Art. 18(f) is the authority's). The request is
+        recorded as received; a watch supervisor accepts it (which plans
+        the restriction) or declines it with a reason. client_ref makes
+        the call idempotent per requester.
+      security:
+        - ecosystemToken: [ansp.requests]
+        - consoleSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RestrictionRequestCreate"
+            example: *RestrictionRequestCreate
+      responses:
+        "201":
+          description: Received.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestrictionRequest"
+              example: *RestrictionRequestReceived
+        "200":
+          description: A repeat of an earlier request with the same client_ref.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestrictionRequest"
+              example: *RestrictionRequestReceived
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/restriction-requests/{id}:
+    get:
+      operationId: getRestrictionRequest
+      tags: [restriction-requests]
+      summary: The state of a restriction request
+      x-process: api
+      x-spec: 02 F11
+      x-auth: token:ansp.requests or session
+      description: received, accepted (with restriction_id) or declined (with decision_reason) (02 F11).
+      security:
+        - ecosystemToken: [ansp.requests]
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: The request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestrictionRequest"
+              example: *RestrictionRequestAccepted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/restriction-requests/{id}/accept:
+    post:
+      operationId: acceptRestrictionRequest
+      tags: [restriction-requests]
+      summary: Accept a restriction request
+      x-process: api
+      x-spec: 02 F11
+      x-auth: session:watch_supervisor
+      description: |
+        Accepts the request and plans the restriction it asks for
+        (ATS.TR.237(a)); the answer carries restriction_id.
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcceptRequest"
+            example:
+              zone_type: PROHIBITED
+              reason: Requested by the authority for the event
+      responses:
+        "200":
+          description: Accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestrictionRequest"
+              example: *RestrictionRequestAccepted
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/restriction-requests/{id}/decline:
+    post:
+      operationId: declineRestrictionRequest
+      tags: [restriction-requests]
+      summary: Decline a restriction request
+      x-process: api
+      x-spec: 02 F11
+      x-auth: session:watch_supervisor
+      description: Declines the request with a reason the requester reads (02 F11).
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReasonRequest"
+            example:
+              reason: The area lies outside controlled airspace
+      responses:
+        "200":
+          description: Declined.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestrictionRequest"
+              example: *RestrictionRequestDeclined
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /v1/coordination/notices:
+    post:
+      operationId: submitCoordinationNotice
+      tags: [coordination]
+      summary: Submit an Annex V notice
+      x-process: api
+      x-spec: 02 F13, 04 §3.5 coordination/annex_v/v1, Art. 13(2)
+      x-auth: token:ansp.coordination+mtls
+      description: |
+        Intake of the Annex V data a USSP sends the ANSP: intents
+        touching controlled U-space airspace, non-conformance notices
+        (2021/664 Art. 13(2)), contingent and ended notices. The body is
+        this system's own schema coordination/annex_v/v1
+        (schemas/coordination/annex_v/v1.json, M14); the USSP consumes
+        it from this repository. The token's sub must be a USSP on the
+        CIS USSP list, else 403 and an audit row; the client certificate
+        is bound per ANSP_MTLS_MODE (M25). The answer is a receipt
+        (202 with ack_id, M2): a person's acknowledgement follows on
+        GET /v1/coordination/notices/{ack_id}. A repeat with the same
+        notice_ref and the same body from the same sender answers the
+        same receipt with 200 (nothing is stored twice); the same
+        notice_ref with another body is refused 409 notice_ref_reused, so
+        a second notice is never answered with the first one's receipt.
+        With no CIS USSP list projected the notice is accepted and flagged
+        sender_unverified (never refused for lack of this system's data).
+        The restrictions the notice's volumes intersect are recorded
+        with it (restriction_ids). A notice carries at most 1000 volumes
+        in all (over its intents); more is refused 400 before anything is
+        read or stored.
+      security:
+        - ecosystemToken: [ansp.coordination]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnnexVNotice"
+            example: *AnnexVNonconformance
+      responses:
+        "202":
+          description: Received; the receipt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NoticeReceipt"
+              example:
+                ack_id: 01K6P3Q8Y2D6W4Z1V7R5T9X3MB
+                state: received
+                received_at: "2026-10-02T12:31:02.118Z"
+        "200":
+          description: A repeat of a notice received before; its first receipt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NoticeReceipt"
+              example:
+                ack_id: 01K6P3Q8Y2D6W4Z1V7R5T9X3MB
+                state: received
+                received_at: "2026-10-02T12:31:02.118Z"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/coordination/notices/{ack_id}:
+    get:
+      operationId: getCoordinationNotice
+      tags: [coordination]
+      summary: The state of a notice
+      x-process: api
+      x-spec: 02 F13
+      x-auth: token:ansp.coordination+mtls or session
+      description: |
+        The notice's state: received, acknowledged (with the role of the
+        person who acknowledged it, never a name, and when) or escalated
+        (2021/664 Art. 13(2)). The sending USSP polls this (every 10 s
+        for 5 min on its side); there is no push in v1 (M2). A machine
+        caller sees only the notices it sent.
+      security:
+        - ecosystemToken: [ansp.coordination]
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/AckID"
+      responses:
+        "200":
+          description: The notice.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoordinationNotice"
+              example: *CoordinationNoticeAcknowledged
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/coordination/inbox:
+    get:
+      operationId: listCoordinationInbox
+      tags: [coordination]
+      summary: The inbox for the console
+      x-process: api
+      x-spec: 01 N3
+      x-auth: session
+      description: |
+        The notices received, newest first, with their payloads, for the
+        watch supervisor (01 N3, 2021/664 Annex V). Every view is
+        audited.
+      security:
+        - consoleSession: []
+      parameters:
+        - name: state
+          in: query
+          required: false
+          description: Only notices in this state.
+          schema:
+            $ref: "#/components/schemas/NoticeState"
+          example: received
+        - name: since
+          in: query
+          required: false
+          description: Only notices received at or after this instant.
+          schema:
+            type: string
+            format: date-time
+          example: "2026-10-02T00:00:00.000Z"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The inbox.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoordinationInbox"
+              example:
+                notices:
+                  - *CoordinationNoticeReceived
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /v1/coordination/inbox/{id}/acknowledge:
+    post:
+      operationId: acknowledgeCoordinationNotice
+      tags: [coordination]
+      summary: Acknowledge a notice
+      x-process: api
+      x-spec: Art. 13(2)
+      x-auth: session:watch_supervisor
+      description: |
+        The person's acknowledgement of a notice (2021/664 Art. 13(2)),
+        within notice_escalation_s of receipt or after its escalation.
+        id is the ack_id of the receipt.
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/NoticeID"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcknowledgeRequest"
+            example:
+              note: Aware; restriction DAR7K2Q already covers the area
+      responses:
+        "200":
+          description: Acknowledged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoordinationNotice"
+              example: *CoordinationNoticeAcknowledged
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /v1/coordination/stream:
+    get:
+      operationId: streamCoordination
+      tags: [coordination]
+      summary: New notices and escalations for the console (WebSocket)
+      x-process: api
+      x-spec: 01 N3 (console)
+      x-auth: session
+      x-websocket: true
+      description: |
+        A WebSocket upgrade for the dispatcher console, authenticated as
+        GET /v1/restrictions/stream is (cookie on a same-origin upgrade
+        checked against the Origin allow-list, or a bearer; M22).
+        Frames: console/snapshot/v1 on connect and on every
+        console/subscribe/v1 (its notices member is the open inbox),
+        coordination/notice/v1 for every new notice and every state
+        change (received, acknowledged, each escalation every 30 s until
+        acknowledged; the body is the inbox item), console/status/v1 on
+        connect and every 2 s. 4401 closes a session that ended.
+      security:
+        - consoleSession: []
+        - sessionCookie: []
+      x-client-frame: "#/components/schemas/ConsoleSubscribeFrame"
+      responses:
+        "101":
+          description: Switched to the WebSocket protocol; every server message is one CoordinationStreamFrame.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoordinationStreamFrame"
+              example: *CoordinationNoticeFrame
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/manned-traffic/snapshot:
+    get:
+      operationId: getMannedTrafficSnapshot
+      tags: [manned-traffic]
+      summary: Bootstrap of the manned traffic picture
+      x-process: manned-feed
+      x-spec: 02 F4
+      x-auth: token:ansp.traffic+mtls or session
+      description: |
+        Every relevant aircraft's last sample with its age, plus what is
+        degraded and the state of every adapter (2021/665 ATS.OR.127(a),
+        on a non-discriminatory basis to every USSP and the authority).
+        Relevant means inside a U-space volume of the CIS projection plus
+        the policy margin (feed_margin_lateral_m, feed_margin_vertical_m).
+        An aircraft whose source stopped is listed with state stale or
+        source_disabled, never dropped silently (CLAUDE.md rule 4); an
+        empty list says why in degraded. The client certificate is bound
+        per ANSP_MTLS_MODE (M25).
+      security:
+        - ecosystemToken: [ansp.traffic]
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/BBox"
+      responses:
+        "200":
+          description: The snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MannedSnapshot"
+              example: *MannedSnapshot
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/manned-traffic/stream:
+    get:
+      operationId: streamMannedTraffic
+      tags: [manned-traffic]
+      summary: The manned traffic stream (WebSocket)
+      x-process: manned-feed
+      x-spec: 02 F4, 04 §3.1 track/manned/v1
+      x-auth: token:ansp.traffic+mtls or session
+      x-websocket: true
+      description: |
+        The manned traffic information service of 2021/665 ATS.OR.127(a)
+        as a WebSocket. Every frame is the 04 §2 envelope with a body
+        named by schema (M12, M29): console/snapshot/v1 on connect and
+        on every console/subscribe/v1 {bbox, layers[]} the client sends;
+        track/manned/v1 at 1 Hz per aircraft (throttled at 2 Hz), also
+        with state stale or source_disabled when an aircraft ages;
+        console/status/v1 on connect and every 2 s with adapters[],
+        degraded[], dropped_frames, cis_version and cis_age_s. There is
+        no feed/status/v1. Machine clients authenticate with a bearer
+        (scope ansp.traffic, certificate per ANSP_MTLS_MODE); the
+        console with the session cookie on a same-origin upgrade (M22).
+        Per-client connection and frame caps apply (06 T8); a client
+        that cannot keep up is closed with 1013.
+      security:
+        - ecosystemToken: [ansp.traffic]
+        - consoleSession: []
+        - sessionCookie: []
+      x-client-frame: "#/components/schemas/ConsoleSubscribeFrame"
+      parameters:
+        - $ref: "#/components/parameters/BBox"
+      responses:
+        "101":
+          description: Switched to the WebSocket protocol; every server message is one MannedStreamFrame.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MannedStreamFrame"
+              example: *MannedTrackFrame
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/adapters:
+    get:
+      operationId: listAdapters
+      tags: [adapters]
+      summary: The surveillance adapters
+      x-process: api
+      x-spec: 02 §3 ansp
+      x-auth: session
+      description: |
+        The registry of surveillance feeds and their running state from
+        src.v1.manned.<id>: configured, running, silent (with since) or
+        disabled (with who and why) (CLAUDE.md rule 4).
+      security:
+        - consoleSession: []
+      responses:
+        "200":
+          description: The adapters.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdapterList"
+              example:
+                adapters:
+                  - *Adapter
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /v1/adapters/{id}:
+    get:
+      operationId: getAdapter
+      tags: [adapters]
+      summary: One surveillance adapter
+      x-process: api
+      x-spec: 02 §3 ansp
+      x-auth: session
+      description: One adapter with its counters.
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/AdapterID"
+      responses:
+        "200":
+          description: The adapter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Adapter"
+              example: *Adapter
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/sources:
+    get:
+      operationId: listSources
+      tags: [sources]
+      summary: The source switches
+      x-process: api
+      x-spec: 04 §3.6, U-15
+      x-auth: session
+      description: Every source switch with who set it, when and why (04 §3.6).
+      security:
+        - consoleSession: []
+      responses:
+        "200":
+          description: The switches.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceControlList"
+              example:
+                sources:
+                  - *SourceControl
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /v1/sources/{type}/{instance}:
+    put:
+      operationId: setSourceControl
+      tags: [sources]
+      summary: Enable or disable a source
+      x-process: api
+      x-spec: 04 §3.6, U-15
+      x-auth: session:admin
+      description: |
+        Enables or disables a source by type (manned) and instance (an
+        adapter id, or * for the type as a whole), with a reason; audited
+        (02 §1 failure rule: every disable is an audited act by a
+        person). 503 when the source_control KV bucket cannot be reached,
+        and nothing changed. The row is committed first and the whole
+        state put to KV and pushed on ctl.sources after the commit; a put
+        that fails after the commit leaves the switch set (the database is
+        the record) and is repaired by the republish within 60 s (WP-6,
+        docs/PLAN.md section 15 row 37).
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/SourceType"
+        - $ref: "#/components/parameters/SourceInstance"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceControlUpdate"
+            example:
+              enabled: false
+              reason: Receiver maintenance window
+      responses:
+        "200":
+          description: The switch as set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceControl"
+              example: *SourceControl
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/policy:
+    get:
+      operationId: getPolicy
+      tags: [policy]
+      summary: The thresholds row
+      x-process: api
+      x-spec: INV-03
+      x-auth: session:admin
+      description: The newest ansp_policy row with its policy_version (INV-03).
+      security:
+        - consoleSession: []
+      responses:
+        "200":
+          description: The policy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Policy"
+              example: *Policy
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    put:
+      operationId: putPolicy
+      tags: [policy]
+      summary: Change the thresholds
+      x-process: api
+      x-spec: INV-03
+      x-auth: session:admin
+      description: |
+        Writes a new ansp_policy row with the next policy_version (a
+        version is never edited) and projects it to the hot path through
+        KV (INV-03). Every threshold is finite and positive.
+      security:
+        - consoleSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PolicyUpdate"
+            example:
+              feed_margin_lateral_m: 5000
+              feed_margin_vertical_m: 1500
+              stale_after_s: 15
+              source_liveness_s: 15
+              cisp_alarm_after_s: 10
+              cisp_heartbeat_s: 15
+              cis_reconcile_s: 60
+              cis_stale_bound_s: 300
+              notice_escalation_s: 60
+              default_zone_type: PROHIBITED
+              country: GEO
+      responses:
+        "200":
+          description: The new policy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Policy"
+              example: *Policy
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/occurrences:
+    post:
+      operationId: createOccurrence
+      tags: [occurrences]
+      summary: Report an occurrence
+      x-process: api
+      x-spec: 01 N4, 376/2014 Art. 4(8), 02 F7
+      x-auth: session:watch_supervisor
+      description: |
+        An occurrence report of ANSP staff (Reg. (EU) 376/2014 Art.
+        4(8)), queued to the authority's POST /v1/occurrences through
+        the outbox with the 72 h deadline from became_aware_at.
+        reporter_person_ref is sealed at rest, sent to the authority in
+        clear over TLS (M13) and never logged, streamed or exported.
+        The authority owns occurrence/v1; until its OpenAPI publishes it
+        (api/clients/authority.yaml), this body is the plan's field list
+        of 04 §3.3.
+      security:
+        - consoleSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OccurrenceCreate"
+            example:
+              channel: mandatory
+              occurred_at: "2026-10-02T11:20:00.000Z"
+              became_aware_at: "2026-10-02T11:25:00.000Z"
+              category: airprox
+              aircraft:
+                - serial: 1581F5FHD23440010000
+                  operator_reg: GEOrz3pa1x0d5ozm
+              manned:
+                - icao24: 4ca7b5
+                  callsign: TST123
+              intent_refs: [2f8343be-6482-4d1b-a474-16847e01af1e]
+              min_separation:
+                h_m: 180
+                v_m: 40
+                at: "2026-10-02T11:20:00.000Z"
+              narrative: Synthetic example of an airprox between a UAS and a manned aircraft.
+              reporter_person_ref: staff-0042
+      responses:
+        "202":
+          description: Queued to the authority.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccurrenceQueued"
+              example:
+                id: 01K6P4B2C3D4E5F6G7H8J9KMNP
+                report_ref: ANSP-OCC-2026-0007
+                state: queued
+                deadline_at: "2026-10-05T11:25:00.000Z"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/audit:
+    get:
+      operationId: listAudit
+      tags: [audit]
+      summary: The audit log
+      x-process: api
+      x-spec: 01 N4
+      x-auth: session:admin
+      description: |
+        The append-only, hash-chained events (06 T7; Annex V(1), 01 N4):
+        every write, switch, inbox view and export, oldest first after
+        since.
+      security:
+        - consoleSession: []
+      parameters:
+        - name: entity
+          in: query
+          required: false
+          description: Only events about this entity, as <entity_type>:<entity_id>.
+          schema:
+            type: string
+            maxLength: 160
+          example: "restriction:01K6P0A1B2C3D4E5F6G7H8J9KM"
+        - name: since
+          in: query
+          required: false
+          description: Only events at or after this instant.
+          schema:
+            type: string
+            format: date-time
+          example: "2026-10-01T00:00:00.000Z"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The events.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditList"
+              example:
+                events:
+                  - id: 1042
+                    ts: "2026-10-02T12:05:00.000Z"
+                    actor_type: user
+                    actor_id: 01K6NZ8Q2W3E4R5T6Y7V8W9X0Z
+                    purpose: reconfiguration
+                    entity_type: restriction
+                    entity_id: 01K6P0A1B2C3D4E5F6G7H8J9KM
+                    event_type: restriction.activated
+                    payload:
+                      ansp_version: 2
+                    prev_hash: 9f2c4be4d1a0b5c6d7e8f90112233445566778899aabbccddeeff00112233445
+                    hash: 0b1c2d3e4f5061728394a5b6c7d8e9f00112233445566778899aabbccddeeff0
+                truncated: false
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /v1/auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Sign in, first step
+      x-process: api
+      x-spec: 06 §3
+      x-auth: public
+      description: |
+        The first step of a console sign-in (06 §3; MFA is mandatory for
+        every role, 01 §4): a local account's username and password
+        answer a single-use mfa_token valid 5 minutes for at most 5
+        codes. An account without TOTP gets its enrolment (secret and
+        otpauth URI) once, here. Failures are counted per username,
+        known or not, and per client address (taken only through
+        ANSP_TRUSTED_PROXIES); past the limit the answer is 429 with
+        Retry-After, and a locked account is 429 account_locked. The
+        refusal never says whether the username exists.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            example:
+              username: supervisor1
+              password: example-password-not-real
+      responses:
+        "200":
+          description: The password is right; the second step follows.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginChallenge"
+              example:
+                mfa_token: example-mfa-token-not-real
+                expires_at: "2026-10-02T12:05:00.000Z"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/auth/mfa:
+    post:
+      operationId: verifyMfa
+      tags: [auth]
+      summary: Sign in, second step
+      x-process: api
+      x-spec: 06 §3
+      x-auth: public
+      description: |
+        The TOTP code for an mfa_token (each code accepted once). The
+        answer is the session: a JWT issued by this system (iss this
+        system, aud its host, scope session, roles [role], realm console,
+        M20), valid at most 12 h and ended after 30 min idle. The BFF
+        puts it in the uspace_session cookie with uspace_csrf (M21).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaRequest"
+            example:
+              mfa_token: example-mfa-token-not-real
+              code: "123456"
+      responses:
+        "200":
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+              example:
+                token: example-session-token-not-real
+                token_type: Bearer
+                expires_at: "2026-10-03T00:00:00.000Z"
+                idle_timeout_s: 1800
+                user: *User
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Sign out
+      x-process: api
+      x-spec: 06 §3
+      x-auth: session
+      description: Ends the caller's session at once, on every replica (06 §3).
+      security:
+        - consoleSession: []
+      responses:
+        "204":
+          description: Signed out.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: The caller's account
+      x-process: api
+      x-spec: 06 §3
+      x-auth: session
+      description: The account behind the session and when the session expires.
+      security:
+        - consoleSession: []
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Me"
+              example:
+                id: 01K6NZ8Q2W3E4R5T6Y7V8W9X0Z
+                username: supervisor1
+                role: watch_supervisor
+                status: active
+                created_at: "2026-09-30T08:00:00.000Z"
+                last_login_at: "2026-10-02T12:00:00.000Z"
+                session_expires_at: "2026-10-03T00:00:00.000Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/users:
+    get:
+      operationId: listUsers
+      tags: [auth]
+      summary: The console accounts
+      x-process: api
+      x-spec: 01 §4 users, 06 §3
+      x-auth: session:admin
+      description: Every console account and its role (01 §4).
+      security:
+        - consoleSession: []
+      responses:
+        "200":
+          description: The accounts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserList"
+              example:
+                users:
+                  - *User
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      operationId: createUser
+      tags: [auth]
+      summary: Create a console account
+      x-process: api
+      x-spec: 01 §4 users, 06 §3
+      x-auth: session:admin
+      description: |
+        A new local account with a role; it enrols TOTP at its first
+        sign-in. Audited.
+      security:
+        - consoleSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserCreate"
+            example:
+              username: viewer2
+              password: example-password-not-real
+              role: viewer
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+              example:
+                id: 01K6P5C6D7E8F9G0H1J2K3M4N5
+                username: viewer2
+                role: viewer
+                status: active
+                created_at: "2026-10-02T12:10:00.000Z"
+                last_login_at: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/users/{id}/reset-mfa:
+    post:
+      operationId: resetUserMfa
+      tags: [auth]
+      summary: Reset an account's TOTP
+      x-process: api
+      x-spec: 01 §4 users, 06 §3
+      x-auth: session:admin
+      description: Removes the account's TOTP and ends its sessions; it enrols again at its next sign-in. Audited.
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: Reset.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+              example: *User
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/users/{id}/disable:
+    post:
+      operationId: disableUser
+      tags: [auth]
+      summary: Disable an account
+      x-process: api
+      x-spec: 01 §4 users, 06 §3
+      x-auth: session:admin
+      description: Disables the account and ends its sessions. Audited.
+      security:
+        - consoleSession: []
+      parameters:
+        - $ref: "#/components/parameters/UserID"
+      responses:
+        "200":
+          description: Disabled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+              example:
+                id: 01K6NZ8Q2W3E4R5T6Y7V8W9X0Z
+                username: supervisor1
+                role: watch_supervisor
+                status: disabled
+                created_at: "2026-09-30T08:00:00.000Z"
+                last_login_at: "2026-10-02T12:00:00.000Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /.well-known/jwks.json:
+    get:
+      operationId: getJwks
+      tags: [auth]
+      summary: The signing keys of this system
+      x-process: api
+      x-spec: 06 §2 T4
+      x-auth: public
+      description: |
+        The public RSA keys of this system (use sig, distinguished by
+        kid): console session tokens, the detached JWS of CISP
+        publications and the compact JWS of degraded direct deliveries
+        (M26). Cacheable for five minutes.
+      security: []
+      responses:
+        "200":
+          description: The key set.
+          content:
+            application/jwk-set+json:
+              schema:
+                $ref: "#/components/schemas/JWKS"
+              example:
+                keys:
+                  - kty: RSA
+                    kid: rWnFq0Gdx3f2J3m5hZ0kS1l4m6n8p0r2t4v6x8z0B2D
+                    use: sig
+                    alg: RS256
+                    n: 0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtVT86zwu1RK7aPFFxuhDR1L6tSoc_BJECPebWKRXjBZCiFV4n3oknjhMstn64tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_FDW2QvzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qMQvRL5hajrn1n91CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_xBniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw
+                    e: AQAB
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /uss/v1/constraints/{entityid}:
+    get:
+      operationId: getConstraintDetails
+      tags: [uss]
+      summary: The details of a constraint this system manages (F3548)
+      x-process: api
+      x-spec: F3548-21 USS API; 02 F2, 09 §1.4
+      x-auth: token:utm.constraint_processing
+      x-standard: ASTM F3548-21 utm.yaml 1d3d8fbe75414e23d7e19ce35955770bea5e413f
+      description: |
+        The ConstraintDetails of a restriction, for USSPs that found its
+        reference in the DSS (ASTM F3548-21 USS-USS API, as the standard's
+        utm.yaml at the commit uspace-core/f3548/SOURCE pins describes
+        it; this system is the constraint manager, 09 §1.4). The body is
+        F3548's GetConstraintDetailsResponse and the Go type is
+        uspace-core's (one struct); details.type is DAR and the ED-318
+        feature is in details.geozone where uspace-core can map it (§15
+        gap 16). What is served is the version the DSS last accepted
+        (the standard: before the DSS answered the first write the
+        constraint is unknown here, 404), its reference as the DSS
+        answered it, ovn included, and its details exactly the
+        restriction's F3548 volumes; after the restriction ended or was
+        cancelled they stay served for ExternalDataMaxRetentionTimeHours,
+        then 404. Answered within CstrMaxTimeSendDetailsSeconds. Errors
+        are this system's problem body; 503 when this instance has no
+        store to read them from (fail closed).
+      security:
+        - ecosystemToken: [utm.constraint_processing]
+      parameters:
+        - name: entityid
+          in: path
+          required: true
+          description: The F3548 entity id of the constraint (UUIDv4, minted by this system).
+          schema:
+            type: string
+            format: uuid
+          example: 2f8343be-6482-4d1b-a474-16847e01af1e
+      responses:
+        "200":
+          description: The constraint.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConstraintDetailsResponse"
+              example:
+                constraint:
+                  reference: *ConstraintReference
+                  details:
+                    type: DAR
+                    volumes:
+                      - *Volume4D
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/cis/notifications:
+    post:
+      operationId: receiveCisNotification
+      tags: [cis]
+      summary: Receive a CIS change notification (F3 push)
+      x-process: api
+      x-spec: 02 F3
+      x-auth: jws:cisp
+      description: |
+        The receiver of the CISP's change notifications (02 F3, M1): a
+        compact JWS (application/jose) signed by an issuer on
+        ANSP_CIS_NOTIFY_ISSUERS (the CISP; JWKS URL from configuration),
+        verified with uspace-core's auth.VerifyCompact. The payload is
+        {iss, aud, sub, iat, jti, body}: aud the host of this system's
+        registered callback_url, sub the subscription id, jti the
+        delivery id (replay window 5 min, remembered in the database),
+        body the CISP's cis/change/v1 (Change in api/clients/cisp.yaml).
+        There is no bearer: the signature authenticates the sender.
+        The reasons subscription_test and republished, any reason this
+        system does not know, and a delivery id seen before are
+        acknowledged 204 without a pull (M16); any other reason answers
+        202 and triggers a pull of the named dataset. pull_url is
+        honoured only when its host equals the issuer's configured base
+        host.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/jose:
+            schema:
+              type: string
+              description: A compact JWS, three base64url parts separated by dots.
+              maxLength: 262144
+              pattern: "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+            example: aGVhZGVy.cGF5bG9hZA.c2lnbmF0dXJl
+      responses:
+        "202":
+          description: Accepted; a pull of the dataset is triggered.
+        "204":
+          description: Acknowledged without a pull (a test, a republication, an unknown reason or a replay).
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /healthz:
+    get:
+      operationId: getHealthz
+      tags: [health]
+      summary: Liveness
+      x-process: each
+      x-spec: "05"
+      x-auth: public
+      description: |
+        200 while the process runs. Served by every process on
+        ANSP_HTTP_ADDR; network-local (Caddy does not route it).
+      security: []
+      responses:
+        "200":
+          description: Alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Liveness"
+              example:
+                status: alive
+                process: api
+                instance: api-1
+
+  /readyz:
+    get:
+      operationId: getReadyz
+      tags: [health]
+      summary: Readiness
+      x-process: each
+      x-spec: "05"
+      x-auth: public
+      description: |
+        Every dependency named with its state and why, never hidden
+        (E-02): 200 when every required check is ok or degraded, 503
+        with the same report otherwise. Network-local. The 503 is a
+        readiness report, not a problem, and carries no Retry-After.
+      security: []
+      responses:
+        "200":
+          description: Ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+              example:
+                process: api
+                instance: api-1
+                status: ready
+                checked_at: "2026-10-02T12:00:00.000Z"
+                checks:
+                  - name: nats
+                    state: ok
+                    required: true
+                  - name: relational
+                    state: ok
+                    required: true
+                summary: ["nats: ok", "relational: ok"]
+        "503":
+          description: Not ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+              example:
+                process: api
+                instance: api-1
+                status: not_ready
+                checked_at: "2026-10-02T12:00:00.000Z"
+                checks:
+                  - name: nats
+                    state: down
+                    required: true
+                    reason: reconnecting
+                summary: ["nats: down (reconnecting)"]
+
+  /metrics:
+    get:
+      operationId: getMetrics
+      tags: [health]
+      summary: Prometheus metrics
+      x-process: each
+      x-spec: "05"
+      x-auth: public
+      description: |
+        Prometheus text exposition: every counter of the process under
+        its snake_case name (E-09). Network-local; never routed by Caddy.
+      security: []
+      responses:
+        "200":
+          description: The metrics.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                # TYPE auth_no_credential counter
+                auth_no_credential 0

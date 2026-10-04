@@ -1,0 +1,92 @@
+{
+  "schema": "coordination/annex_v/v1",
+  "notice_ref": "ussp-01-in-000184",
+  "kind": "intent_notice",
+  "ussp_id": "ussp-01",
+  "sent_at": "2026-10-02T12:31:01.904Z",
+  "intents": [
+    {
+      "intent_ref": "6d1c2b4e-9a0f-4e3b-8c7d-2a1b0c9d8e7f",
+      "authorisation_number": "GEO-UAS-2026-000183",
+      "state": "Accepted",
+      "time_start": "2026-10-02T12:15:00.000Z",
+      "time_end": "2026-10-02T12:45:00.000Z",
+      "volumes": [
+        {
+          "volume": {
+            "outline_polygon": {
+              "vertices": [
+                {
+                  "lat": 41.7,
+                  "lng": 44.78
+                },
+                {
+                  "lat": 41.7,
+                  "lng": 44.82
+                },
+                {
+                  "lat": 41.73,
+                  "lng": 44.82
+                },
+                {
+                  "lat": 41.73,
+                  "lng": 44.78
+                }
+              ]
+            },
+            "altitude_lower": {
+              "value": 0,
+              "reference": "W84",
+              "units": "M"
+            },
+            "altitude_upper": {
+              "value": 1218,
+              "reference": "W84",
+              "units": "M"
+            }
+          },
+          "time_start": {
+            "value": "2026-10-02T12:00:00.000Z",
+            "format": "RFC3339"
+          },
+          "time_end": {
+            "value": "2026-10-02T16:00:00.000Z",
+            "format": "RFC3339"
+          }
+        },
+        {
+          "volume": {
+            "altitude_lower": {
+              "value": 0,
+              "reference": "W84",
+              "units": "M"
+            },
+            "altitude_upper": {
+              "value": 1218,
+              "reference": "W84",
+              "units": "M"
+            },
+            "outline_circle": {
+              "center": {
+                "lat": 41.715,
+                "lng": 44.8
+              },
+              "radius": {
+                "value": 300,
+                "units": "M"
+              }
+            }
+          },
+          "time_start": {
+            "value": "2026-10-02T12:00:00.000Z",
+            "format": "RFC3339"
+          },
+          "time_end": {
+            "value": "2026-10-02T16:00:00.000Z",
+            "format": "RFC3339"
+          }
+        }
+      ]
+    }
+  ]
+}

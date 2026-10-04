@@ -340,6 +340,7 @@ func TopologyOf(cfg config.Config) bus.Topology {
 			bus.BucketConformanceState: int64(cfg.ConformanceStateBucketMaxBytes),
 			bus.BucketProximityState:   int64(cfg.ProximityStateBucketMaxBytes),
 			bus.BucketSessionsLive:     int64(cfg.SessionsLiveBucketMaxBytes),
+			bus.BucketRecordHolds:      int64(cfg.RecordHoldsBucketMaxBytes),
 		},
 	})
 }

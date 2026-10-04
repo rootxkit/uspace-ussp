@@ -20,3 +20,18 @@ repository: https://github.com/rootxkit/uspace-ansp
 commit: 790781fb69f1a33985bf74a7c8630255e586d568
 copied:
   track/manned/v1
+
+# The ANSP owns coordination/annex_v/v1 (D8, M14: its API carries the
+# body of POST /v1/coordination/notices). Its file
+# schemas/coordination/annex_v/v1.json is copied byte for byte to
+# schemas/coordination/annex_v/v1/schema.json and its examples from
+# schemas/examples/coordination/annex_v/v1/ to
+# schemas/coordination/annex_v/v1/examples/, at the commit
+# api/clients/SOURCE pins for ansp.yaml (the lab mirror holds no copy
+# yet). The notices this USSP builds are under
+# schemas/examples/consumed/coordination/annex_v/v1/ and validate
+# against it (internal/coordination's tests).
+repository: https://github.com/rootxkit/uspace-ansp
+commit: 7fc3ef1517fa1e66df38be72ab6efe0f3ae7ec1d
+copied:
+  coordination/annex_v/v1
