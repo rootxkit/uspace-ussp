@@ -1,17 +1,21 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/rootxkit/uspace-core/core"
+	coresources "github.com/rootxkit/uspace-core/sources"
 
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
+	"github.com/rootxkit/uspace-ussp/internal/sources"
 	"github.com/rootxkit/uspace-ussp/internal/store/relational"
 )
 
@@ -186,6 +190,65 @@ func TestStateOf(t *testing.T) {
 		if got := stateOf(c.in, c.lag); got != c.want {
 			t.Errorf("%s: %s, want %s", c.in, got, c.want)
 		}
+	}
+}
+
+// failingSwitches is a SourceSwitcher whose rows cannot be read while
+// err is set.
+type failingSwitches struct {
+	err  error
+	rows []SwitchRow
+}
+
+func (f failingSwitches) Switch(context.Context, string, string, coresources.Control) (coresources.State, error) {
+	return coresources.State{}, f.err
+}
+func (f failingSwitches) List(context.Context) ([]sources.Row, coresources.State, error) {
+	return nil, coresources.State{}, f.err
+}
+func (f failingSwitches) Rows(context.Context) ([]SwitchRow, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.rows, nil
+}
+
+// When the source switches cannot be read the answer says so, counts
+// it and shows no input switched off, never an empty list of switches
+// that looks like none is off (rule 7); when they are read it says read
+// and applies them (E-01); without a switcher it says they are not read.
+func TestInputsViewSaysWhenSwitchesAreUnread(t *testing.T) {
+	ctx := context.Background()
+	counters := &core.Counters{}
+	s := &Service{Inputs: &Inputs{Now: func() time.Time { return t0 }}, Now: func() time.Time { return t0 }, Counters: counters,
+		Switches: failingSwitches{err: errors.New("relational: connection refused")}}
+	v, err := s.InputsView(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Switches.State != SwitchesUnavailable || v.Switches.Detail == nil || !strings.Contains(*v.Switches.Detail, "cannot be read") {
+		t.Fatalf("switches unread: %+v", v.Switches)
+	}
+	if strings.Contains(*v.Switches.Detail, "connection refused") {
+		t.Fatalf("the cause was sent: %s", *v.Switches.Detail)
+	}
+	if counters.Get(CounterSwitchesUnread) != 1 {
+		t.Fatalf("counter %d", counters.Get(CounterSwitchesUnread))
+	}
+	raw, _ := json.Marshal(v)
+	if !strings.Contains(string(raw), `"switches":{"state":"unavailable"`) {
+		t.Fatalf("answer %s", raw)
+	}
+	s.Switches = failingSwitches{rows: []SwitchRow{{SourceType: "adsb_rx", Enabled: false, Actor: "bootstrap", Reason: "r", ChangedAt: t0}}}
+	if v, err = s.InputsView(ctx); err != nil || v.Switches.State != SwitchesRead || v.Switches.Detail != nil {
+		t.Fatalf("switches read: %+v %v", v.Switches, err)
+	}
+	if i, ok := find(v.Sources, "adsb_rx", ""); !ok || i.State != InputDisabled {
+		t.Fatalf("adsb_rx with its switch read: %+v", i)
+	}
+	s.Switches = nil
+	if v, err = s.InputsView(ctx); err != nil || v.Switches.State != SwitchesUnavailable || v.Switches.Detail == nil {
+		t.Fatalf("no switcher: %+v %v", v.Switches, err)
 	}
 }
 

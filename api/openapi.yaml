@@ -4202,7 +4202,7 @@ components:
 
     AdminInputs:
       type: object
-      required: [checked_at, bus, sources, monitor, dependencies]
+      required: [checked_at, bus, switches, sources, monitor, dependencies]
       properties:
         checked_at:
           type: string
@@ -4210,6 +4210,8 @@ components:
           description: api's clock when the answer was made.
         bus:
           $ref: "#/components/schemas/AdminBus"
+        switches:
+          $ref: "#/components/schemas/AdminSwitchesState"
         sources:
           type: array
           items:
@@ -4224,6 +4226,15 @@ components:
           description: The readiness of every dependency of api, by name (as /readyz).
           additionalProperties:
             $ref: "#/components/schemas/Dependency"
+    AdminSwitchesState:
+      type: object
+      required: [state]
+      description: Whether the stored source switches were read for this answer. While they are unavailable no input is shown switched off by a switch, and whether one is is not known (counted as admin_source_switches_unread).
+      properties:
+        state:
+          type: string
+          enum: [read, unavailable]
+        detail: {type: string}
     AdminBus:
       type: object
       required: [state, since]

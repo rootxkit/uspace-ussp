@@ -41,7 +41,7 @@ func TestConsoleAnswersMatchTheContract(t *testing.T) {
 			Outbox:        admin.Outbox{Pending: 2, ByKind: map[string]int64{"oir_put": 2}, OldestCreatedAt: tp(now), Retrying: 1},
 			LastErrors:    []admin.OutboxError{{Kind: "oir_put", EntityID: id, Attempts: 2, LastError: "503", NextAt: now, DoneAt: tp(now)}},
 			Subscriptions: []admin.Subscription{{SubscriptionID: "s", Kind: "utm", TimeEnd: now, RenewedAt: tp(now), NotificationIndex: 4}}}, decodeInto[gen.AdminDSS]},
-		{"inputs", admin.InputsView{CheckedAt: now, Bus: admin.Bus{State: "disconnected", Since: now, Detail: sp("x")},
+		{"inputs", admin.InputsView{CheckedAt: now, Bus: admin.Bus{State: "disconnected", Since: now, Detail: sp("x")}, Switches: admin.SwitchesState{State: admin.SwitchesUnavailable, Detail: sp("x")},
 			Sources: []admin.Input{{Source: "operator_ws", SourceInstance: sp("op-1"), State: "disabled", Since: tp(now), LastHeardAt: tp(now), AgeS: fp(1), LagS: fp(2),
 				Disabled: &admin.Disabled{By: "instance", ByWho: "admin.a", At: now, Reason: "r"}, Detail: sp("x"), Counters: map[string]uint64{"accepted": 1}}},
 			SourcesTruncated: true,

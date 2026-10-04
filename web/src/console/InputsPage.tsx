@@ -83,6 +83,12 @@ export function ConsoleInputsPage() {
           <p className="m-0 text-sm">
             {t("console.inputs.checked")} <Utc iso={data.checked_at} />
           </p>
+          {data.switches.state === "unavailable" && (
+            <p role="alert" className="m-0 text-sm font-semibold" data-testid="switches-unavailable">
+              {t("console.inputs.switches_unavailable")}
+              {data.switches.detail !== undefined && <span className="block font-normal">{data.switches.detail}</span>}
+            </p>
+          )}
           <Table data-testid="inputs-table">
             <TableHeader>
               <TableRow>

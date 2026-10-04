@@ -536,6 +536,7 @@
   "console.inputs.heading": "Inputs",
   "console.inputs.note": "Every source type and instance with its state and its time. A switch is audited and reversible; a switched-off input is labelled with who and when, and its tracks age out as source_disabled.",
   "console.inputs.checked": "Checked at",
+  "console.inputs.switches_unavailable": "The source switches cannot be read: no input is shown switched off, and whether one is is not known.",
   "console.inputs.input": "Input",
   "console.inputs.state": "State",
   "console.inputs.heard": "Last status",

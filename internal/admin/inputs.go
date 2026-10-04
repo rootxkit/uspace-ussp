@@ -48,6 +48,13 @@ const (
 	CounterSourceUnreadable = "admin_source_status_unreadable"
 	CounterSourcesOverBound = "admin_source_status_over_bound"
 	CounterMonitorUnread    = "admin_monitor_status_unread"
+	CounterSwitchesUnread   = "admin_source_switches_unread"
+)
+
+// States of the source switches on the inputs page.
+const (
+	SwitchesRead        = "read"
+	SwitchesUnavailable = "unavailable"
 )
 
 // Console states of an input (the kit's source states, and unknown while
@@ -206,10 +213,19 @@ type Monitor struct {
 	Instances   []MonitorInstance `json:"instances"`
 }
 
+// SwitchesState says whether the stored source switches were read for the
+// answer: while they are not, no input is shown disabled by a switch,
+// and whether one is switched off is not known (rule 7).
+type SwitchesState struct {
+	State  string  `json:"state"`
+	Detail *string `json:"detail,omitempty"`
+}
+
 // InputsView is GET /v1/admin/inputs.
 type InputsView struct {
 	CheckedAt        time.Time                       `json:"checked_at"`
 	Bus              Bus                             `json:"bus"`
+	Switches         SwitchesState                   `json:"switches"`
 	Sources          []Input                         `json:"sources"`
 	SourcesTruncated bool                            `json:"sources_truncated"`
 	Monitor          Monitor                         `json:"monitor"`
@@ -445,10 +461,19 @@ func (s *Service) InputsView(ctx context.Context) (InputsView, error) {
 	now := s.now()
 	out := InputsView{CheckedAt: now.UTC(), Dependencies: map[string]obs.DependencyStatus{}, Sources: []Input{}}
 	var switches []SwitchRow
-	if s.Switches != nil {
+	out.Switches = SwitchesState{State: SwitchesRead}
+	if s.Switches == nil {
+		d := "the source switches are not read on this process: whether an input is switched off is not known"
+		out.Switches = SwitchesState{State: SwitchesUnavailable, Detail: &d}
+	} else {
 		rows, err := s.Switches.Rows(ctx)
 		if err != nil {
+			// The cause is logged and counted, never sent.
+			s.count(CounterSwitchesUnread)
 			s.logger().WarnContext(ctx, "source switches not read; inputs shown without them", "error", err.Error())
+			d := "the source switches cannot be read: no input is shown switched off, and whether one is is not known"
+			out.Switches = SwitchesState{State: SwitchesUnavailable, Detail: &d}
+			rows = nil
 		}
 		switches = rows
 	}

@@ -341,7 +341,7 @@ func (s *Service) Switch(ctx context.Context, staffID string, in SwitchRequest) 
 // shown as it is stored.
 func (s *Service) staffNames(ctx context.Context, ids []string) func(string) string {
 	names := map[string]string{}
-	q := s.Store.Queries()
+	var q *relational.Queries
 	for _, id := range ids {
 		if _, done := names[id]; done || len(names) >= 256 {
 			continue
@@ -350,6 +350,9 @@ func (s *Service) staffNames(ctx context.Context, ids []string) func(string) str
 		u, err := store.UUID("actor", id)
 		if err != nil {
 			continue
+		}
+		if q == nil {
+			q = s.Store.Queries()
 		}
 		if st, err := q.StaffByID(ctx, u); err == nil {
 			names[id] = st.Username

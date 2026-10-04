@@ -174,6 +174,24 @@ func (e AdminSubscriptionKind) Valid() bool {
 	}
 }
 
+// Defines values for AdminSwitchesStateState.
+const (
+	AdminSwitchesStateStateRead        AdminSwitchesStateState = "read"
+	AdminSwitchesStateStateUnavailable AdminSwitchesStateState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the AdminSwitchesStateState enum.
+func (e AdminSwitchesStateState) Valid() bool {
+	switch e {
+	case AdminSwitchesStateStateRead:
+		return true
+	case AdminSwitchesStateStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CoordinationNoticeItemKind.
 const (
 	CoordinationNoticeItemKindContingent     CoordinationNoticeItemKind = "contingent"
@@ -1612,6 +1630,9 @@ type AdminInputs struct {
 
 	// SourcesTruncated More instances were heard than api holds (they are counted on /metrics).
 	SourcesTruncated *bool `json:"sources_truncated,omitempty"`
+
+	// Switches Whether the stored source switches were read for this answer. While they are unavailable no input is shown switched off by a switch, and whether one is is not known (counted as admin_source_switches_unread).
+	Switches AdminSwitchesState `json:"switches"`
 }
 
 // AdminMonitor defines model for AdminMonitor.
@@ -1706,6 +1727,15 @@ type AdminSubscription struct {
 
 // AdminSubscriptionKind defines model for AdminSubscription.Kind.
 type AdminSubscriptionKind string
+
+// AdminSwitchesState Whether the stored source switches were read for this answer. While they are unavailable no input is shown switched off by a switch, and whether one is is not known (counted as admin_source_switches_unread).
+type AdminSwitchesState struct {
+	Detail *string                 `json:"detail,omitempty"`
+	State  AdminSwitchesStateState `json:"state"`
+}
+
+// AdminSwitchesStateState defines model for AdminSwitchesState.State.
+type AdminSwitchesStateState string
 
 // AlertAck An alert's acknowledgement as recorded.
 type AlertAck struct {
