@@ -9,6 +9,37 @@ additively within `/v1`.
 
 ### Fixed
 
+- WP-14 review follow-ups:
+  - the echo guard of the manned inputs no longer hides an aircraft on
+    its mark alone: a record whose callsign or registration is an active
+    own flight's UA registration is its echo only within
+    `echo_colocation_m` of the flight's live `trk.v1` position, received
+    at most `echo_colocation_s` ago (uspace-core `identify.JudgeFleet`;
+    defaults 300 m and 5 s from spec 04 §3.2, pending GCAA); a manned
+    aircraft with the same mark elsewhere is shown;
+  - a peer that failed and whose ISAs then ended is forgotten
+    `peer_unavailable_s` after its last failure, so `network_rid` is no
+    longer stale for ever over a peer nobody polls;
+  - the ANSP stream's last frame is the last frame the ANSP sent, not
+    the time of a reconnect: a stream that reconnects silent is
+    unavailable since that frame, and a new connection is never live
+    before its first frame;
+  - the ANSP stream's frame bound is the snapshot's 8 MiB (a
+    `console/snapshot/v1` carries what the snapshot does), and a frame
+    or snapshot over it raises an alarm (`ansp_feed_frame_oversize`, an
+    error log, `ansp_feed` stale with why) until the next snapshot reads,
+    instead of a silent reconnect;
+  - a manned aircraft's altitude is selected with the policy row's
+    `AltPolicy` (the monitor's CPA path and traffic-ws), as every other
+    source's is, not uspace-core's defaults;
+  - a peer flight's details are asked under the peer's normalised base
+    URL, so a base written with a trailing slash meets the peer's switch;
+  - the peer Display Provider's DSS subscriptions are saved in the new
+    `rid_dp_subscriptions` bucket (TTL 24 h,
+    `USSP_RID_DP_SUBSCRIPTIONS_BUCKET_MAX_BYTES`, 4 MiB) and read back at
+    the start, so the subscription of an area dropped across a restart
+    is deleted at the DSS (a version another run renewed is read again);
+    an unread store is said on `network_rid`'s status.
 - This USSP's client id at the authority keeps the case of its code
   (`ussp-ABC1-01`, not `ussp-abc1-01`). The authority's token service
   registers only `ussp-<code>-<nn>` with an upper-case code (M8), and the

@@ -64,6 +64,11 @@ const (
 	// written by api after the report's commit and read by tsdb-writer,
 	// which keeps the remote pilot's position of a held flight (WP-15).
 	BucketRecordHolds = "record_holds"
+	// BucketRIDSubscriptions holds the monitor's F3411 subscriptions at
+	// the DSS (the peer Display Provider's, one per area of interest), by
+	// subscription id, so that one whose area was dropped while the
+	// process was down is deleted at its next start (WP-14).
+	BucketRIDSubscriptions = "rid_dp_subscriptions"
 )
 
 // Bounds (E-10). The server's max_payload is 1 MiB by default, so no
@@ -106,6 +111,12 @@ const (
 	// ProximityStateMaxBytes bounds the bucket: 16 KiB for each of
 	// 4096 active alerts.
 	ProximityStateMaxBytes = int64(ProximityStateBytes) * 4096
+	// RIDSubscriptionsTTL is rid_dp_subscriptions' TTL: a subscription
+	// lasts at most the DSS's 24 h and is rewritten at each renewal, so a
+	// key a day old names one the DSS no longer holds.
+	RIDSubscriptionsTTL = time.Duration(f3411.NetDSSMaxSubscriptionDurationHours) * time.Hour
+	// RIDSubscriptionBytes bounds one saved subscription.
+	RIDSubscriptionBytes = 4 << 10
 )
 
 // ALRT's and TRAFFIC's bounds (every stream bounded in age and size):
@@ -155,6 +166,7 @@ const (
 	ConformanceStateMaxBytes = int64(512 << 20)
 	SessionsLiveMaxBytes     = int64(64 << 20)
 	RecordHoldsMaxBytes      = int64(16 << 20)
+	RIDSubscriptionsMaxBytes = int64(4 << 20)
 )
 
 // RecordHoldBytes bounds one record hold (a flight id, its reasons and
@@ -284,6 +296,7 @@ func defaultTopology() Topology {
 			bucket(BucketProximityState, "each active proximity alert, by pair (monitor)", ProximityStateBytes, ProximityStateTTL, ProximityStateMaxBytes),
 			bucket(BucketSessionsLive, "live sessions by jti: subject, realm, expiry and idle end (api)", SessionsLiveBytes, SessionsLiveTTL, SessionsLiveMaxBytes),
 			bucket(BucketRecordHolds, "flights whose records an occurrence holds past their retention, by flight id (api)", RecordHoldBytes, 0, RecordHoldsMaxBytes),
+			bucket(BucketRIDSubscriptions, "the peer Display Provider's DSS subscriptions, by subscription id (monitor)", RIDSubscriptionBytes, RIDSubscriptionsTTL, RIDSubscriptionsMaxBytes),
 		},
 	}
 }

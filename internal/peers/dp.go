@@ -96,6 +96,8 @@ const (
 	CounterSubscriptionPut  = "peer_subscription_put"
 	CounterSubscriptionFail = "peer_subscription_failed"
 	CounterSubscriptionDel  = "peer_subscription_deleted"
+	CounterSubscriptionKept = "peer_subscription_restored"
+	CounterSubStoreFailed   = "peer_subscription_store_failed"
 	CounterISAOwn           = "peer_isa_own_skipped"
 	CounterISARefused       = "peer_isa_refused"
 	CounterISAOverBound     = "peer_isa_over_bound"
@@ -180,9 +182,11 @@ type poller struct {
 }
 
 // peerState is what is known of one peer's answers: down since its
-// first failure after its last answer.
+// first failure after its last answer. idle is when the peer was first
+// seen unpolled with no answer and no failure to date it by.
 type peerState struct {
 	ok, failed     time.Time
+	idle           time.Time
 	down           bool
 	since          time.Time
 	lastErr        string
@@ -190,6 +194,23 @@ type peerState struct {
 	polls, refused uint64
 	published      uint64
 	echoes         uint64
+}
+
+// forgotten reports, for a peer no longer polled, whether
+// peer_unavailable_s has passed since its last answer or failure (since
+// it was first seen idle when it has neither).
+func (p *peerState) forgotten(now time.Time, unavailable time.Duration) bool {
+	last := p.ok
+	if p.failed.After(last) {
+		last = p.failed
+	}
+	if last.IsZero() {
+		if p.idle.IsZero() {
+			p.idle = now
+		}
+		last = p.idle
+	}
+	return now.Sub(last) > unavailable
 }
 
 func (p *peerState) slow() bool {
@@ -220,6 +241,10 @@ type DP struct {
 	Areas func() ([]Area, bool)
 	// Notifications is rid_isa_notifications now; false while unread.
 	Notifications func() (map[string]ISANotification, bool)
+	// Subscriptions keeps our DSS subscriptions across a restart
+	// (rid_dp_subscriptions), so that one whose area was dropped meanwhile
+	// is deleted; nil keeps them in memory only.
+	Subscriptions SubscriptionStore
 	Sink          Sink
 	Gate          Gate
 	Own           Own
@@ -237,27 +262,32 @@ type DP struct {
 	ReconcileEvery time.Duration
 	StatusEvery    time.Duration
 
-	mu        sync.Mutex
-	once      sync.Once
-	started   time.Time
-	searched  map[string]*isa
-	isas      map[string]*isa
-	pollers   map[pollKey]*poller
-	peers     map[string]*peerState
-	subs      map[string]*subState
-	dssOK     time.Time
-	dssFailed time.Time
-	dssDown   bool
-	dssErr    string
-	areasErr  string
-	offSince  time.Time
-	agg       string
-	aggSince  time.Time
-	tiles     map[string][]geodesy.BBox
-	dss       *stdf3411.StdClient
-	dssCErr   error
-	clients   map[string]*stdf3411.StdClient
-	wake      chan struct{}
+	mu       sync.Mutex
+	once     sync.Once
+	started  time.Time
+	searched map[string]*isa
+	isas     map[string]*isa
+	pollers  map[pollKey]*poller
+	peers    map[string]*peerState
+	subs     map[string]*subState
+	restored bool
+	// restoreErr says why the saved subscriptions are not read yet,
+	// storeErr why the last write of one failed.
+	restoreErr string
+	storeErr   string
+	dssOK      time.Time
+	dssFailed  time.Time
+	dssDown    bool
+	dssErr     string
+	areasErr   string
+	offSince   time.Time
+	agg        string
+	aggSince   time.Time
+	tiles      map[string][]geodesy.BBox
+	dss        *stdf3411.StdClient
+	dssCErr    error
+	clients    map[string]*stdf3411.StdClient
+	wake       chan struct{}
 }
 
 func (d *DP) init() {
@@ -593,13 +623,67 @@ func SubscriptionID(ussBaseURL, areaID string) string {
 	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
 }
 
+// restore reads back, once, the subscriptions an earlier run saved
+// (Subscriptions), so that those of areas no longer wanted are deleted
+// below like any other; one already known here keeps what this run
+// knows. A store that cannot be read is tried again at the next
+// discovery, and said so meanwhile.
+func (d *DP) restore(ctx context.Context) {
+	d.mu.Lock()
+	done := d.restored || d.Subscriptions == nil
+	d.mu.Unlock()
+	if done {
+		return
+	}
+	saved, err := d.Subscriptions.Load(ctx)
+	if err != nil {
+		what := "the subscriptions of an earlier run are not known (one of an area dropped meanwhile is not deleted)"
+		d.Counters.Inc(CounterSubStoreFailed)
+		d.mu.Lock()
+		d.restoreErr = what + ": " + clipErr(err)
+		d.mu.Unlock()
+		d.logger().LogAttrs(ctx, slog.LevelWarn, "DSS RID subscription store: "+what, obs.Err(err))
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for id, s := range saved {
+		if !d.IsOwn(s.USSBaseURL) {
+			continue // another base URL's (a shared bus): not ours to delete
+		}
+		if _, have := d.subs[id]; !have {
+			d.subs[id] = s.state()
+			d.Counters.Inc(CounterSubscriptionKept)
+		}
+	}
+	d.restored, d.restoreErr = true, ""
+}
+
+// storeFailed counts and keeps a failure of the subscription store.
+func (d *DP) storeFailed(ctx context.Context, what string, err error) {
+	d.Counters.Inc(CounterSubStoreFailed)
+	d.mu.Lock()
+	d.storeErr = what + ": " + clipErr(err)
+	d.mu.Unlock()
+	d.logger().LogAttrs(ctx, slog.LevelWarn, "DSS RID subscription store: "+what, obs.Err(err))
+}
+
+// saved records a store write that succeeded.
+func (d *DP) saved() {
+	d.mu.Lock()
+	d.storeErr = ""
+	d.mu.Unlock()
+}
+
 // subscriptions puts one subscription per area (renewed at 80 % of the
-// DSS's 24 h) and deletes those of areas no longer wanted. Each answer's
-// ISAs are added to the discovery at once.
+// DSS's 24 h) and deletes those of areas no longer wanted, those of an
+// earlier run included (restore). Each answer's ISAs are added to the
+// discovery at once.
 func (d *DP) subscriptions(ctx context.Context, c *stdf3411.StdClient, areas []Area, now time.Time) {
 	if d.USSBaseURL == "" {
 		return
 	}
+	d.restore(ctx)
 	window := time.Duration(f3411.NetDSSMaxSubscriptionDurationHours)*time.Hour - subscriptionSlack
 	want := map[string]bool{}
 	for _, a := range areas {
@@ -626,6 +710,13 @@ func (d *DP) subscriptions(ctx context.Context, c *stdf3411.StdClient, areas []A
 		d.mu.Lock()
 		d.subs[id] = st
 		d.mu.Unlock()
+		if d.Subscriptions != nil {
+			if err := d.Subscriptions.Put(ctx, id, savedOf(d.USSBaseURL, st)); err != nil {
+				d.storeFailed(ctx, "a subscription is not saved (a restart would not delete it once its area is dropped)", err)
+			} else {
+				d.saved()
+			}
+		}
 	}
 	d.mu.Lock()
 	var gone []string
@@ -639,19 +730,58 @@ func (d *DP) subscriptions(ctx context.Context, c *stdf3411.StdClient, areas []A
 		d.mu.Lock()
 		st := d.subs[id]
 		d.mu.Unlock()
-		cctx, cancel := context.WithTimeout(ctx, dssTimeout)
-		res, err := c.DeleteSubscription(cctx, id, st.version, d.bearer(d.DSSBaseURL))
-		cancel()
-		if err == nil {
-			_, _ = read(res)
-			if res.StatusCode == http.StatusOK || res.StatusCode == http.StatusNotFound {
-				d.Counters.Inc(CounterSubscriptionDel)
-				d.mu.Lock()
-				delete(d.subs, id)
-				d.mu.Unlock()
+		if !d.deleteSubscription(ctx, c, id, st.version) {
+			continue
+		}
+		d.Counters.Inc(CounterSubscriptionDel)
+		d.mu.Lock()
+		delete(d.subs, id)
+		d.mu.Unlock()
+		if d.Subscriptions != nil {
+			if err := d.Subscriptions.Delete(ctx, id); err != nil {
+				d.storeFailed(ctx, "a deleted subscription is not forgotten", err)
+			} else {
+				d.saved()
 			}
 		}
 	}
+}
+
+// deleteSubscription deletes one subscription at the DSS: true once it
+// is gone (deleted, or not there). A version the DSS no longer holds (a
+// saved one another run renewed) is read again and the delete retried
+// once.
+func (d *DP) deleteSubscription(ctx context.Context, c *stdf3411.StdClient, id, version string) bool {
+	auth := d.bearer(d.DSSBaseURL)
+	del := func(version string) int {
+		cctx, cancel := context.WithTimeout(ctx, dssTimeout)
+		defer cancel()
+		res, err := c.DeleteSubscription(cctx, id, version, auth)
+		if err != nil {
+			return 0
+		}
+		_, _ = read(res)
+		return res.StatusCode
+	}
+	code := del(version)
+	if code == http.StatusConflict {
+		cctx, cancel := context.WithTimeout(ctx, dssTimeout)
+		g, err := c.GetSubscription(cctx, id, auth)
+		cancel()
+		if err != nil {
+			return false
+		}
+		body, _ := read(g)
+		var ans f3411.GetSubscriptionResponse
+		switch {
+		case g.StatusCode == http.StatusNotFound:
+			return true
+		case g.StatusCode != http.StatusOK || json.Unmarshal(body, &ans) != nil || ans.Subscription.Version == "":
+			return false
+		}
+		code = del(ans.Subscription.Version)
+	}
+	return code == http.StatusOK || code == http.StatusNotFound
 }
 
 // putSubscription creates (version "") or updates the subscription; a
@@ -1045,17 +1175,24 @@ func (d *DP) Statuses() []sources.StatusBody {
 				break
 			}
 		}
+		disabled := b.Disabled(d.decision(&inst))
+		if !polled && !disabled && ps.forgotten(now, unavailable) {
+			// No longer polled (its ISAs ended) for peer_unavailable_s
+			// since its last answer or failure: forgotten, answering or
+			// not, so a peer nobody polls never keeps network_rid stale.
+			delete(d.peers, base)
+			continue
+		}
+		if polled {
+			ps.idle = time.Time{}
+		}
 		switch {
-		case b.Disabled(d.decision(&inst)):
+		case disabled:
 			b.Since, b.Detail = bus.Stamp{Time: now.UTC()}, "network_rid is switched off for this peer: not polled"
 		case ps.down:
 			b.State, b.Since = sources.StateDown, bus.Stamp{Time: ps.since.UTC()}
 			b.Detail = "the peer does not answer: " + ps.lastErr
 			down++
-		case !polled && !ps.ok.IsZero() && now.Sub(ps.ok) > unavailable:
-			// No longer polled (its ISAs ended): forgotten.
-			delete(d.peers, base)
-			continue
 		case ps.ok.IsZero():
 			b.State, b.Since, b.Detail = sources.StateUnknown, bus.Stamp{Time: now.UTC()}, "not answered yet"
 		default:
@@ -1086,6 +1223,11 @@ func (d *DP) Statuses() []sources.StatusBody {
 	}
 	if d.areasErr != "" {
 		agg.Detail += "; " + d.areasErr
+	}
+	for _, e := range []string{d.restoreErr, d.storeErr} {
+		if e != "" {
+			agg.Detail += "; " + e
+		}
 	}
 	if dec.Enabled {
 		d.offSince = time.Time{}
@@ -1149,16 +1291,19 @@ func (d *DP) Details(ctx context.Context, base, id string, view geodesy.BBox) (j
 	if DiagonalM(view) > MaxDetailsDiagonalM {
 		return nil, ErrDetailsViewTooLarge
 	}
+	// The peer's instance is its normalised base, as the pollers and the
+	// switches key it.
+	base = normBase(base)
 	if !d.decision(&base).Enabled {
 		return nil, errors.New("network_rid is switched off for this peer")
 	}
-	c, err := d.peerClient(normBase(base))
+	c, err := d.peerClient(base)
 	if err != nil {
 		return nil, err
 	}
 	cctx, cancel := context.WithTimeout(ctx, f3411.NetDpDetailsResponse99thPercentileSeconds*time.Second)
 	defer cancel()
-	res, err := c.GetFlightDetails(cctx, id, d.bearer(normBase(base)))
+	res, err := c.GetFlightDetails(cctx, id, d.bearer(base))
 	if err != nil {
 		return nil, err
 	}

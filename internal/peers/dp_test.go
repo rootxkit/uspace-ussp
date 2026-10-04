@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -371,6 +373,51 @@ func TestDPPeerDownAndBack(t *testing.T) {
 	within(t, 2*time.Second, "back", func() bool { return status(g.dp, g.peer.URL()).State == sources.StateLive })
 }
 
+// A peer that failed and whose ISAs then ended is no longer polled: it
+// stays down for peer_unavailable_s after its last failure, then it is
+// forgotten, so the aggregate is not stale for ever over a peer nobody
+// polls; a peer never answered and no longer polled likewise. The pair
+// (E-01): a peer still polled stays down however long it fails, and a
+// peer switched off stays disabled.
+func TestDPForgetsAFailedPeerWhoseISAsEnded(t *testing.T) {
+	g := newRig(t)
+	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	g.dp.Now = func() time.Time { return now }
+	g.dp.dssOK = now
+	window := time.Duration(g.dp.policy().PeerUnavailableS * float64(time.Second))
+	failed, polled, never, off := "https://failed.example", "https://polled.example", "https://never.example", "https://off.example"
+	g.dp.peers[failed] = &peerState{ok: now.Add(-time.Minute), failed: now, since: now.Add(-30 * time.Second), down: true, lastErr: "503"}
+	g.dp.peers[polled] = &peerState{failed: now, since: now.Add(-30 * time.Second), down: true, lastErr: "503"}
+	g.dp.peers[never] = &peerState{}
+	g.dp.peers[off] = &peerState{ok: now}
+	g.gate.set(SourceNetworkRID+"/"+off, true)
+	g.dp.pollers[pollKey{polled, "v"}] = &poller{}
+	if b := status(g.dp, failed); b.State != sources.StateDown {
+		t.Fatalf("within the window the failed peer is not down: %+v", b)
+	}
+	now = now.Add(window + time.Second)
+	if b := status(g.dp, failed); b.SourceInstance != nil {
+		t.Fatalf("a failed peer whose ISAs ended is kept: %+v", b)
+	}
+	if b := status(g.dp, never); b.SourceInstance != nil {
+		t.Fatalf("a peer never answered and not polled is kept: %+v", b)
+	}
+	if b := status(g.dp, polled); b.State != sources.StateDown {
+		t.Fatalf("a polled peer that fails is forgotten: %+v", b)
+	}
+	if b := status(g.dp, off); b.State != sources.StateDisabled {
+		t.Fatalf("a switched-off peer is forgotten: %+v", b)
+	}
+	if a := status(g.dp, ""); a.State != sources.StateStale || !strings.Contains(a.Detail, "1 of 2 peers do not answer") {
+		t.Fatalf("aggregate %+v", a)
+	}
+	delete(g.dp.pollers, pollKey{polled, "v"})
+	now = now.Add(window + time.Second)
+	if a := status(g.dp, ""); a.State != sources.StateLive {
+		t.Fatalf("no peer is polled or failing: the aggregate is %+v", a)
+	}
+}
+
 // Over peer_flights_max_count the answer is refused whole and counted,
 // never shown in part as if complete; at the bound it is shown (E-10).
 func TestDPRefusesAnAnswerOverTheFlightCap(t *testing.T) {
@@ -486,6 +533,125 @@ func TestDPRenewsAndDeletesItsSubscription(t *testing.T) {
 	}
 }
 
+// memSubs is a SubscriptionStore in memory that can be down.
+type memSubs struct {
+	mu   sync.Mutex
+	m    map[string]SavedSubscription
+	down bool
+}
+
+var errStoreDown = errors.New("kv down")
+
+func (s *memSubs) Load(context.Context) (map[string]SavedSubscription, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.down {
+		return nil, errStoreDown
+	}
+	out := map[string]SavedSubscription{}
+	for k, v := range s.m {
+		out[k] = v
+	}
+	return out, nil
+}
+
+func (s *memSubs) Put(_ context.Context, id string, v SavedSubscription) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.down {
+		return errStoreDown
+	}
+	if s.m == nil {
+		s.m = map[string]SavedSubscription{}
+	}
+	s.m[id] = v
+	return nil
+}
+
+func (s *memSubs) Delete(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.down {
+		return errStoreDown
+	}
+	delete(s.m, id)
+	return nil
+}
+
+func (s *memSubs) ids() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Sorted(maps.Keys(s.m))
+}
+
+// A subscription whose area was dropped across a restart is deleted at
+// the DSS (it would otherwise be notified for up to 24 h): the
+// subscriptions are saved as they are put and read back at the next
+// start. The pair (E-01): with the store down at the start the dropped
+// one is not deleted and the status says why; once it reads, deleted.
+// A saved version another run has since renewed is read again.
+func TestDPDeletesASubscriptionDroppedAcrossARestart(t *testing.T) {
+	g := newRig(t)
+	store := &memSubs{}
+	two := []Area{{ID: "TSA-1", Box: area}, {ID: "TSA-2", Box: isaBox}}
+	g.dp.Subscriptions = store
+	g.dp.Areas = func() ([]Area, bool) { return two, true }
+	ctx := context.Background()
+	g.dp.Discover(ctx)
+	kept, dropped := SubscriptionID(g.rx.srv.URL, "TSA-1"), SubscriptionID(g.rx.srv.URL, "TSA-2")
+	if len(g.dss.Subscriptions()) != 2 || !slices.Equal(store.ids(), slices.Sorted(slices.Values([]string{kept, dropped}))) {
+		t.Fatalf("first run: DSS %v, saved %v", g.dss.Subscriptions(), store.ids())
+	}
+	restart := func() *DP {
+		d := &DP{DSSBaseURL: g.dss.URL(), USSBaseURL: g.rx.srv.URL, Tokens: tokens{}, Subscriptions: store,
+			Areas: func() ([]Area, bool) { return []Area{{ID: "TSA-1", Box: area}}, true }, Gate: g.gate, Policy: g.dp.Policy}
+		d.init()
+		return d
+	}
+	// The store down at the start: the dropped one stays, said so.
+	store.mu.Lock()
+	store.down = true
+	store.mu.Unlock()
+	d := restart()
+	d.Discover(ctx)
+	if _, ok := g.dss.Subscriptions()[dropped]; !ok || d.Counters.Get(CounterSubStoreFailed) == 0 {
+		t.Fatalf("store down: DSS %v, counters %v", g.dss.Subscriptions(), d.Counters.Snapshot())
+	}
+	if a := status(d, ""); !strings.Contains(a.Detail, "earlier run are not known") {
+		t.Fatalf("the status hides the unread store: %+v", a)
+	}
+	// A saved subscription of another base URL is not ours to delete.
+	store.mu.Lock()
+	store.m["other"] = SavedSubscription{USSBaseURL: "https://other.example", AreaID: "TSA-9", Version: "v"}
+	store.mu.Unlock()
+	// Another run renewed the dropped one meanwhile: the saved version
+	// is no longer the DSS's.
+	store.mu.Lock()
+	store.down = false
+	store.mu.Unlock()
+	g.dp.Areas = func() ([]Area, bool) { return two, true }
+	g.dp.subs[dropped].end = time.Now()
+	g.dp.Discover(ctx)
+	if store.m[dropped].Version == g.dss.Subscriptions()[dropped].Version {
+		store.mu.Lock()
+		v := store.m[dropped]
+		v.Version = "stale-version"
+		store.m[dropped] = v
+		store.mu.Unlock()
+	}
+	d.Discover(ctx)
+	subs := g.dss.Subscriptions()
+	if _, ok := subs[dropped]; ok || len(subs) != 1 || d.Counters.Get(CounterSubscriptionDel) != 1 {
+		t.Fatalf("after the restart: DSS %v, counters %v", subs, d.Counters.Snapshot())
+	}
+	if _, ok := subs[kept]; !ok || !slices.Equal(store.ids(), slices.Sorted(slices.Values([]string{kept, "other"}))) {
+		t.Fatalf("kept: DSS %v, saved %v", subs, store.ids())
+	}
+	if a := status(d, ""); strings.Contains(a.Detail, "not known") {
+		t.Fatalf("the status still says the store is unread: %+v", a)
+	}
+}
+
 // The DSS down: discovery says so (stale since then, the peers known
 // polled), counted; the areas unknown: nothing asked of the DSS.
 func TestDPDSSDownAndUnknownAreas(t *testing.T) {
@@ -534,9 +700,17 @@ func TestDPDetails(t *testing.T) {
 	if _, err := g.dp.Details(context.Background(), g.peer.URL(), "unknown", small); err == nil {
 		t.Fatal("a 404 answered")
 	}
+	// The base as a peer may write it (a trailing slash) is the peer's
+	// instance: served while it is on, refused while it is off.
+	if raw, err := g.dp.Details(context.Background(), g.peer.URL()+"/", peerFlight, small); err != nil || !strings.Contains(string(raw), peerFlight) {
+		t.Fatalf("details through %q: %s %v", g.peer.URL()+"/", raw, err)
+	}
 	g.gate.set(SourceNetworkRID+"/"+g.peer.URL(), true)
 	if _, err := g.dp.Details(context.Background(), g.peer.URL(), peerFlight, small); err == nil {
 		t.Fatal("details of a switched-off peer")
+	}
+	if _, err := g.dp.Details(context.Background(), " "+g.peer.URL()+"/", peerFlight, small); err == nil {
+		t.Fatal("details of a switched-off peer through its base with a trailing slash")
 	}
 }
 

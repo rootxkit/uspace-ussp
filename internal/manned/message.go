@@ -148,12 +148,14 @@ type Gate interface {
 }
 
 // Own is this USSP's own flights as the echo guard reads them (PLAN §15
-// Q23): EchoOf names the active own flight a manned record is the echo
-// of, matched by the UA registration the flight's intent declares
-// against the callsign or the registration the record carries. A record
-// with neither, or with one no active flight declares, is no echo.
+// Q23): EchoOf names the active own flight a manned record at position
+// at is the echo of, matched by the UA registration the flight's intent
+// declares against the callsign or the registration the record carries,
+// and by where the flight's own track places it. A record with neither
+// mark, with one no active flight declares, or away from that flight,
+// is no echo.
 type Own interface {
-	EchoOf(icao24 string, callsign, registration *string) (flightID string, ok bool)
+	EchoOf(icao24 string, callsign, registration *string, at core.LatLon) (flightID string, ok bool)
 }
 
 // Counters of the publication (shared by both adapters).
@@ -168,7 +170,7 @@ const (
 // published: the own flight's track shows it).
 func publish(ctx context.Context, sink Sink, own Own, counters *core.Counters, m *Track, registration *string) (string, error) {
 	if own != nil {
-		if fid, ok := own.EchoOf(m.Body.ICAO24, m.Body.Callsign, registration); ok {
+		if fid, ok := own.EchoOf(m.Body.ICAO24, m.Body.Callsign, registration, m.Body.Position.LatLon()); ok {
 			counters.Inc(CounterEchoOwnFlight)
 			return fid, nil
 		}

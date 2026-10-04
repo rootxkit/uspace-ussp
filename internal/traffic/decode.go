@@ -286,9 +286,11 @@ func (p MannedPosition) latLon() core.LatLon { return core.LatLon{LatDeg: p.Lat,
 // broadcast, which is not AMSL, so the aircraft is judged on the
 // horizontal alone (alt_source pressure, R-09); a geometric altitude
 // without a geoid is none (pressure never stands in for a missing
-// geoid). A live manned aircraft flies; a stale or switched-off one is
-// not a new sample at all (the caller does not feed it to the monitor).
-func MannedInputOf(m *MannedTrack, g geoid.Undulator) Input {
+// geoid). The selection's thresholds are ap, the policy row's
+// (policy.Values.AltPolicy), as for every other source. A live manned
+// aircraft flies; a stale or switched-off one is not a new sample at all
+// (the caller does not feed it to the monitor).
+func MannedInputOf(m *MannedTrack, g geoid.Undulator, ap rid.AltPolicy) Input {
 	b := &m.Body
 	p := b.Position.latLon()
 	flying := true
@@ -303,7 +305,7 @@ func MannedInputOf(m *MannedTrack, g geoid.Undulator) Input {
 			ai.UndulationM = &n
 		}
 	}
-	alt := rid.SelectAltitude(ai, rid.DefaultAltPolicy())
+	alt := rid.SelectAltitude(ai, ap)
 	in.AltAMSLM, in.AltSource = alt.AltAMSLM, alt.Source
 	if c5, _, err := cell.Key(p); err == nil {
 		in.Cell5 = c5

@@ -6,11 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/geodesy"
 	"github.com/rootxkit/uspace-core/timeplace"
@@ -82,7 +86,7 @@ func TestANSPStreamPublishesTheANSPsAircraft(t *testing.T) {
 		if err != nil {
 			t.Fatalf("the CPA path refuses it: %v", err)
 		}
-		in := traffic.MannedInputOf(m, nil)
+		in := traffic.MannedInputOf(m, nil, policy.Defaults().AltPolicy())
 		if in.Trust != core.TrustSurveillance || in.Source != SourceANSPFeed || in.Instance != "fake-adsb-1" || in.AltSource != core.AltNone {
 			t.Fatalf("input %+v", in)
 		}
@@ -152,6 +156,132 @@ func TestANSPStreamCutIsUnavailableSinceTheLastFrameThenBack(t *testing.T) {
 	if st.Counters.Get(CounterANSPConnects) < 2 || st.Counters.Get(CounterANSPDisconnects) < 1 {
 		t.Fatalf("counters %v", st.Counters.Snapshot())
 	}
+}
+
+// scriptedANSP is an ANSP stream that sends, on its n-th connection
+// (from 1), the frames send(n) gives, then holds the connection open
+// without a word; it counts the connections and keeps when it sent its
+// last frame. Its snapshot answers 404.
+type scriptedANSP struct {
+	srv    *httptest.Server
+	conns  atomic.Int32
+	sentAt atomic.Int64
+}
+
+func newScriptedANSP(t *testing.T, send func(n int) [][]byte) *scriptedANSP {
+	t.Helper()
+	a := &scriptedANSP{}
+	a.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/stream") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = c.CloseNow() }()
+		n := int(a.conns.Add(1))
+		for _, f := range send(n) {
+			if c.Write(r.Context(), websocket.MessageText, f) != nil {
+				return
+			}
+			a.sentAt.Store(time.Now().UnixNano())
+		}
+		_, _, _ = c.Read(r.Context()) // until the client goes
+	}))
+	t.Cleanup(a.srv.Close)
+	return a
+}
+
+func (a *scriptedANSP) streamURL() string {
+	return "ws" + strings.TrimPrefix(a.srv.URL, "http") + "/v1/manned-traffic/stream"
+}
+
+// The connection alone is no frame (E-01, both ways): a stream that
+// opens and says nothing is unavailable since the start, never live for
+// a moment; one that sent a frame and then reconnects silent is
+// unavailable since that last real frame, not since the reconnect.
+func TestANSPStreamUnavailableSinceTheLastRealFrame(t *testing.T) {
+	now := time.Now()
+	status := frame(t, SchemaConsoleStatus, now, now, map[string]any{"degraded": []string{}})
+	silent := newScriptedANSP(t, func(int) [][]byte { return nil })
+	st := &ANSPStream{URL: silent.streamURL(), Tokens: &tokens{tok: "tok"}, Policy: fastPolicy, Counters: &core.Counters{},
+		RetryMin: 10 * time.Millisecond, StatusEvery: 20 * time.Millisecond, GateEvery: 10 * time.Millisecond}
+	run(t, st.Run)
+	within(t, 5*time.Second, "connected", func() bool { return st.Counters.Get(CounterANSPConnects) >= 1 })
+	deadline := time.Now().Add(time.Duration(fastPolicy().MannedUnavailableS*float64(time.Second)) + 200*time.Millisecond)
+	for time.Now().Before(deadline) {
+		if a := st.State(); a.State != sources.StateDown || !strings.Contains(a.Detail, "no frame from the ANSP yet") {
+			t.Fatalf("a connection without a frame is %+v", a)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	once := newScriptedANSP(t, func(n int) [][]byte {
+		if n == 1 {
+			return [][]byte{status}
+		}
+		return nil
+	})
+	st2 := &ANSPStream{URL: once.streamURL(), Tokens: &tokens{tok: "tok"}, Policy: fastPolicy, Counters: &core.Counters{},
+		RetryMin: 10 * time.Millisecond, StatusEvery: 20 * time.Millisecond, GateEvery: 10 * time.Millisecond}
+	run(t, st2.Run)
+	within(t, 5*time.Second, "live on the frame", func() bool { return st2.State().State == sources.StateLive })
+	within(t, 5*time.Second, "reconnected and silent", func() bool {
+		return st2.Counters.Get(CounterANSPConnects) >= 2 && st2.State().State == sources.StateDown
+	})
+	a := st2.State()
+	sent := time.Unix(0, once.sentAt.Load())
+	if a.Since.Before(sent) || a.Since.Sub(sent) > 300*time.Millisecond {
+		t.Fatalf("unavailable since %v, the last real frame was sent at %v: %+v", a.Since, sent, a)
+	}
+}
+
+// The frame bound is the snapshot's (E-10): a console/snapshot/v1 of
+// 2 MiB, over the old 1 MiB, is read; a frame over ANSPFrameBytes is
+// refused with an alarm (counted, logged at error level, the feed stale
+// since then with why on /readyz), never a silent reconnect; the next
+// snapshot that reads clears it (E-01 pair).
+func TestANSPStreamAlarmsOnAnOversizeFrame(t *testing.T) {
+	if ANSPFrameBytes < ANSPSnapshotBytes {
+		t.Fatalf("a stream frame is bounded at %d bytes, below the snapshot's %d", ANSPFrameBytes, ANSPSnapshotBytes)
+	}
+	now := time.Now()
+	big := frame(t, SchemaConsoleSnapshot, now, now, map[string]any{"manned": []any{}, "pad": strings.Repeat("x", 2<<20)})
+	over := frame(t, SchemaConsoleSnapshot, now, now, map[string]any{"manned": []any{}, "pad": strings.Repeat("x", ANSPFrameBytes)})
+	status := frame(t, SchemaConsoleStatus, now, now, map[string]any{"degraded": []string{}})
+	snap := frame(t, SchemaConsoleSnapshot, now, now, map[string]any{"manned": []any{}})
+	var sendSnap atomic.Bool
+	a := newScriptedANSP(t, func(n int) [][]byte {
+		switch {
+		case n == 1:
+			return [][]byte{big, over}
+		case sendSnap.Load():
+			return [][]byte{status, snap}
+		}
+		return [][]byte{status}
+	})
+	var buf syncBuffer
+	st := &ANSPStream{URL: a.streamURL(), Tokens: &tokens{tok: "tok"}, Policy: fastPolicy, Counters: &core.Counters{},
+		Logger: slog.New(slog.NewJSONHandler(&buf, nil)), RetryMin: 10 * time.Millisecond, StatusEvery: 20 * time.Millisecond, GateEvery: 10 * time.Millisecond}
+	run(t, st.Run)
+	within(t, 10*time.Second, "the oversize frame refused", func() bool { return st.Counters.Get(CounterANSPFrameOversize) == 1 })
+	if st.Counters.Get(CounterANSPSnapshotFrames) < 1 {
+		t.Fatalf("a 2 MiB snapshot frame was not read: %v", st.Counters.Snapshot())
+	}
+	if !strings.Contains(buf.String(), `"level":"ERROR","msg":"ANSP manned-traffic frame over the bound refused`) {
+		t.Fatalf("no alarm logged: %s", buf.String())
+	}
+	within(t, 5*time.Second, "reconnected, stale with why", func() bool {
+		s := st.State()
+		return st.Counters.Get(CounterANSPConnects) >= 2 && s.State == sources.StateStale && strings.Contains(s.Detail, "over")
+	})
+	if state, d := st.Probe(context.Background()); state != obs.StateDegraded || !strings.Contains(d, "refused") {
+		t.Fatalf("probe %s %s", state, d)
+	}
+	sendSnap.Store(true)
+	within(t, 10*time.Second, "cleared by the next snapshot", func() bool { return st.State().State == sources.StateLive })
 }
 
 // The ANSP sends only console/status/v1 with an adapter stale: the feed

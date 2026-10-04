@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/rootxkit/uspace-ussp/internal/policy"
 )
 
 // seedExamples adds every example (valid and invalid) of a schema as a
@@ -55,7 +57,7 @@ func FuzzDecodeManned(f *testing.F) {
 		if err != nil {
 			return
 		}
-		in := MannedInputOf(m, flatGeoid{})
+		in := MannedInputOf(m, flatGeoid{}, policy.Defaults().AltPolicy())
 		if !in.Position.Valid() {
 			t.Fatalf("accepted an invalid position %+v", in.Position)
 		}

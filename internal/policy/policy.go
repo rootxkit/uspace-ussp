@@ -256,6 +256,16 @@ type Values struct {
 	MannedUnavailableS float64 `json:"manned_unavailable_s"`
 	PeerUnavailableS   float64 `json:"peer_unavailable_s"`
 	PeerFlightsMax     int     `json:"peer_flights_max_count"`
+	// EchoColocationM and EchoColocationS bound the echo guard of the
+	// manned inputs (PLAN §15 Q23, Q25): a manned or e-conspicuity
+	// record whose callsign or registration is the UA registration of an
+	// active own flight is that flight's echo only within
+	// EchoColocationM of where the flight's live trk.v1 track places it,
+	// that sample received at most EchoColocationS ago (and captured at
+	// most that long before). Away from it, or with the track quiet, the
+	// record is shown as a second aircraft.
+	EchoColocationM float64 `json:"echo_colocation_m"`
+	EchoColocationS float64 `json:"echo_colocation_s"`
 }
 
 // MaxPeerFlightsMax bounds PeerFlightsMax.
@@ -353,7 +363,9 @@ const TelemetryRetentionFloorDays = 30
 // 10 s silence (five of the ANSP's 2 s status periods), F3411's 60 s
 // near-real-time window for a peer's last report
 // (NetMaxNearRealTimeDataPeriodSeconds: older is never current) and 1000
-// flights per answer (no figure in the plan).
+// flights per answer (no figure in the plan). The echo guard's
+// co-location is spec 04 §3.2's serial_conflict figures, pending GCAA:
+// within 300 m (spoof_distance_m) of a track received at most 5 s ago.
 func Defaults() Values {
 	c := cpa.DefaultPolicy
 	alt := rid.DefaultAltPolicy()
@@ -437,6 +449,9 @@ func Defaults() Values {
 		MannedUnavailableS: 10,
 		PeerUnavailableS:   f3411.NetMaxNearRealTimeDataPeriodSeconds,
 		PeerFlightsMax:     1000,
+		// Pending GCAA (spec 04 §3.2 defaults).
+		EchoColocationM: 300,
+		EchoColocationS: 5,
 	}
 }
 
@@ -512,6 +527,7 @@ func (v Values) Validate() error {
 		{"ats_ack_poll_s", v.ATSAckPollS}, {"ats_ack_escalate_s", v.ATSAckEscalateS}, {"record_gap_s", v.RecordGapS},
 		{"airprox_report_m", v.AirproxReportM}, {"airprox_report_v_m", v.AirproxReportVM},
 		{"manned_unavailable_s", v.MannedUnavailableS}, {"peer_unavailable_s", v.PeerUnavailableS},
+		{"echo_colocation_m", v.EchoColocationM}, {"echo_colocation_s", v.EchoColocationS},
 	}
 	for _, f := range positive {
 		if !finite(f.v) || f.v <= 0 {

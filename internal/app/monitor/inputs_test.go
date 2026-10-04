@@ -7,11 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/geodesy"
 
 	"github.com/rootxkit/uspace-ussp/internal/cis"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
 	"github.com/rootxkit/uspace-ussp/internal/telemetry"
+	"github.com/rootxkit/uspace-ussp/internal/traffic"
 )
 
 type intentsSnap map[string]intentBody
@@ -20,20 +22,26 @@ func (s intentsSnap) Snapshot() (map[string]intentBody, float64, bool) { return 
 
 func sp(s string) *string { return &s }
 
+// trkSample is one sample of an own flight on trk.v1 at p, captured and
+// received at at.
+func trkSample(flightID string, p core.LatLon, at time.Time) traffic.Input {
+	return traffic.Input{FlightID: flightID, Position: p, Times: core.Times{CapturedAt: at, RxTS: at}}
+}
+
 // The echo guard's view of our own flights (Q23): a peer record of one
 // of our flights (an active intent's flight or one seen on trk.v1 in
 // the last minute) is ours; a manned record whose callsign or
-// registration is an active flight's declared UA registration is its
-// echo. Every twin is not (E-01): another id, a flight seen over a
-// minute ago, another registration, an intent without a flight, a
-// record that carries neither.
+// registration is an active flight's declared UA registration, where
+// that flight's track is, is its echo. Every twin is not (E-01): another
+// id, a flight seen over a minute ago, another registration, an intent
+// without a flight, a record that carries neither.
 func TestOwnFlightsEchoGuard(t *testing.T) {
 	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
 	o := &ownFlights{now: func() time.Time { return now }, intents: intentsSnap{
 		"i1": {IntentID: "i1", FlightID: sp("f-intent"), UARegistration: sp("4L-UAV01")},
 		"i2": {IntentID: "i2", UARegistration: sp("4L-NOFLT")},
 	}}
-	o.Seen("f-trk")
+	o.Seen(trkSample("f-trk", here, now))
 	if !o.OwnFlight("f-intent") || !o.OwnFlight("f-trk") || o.OwnFlight("someone-else") {
 		t.Fatal("OwnFlight")
 	}
@@ -41,14 +49,15 @@ func TestOwnFlightsEchoGuard(t *testing.T) {
 	if o.OwnFlight("f-trk") {
 		t.Fatal("a flight seen over a minute ago is still ours")
 	}
-	if fid, ok := o.EchoOf("4ca123", sp("4luav01"), nil); !ok || fid != "f-intent" {
+	o.Seen(trkSample("f-intent", here, now))
+	if fid, ok := o.EchoOf("4ca123", sp("4luav01"), nil, here); !ok || fid != "f-intent" {
 		t.Fatalf("callsign echo %q %v", fid, ok)
 	}
-	if fid, ok := o.EchoOf("4ca123", sp("OTHER"), sp("4L UAV01")); !ok || fid != "f-intent" {
+	if fid, ok := o.EchoOf("4ca123", sp("OTHER"), sp("4L UAV01"), here); !ok || fid != "f-intent" {
 		t.Fatalf("registration echo %q %v", fid, ok)
 	}
 	for _, c := range [][2]*string{{sp("OTHER"), nil}, {sp("4L-NOFLT"), nil}, {nil, nil}, {sp(" "), nil}} {
-		if _, ok := o.EchoOf("4ca123", c[0], c[1]); ok {
+		if _, ok := o.EchoOf("4ca123", c[0], c[1], here); ok {
 			t.Fatalf("%v taken for an echo", c)
 		}
 	}
@@ -57,21 +66,82 @@ func TestOwnFlightsEchoGuard(t *testing.T) {
 	}
 }
 
+var here = core.LatLon{LatDeg: 41.75, LonDeg: 44.85}
+
+// The mark alone never hides an aircraft (Q23, Q25): a manned record
+// with an own flight's registration is its echo only within
+// echo_colocation_m of where the flight's live trk.v1 track places it.
+// The pair (E-01): co-located, suppressed; the same mark 1 km away, at
+// just over the distance, with the track quiet longer than
+// echo_colocation_s, from a backlog sample, captured too long before
+// its receipt, or never seen here, shown as a second aircraft. A
+// policy whose distance cannot judge shows it too.
+func TestOwnFlightsEchoNeedsColocation(t *testing.T) {
+	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	pol := policy.Defaults()
+	o := &ownFlights{now: func() time.Time { return now }, policy: func() policy.Values { return pol },
+		intents: intentsSnap{"i1": {IntentID: "i1", FlightID: sp("f-1"), UARegistration: sp("4L-UAV01")}}}
+	reg := sp("4L-UAV01")
+	if _, ok := o.EchoOf("4ca123", reg, nil, here); ok {
+		t.Fatal("an echo of a flight whose track was never seen here")
+	}
+	o.Seen(trkSample("f-1", here, now.Add(-time.Second)))
+	if fid, ok := o.EchoOf("4ca123", reg, nil, geodesy.Destination(here, 90, 50)); !ok || fid != "f-1" {
+		t.Fatalf("a co-located echo is not suppressed: %q %v", fid, ok)
+	}
+	if _, ok := o.EchoOf("4ca123", reg, nil, geodesy.Destination(here, 90, 1000)); ok {
+		t.Fatal("an aircraft 1 km away with the same mark is hidden as an echo")
+	}
+	if _, ok := o.EchoOf("4ca123", reg, nil, geodesy.Destination(here, 0, pol.EchoColocationM+5)); ok {
+		t.Fatal("an aircraft just beyond echo_colocation_m is hidden")
+	}
+	if _, ok := o.EchoOf("4ca123", reg, nil, geodesy.Destination(here, 0, pol.EchoColocationM-5)); !ok {
+		t.Fatal("an aircraft just within echo_colocation_m is not the echo")
+	}
+	bad := pol
+	bad.EchoColocationM = 0
+	o.policy = func() policy.Values { return bad }
+	if _, ok := o.EchoOf("4ca123", reg, nil, here); ok {
+		t.Fatal("a guard that cannot judge hides the aircraft")
+	}
+	o.policy = func() policy.Values { return pol }
+	now = now.Add(time.Duration(pol.EchoColocationS*float64(time.Second)) + time.Second)
+	if _, ok := o.EchoOf("4ca123", reg, nil, here); ok {
+		t.Fatal("an echo of a flight whose track is quiet")
+	}
+	backlog := trkSample("f-1", here, now)
+	backlog.Times.Backlog = true
+	o.Seen(backlog)
+	if _, ok := o.EchoOf("4ca123", reg, nil, here); ok {
+		t.Fatal("a backlog sample vouches for where the flight is")
+	}
+	late := trkSample("f-1", here, now)
+	late.Times.CapturedAt = now.Add(-time.Minute)
+	o.Seen(late)
+	if _, ok := o.EchoOf("4ca123", reg, nil, here); ok {
+		t.Fatal("a sample captured a minute before its receipt vouches for where the flight is")
+	}
+	o.Seen(trkSample("f-1", here, now))
+	if _, ok := o.EchoOf("4ca123", reg, nil, here); !ok {
+		t.Fatal("the live track again: the co-located echo is not suppressed")
+	}
+}
+
 // E-10: past maxOwnSeen a new flight is not remembered, unless the old
 // ones can be forgotten.
 func TestOwnFlightsBound(t *testing.T) {
 	now := time.Now()
 	o := &ownFlights{now: func() time.Time { return now }}
-	o.seen = map[string]time.Time{}
+	o.seen = map[string]ownSeen{}
 	for i := 0; i < maxOwnSeen; i++ {
-		o.seen["f"+strconv.Itoa(i)] = now
+		o.seen["f"+strconv.Itoa(i)] = ownSeen{at: now}
 	}
-	o.Seen("new")
+	o.Seen(trkSample("new", here, now))
 	if _, ok := o.seen["new"]; ok {
 		t.Fatal("remembered past the bound")
 	}
 	now = now.Add(2 * ownSeenFor)
-	o.Seen("new")
+	o.Seen(trkSample("new", here, now))
 	if _, ok := o.seen["new"]; !ok || len(o.seen) != 1 {
 		t.Fatalf("the old ones were not forgotten: %d", len(o.seen))
 	}

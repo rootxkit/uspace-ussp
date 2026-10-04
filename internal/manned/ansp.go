@@ -40,11 +40,12 @@ const (
 
 // Bounds and periods of the stream reader (E-10).
 const (
-	// ANSPFrameBytes bounds one frame read from the ANSP: a
-	// console/snapshot/v1 carries every relevant aircraft.
-	ANSPFrameBytes = 1 << 20
 	// ANSPSnapshotBytes bounds the GET /v1/manned-traffic/snapshot body.
 	ANSPSnapshotBytes = 8 << 20
+	// ANSPFrameBytes bounds one frame read from the ANSP: the snapshot's
+	// bound, since a console/snapshot/v1 carries every relevant aircraft
+	// as the snapshot does. A larger frame is refused with an alarm.
+	ANSPFrameBytes = ANSPSnapshotBytes
 	// MaxANSPAdapters bounds the ANSP adapters whose state is kept.
 	MaxANSPAdapters = 64
 	// MaxSnapshotTracks bounds the aircraft taken from one snapshot.
@@ -77,6 +78,7 @@ const (
 	CounterANSPUnreadable      = "ansp_feed_unreadable"
 	CounterANSPSnapshotFailed  = "ansp_feed_snapshot_failed"
 	CounterANSPSnapshotTaken   = "ansp_feed_snapshot_taken"
+	CounterANSPFrameOversize   = "ansp_feed_frame_oversize"
 	CounterANSPSwitchedOff     = "ansp_feed_closed_switched_off"
 	CounterANSPAdaptersOver    = "ansp_feed_adapters_over_bound"
 	CounterANSPStatusFailed    = "ansp_feed_status_publish_failed"
@@ -131,15 +133,19 @@ type ANSPStream struct {
 	lastFrame time.Time
 	lastTrack time.Time
 	lastErr   string
-	adapters  map[string]adapterState
-	degraded  []string
-	accepted  uint64
-	refused   uint64
-	echoes    uint64
-	agg       string
-	aggSince  time.Time
-	offSince  time.Time
-	once      sync.Once
+	// oversizeAt is when a frame or a snapshot over its bound was last
+	// refused, oversize what it was; cleared by the next snapshot read.
+	oversizeAt time.Time
+	oversize   string
+	adapters   map[string]adapterState
+	degraded   []string
+	accepted   uint64
+	refused    uint64
+	echoes     uint64
+	agg        string
+	aggSince   time.Time
+	offSince   time.Time
+	once       sync.Once
 }
 
 func (f *ANSPStream) init() {
@@ -361,10 +367,9 @@ func (f *ANSPStream) session(ctx context.Context) (connected bool, err error) {
 	defer func() { _ = conn.CloseNow() }()
 	conn.SetReadLimit(ANSPFrameBytes)
 	f.Counters.Inc(CounterANSPConnects)
+	// The connection is no frame: lastFrame stays the last one the ANSP
+	// sent (Take), so the feed is unavailable since then until one comes.
 	f.setConnected(true, "")
-	f.mu.Lock()
-	f.lastFrame = f.now()
-	f.mu.Unlock()
 	f.logger().LogAttrs(ctx, slog.LevelInfo, "ANSP manned-traffic stream connected", slog.String("bbox", bbox))
 	f.snapshot(ctx, tok, bbox, hasBBox)
 
@@ -402,6 +407,11 @@ func (f *ANSPStream) session(ctx context.Context) (connected bool, err error) {
 			if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
 				return true, fmt.Errorf("no frame for %s", f.silence())
 			}
+			if errors.Is(err, websocket.ErrMessageTooBig) {
+				what := fmt.Sprintf("a frame over %d bytes", ANSPFrameBytes)
+				f.oversized(ctx, what)
+				return true, fmt.Errorf("%s was refused: %w", what, err)
+			}
 			return true, err
 		}
 		f.Take(ctx, data)
@@ -437,7 +447,12 @@ func (f *ANSPStream) snapshot(ctx context.Context, tok, bbox string, hasBBox boo
 	}
 	defer func() { _ = res.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(res.Body, ANSPSnapshotBytes+1))
-	if err != nil || res.StatusCode != http.StatusOK || len(body) > ANSPSnapshotBytes {
+	if err == nil && res.StatusCode == http.StatusOK && len(body) > ANSPSnapshotBytes {
+		f.Counters.Inc(CounterANSPSnapshotFailed)
+		f.oversized(ctx, fmt.Sprintf("a snapshot over %d bytes", ANSPSnapshotBytes))
+		return
+	}
+	if err != nil || res.StatusCode != http.StatusOK {
 		f.Counters.Inc(CounterANSPSnapshotFailed)
 		f.logger().LogAttrs(ctx, slog.LevelWarn, "ANSP manned-traffic snapshot refused or too large; the stream's snapshot follows",
 			slog.Int("status", res.StatusCode))
@@ -448,6 +463,19 @@ func (f *ANSPStream) snapshot(ctx context.Context, tok, bbox string, hasBBox boo
 		return
 	}
 	f.Counters.Inc(CounterANSPSnapshotTaken)
+}
+
+// oversized raises the alarm of a frame or snapshot over its bound: it
+// is counted, logged at error level, and the feed is stale since now
+// with what was refused until the next snapshot reads (the aircraft it
+// carried are not shown), whatever the reconnect does.
+func (f *ANSPStream) oversized(ctx context.Context, what string) {
+	f.Counters.Inc(CounterANSPFrameOversize)
+	f.mu.Lock()
+	f.oversizeAt, f.oversize = f.now(), what
+	f.mu.Unlock()
+	f.logger().LogAttrs(ctx, slog.LevelError, "ANSP manned-traffic frame over the bound refused; the aircraft it carried are not shown",
+		slog.String("refused", what))
 }
 
 // snapshotBody is the part of console/snapshot/v1 (and of the ANSP's
@@ -473,6 +501,9 @@ func (f *ANSPStream) takeSnapshotBody(ctx context.Context, body []byte, rx time.
 	if s.Adapters != nil {
 		f.takeAdapters(nil, s.Adapters, s.Degraded)
 	}
+	f.mu.Lock()
+	f.oversizeAt, f.oversize = time.Time{}, ""
+	f.mu.Unlock()
 	return true
 }
 
@@ -688,7 +719,11 @@ func (f *ANSPStream) aggregateLocked(now time.Time, dec coresources.Decision) Ag
 		a = Aggregate{State: sources.StateDisabled, Since: f.offSince, DisabledBy: &why,
 			Detail: "ansp_feed is switched off (" + why + "): the stream is closed, manned traffic is not shown"}
 	case last.IsZero():
-		a = Aggregate{State: sources.StateDown, Since: f.started, Detail: "unavailable: no frame from the ANSP yet (" + f.lastErr + ")"}
+		why := f.lastErr
+		if f.connected {
+			why = "connected, no frame read"
+		}
+		a = Aggregate{State: sources.StateDown, Since: f.started, Detail: "unavailable: no frame from the ANSP yet (" + why + ")"}
 	case !f.connected:
 		// Cut: the stream closed and is not open again; unavailable since
 		// its last frame at once (a reconnect that succeeds clears it).
@@ -699,6 +734,9 @@ func (f *ANSPStream) aggregateLocked(now time.Time, dec coresources.Decision) Ag
 			detail += " (" + f.lastErr + ")"
 		}
 		a = Aggregate{State: sources.StateDown, Since: last, Detail: detail}
+	case !f.oversizeAt.IsZero():
+		a = Aggregate{State: sources.StateStale, Since: f.oversizeAt,
+			Detail: clip(f.oversize + " was refused: the aircraft it carried are not shown until the ANSP's next snapshot reads")}
 	default:
 		var worst []string
 		var since time.Time
