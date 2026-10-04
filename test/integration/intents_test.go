@@ -648,6 +648,59 @@ func TestIntegrationIntentProjectedAfterCommit(t *testing.T) {
 	}
 }
 
+// An intent_active entry projected before intent/state/v1 carried the
+// operator and the client (brief WP-17) is rewritten with both by the
+// owner backfill, on PostgreSQL's row lock and NATS, to what the
+// projection of its version writes now; a second pass leaves it as it
+// is (E-01: the pass with nothing to do is run and read).
+func TestIntegrationIntentOwnersBackfilled(t *testing.T) {
+	g := newIntentRig(t)
+	g.publishAll(nil, nil, nil)
+	number, serial, _ := g.operatorClient()
+	clientID := clientOf(t, serial)
+	ctx := context.Background()
+	d, _, err := g.svc.Submit(ctx, clientID, mustJSON(t, g.request(number, serial, "backfill", g.box(3, 0, 0.01))))
+	if err != nil || d.Decision != intent.DecisionAuthorised {
+		t.Fatalf("submit: %v %s", err, d.Decision)
+	}
+	read := func() (intent.StateBody, []byte) {
+		t.Helper()
+		raw, found, err := g.kv.Get(ctx, bus.BucketIntentActive, d.IntentID)
+		if err != nil || !found {
+			t.Fatalf("intent_active %s: %v %v", d.IntentID, found, err)
+		}
+		var b intent.StateBody
+		if err := json.Unmarshal(raw, &b); err != nil {
+			t.Fatal(err)
+		}
+		return b, raw
+	}
+	projected, _ := read()
+	if projected.ClientID != clientID || projected.OperatorID == "" {
+		t.Fatalf("projected without its owners: %+v", projected)
+	}
+	old := projected
+	old.OperatorID, old.ClientID = "", ""
+	if err := g.kv.PutJSON(ctx, bus.BucketIntentActive, d.IntentID, old); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := g.svc.BackfillOwners(ctx, g.kv, intent.BackfillBatch)
+	if err != nil || res.Rewritten < 1 {
+		t.Fatalf("backfill: %+v %v", res, err)
+	}
+	after, raw := read()
+	if after.ClientID != clientID || after.OperatorID != projected.OperatorID || after.Version != projected.Version {
+		t.Fatalf("backfilled %+v, want the owners of %+v", after, projected)
+	}
+	if _, err := g.svc.BackfillOwners(ctx, g.kv, intent.BackfillBatch); err != nil {
+		t.Fatal(err)
+	}
+	if _, again := read(); !bytes.Equal(again, raw) {
+		t.Fatal("a second pass rewrote an entry that carries its owners")
+	}
+}
+
 // S-M1, as reviewed: flight_type special_operation is declared by the
 // operator and nothing this USSP can check verifies it yet, so it is
 // judged at priority 0 with the condition special_operation_unverified:

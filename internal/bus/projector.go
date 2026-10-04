@@ -135,6 +135,28 @@ func (p *Projector) Put(ctx context.Context, bucket, key string, value []byte) e
 	return nil
 }
 
+// Get is key's value in bucket, within Timeout; false when the bucket
+// holds no such key.
+func (p *Projector) Get(ctx context.Context, bucket, key string) ([]byte, bool, error) {
+	if !ValidKey(key) {
+		return nil, false, core.Fieldf("key", "%q is not a KV key", key)
+	}
+	ctx, cancel := context.WithTimeout(ctx, p.timeout())
+	defer cancel()
+	kv, err := p.bucket(ctx, bucket)
+	if err != nil {
+		return nil, false, err
+	}
+	e, err := kv.Get(ctx, key)
+	if errors.Is(err, jetstream.ErrKeyNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("kv %s/%s: %w", bucket, key, err)
+	}
+	return e.Value(), true, nil
+}
+
 // PutJSON is Put of v as JSON.
 func (p *Projector) PutJSON(ctx context.Context, bucket, key string, v any) error {
 	data, err := json.Marshal(v)

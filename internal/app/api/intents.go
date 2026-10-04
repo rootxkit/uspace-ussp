@@ -61,7 +61,7 @@ func geoidProbe(und geoid.Undulator, mapped bool, why string) obs.Probe {
 // coordination write can be made now; an intent the DSS must hold waits
 // pending_dss until the DSS writer has written it), projects through kv
 // and the bus, registers the geoid's readiness and starts the time_end
-// sweep.
+// sweep and the one-off owner backfill of intent_active.
 func startIntents(ctx context.Context, rt *proc.Runtime, pol *policy.Service, cisState *CIS, reg *registry.Cache, kv *bus.Projector, dss intent.DSS, wx intent.Weather) *intent.Service {
 	counters := &core.Counters{}
 	proc.Publish(rt, "intent", counters)
@@ -86,6 +86,9 @@ func startIntents(ctx context.Context, rt *proc.Runtime, pol *policy.Service, ci
 	if rt.Store != nil && rt.Store.Rel != nil {
 		svc.Store = pgstore.Store{S: rt.Store}
 		rt.Go(ctx, func(ctx context.Context) { svc.RunSweep(ctx, intentSweepInterval) })
+		// The entries projected before intent/state/v1 carried the
+		// operator and the client are rewritten once (brief WP-17).
+		rt.Go(ctx, func(ctx context.Context) { svc.RunOwnerBackfill(ctx, kv, intentSweepInterval) })
 	}
 	return svc
 }

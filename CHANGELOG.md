@@ -49,6 +49,13 @@ additively within `/v1`.
     earlier `sessions_live` projection (operator and idle end) instead
     of projecting it without its operator, and counts
     `session_operator_unread`.
+  - api rewrites, once at start, the `intent_active` entries projected
+    before `intent/state/v1` carried `operator_id` and `client_id`, so a
+    portal session can follow an intent filed before the WP-17 deploy
+    without waiting for its next version: under the projection's row
+    lock, only for a projected version, 500 entries a pass, nothing
+    published, idempotent (`intent_owners_backfilled`,
+    `intent_owners_backfill_left`).
 - WP-16 review follow-ups:
   - a weather fetch that answers but delivers nothing in force (every
     report refused, no report for any station, or only reports held

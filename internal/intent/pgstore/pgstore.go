@@ -216,6 +216,46 @@ func (p Store) Project(ctx context.Context, id string, fn func(ctx context.Conte
 	return done, nil
 }
 
+// Reproject runs fn on the intent's newest version with its row locked,
+// only when that version is projected, and marks nothing: a projection
+// of a newer version waits for the lock, so fn never writes over it.
+func (p Store) Reproject(ctx context.Context, id string, fn func(ctx context.Context, r *intent.Record) error) (bool, error) {
+	u, err := store.UUID("id", id)
+	if err != nil {
+		return false, err
+	}
+	done := false
+	err = p.S.Tx(ctx, func(q *relational.Queries) error {
+		st, err := q.IntentProjectionLock(ctx, u)
+		if store.IsNoRows(err) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("intent projection lock: %w", err)
+		}
+		if st.ProjectedVersion < st.Version {
+			return nil
+		}
+		r, err := q.IntentByID(ctx, u)
+		if err != nil {
+			return fmt.Errorf("intent: %w", err)
+		}
+		rec, err := recordOf(r)
+		if err != nil {
+			return err
+		}
+		if err := fn(ctx, rec); err != nil {
+			return err
+		}
+		done = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return done, nil
+}
+
 // row is the shape every intent query returns.
 type row = relational.IntentByIDRow
 

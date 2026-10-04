@@ -197,6 +197,11 @@ type Store interface {
 	// version is already projected, and records it projected when fn
 	// succeeds; false when there was nothing to project.
 	Project(ctx context.Context, id string, fn func(ctx context.Context, r *Record) error) (bool, error)
+	// Reproject runs fn on the intent's newest version with its row
+	// locked as Project does, but only when that version is already
+	// projected, and records nothing (the owner backfill rewrites what
+	// the projection wrote); false when fn did not run.
+	Reproject(ctx context.Context, id string, fn func(ctx context.Context, r *Record) error) (bool, error)
 	// Held is what the DSS holds of the intent (WP-13); nil when nothing
 	// or no such intent.
 	Held(ctx context.Context, id string) (*DSSHeld, error)

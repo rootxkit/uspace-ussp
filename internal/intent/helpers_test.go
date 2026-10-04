@@ -508,6 +508,19 @@ func (m *memStore) Project(ctx context.Context, id string, fn func(context.Conte
 	return true, nil
 }
 
+func (m *memStore) Reproject(ctx context.Context, id string, fn func(context.Context, *Record) error) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, ok := m.byID[id]
+	if !ok || m.projected[id] < r.Version {
+		return false, nil
+	}
+	if err := fn(ctx, clone(r)); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 type memTx struct{ m *memStore }
 
 func (t memTx) Now(context.Context) (time.Time, error) { return t.m.now, nil }
