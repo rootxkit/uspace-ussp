@@ -117,6 +117,10 @@ test("S-M1 and S-M3: register, client, intent, decision, geo, traffic, alert ack
   await expect(page.getByTestId("thresholds")).toContainText("m");
   await expect(page.getByTestId("volumes-amsl")).toContainText("580");
   await expect(page.getByTestId("no-conflicts")).toBeVisible();
+  // A condition by its name in the reader's language, beside its code
+  // (the e2e stack runs without a weather source).
+  const noWeather = page.locator('[data-testid="condition"][data-code="weather_unavailable"]');
+  await expect(noWeather).toContainText("No weather information consulted");
   await shot(page, "decision-en");
   await page.getByRole("button", { name: "Activate" }).click();
   await expect(decision).toHaveAttribute("data-state", "activated");
@@ -161,6 +165,9 @@ test("S-M1 and S-M3: register, client, intent, decision, geo, traffic, alert ack
   await expect(page.locator("html")).toHaveAttribute("lang", "ka");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("გაფრთხილებები");
   await shot(page, "alerts-ka");
+  await page.goto(`/intents/${intentId}`);
+  await expect(noWeather).toContainText("ამინდის ინფორმაცია არ იქნა გათვალისწინებული");
+  await shot(page, "decision-ka");
   await page.goto(`/traffic?intent=${intentId}`);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("მოძრაობის ინფორმაცია");
   await expect(page.locator('[data-testid="track-row"][data-own="true"]')).toHaveCount(1);

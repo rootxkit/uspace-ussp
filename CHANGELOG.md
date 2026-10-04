@@ -74,6 +74,11 @@ additively within `/v1`.
   alert, 500 a page by (`raised_at`, id), where it read the oldest 500
   only: a lifted restriction's alert past them never cleared. The pages
   past the first are counted (`alerts_notices_lift_pages`).
+- The portal's intent page names each decision condition in the
+  reader's language (`portal.decision.condition.<code>`, `ka` and `en`,
+  `restriction_planned` among them) beside its code, where it showed
+  the code alone. `pnpm check:i18n` fails when a condition code of
+  `internal/intent` has no key.
 - WP-17 review follow-ups:
   - a portal session's use whose portal user cannot be read keeps the
     earlier `sessions_live` projection (operator and idle end) instead
