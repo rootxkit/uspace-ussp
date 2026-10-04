@@ -252,6 +252,37 @@ func TestInputsViewSaysWhenSwitchesAreUnread(t *testing.T) {
 	}
 }
 
+// The inputs page measures silence on the clock that stamped what it
+// heard: a status the tracker heard a second ago is healthy however far
+// the Service's own clock is from the tracker's, and checked_at is the
+// tracker's reading; a status silent past SourceSilentAfter on that
+// clock is unreachable (E-01).
+func TestInputsViewOnOneClock(t *testing.T) {
+	ctx := context.Background()
+	heardAt := t0
+	in := &Inputs{Now: func() time.Time { return heardAt }}
+	in.Take("src.v1.operator_ws.op-1", status("operator_ws", ptr("op-1"), "live", t0.Add(-time.Minute), nil))
+	heardAt = t0.Add(time.Second)
+	s := &Service{Inputs: in, Now: func() time.Time { return t0.Add(time.Hour) }, Switches: failingSwitches{}}
+	v, err := s.InputsView(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i, ok := find(v.Sources, "operator_ws", "op-1"); !ok || i.State != InputHealthy {
+		t.Fatalf("heard a second ago on the tracker's clock: %+v", i)
+	}
+	if !v.CheckedAt.Equal(heardAt) {
+		t.Fatalf("checked_at %s, want the tracker's %s", v.CheckedAt, heardAt)
+	}
+	heardAt = t0.Add(SourceSilentAfter + time.Second)
+	if v, err = s.InputsView(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if i, ok := find(v.Sources, "operator_ws", "op-1"); !ok || i.State != InputUnreachable {
+		t.Fatalf("silent past SourceSilentAfter on the tracker's clock: %+v", i)
+	}
+}
+
 // changes names exactly the values that differ, both ways.
 func TestPolicyChanges(t *testing.T) {
 	a, b := valuesMap(policy.Defaults()), valuesMap(policy.Defaults())

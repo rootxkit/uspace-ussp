@@ -269,11 +269,11 @@ func stateOf(s string, lagging bool) string {
 // is unreachable since it was last heard; while the bus is not
 // connected every input is unknown since then, with its last status.
 func (in *Inputs) view(now time.Time, switches []SwitchRow, staff func(string) string) (Bus, []Input, bool) {
-	connected, since, why := true, in.startTime(), ""
+	connected, since, why := true, in.startTime(now), ""
 	if in.Link != nil {
 		connected, since, why = in.Link()
 		if since.IsZero() {
-			since = in.startTime()
+			since = in.startTime(now)
 		}
 	}
 	b := Bus{State: "connected", Since: since.UTC()}
@@ -397,11 +397,13 @@ func (in *Inputs) view(now time.Time, switches []SwitchRow, staff func(string) s
 	return b, out, over
 }
 
-func (in *Inputs) startTime() time.Time {
+// startTime is when Run started, or now (the caller's reading of the
+// tracker's clock) before it has.
+func (in *Inputs) startTime(now time.Time) time.Time {
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	if in.start.IsZero() {
-		return in.now()
+		return now
 	}
 	return in.start
 }
@@ -456,10 +458,14 @@ func (in *Inputs) monitor(ctx context.Context, now time.Time, missingS float64) 
 	return out
 }
 
-// InputsView is GET /v1/admin/inputs.
+// InputsView is GET /v1/admin/inputs. It reads one clock once, the
+// tracker's (Inputs.Now), after the switches are read: the clock that
+// stamped when each source status was heard and when the tracker
+// started, so a source's silence is measured on the clock that stamped
+// it and the Service's clock is never compared with those stamps. The
+// same reading is checked_at and the "now" of the monitor's ages.
 func (s *Service) InputsView(ctx context.Context) (InputsView, error) {
-	now := s.now()
-	out := InputsView{CheckedAt: now.UTC(), Dependencies: map[string]obs.DependencyStatus{}, Sources: []Input{}}
+	out := InputsView{Dependencies: map[string]obs.DependencyStatus{}, Sources: []Input{}}
 	var switches []SwitchRow
 	out.Switches = SwitchesState{State: SwitchesRead}
 	if s.Switches == nil {
@@ -480,8 +486,10 @@ func (s *Service) InputsView(ctx context.Context) (InputsView, error) {
 	staff := s.staffNames(ctx, actorsOf(switches))
 	in := s.Inputs
 	if in == nil {
-		in = &Inputs{}
+		in = &Inputs{Now: s.Now}
 	}
+	now := in.now()
+	out.CheckedAt = now.UTC()
 	out.Bus, out.Sources, out.SourcesTruncated = in.view(now, switches, staff)
 	out.Monitor = in.monitor(ctx, now, s.policy().Values.MonitorStatusMissingS)
 	if s.Health != nil {
