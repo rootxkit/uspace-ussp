@@ -164,13 +164,21 @@ func readBounded(path string, maxBytes int64) ([]byte, error) {
 	return buf, nil
 }
 
+// ZoneStatus is the zone set in force and how old the CIS it rests on
+// is now (geo.ZoneSource).
+type ZoneStatus interface {
+	ZoneProvider
+	Freshness() geo.Freshness
+}
+
 // zoneProbe is the readiness of the zone path's input: unknown while
 // cis_current was never read (no zone is judged, said so: an empty sky
 // is never claimed, SC-22), degraded with its age when the CIS it holds
-// is stale or a feature did not build.
-func zoneProbe(src ZoneProvider) obs.Probe {
+// is stale now or a feature did not build.
+func zoneProbe(src ZoneStatus) obs.Probe {
 	return func(context.Context) (obs.State, string) {
 		s := src.Current()
+		f := src.Freshness()
 		switch {
 		case s == nil || !s.Loaded:
 			return obs.StateUnknown, "cis_current not read or nothing projected: no zone is judged"
@@ -178,8 +186,8 @@ func zoneProbe(src ZoneProvider) obs.Probe {
 			return obs.StateDegraded, fmt.Sprintf("%d CIS features do not build into zones and are not judged: %v", len(s.Unbuildable), s.Unbuildable)
 		case s.OverBound:
 			return obs.StateDegraded, fmt.Sprintf("more than %d zone parts: the rest are not judged", geo.MaxZones)
-		case s.Stale:
-			return obs.StateDegraded, fmt.Sprintf("the CIS in force (%s) is stale: age %.0f s", s.CISVersion, s.CISAgeS)
+		case f.Stale:
+			return obs.StateDegraded, fmt.Sprintf("the CIS in force (%s) is stale: age %.0f s", f.CISVersion, f.CISAgeS)
 		}
 		return obs.StateUp, ""
 	}
@@ -209,14 +217,15 @@ func zoneAlertEvent(e geo.Event) conformance.AlertEvent {
 }
 
 // ZoneStatusAttrs are the zone path's attributes of the status line:
-// what the judgement rests on, said every period (SC-22).
-func ZoneStatusAttrs(s *geo.ZoneSet, terrainKnown, geoidKnown bool) []slog.Attr {
+// what the judgement rests on, said every period (SC-22): the set
+// judged, and how old the CIS is now and whether it is stale (f).
+func ZoneStatusAttrs(s *geo.ZoneSet, f geo.Freshness, terrainKnown, geoidKnown bool) []slog.Attr {
 	if s == nil {
 		s = &geo.ZoneSet{}
 	}
 	return []slog.Attr{
-		slog.Bool("cis_loaded", s.Loaded), slog.String("cis_version", s.CISVersion), slog.Float64("cis_age_s", s.CISAgeS),
-		slog.Bool("cis_stale", s.Stale), slog.Int("zones_judged", len(s.Zones)), slog.Int("zones_unbuildable", len(s.Unbuildable)),
+		slog.Bool("cis_loaded", s.Loaded), slog.String("cis_version", s.CISVersion), slog.Float64("cis_age_s", f.CISAgeS),
+		slog.Bool("cis_stale", f.Stale), slog.Int("zones_judged", len(s.Zones)), slog.Int("zones_unbuildable", len(s.Unbuildable)),
 		slog.Bool("terrain", terrainKnown), slog.Bool("geoid", geoidKnown),
 	}
 }

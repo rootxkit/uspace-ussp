@@ -168,8 +168,9 @@ func (e *Evaluator) confirm(d Dataset, at time.Time, empty bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if empty && e.snap.Load().versions[d] != nil {
-		// A version is held: never let a 404 empty the cache.
-		empty = false
+		// A version is held: a 404 neither empties the cache nor
+		// confirms what it holds (Cache.heldNotFound); it ages.
+		return
 	}
 	e.contact[d] = at
 	if empty {

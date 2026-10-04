@@ -3,6 +3,7 @@ package cis
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sort"
 	"sync"
 	"time"
@@ -69,6 +70,18 @@ type Projector interface {
 	ProjectCIS(ctx context.Context, p *Projection) error
 }
 
+// BasisProjector is a Projector that can rewrite the basis of the last
+// projection alone (a confirmation of the same versions: the cells are
+// unchanged). ErrNotProjected when it holds no whole projection of its
+// own to rewrite the basis of.
+type BasisProjector interface {
+	ProjectCISBasis(ctx context.Context, b Basis, at time.Time) error
+}
+
+// ErrNotProjected is a basis rewrite with no whole projection written
+// before it by this projector.
+var ErrNotProjected = errors.New("no projection written yet: the basis alone cannot be rewritten")
+
 // MemoryProjector keeps the last projection in memory: the projector of
 // one process until WP-6's bus projector exists.
 type MemoryProjector struct {
@@ -82,6 +95,21 @@ func (m *MemoryProjector) ProjectCIS(_ context.Context, p *Projection) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.last = p
+	m.n++
+	return nil
+}
+
+// ProjectCISBasis implements BasisProjector: the last projection with
+// b and at, counted as a write.
+func (m *MemoryProjector) ProjectCISBasis(_ context.Context, b Basis, at time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.last == nil {
+		return ErrNotProjected
+	}
+	p := *m.last
+	p.Basis, p.At = b, at.UTC()
+	m.last = &p
 	m.n++
 	return nil
 }

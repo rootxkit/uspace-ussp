@@ -40,7 +40,15 @@ const (
 	CounterWebhookStoreFailed = "cis_webhook_store_failed"
 	CounterPullURLMismatch    = "cis_pull_url_mismatch"
 	CounterANSPDirect         = "cis_ansp_direct_notifications"
+	// CounterHeldNotFound counts the 404s (no version) for a dataset of
+	// which a version is held: never a confirmation, the version ages.
+	CounterHeldNotFound = "cis_held_not_found"
 )
+
+// ErrHeldNotFound is a pull answered 404 (no version) for a dataset of
+// which a version is held: the version is kept, not confirmed, and ages
+// until it is stale.
+var ErrHeldNotFound = errors.New("the CISP answered 404 (no version) for a dataset of which a version is held")
 
 // DefaultReconcileInterval is the conditional pull of every dataset that
 // bounds what a missed notification costs (spec 02 F3: 60 s).
@@ -128,13 +136,20 @@ type Cache struct {
 	locks map[Dataset]*sync.Mutex
 	kick  map[Dataset]chan struct{}
 
-	mu          sync.Mutex
-	hints       map[Dataset]*Hint
-	pending     map[Dataset]*Hint
-	refused     map[Dataset]*RefusalError
-	held        map[Dataset]*UntrustedError
-	pullErr     map[Dataset]string
-	projErr     string
+	mu      sync.Mutex
+	hints   map[Dataset]*Hint
+	pending map[Dataset]*Hint
+	refused map[Dataset]*RefusalError
+	held    map[Dataset]*UntrustedError
+	pullErr map[Dataset]string
+	// notFound is the version held of each dataset the CISP last
+	// answered 404 for (ErrHeldNotFound).
+	notFound map[Dataset]int64
+	projErr  string
+	// projected is the CIS version of the last whole projection written,
+	// "" until one is or after one failed: a confirmation of the same
+	// version rewrites the basis alone.
+	projected   string
 	subscribed  string
 	subErr      string
 	warmErr     string
@@ -167,7 +182,7 @@ func NewCache(cfg CacheConfig) *Cache {
 	c := &Cache{
 		cfg: cfg, locks: map[Dataset]*sync.Mutex{}, kick: map[Dataset]chan struct{}{},
 		hints: map[Dataset]*Hint{}, pending: map[Dataset]*Hint{}, refused: map[Dataset]*RefusalError{}, held: map[Dataset]*UntrustedError{},
-		pullErr: map[Dataset]string{}, unpersisted: map[Dataset]int64{},
+		pullErr: map[Dataset]string{}, notFound: map[Dataset]int64{}, unpersisted: map[Dataset]int64{},
 	}
 	for _, d := range AllDatasets {
 		c.locks[d] = &sync.Mutex{}
@@ -338,10 +353,15 @@ func (c *Cache) Pull(ctx context.Context, d Dataset, h *Hint, reconcile bool) er
 			c.persistTouch(ctx, d, cur.Number)
 			c.clearPending(d, cur.Number)
 		}
+		c.projectConfirmed(ctx)
 		return nil
 	case http.StatusNotFound:
+		if cur != nil {
+			return c.heldNotFound(d, cur.Number)
+		}
 		c.cfg.Evaluator.confirm(d, now, true)
 		c.clearPullErr(d)
+		c.projectConfirmed(ctx)
 		return nil
 	}
 	v, rf := ParseVersion(d, f.Body, f.ETag, f.Version)
@@ -399,6 +419,7 @@ func (c *Cache) accept(ctx context.Context, v, cur *Version, reconcile bool) err
 		} else {
 			c.cfg.Evaluator.confirm(v.Dataset, now, false)
 			c.persistTouch(ctx, v.Dataset, cur.Number)
+			c.projectConfirmed(ctx)
 		}
 		c.clearPullErr(v.Dataset)
 		return nil
@@ -525,10 +546,31 @@ func (c *Cache) failPull(d Dataset, err error) error {
 	return err
 }
 
+// clearPullErr forgets d's last pull failure and 404 on a version held:
+// the CISP answered for it.
 func (c *Cache) clearPullErr(d Dataset) {
 	c.mu.Lock()
 	delete(c.pullErr, d)
+	delete(c.notFound, d)
 	c.mu.Unlock()
+}
+
+// heldNotFound handles a 404 for d while version is held: the CISP says
+// it has no version of what this cache holds (withdrawn, or the CISP
+// lost its state). The version is kept, as a 404 never empties the
+// cache, but it is not confirmed: it ages until it is stale. Counted,
+// logged when it starts, and on /readyz until the CISP answers for d.
+func (c *Cache) heldNotFound(d Dataset, version int64) error {
+	c.cfg.Counters.Inc(CounterHeldNotFound)
+	c.mu.Lock()
+	prev, had := c.notFound[d]
+	c.notFound[d] = version
+	c.mu.Unlock()
+	if !had || prev != version {
+		c.cfg.Logger.Error("the CISP answered 404 (no version) for a dataset of which a version is held: kept, not confirmed, ageing",
+			slog.String("dataset", string(d)), slog.Int64("version", version))
+	}
+	return fmt.Errorf("%w: %s version %d", ErrHeldNotFound, d, version)
 }
 
 func (c *Cache) clearPending(d Dataset, held int64) {
@@ -539,11 +581,54 @@ func (c *Cache) clearPending(d Dataset, held int64) {
 	c.mu.Unlock()
 }
 
+// project writes the projection of the snapshot now. It runs on every
+// new version and on every confirmation (a 304, a 404, the version held
+// served again): the basis it carries (cis_version, cis_age_s, stale) is
+// what the followers of cis_current judge staleness by, aged on their
+// own clock from its at. Written only on a new version, a confirmation
+// that a dataset has no version left the warm start's "stale: never
+// loaded" in force for good, and a basis never rewritten while the CISP
+// confirms it would age past cis_stale_s on a follower.
 func (c *Cache) project(ctx context.Context) {
 	p := c.cfg.Evaluator.Project(c.cfg.Now())
 	err := c.cfg.Projector.ProjectCIS(ctx, p)
+	version := p.CISVersion
+	if err != nil {
+		version = ""
+	}
+	c.projectionWritten(err, version)
+}
+
+// projectConfirmed writes the projection after a confirmation: the
+// basis alone when the projector can (BasisProjector) and the last
+// whole projection written is of the same CIS version, every cell
+// otherwise (a new version label, or the last write failed).
+func (c *Cache) projectConfirmed(ctx context.Context) {
+	bp, ok := c.cfg.Projector.(BasisProjector)
+	b := c.cfg.Evaluator.basis()
+	c.mu.Lock()
+	same := c.projErr == "" && c.projected != "" && c.projected == b.CISVersion
+	c.mu.Unlock()
+	if !ok || !same {
+		c.project(ctx)
+		return
+	}
+	err := bp.ProjectCISBasis(ctx, b, c.cfg.Now())
+	if errors.Is(err, ErrNotProjected) {
+		c.project(ctx)
+		return
+	}
+	version := b.CISVersion
+	if err != nil {
+		version = ""
+	}
+	c.projectionWritten(err, version)
+}
+
+func (c *Cache) projectionWritten(err error, version string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.projected = version
 	if err != nil {
 		c.cfg.Counters.Inc(CounterProjectionFailed)
 		c.projErr = err.Error()
@@ -659,6 +744,11 @@ func (c *Cache) Probe(context.Context) (obs.State, string) {
 	for _, d := range AllDatasets {
 		if h := c.held[d]; h != nil {
 			problems = append(problems, h.Error())
+		}
+	}
+	for _, d := range AllDatasets {
+		if v, ok := c.notFound[d]; ok {
+			problems = append(problems, fmt.Sprintf("%s answered 404 (no version) while version %d is held: kept, not confirmed, ageing", d, v))
 		}
 	}
 	for _, d := range AllDatasets {

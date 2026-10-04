@@ -51,6 +51,30 @@ type BasisValue struct {
 	Cells int       `json:"cells"`
 }
 
+var _ BasisProjector = (*BusProjector)(nil)
+
+// ProjectCISBasis implements BasisProjector: the basis key alone, over
+// the cells this projector last wrote (ErrNotProjected before it wrote
+// any: the bucket's cells are not known to be this version's).
+func (b *BusProjector) ProjectCISBasis(ctx context.Context, basis Basis, at time.Time) error {
+	b.run.Lock()
+	defer b.run.Unlock()
+	if b.written == nil {
+		return ErrNotProjected
+	}
+	timeout := b.Timeout
+	if timeout <= 0 {
+		timeout = DefaultProjectTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	data, err := json.Marshal(BasisValue{Basis: basis, At: at.UTC(), Cells: len(b.written)})
+	if err != nil {
+		return err
+	}
+	return b.KV.Put(ctx, BucketCISCurrent, KeyBasis, data)
+}
+
 // ProjectCIS implements Projector.
 func (b *BusProjector) ProjectCIS(ctx context.Context, p *Projection) error {
 	b.run.Lock()
