@@ -79,14 +79,14 @@ func TestValuesJSONNamesCarryUnits(t *testing.T) {
 		t.Fatalf("%d JSON fields for %d struct fields", len(m), reflect.TypeFor[Values]().NumField())
 	}
 	for k := range m {
-		// _priority, _count, _code, _severity and _ids are dimensionless
-		// (an ordinal, a number of things, an enumeration code, a
-		// severity, a list of identifiers); every other name carries its
-		// unit.
+		// _priority, _count, _code, _severity, _ids and _text are
+		// dimensionless (an ordinal, a number of things, an enumeration
+		// code, a severity, a list of identifiers, a sentence a person
+		// reads); every other name carries its unit.
 		if !strings.HasSuffix(k, "_m") && !strings.HasSuffix(k, "_s") && !strings.HasSuffix(k, "_days") &&
 			!strings.HasSuffix(k, "_priority") && !strings.HasSuffix(k, "_count") && !strings.HasSuffix(k, "_hz") &&
 			!strings.HasSuffix(k, "_code") && !strings.HasSuffix(k, "_ms") && !strings.HasSuffix(k, "_severity") &&
-			!strings.HasSuffix(k, "_ids") {
+			!strings.HasSuffix(k, "_ids") && !strings.HasSuffix(k, "_text") {
 			t.Errorf("%s has no unit", k)
 		}
 	}

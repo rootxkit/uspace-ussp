@@ -24,7 +24,10 @@ info:
     information and the alert stream (served by traffic-ws), the alert
     acknowledgement (api). WP-15: the console's list of Annex V notices
     to the ANSP; the service records for the authority. WP-16: the
-    optional weather information.
+    optional weather information. WP-18: the USSP console (flights,
+    alerts with escalation and close, DSS state, inputs, policy,
+    source switches, the emergency workflow, record days, audit rows)
+    and the staff admin's second sign-in step.
   license:
     name: Apache-2.0
 servers:
@@ -1132,6 +1135,591 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
 
+  /v1/admin/flights:
+    get:
+      operationId: listAdminFlights
+      tags: [admin]
+      summary: The active flights the console must see
+      description: |
+        Console session of a supervisor, support or admin (served by api;
+        brief WP-18, spec 07 S-M5). Every flight not ended, newest first,
+        at most 500 (truncated when there are more): its intent and the
+        intent's local and DSS state, the last conformance state recorded
+        with its time, the client its samples come from (the source
+        instance), and the time and age of its last sample from the
+        telemetry record. samples says whether the last samples could be
+        read: while TimescaleDB is unavailable every flight's
+        last_sample_at is null and samples.detail says since when, never
+        a flight without telemetry. An empty list means no flight is
+        active; a list that cannot be read is 503.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The active flights.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminFlights"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/admin/alerts:
+    get:
+      operationId: listAdminAlerts
+      tags: [admin]
+      summary: The active and recent alerts with acknowledgement and escalation
+      description: |
+        Console session of a supervisor, support or admin (served by api;
+        spec 02 F5, Art. 13). The alerts of the record (api never
+        re-judges an alert: the monitor raised and clears it), newest
+        first, at most 500: view active is every alert not cleared, view
+        recent adds the ones cleared in the last 24 h. Each carries its
+        acknowledgement (when and by whom), its escalation (automatic
+        after the policy's escalation_after_s, or by a supervisor with a
+        reason), the console's close (a supervisor's handling of it, which
+        never clears the alert) and how many messages of it were
+        recorded.
+      security:
+        - session: []
+      parameters:
+        - name: view
+          in: query
+          required: false
+          description: active (the default) or recent; any other value is 400.
+          schema:
+            type: string
+            maxLength: 16
+      responses:
+        "200":
+          description: The alerts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAlerts"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/admin/escalations:
+    get:
+      operationId: listEscalations
+      tags: [admin]
+      summary: The escalated alerts the console has not closed
+      description: |
+        Console session of a supervisor, support or admin (served by api;
+        spec 02 F5: an unacknowledged critical alert escalates to the
+        supervisor console). Every alert escalated and not closed on the
+        console, oldest escalation first, at most 500. A cleared alert
+        stays until a supervisor closes it: nothing disappears silently.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The escalations.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAlerts"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/admin/alerts/{alert_id}/escalate:
+    parameters:
+      - $ref: "#/components/parameters/AlertID"
+    post:
+      operationId: escalateAlert
+      tags: [admin]
+      summary: Escalate an alert by hand
+      description: |
+        Console session of a supervisor (served by api). Marks the alert
+        escalated on the database clock with the supervisor and the
+        reason, an events row in the same transaction, and republishes it
+        on alrt.v1 after the commit. An alert escalated before answers 200
+        unchanged, with nothing written. Escalation informs people; it
+        never changes the alert's state, which the monitor alone sets.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertAction"
+      responses:
+        "200":
+          description: The alert as recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAlert"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/admin/alerts/{alert_id}/close:
+    parameters:
+      - $ref: "#/components/parameters/AlertID"
+    post:
+      operationId: closeAlert
+      tags: [admin]
+      summary: Close an alert on the console
+      description: |
+        Console session of a supervisor (served by api). Records that the
+        console has handled the alert (when, by whom, why) with an events
+        row in the same transaction; the alert leaves the escalations.
+        Closing never clears the alert: an active one stays active, and
+        the monitor alone clears it. An alert closed before is 409 (a
+        permanent answer: it is not closed again).
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertAction"
+      responses:
+        "200":
+          description: The alert as recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAlert"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/admin/dss:
+    get:
+      operationId: getAdminDSS
+      tags: [admin]
+      summary: The DSS state, the outbox and the subscriptions
+      description: |
+        Console session of a supervisor, support or admin (served by api;
+        spec 07 S-M5). This USSP's availability as the DSS knows it and
+        since when the DSS is reachable or not (dss_state), the readiness
+        of the DSS dependency, the outbox depth by kind with the oldest
+        due item, the last errors of the outbox (at most 20) and the
+        subscriptions held. A state that cannot be read is 503.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The DSS panel.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminDSS"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/admin/inputs:
+    get:
+      operationId: getAdminInputs
+      tags: [admin]
+      summary: Every input with its state and its time
+      description: |
+        Console session of a supervisor, support or admin (served by api;
+        spec 05 §6, LESSONS B-11, SC-22). Every source type and instance
+        api has heard on src.v1 or holds a switch for, each with one
+        state: disabled (by whom, when, why), healthy, stale since,
+        lagging (lag_s), unreachable since, never_heard, or unknown while
+        the bus is not connected (since when). The monitor's status
+        (published every 10 s; down when not heard for
+        monitor_status_missing_s: "conformance and traffic alerts stopped
+        since T") with its evaluation_period_s, CIS version and age,
+        terrain and geoid presence; and the readiness of every dependency
+        of api (the CISP, the registry feed, the DSS, the ANSP, the
+        databases, NATS). Never an empty answer for an input that is
+        unknown.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The inputs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminInputs"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/admin/policy:
+    get:
+      operationId: getAdminPolicy
+      tags: [admin]
+      summary: The policy in force and its version history
+      description: |
+        Console session of a supervisor, support or admin (served by api;
+        LESSONS INV-03). The current version (or the defaults, version 0,
+        while none is stored), the 50 newest versions newest first, each
+        with who stored it, why, and what changed from the version before
+        it, and the names of the values whose defaults are pending GCAA
+        (PLAN §15.2 Q6 and the briefs).
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The policy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPolicy"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      operationId: putAdminPolicy
+      tags: [admin]
+      summary: Store a new policy version
+      description: |
+        Console session of an admin (served by api). The values given
+        replace those of base_version (a value left out keeps the
+        current one; an unknown name is 400); the result is validated,
+        stored as the next version with its events row and projected to
+        the KV bucket policy in one transaction: 503 when the KV cannot
+        take it, and nothing is stored (B-09). base_version other than
+        the current version is 409 (permanent: read the policy again).
+        The answer is the new version with its changes.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PolicyPut"
+      responses:
+        "201":
+          description: The new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyVersion"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/admin/sources:
+    get:
+      operationId: listSourceSwitches
+      tags: [admin]
+      summary: The source switches with who set them and why
+      description: |
+        Console session of a supervisor, support or admin (served by api;
+        LESSONS B-09, B-11, SC-08). Every stored switch (a whole type when
+        instance_id is null) with its reason, actor and time, the version
+        and epoch of the state projected to source_control, and the source
+        types this USSP knows. A source without a switch is enabled.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The switches.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceSwitches"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: switchSource
+      tags: [admin]
+      summary: Switch a source type or instance on or off
+      description: |
+        Console session of an admin; 403 for every other role, a support
+        viewer included (SC-08). The switch, its events row and the KV
+        projection of the whole state are written in one transaction;
+        503 with Retry-After when the KV cannot take it, and nothing
+        changes (B-09). A switch is reversible: the same source switched
+        on again is a new row version. A disabled source is labelled with
+        who and when on every console and stream; its tracks age out
+        source_disabled.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceSwitchRequest"
+      responses:
+        "200":
+          description: The switches after this one.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceSwitches"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/admin/emergency:
+    get:
+      operationId: listEmergencyCases
+      tags: [admin]
+      summary: The emergency cases, open first
+      description: |
+        Console session of a supervisor, support or admin (served by api;
+        spec 01 §3 S11: the emergency management and communication
+        plan). Every open case and the cases closed in the last 7 days,
+        open first, newest first, at most 200.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The cases.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmergencyCases"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/admin/emergency/{flight_id}:
+    parameters:
+      - name: flight_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: getEmergencyCase
+      tags: [admin]
+      summary: A flight's newest emergency case
+      description: |
+        Console session of a supervisor, support or admin (served by api).
+        The flight's newest case with its notes and checklist, the
+        emergency contact reference of its intent (resolved by the
+        authority, never here: the console shows the reference and the
+        authority's contact procedure), and the link to the flight's
+        record. 404 when the flight has no case.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The case.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmergencyCase"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: actOnEmergency
+      tags: [admin]
+      summary: Open an emergency case, add a note, or close it
+      description: |
+        Console session of a supervisor (served by api). open starts a
+        case for one of this USSP's flights with a reason (409 while one
+        is open: permanent, add notes to it); note adds a timestamped note
+        (the database clock), optionally ticking one step of the policy's
+        emergency_checklist; close ends it with an outcome. Every step is
+        an events row with the supervisor and the text, in the
+        transaction that writes it. The workflow is a communication
+        checklist with timestamps: nothing in it reaches an aircraft. note
+        and close without an open case are 409. 404 for a flight this USSP
+        does not hold.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmergencyAction"
+      responses:
+        "200":
+          description: The case after a note or the close.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmergencyCase"
+        "201":
+          description: The case opened.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmergencyCase"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/admin/records/days:
+    get:
+      operationId: listRecordDays
+      tags: [admin]
+      summary: The daily record bundles of the last days, and the days without one
+      description: |
+        Console session of a supervisor, support or admin (served by api;
+        Art. 15(1)(g)). The bundles of the last 31 UTC days that are
+        built (date, when, content hash, flights), and the days before
+        today without one: a missing day is said, never left out.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The days.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecordDays"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/admin/events:
+    get:
+      operationId: listAdminEvents
+      tags: [admin]
+      summary: The audit rows of one console entity
+      description: |
+        Console session of a supervisor, support or admin (served by api;
+        spec 06 T7). The events rows of one alert, emergency case, policy
+        version, source switch or occurrence report, oldest first, at
+        most limit (truncated when there are more). The rows of sign-ins
+        and of operator accounts are not served here.
+      security:
+        - session: []
+      parameters:
+        - name: entity_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [alert, emergency_case, policy, source_control, occurrence_report]
+        - name: entity_id
+          in: query
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 200}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 500, default: 100}
+      responses:
+        "200":
+          description: The rows.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminEvents"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
   /oauth/token:
     post:
       operationId: requestToken
@@ -1226,8 +1814,10 @@ paths:
       description: |
         Checks a username and password (argon2id) in the realm `portal`
         (operator users) or `console` (staff); a staff `admin` also sends
-        a TOTP code. An unknown user, a wrong password and a wrong code
-        are one answer. Ten consecutive failures for one username lock it
+        a TOTP code: in totp_code, or, without one, the answer is 202
+        with an MFAChallenge for POST /v1/accounts/login/mfa (the BFF's
+        two-step sign-in, brief WP-18). An unknown user, a wrong password and a
+        wrong code are one answer. Ten consecutive failures for one username lock it
         for 15 minutes (the lock is in the database and holds across
         replicas; 429 with `Retry-After`); attempts are also limited per
         client address. On success the answer carries the session JWT
@@ -1255,6 +1845,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Session"
+        "202":
+          description: A staff admin who sent no code - the challenge of the second step; no cookie is set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAChallenge"
         "400":
           $ref: "#/components/responses/Problem"
         "401":
@@ -1268,6 +1864,55 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/accounts/login/mfa:
+    post:
+      operationId: loginMFA
+      tags: [accounts]
+      summary: The second step of a staff admin's sign-in
+      description: |
+        Exchanges the challenge of the password step and the admin's TOTP
+        code for the session (as POST /v1/accounts/login answers it, with
+        the cookies). The challenge is held in the database until its
+        expires_at (the database clock); a code already accepted is
+        refused (replay), a wrong code counts against the username's
+        lockout and against the challenge, which is spent after five
+        codes. An unknown, expired or spent challenge, a wrong code and a
+        replayed code are one answer (401). Every attempt is an events
+        row.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MFAStep"
+      responses:
+        "200":
+          description: The session.
+          headers:
+            Set-Cookie:
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "429":
+          description: The username is locked or the address's budget is spent.
+          headers:
+            Retry-After:
+              schema: {type: integer, minimum: 1}
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
         default:
           $ref: "#/components/responses/Problem"
   /v1/accounts/logout:
@@ -3321,3 +3966,606 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TelemetryOutcome"
+
+    MFAStep:
+      type: object
+      required: [mfa_token, code]
+      properties:
+        mfa_token:
+          type: string
+          maxLength: 128
+          description: The challenge of the password step.
+        code:
+          type: string
+          maxLength: 16
+          description: The six digits of the admin's authenticator.
+    MFAChallenge:
+      type: object
+      required: [mfa_token, expires_at]
+      properties:
+        mfa_token:
+          type: string
+          description: |
+            An opaque challenge for POST /v1/accounts/login/mfa, held in the
+            database (its hash) until expires_at on the database clock; one
+            live challenge per account, at most five codes tried.
+        expires_at:
+          type: string
+          format: date-time
+
+    AdminFlights:
+      type: object
+      required: [flights, truncated, samples]
+      properties:
+        flights:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminFlight"
+        truncated:
+          type: boolean
+        samples:
+          $ref: "#/components/schemas/AdminSamples"
+    AdminSamples:
+      type: object
+      required: [available]
+      properties:
+        available:
+          type: boolean
+          description: Whether the last samples were read from the telemetry record.
+        detail:
+          type: string
+          description: Why they were not (TimescaleDB unavailable since T); absent while they were.
+    AdminFlight:
+      type: object
+      required: [flight_id, uas_serial, started_at, emergency]
+      properties:
+        flight_id: {type: string, format: uuid}
+        intent_id: {type: string, format: uuid}
+        authorisation_number: {type: string}
+        uas_serial: {type: string}
+        operator_reg: {type: string}
+        client_id:
+          type: string
+          description: The operator client the samples come from (the source instance of operator_ws).
+        started_at: {type: string, format: date-time}
+        last_state: {type: string}
+        emergency:
+          type: boolean
+          description: Whether the flight declared an emergency.
+        intent_state:
+          type: string
+          description: The intent's local state.
+        dss_state:
+          type: string
+          description: The F3548 state the intent's decision asks the DSS to hold.
+        conformance:
+          $ref: "#/components/schemas/AdminConformance"
+        last_sample_at:
+          type: string
+          format: date-time
+          description: The capture time of the newest sample in the telemetry record.
+        last_sample_age_s:
+          type: number
+          format: double
+          minimum: 0
+        emergency_case_open:
+          type: boolean
+          description: Whether an emergency case of this flight is open on the console.
+    AdminConformance:
+      type: object
+      required: [state, at]
+      properties:
+        state:
+          type: string
+          enum: [conforming, nonconforming, contingent, lost_link, unknown]
+        at: {type: string, format: date-time}
+        reason: {type: string}
+
+    AdminAlerts:
+      type: object
+      required: [alerts, truncated, escalation_after_s, escalation_repeat_s, policy_version]
+      properties:
+        alerts:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminAlert"
+        truncated:
+          type: boolean
+        escalation_after_s:
+          type: number
+          format: double
+          description: The policy's delay before an unacknowledged critical alert escalates.
+        escalation_repeat_s:
+          type: number
+          format: double
+          description: The policy's repeat of an unacknowledged critical alert to the operator.
+        policy_version:
+          type: integer
+          format: int64
+          description: The policy version in force (0 while the defaults apply).
+    AdminAlert:
+      type: object
+      required: [alert_id, kind, severity, state, raised_at, updated_at, messages_recorded, policy_version, detail]
+      properties:
+        alert_id: {type: string, format: uuid}
+        kind: {type: string}
+        severity:
+          type: string
+          description: info, warning or critical (alert/v1).
+        state:
+          type: string
+          description: raised, updated or cleared (alert/v1); the monitor alone sets it.
+        clear_reason: {type: string}
+        flight_id: {type: string, format: uuid}
+        intent_id: {type: string, format: uuid}
+        authorisation_number: {type: string}
+        raised_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        cleared_at: {type: string, format: date-time}
+        acked_at: {type: string, format: date-time}
+        acked_by: {type: string}
+        escalated_at: {type: string, format: date-time}
+        escalated_by:
+          type: string
+          description: The supervisor who escalated it; absent for the automatic escalation.
+        escalation_reason: {type: string}
+        closed_at: {type: string, format: date-time}
+        closed_by: {type: string}
+        close_reason: {type: string}
+        messages_recorded:
+          type: integer
+          format: int64
+          minimum: 1
+          description: How many alert/v1 messages of this alert api recorded (the monitor republishes an active alert every second).
+        policy_version: {type: integer, format: int64}
+        detail:
+          type: object
+          additionalProperties: true
+          description: The alert's detail as the monitor sent it (alert/v1).
+    AlertAction:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Why; recorded in the events row. Free text that must name no person.
+
+    AdminDSS:
+      type: object
+      required: [dss_state, readiness, outbox, last_errors, subscriptions]
+      properties:
+        dss_state:
+          $ref: "#/components/schemas/AdminDSSState"
+        readiness:
+          $ref: "#/components/schemas/Dependency"
+        outbox:
+          $ref: "#/components/schemas/AdminOutbox"
+        last_errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminOutboxError"
+        subscriptions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminSubscription"
+    AdminDSSState:
+      type: object
+      properties:
+        uss_availability:
+          type: string
+          enum: [Unknown, Normal, Down]
+        set_by: {type: string}
+        set_at: {type: string, format: date-time}
+        dss_reachable_since: {type: string, format: date-time}
+        dss_unreachable_since: {type: string, format: date-time}
+    AdminOutbox:
+      type: object
+      required: [pending, by_kind]
+      properties:
+        pending:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Items not done.
+        by_kind:
+          type: object
+          additionalProperties: {type: integer, format: int64, minimum: 0}
+        oldest_created_at: {type: string, format: date-time}
+        retrying:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Items not done that failed at least once.
+    AdminOutboxError:
+      type: object
+      required: [kind, entity_id, attempts, last_error, next_at]
+      properties:
+        kind: {type: string}
+        entity_id: {type: string}
+        attempts: {type: integer}
+        last_error: {type: string}
+        next_at: {type: string, format: date-time}
+        done_at: {type: string, format: date-time}
+    AdminSubscription:
+      type: object
+      required: [subscription_id, kind, time_end, notification_index]
+      properties:
+        subscription_id: {type: string}
+        kind:
+          type: string
+          enum: [rid, utm]
+        time_end: {type: string, format: date-time}
+        renewed_at: {type: string, format: date-time}
+        notification_index: {type: integer}
+
+    AdminInputs:
+      type: object
+      required: [checked_at, bus, sources, monitor, dependencies]
+      properties:
+        checked_at:
+          type: string
+          format: date-time
+          description: api's clock when the answer was made.
+        bus:
+          $ref: "#/components/schemas/AdminBus"
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminInput"
+        sources_truncated:
+          type: boolean
+          description: More instances were heard than api holds (they are counted on /metrics).
+        monitor:
+          $ref: "#/components/schemas/AdminMonitor"
+        dependencies:
+          type: object
+          description: The readiness of every dependency of api, by name (as /readyz).
+          additionalProperties:
+            $ref: "#/components/schemas/Dependency"
+    AdminBus:
+      type: object
+      required: [state, since]
+      properties:
+        state:
+          type: string
+          enum: [connected, disconnected]
+        since:
+          type: string
+          format: date-time
+          description: When api's src.v1 subscription entered this state.
+        detail: {type: string}
+    AdminInput:
+      type: object
+      required: [source, state]
+      properties:
+        source: {type: string}
+        source_instance:
+          type: string
+          description: The instance; absent for the type as a whole.
+        state:
+          type: string
+          enum: [healthy, stale, lagging, unreachable, never_heard, disabled, unknown]
+        since:
+          type: string
+          format: date-time
+          description: When it entered state, as the source said (or when api lost the bus, for unknown).
+        last_heard_at:
+          type: string
+          format: date-time
+          description: When api last received its status; absent when never.
+        age_s:
+          type: number
+          format: double
+          minimum: 0
+          description: The source's own age of its newest record, as it said.
+        lag_s:
+          type: number
+          format: double
+          minimum: 0
+        disabled:
+          $ref: "#/components/schemas/AdminDisabled"
+        detail: {type: string}
+        counters:
+          type: object
+          additionalProperties: {type: integer, format: int64, minimum: 0}
+    AdminDisabled:
+      type: object
+      required: [by, by_who, at, reason]
+      properties:
+        by:
+          type: string
+          enum: [type, instance]
+        by_who: {type: string}
+        at: {type: string, format: date-time}
+        reason: {type: string}
+    AdminMonitor:
+      type: object
+      required: [state, detail, instances]
+      properties:
+        state:
+          type: string
+          enum: [up, down, unknown]
+          description: down when no instance was heard for monitor_status_missing_s; unknown while the bucket cannot be read.
+        last_heard_at: {type: string, format: date-time}
+        detail: {type: string}
+        instances:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminMonitorInstance"
+    AdminMonitorInstance:
+      type: object
+      required: [instance, at, age_s, workers, flights_tracked, evaluation_period_s, outbox_depth, policy_version, cis_loaded, terrain, geoid]
+      properties:
+        instance: {type: string}
+        at:
+          type: string
+          format: date-time
+          description: When the instance wrote its status (its clock).
+        age_s:
+          type: number
+          format: double
+          minimum: 0
+          description: Seconds since the status was stored, on the NATS server's clock against api's.
+        workers: {type: integer}
+        flights_tracked: {type: integer}
+        states:
+          type: object
+          additionalProperties: {type: integer}
+        evaluation_period_s:
+          type: number
+          format: double
+          description: The longest conformance tick period measured in the last status period (05 §3).
+        cpa_evaluation_period_s: {type: number, format: double}
+        outbox_depth: {type: integer}
+        policy_version: {type: integer, format: int64}
+        intent_active_age_s:
+          type: number
+          format: double
+          description: Absent while intent_active was never read (every flight unknown).
+        cis_loaded: {type: boolean}
+        cis_version: {type: string}
+        cis_age_s: {type: number, format: double}
+        cis_stale: {type: boolean}
+        terrain: {type: boolean}
+        geoid: {type: boolean}
+
+    AdminPolicy:
+      type: object
+      required: [current, history, pending_gcaa]
+      properties:
+        current:
+          $ref: "#/components/schemas/PolicyVersion"
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolicyVersion"
+        pending_gcaa:
+          type: array
+          description: The value names whose defaults are national figures GCAA has not given (PLAN §15.2).
+          items: {type: string}
+    PolicyVersion:
+      type: object
+      required: [version, values, changes]
+      properties:
+        version:
+          type: integer
+          format: int64
+          description: 0 for the defaults while no version is stored.
+        created_at: {type: string, format: date-time}
+        actor: {type: string}
+        reason: {type: string}
+        values:
+          $ref: "#/components/schemas/PolicyValues"
+        changes:
+          type: array
+          description: What differs from the version before it; empty for the first.
+          items:
+            $ref: "#/components/schemas/PolicyChange"
+    PolicyValues:
+      type: object
+      description: |
+        The thresholds of one version (internal/policy.Values), by their
+        snake_case names with the unit in each name; numbers, strings and
+        lists of strings.
+      additionalProperties: true
+    PolicyChange:
+      type: object
+      required: [field, from, to]
+      properties:
+        field: {type: string}
+        from:
+          description: The value before (any JSON value).
+        to:
+          description: The value after (any JSON value).
+    PolicyPut:
+      type: object
+      required: [base_version, reason, values]
+      properties:
+        base_version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: The version the change was made from (0 for the defaults).
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        values:
+          $ref: "#/components/schemas/PolicyValues"
+
+    SourceSwitches:
+      type: object
+      required: [switches, version, epoch, known_types]
+      properties:
+        switches:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceSwitch"
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        epoch: {type: string}
+        known_types:
+          type: array
+          items: {type: string}
+    SourceSwitch:
+      type: object
+      required: [source_type, enabled, reason, actor, changed_at, version]
+      properties:
+        source_type: {type: string}
+        instance_id:
+          type: string
+          description: Absent for the switch of the whole type.
+        enabled: {type: boolean}
+        reason: {type: string}
+        actor: {type: string}
+        changed_at: {type: string, format: date-time}
+        version: {type: integer, format: int64}
+    SourceSwitchRequest:
+      type: object
+      required: [source_type, enabled, reason]
+      properties:
+        source_type:
+          type: string
+          enum: [operator_ws, network_rid, direct_rid, ansp_feed, adsb_rx]
+        instance_id:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: Leave out to switch the whole type.
+        enabled: {type: boolean}
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    EmergencyCases:
+      type: object
+      required: [cases, truncated]
+      properties:
+        cases:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmergencyCase"
+        truncated: {type: boolean}
+    EmergencyCase:
+      type: object
+      required: [case_id, flight_id, uas_serial, opened_at, opened_by, reason, contact_procedure, checklist, notes, record_link]
+      properties:
+        case_id: {type: string, format: uuid}
+        flight_id: {type: string, format: uuid}
+        intent_id: {type: string, format: uuid}
+        authorisation_number: {type: string}
+        uas_serial: {type: string}
+        opened_at: {type: string, format: date-time}
+        opened_by: {type: string}
+        reason: {type: string}
+        contact_ref:
+          type: string
+          description: The intent's emergency contact reference; the authority resolves it (no PII here).
+        contact_procedure:
+          type: string
+          description: The authority's contact procedure (policy emergency_contact_procedure).
+        checklist:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmergencyStep"
+        notes:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmergencyNote"
+        closed_at: {type: string, format: date-time}
+        closed_by: {type: string}
+        outcome: {type: string}
+        record_link:
+          type: string
+          description: The path of the flight's record (GET /v1/records/flights/{flight_id}).
+    EmergencyStep:
+      type: object
+      required: [step]
+      properties:
+        step: {type: string}
+        done_at: {type: string, format: date-time}
+        done_by: {type: string}
+    EmergencyNote:
+      type: object
+      required: [at, author, text]
+      properties:
+        at: {type: string, format: date-time}
+        author: {type: string}
+        step: {type: string}
+        text: {type: string}
+    EmergencyAction:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [open, note, close]
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Why the case is opened (open).
+        text:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: The note (note).
+        step:
+          type: string
+          maxLength: 64
+          description: The checklist step the note ticks (note); one of the policy's emergency_checklist.
+        outcome:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: How the case ended (close).
+
+    RecordDays:
+      type: object
+      required: [days, missing]
+      properties:
+        days:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecordDay"
+        missing:
+          type: array
+          description: The days of the window before today without a bundle.
+          items: {type: string, format: date}
+    RecordDay:
+      type: object
+      required: [date, built_at, content_hash, flights]
+      properties:
+        date: {type: string, format: date}
+        built_at: {type: string, format: date-time}
+        content_hash: {type: string}
+        flights: {type: integer}
+
+    AdminEvents:
+      type: object
+      required: [events, truncated]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminEvent"
+        truncated: {type: boolean}
+    AdminEvent:
+      type: object
+      required: [id, ts, actor_type, actor_id, entity_type, event_type, payload]
+      properties:
+        id: {type: integer, format: int64}
+        ts: {type: string, format: date-time}
+        actor_type: {type: string}
+        actor_id: {type: string}
+        entity_type: {type: string}
+        entity_id: {type: string}
+        event_type: {type: string}
+        payload:
+          type: object
+          additionalProperties: true

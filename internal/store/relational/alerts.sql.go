@@ -277,9 +277,33 @@ FROM alerts
 WHERE id = $1::uuid
 `
 
-func (q *Queries) GetAlert(ctx context.Context, id pgtype.UUID) (Alert, error) {
+type GetAlertRow struct {
+	ID                  pgtype.UUID `json:"id"`
+	Kind                string      `json:"kind"`
+	FlightID            pgtype.UUID `json:"flight_id"`
+	IntentID            pgtype.UUID `json:"intent_id"`
+	AuthorisationNumber *string     `json:"authorisation_number"`
+	PeerRef             *string     `json:"peer_ref"`
+	Severity            string      `json:"severity"`
+	State               string      `json:"state"`
+	RaisedAt            time.Time   `json:"raised_at"`
+	UpdatedAt           time.Time   `json:"updated_at"`
+	ClearedAt           *time.Time  `json:"cleared_at"`
+	ClearReason         *string     `json:"clear_reason"`
+	Detail              []byte      `json:"detail"`
+	CapturedAt          *time.Time  `json:"captured_at"`
+	PolicyVersion       int64       `json:"policy_version"`
+	AckedAt             *time.Time  `json:"acked_at"`
+	AckedBy             *string     `json:"acked_by"`
+	EscalatedAt         *time.Time  `json:"escalated_at"`
+	Delivery            []byte      `json:"delivery"`
+	Cell5               *string     `json:"cell5"`
+	RecordedAt          time.Time   `json:"recorded_at"`
+}
+
+func (q *Queries) GetAlert(ctx context.Context, id pgtype.UUID) (GetAlertRow, error) {
 	row := q.db.QueryRow(ctx, getAlert, id)
-	var i Alert
+	var i GetAlertRow
 	err := row.Scan(
 		&i.ID,
 		&i.Kind,
@@ -486,7 +510,8 @@ WITH f AS (
         policy_version = EXCLUDED.policy_version,
         authorisation_number = COALESCE(EXCLUDED.authorisation_number, alerts.authorisation_number),
         peer_ref = COALESCE(EXCLUDED.peer_ref, alerts.peer_ref),
-        cell5 = COALESCE(EXCLUDED.cell5, alerts.cell5)
+        cell5 = COALESCE(EXCLUDED.cell5, alerts.cell5),
+        messages_recorded = alerts.messages_recorded + 1
     WHERE alerts.cleared_at IS NULL
     RETURNING 1
 )

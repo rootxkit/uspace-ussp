@@ -67,6 +67,7 @@ const (
 // Counter names of the service.
 const (
 	CounterLoginSucceeded  = "login_succeeded"
+	CounterMFAChallenged   = "login_mfa_challenged"
 	CounterLoginRefused    = "login_refused"
 	CounterLoginLocked     = "login_locked"
 	CounterLoginLockedOut  = "login_refused_locked"

@@ -27,7 +27,12 @@
 // operating-status notices (internal/status) with /v1/admin/status;
 // WP-16 the optional weather information (internal/weather): the
 // configured source polled, GET /v1/weather, and the products every
-// decision consults (weather_checked_ref).
+// decision consults (weather_checked_ref). WP-18 the USSP console
+// (internal/admin): /v1/admin/* (flights, alerts, escalation and close,
+// the DSS state, every input with its state and time, the policy and
+// its versions, the source switches, the emergency workflow, the record
+// days, the audit rows), the source switches' writer, and the second
+// step of a staff admin's sign-in.
 package api
 
 import (
@@ -229,7 +234,8 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 		return err
 	}
 	cisState.Start(ctx, rt)
-	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc, Portal: svc,
+	console := startAdmin(ctx, rt, pol, kv, alertSvc)
+	srv := &national.Server{Admin: adminAPI{S: console}, Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc, Portal: svc,
 		CIS: cisState.Receiver, Registry: reg.Cache, Intents: intents, Alerts: alertSvc, Geo: geoState, Coordination: coordinationList{Store: notices}, Records: recordsAPI, Logger: rt.Logger,
 		Occurrences: occurrencesAPI(occurrences),
 		Status:      statusNotices{Service: statusSvc}, CertificateID: cfg.CertificateID, Weather: wx,

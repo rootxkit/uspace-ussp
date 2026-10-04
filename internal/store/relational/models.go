@@ -32,6 +32,12 @@ type Alert struct {
 	Delivery            []byte      `json:"delivery"`
 	Cell5               *string     `json:"cell5"`
 	RecordedAt          time.Time   `json:"recorded_at"`
+	EscalatedBy         *string     `json:"escalated_by"`
+	EscalationReason    *string     `json:"escalation_reason"`
+	ClosedAt            *time.Time  `json:"closed_at"`
+	ClosedBy            *string     `json:"closed_by"`
+	CloseReason         *string     `json:"close_reason"`
+	MessagesRecorded    int64       `json:"messages_recorded"`
 }
 
 type CisDataset struct {
@@ -221,6 +227,26 @@ type DssSubscription struct {
 	TimeEnd           time.Time  `json:"time_end"`
 	UssBaseUrl        string     `json:"uss_base_url"`
 	RenewedAt         *time.Time `json:"renewed_at"`
+}
+
+type EmergencyCase struct {
+	ID       pgtype.UUID `json:"id"`
+	FlightID pgtype.UUID `json:"flight_id"`
+	OpenedAt time.Time   `json:"opened_at"`
+	OpenedBy string      `json:"opened_by"`
+	Reason   string      `json:"reason"`
+	ClosedAt *time.Time  `json:"closed_at"`
+	ClosedBy *string     `json:"closed_by"`
+	Outcome  *string     `json:"outcome"`
+}
+
+type EmergencyNote struct {
+	ID     int64       `json:"id"`
+	CaseID pgtype.UUID `json:"case_id"`
+	At     time.Time   `json:"at"`
+	Author string      `json:"author"`
+	Step   *string     `json:"step"`
+	Text   string      `json:"text"`
 }
 
 type Event struct {
@@ -526,6 +552,15 @@ type StaffAccount struct {
 	Status       string      `json:"status"`
 	CreatedAt    time.Time   `json:"created_at"`
 	MfaLastStep  int64       `json:"mfa_last_step"`
+}
+
+type StaffMfaChallenge struct {
+	TokenHash []byte      `json:"token_hash"`
+	AccountID pgtype.UUID `json:"account_id"`
+	CreatedAt time.Time   `json:"created_at"`
+	ExpiresAt time.Time   `json:"expires_at"`
+	Attempts  int32       `json:"attempts"`
+	RemoteIp  *string     `json:"remote_ip"`
 }
 
 type UssReport struct {

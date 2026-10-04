@@ -260,10 +260,10 @@ func totpNow(t *testing.T, secret string, at time.Time) string {
 	return accounts.TOTPCode(key, at)
 }
 
-// A staff admin signs in with a TOTP code (brief WP-2): without one
-// 401 mfa_required, a wrong one 401, the right one 200, the same one a
-// second time refused (on another replica too: the step is in the
-// database). A supervisor needs no code.
+// A staff admin signs in with a TOTP code (brief WP-2): without one a
+// 202 challenge for the second step (WP-18), a wrong one 401, the right
+// one 200, the same one a second time refused (on another replica too:
+// the step is in the database). A supervisor needs no code.
 func TestIntegrationStaffAdminTOTP(t *testing.T) {
 	c := newClock()
 	s := newStack(t, c, &logBuffer{})
@@ -280,7 +280,8 @@ func TestIntegrationStaffAdminTOTP(t *testing.T) {
 	if strings.Contains(ref, created.TOTPSecret) {
 		t.Fatal("the TOTP secret is stored in clear")
 	}
-	if r := s.login(auth.RealmConsole, "admin."+u, "staff-password-"+u, ""); r.status != 401 || r.slug() != accounts.SlugMFARequired {
+	if r := s.login(auth.RealmConsole, "admin."+u, "staff-password-"+u, ""); r.status != 202 || r.str("mfa_token") == "" ||
+		r.header.Get("Set-Cookie") != "" {
 		t.Fatalf("no code: %d %s", r.status, r.raw)
 	}
 	if r := s.login(auth.RealmConsole, "admin."+u, "staff-password-"+u, "000000"); r.status != 401 || r.slug() != accounts.SlugInvalidCredentials {
@@ -333,6 +334,89 @@ func TestIntegrationStaffAdminTOTP(t *testing.T) {
 	// A portal user cannot sign in to the console with the same name.
 	if r := s.login(auth.RealmPortal, "super."+u, "staff-password-"+u, ""); r.status != 401 {
 		t.Fatalf("staff in the portal realm: %d", r.status)
+	}
+	// A supervisor's password step never answers a challenge.
+	if r := s.login(auth.RealmConsole, "super."+u, "staff-password-"+u, ""); r.status != 200 || r.str("mfa_token") != "" {
+		t.Fatalf("supervisor challenged: %d %s", r.status, r.raw)
+	}
+}
+
+// The second step of a staff admin's sign-in (WP-18): the password
+// step's challenge and the code start the session; a wrong code is 401
+// and counted against the username; the challenge is spent once it
+// started a session and after MaxMFAAttempts codes; an unknown
+// challenge is 401; the challenge is in the database, so another
+// replica takes it; it expires on the database clock.
+func TestIntegrationStaffAdminMFAStep(t *testing.T) {
+	c := newClock()
+	s := newStack(t, c, &logBuffer{})
+	replica := newStack(t, c, &logBuffer{})
+	u := unique()
+	user, pass := "mfa."+u, "staff-password-"+u
+	created, err := s.svc.CreateStaff(context.Background(), user, pass, auth.RoleAdmin, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	challenge := func() string {
+		t.Helper()
+		r := s.login(auth.RealmConsole, user, pass, "")
+		if r.status != 202 || r.str("mfa_token") == "" || r.str("expires_at") == "" {
+			t.Fatalf("challenge: %d %s", r.status, r.raw)
+		}
+		return r.str("mfa_token")
+	}
+	step := func(st *stack, tok, code string) resp {
+		return st.call("POST", "/v1/accounts/login/mfa", map[string]any{"mfa_token": tok, "code": code}, nil)
+	}
+	key := "console:" + user
+	failures := func() int64 {
+		return count(t, relOwner(t), "SELECT coalesce(max(failures), 0) FROM login_lockouts WHERE realm || ':' || username = $1", key)
+	}
+	tok := challenge()
+	if r := step(s, tok, "000000"); r.status != 401 || r.slug() != accounts.SlugInvalidCredentials || failures() != 1 {
+		t.Fatalf("wrong code: %d %s, failures %d", r.status, r.raw, failures())
+	}
+	r := step(replica, tok, totpNow(t, created.TOTPSecret, c.Now()))
+	if r.status != 200 || r.str("realm") != auth.RealmConsole || r.str("token") == "" || r.header.Get("Set-Cookie") == "" {
+		t.Fatalf("right code on another replica: %d %s", r.status, r.raw)
+	}
+	if failures() != 0 {
+		t.Fatalf("a session left %d failures", failures())
+	}
+	c.Add(30 * time.Second)
+	if r := step(s, tok, totpNow(t, created.TOTPSecret, c.Now())); r.status != 401 {
+		t.Fatalf("a used challenge again: %d %s", r.status, r.raw)
+	}
+	if r := step(s, "not-a-challenge", "123456"); r.status != 401 {
+		t.Fatalf("unknown challenge: %d %s", r.status, r.raw)
+	}
+	// Spent after five codes, even when the sixth is right.
+	tok = challenge()
+	for i := range accounts.MaxMFAAttempts {
+		if r := step(s, tok, "000000"); r.status != 401 {
+			t.Fatalf("wrong code %d: %d %s", i, r.status, r.raw)
+		}
+	}
+	c.Add(30 * time.Second)
+	if r := step(s, tok, totpNow(t, created.TOTPSecret, c.Now())); r.status != 401 {
+		t.Fatalf("a spent challenge: %d %s", r.status, r.raw)
+	}
+	// The presence twin: a fresh challenge with the right code.
+	if r := step(s, challenge(), totpNow(t, created.TOTPSecret, c.Now())); r.status != 200 {
+		t.Fatalf("a fresh challenge: %d %s", r.status, r.raw)
+	}
+	// Expiry on the database clock.
+	tok = challenge()
+	if _, err := relOwner(t).Exec(context.Background(),
+		"UPDATE staff_mfa_challenges SET created_at = now() - interval '1 hour', expires_at = now() - interval '1 second' WHERE account_id = (SELECT id FROM staff_accounts WHERE username = $1)", user); err != nil {
+		t.Fatal(err)
+	}
+	c.Add(30 * time.Second)
+	if r := step(s, tok, totpNow(t, created.TOTPSecret, c.Now())); r.status != 401 {
+		t.Fatalf("an expired challenge: %d %s", r.status, r.raw)
+	}
+	if n := events(t, "login", key, accounts.EventMFAChallenged); n < 4 {
+		t.Fatalf("challenges audited %d", n)
 	}
 }
 
