@@ -510,6 +510,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/records/flights/{flight_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One flight's service record
+         * @description The service record of one flight (served by api; Reg. (EU)
+         *     2021/664 Art. 15(1)(g), 18(b); spec 02 F7): the flight, its
+         *     authorisation and every version of the decision, the telemetry
+         *     summary with its holes and their recorded causes, the alerts with
+         *     their lifecycle, the conformance timeline, the Annex V notices,
+         *     the traffic products the operator was shown, and every policy
+         *     version the record names. A section whose store cannot be read
+         *     is {state: unavailable, reason}, never an empty list (LESSONS
+         *     B-13); a bounded section says truncated. No names (spec 06 §5):
+         *     registration numbers by their public part only, no free text of
+         *     the request. An ecosystem token with scope ussp.records (the
+         *     authority); every read is audited with the caller before the
+         *     body is sent (503 when it cannot be). A flight this USSP does not
+         *     hold is 404.
+         */
+        get: operations["getFlightRecord"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/records/daily/{date}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One day's bundle of service records
+         * @description The bundle of one UTC day (served by api; spec 02 F7): the
+         *     FlightRecord of every flight that started that day, one per line
+         *     (JSON lines), gzip, as built from 01:00 UTC the next day. The
+         *     stored file is hashed before a byte is served and refused (500
+         *     record_bundle_corrupt) when it no longer matches the recorded
+         *     hash; X-Content-SHA256 carries that hash. 404 for a day without a
+         *     bundle (not yet built, or missed: /readyz says records: day
+         *     <date> missing from 02:00 UTC). An ecosystem token with scope
+         *     ussp.records; every read is audited with the caller.
+         */
+        get: operations["getDailyRecords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/oauth/token": {
         parameters: {
             query?: never;
@@ -851,6 +912,195 @@ export interface components {
              * @description The next try of a pending notice.
              */
             next_at: string | null;
+        };
+        /** @description How a section of a record reads. */
+        RecordSection: {
+            /** @enum {string} */
+            state: "included" | "unavailable";
+            /** @description Why the section could not be read (state unavailable). */
+            reason?: string;
+        };
+        /**
+         * @description record/flight/v1: one flight's service record (spec 02 F7). Times
+         *     are UTC; every number carries the policy_version it was judged
+         *     under, and policy_versions holds those versions' values.
+         */
+        FlightRecord: {
+            /** @constant */
+            schema: "record/flight/v1";
+            /** Format: uuid */
+            flight_id: string;
+            ussp_id: string;
+            /** Format: date-time */
+            generated_at: string;
+            flight: {
+                /** Format: date-time */
+                started_at: string;
+                /** Format: date-time */
+                ended_at: string | null;
+                end_reason: string | null;
+                uas_serial: string;
+                /** @description The public part of the operator registration number (never the secret part). */
+                operator_reg_public: string | null;
+                authorisation_number: string | null;
+                /** Format: uuid */
+                intent_id: string | null;
+                rid_flight_id: string | null;
+                emergency: boolean;
+                last_state: string | null;
+            };
+            intent: components["schemas"]["RecordSection"] & {
+                /** @description The intent as it stands (null for a flight without one); the Annex IV items that are not free text, the decision and its inputs. */
+                intent: {
+                    /** Format: uuid */
+                    intent_id: string;
+                    version: number;
+                    local_state: string;
+                    decision: string | null;
+                    authorisation_number: string | null;
+                    /** Format: date-time */
+                    time_start: string;
+                    /** Format: date-time */
+                    time_end: string;
+                    /** @description F3548 Volume4D list as authorised (W84). */
+                    volumes: unknown[];
+                    deviation_thresholds: Record<string, never> | null;
+                    conflicts: unknown[] | null;
+                    cis_version_checked: string | null;
+                    /** Format: date-time */
+                    registry_checked_at: string | null;
+                    policy_version: number | null;
+                    operator_reg_public?: string | null;
+                } | null;
+                versions: {
+                    version: number;
+                    /** Format: date-time */
+                    at: string;
+                    /** @description The client id that made the change, or system. */
+                    actor: string;
+                    change_reason: string;
+                    /** @description The decision of that version as it was taken (intent/decision/v1). */
+                    decision: unknown;
+                }[];
+                versions_truncated?: boolean;
+            };
+            telemetry: components["schemas"]["RecordSection"] & {
+                samples: number;
+                /** Format: date-time */
+                first_at: string | null;
+                /** Format: date-time */
+                last_at: string | null;
+                /** @description min_lng, min_lat, max_lng, max_lat in WGS84 degrees. */
+                bbox: number[] | null;
+                /** @description The highest AMSL altitude; null when no sample had one (not judged, never 0). */
+                max_alt_amsl_m: number | null;
+                /** @description The silence that makes a hole (policy record_gap_s). */
+                gap_s: number;
+                policy_version: number;
+                holes: {
+                    /** Format: date-time */
+                    after: string;
+                    /** Format: date-time */
+                    before: string;
+                    gap_s: number;
+                    /** @description The recorded cause, or no recorded cause. */
+                    cause: string;
+                    detail?: string;
+                }[];
+                holes_truncated?: boolean;
+                causes: components["schemas"]["RecordSection"];
+            };
+            alerts: components["schemas"]["RecordSection"] & {
+                items?: {
+                    /** Format: uuid */
+                    alert_id: string;
+                    kind: string;
+                    /** @enum {string} */
+                    severity: "info" | "warning" | "critical";
+                    /** @enum {string} */
+                    state: "raised" | "updated" | "cleared";
+                    /** Format: date-time */
+                    raised_at: string;
+                    /** Format: date-time */
+                    updated_at: string;
+                    /** Format: date-time */
+                    cleared_at: string | null;
+                    clear_reason: string | null;
+                    /** Format: date-time */
+                    captured_at?: string | null;
+                    /** Format: date-time */
+                    acked_at?: string | null;
+                    /** Format: date-time */
+                    escalated_at?: string | null;
+                    peer_ref?: string | null;
+                    policy_version: number;
+                    detail: Record<string, never>;
+                }[];
+                truncated?: boolean;
+            };
+            conformance: components["schemas"]["RecordSection"] & {
+                items?: {
+                    /** Format: date-time */
+                    at: string;
+                    /** @enum {string} */
+                    state: "conforming" | "nonconforming" | "contingent" | "lost_link" | "unknown";
+                    reason: string | null;
+                    distance_outside_m?: number | null;
+                    height_over_m?: number | null;
+                    time_outside_s?: number | null;
+                    policy_version: number;
+                    /** Format: date-time */
+                    ats_notified_at: string | null;
+                    ats_ack_ref: string | null;
+                }[];
+                truncated?: boolean;
+            };
+            coordination: components["schemas"]["RecordSection"] & {
+                items?: {
+                    notice_ref: string;
+                    /** @enum {string} */
+                    kind: "intent_notice" | "nonconformance" | "contingent" | "ended";
+                    /** @enum {string} */
+                    state: "pending" | "received" | "acknowledged" | "escalated" | "failed";
+                    /** Format: date-time */
+                    created_at: string;
+                    /** Format: date-time */
+                    received_at?: string | null;
+                    ack_id?: string | null;
+                    /** Format: date-time */
+                    acknowledged_at?: string | null;
+                    /** @description A role at the ANSP, never a person. */
+                    acknowledged_by?: string | null;
+                    /** Format: date-time */
+                    escalated_at?: string | null;
+                    /** Format: date-time */
+                    failed_at?: string | null;
+                }[];
+                truncated?: boolean;
+            };
+            traffic_products: components["schemas"]["RecordSection"] & {
+                items?: {
+                    /** Format: date-time */
+                    at: string;
+                    /** Format: uuid */
+                    intent_id?: string | null;
+                    /** @description The tracks shown (ids, trust, age) as traffic-ws sampled them. */
+                    tracks_shown: unknown;
+                    degraded: string[];
+                    policy_version: number;
+                }[];
+                total?: number;
+                truncated?: boolean;
+            };
+            policy_versions: components["schemas"]["RecordSection"] & {
+                items?: {
+                    policy_version: number;
+                    /** Format: date-time */
+                    created_at: string;
+                    values: Record<string, never>;
+                }[];
+                missing?: number[];
+            };
         };
         /**
          * @description The ecosystem-wide error body (RFC 9457), the shape of
@@ -2013,6 +2263,67 @@ export interface operations {
             };
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getFlightRecord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                flight_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlightRecord"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getDailyRecords: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                date: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The bundle. */
+            200: {
+                headers: {
+                    /** @description The SHA-256 of the body, in hex, as record_bundles holds it. */
+                    "X-Content-SHA256"?: string;
+                    /** @description The number of records in the bundle. */
+                    "X-Record-Flights"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/gzip": string;
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            500: components["responses"]["Problem"];
             503: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
         };

@@ -18,22 +18,22 @@ import (
 
 // Defines values for CoordinationNoticeItemKind.
 const (
-	Contingent     CoordinationNoticeItemKind = "contingent"
-	Ended          CoordinationNoticeItemKind = "ended"
-	IntentNotice   CoordinationNoticeItemKind = "intent_notice"
-	Nonconformance CoordinationNoticeItemKind = "nonconformance"
+	CoordinationNoticeItemKindContingent     CoordinationNoticeItemKind = "contingent"
+	CoordinationNoticeItemKindEnded          CoordinationNoticeItemKind = "ended"
+	CoordinationNoticeItemKindIntentNotice   CoordinationNoticeItemKind = "intent_notice"
+	CoordinationNoticeItemKindNonconformance CoordinationNoticeItemKind = "nonconformance"
 )
 
 // Valid indicates whether the value is a known member of the CoordinationNoticeItemKind enum.
 func (e CoordinationNoticeItemKind) Valid() bool {
 	switch e {
-	case Contingent:
+	case CoordinationNoticeItemKindContingent:
 		return true
-	case Ended:
+	case CoordinationNoticeItemKindEnded:
 		return true
-	case IntentNotice:
+	case CoordinationNoticeItemKindIntentNotice:
 		return true
-	case Nonconformance:
+	case CoordinationNoticeItemKindNonconformance:
 		return true
 	default:
 		return false
@@ -42,19 +42,19 @@ func (e CoordinationNoticeItemKind) Valid() bool {
 
 // Defines values for CoordinationNoticeItemState.
 const (
-	Escalated CoordinationNoticeItemState = "escalated"
-	Failed    CoordinationNoticeItemState = "failed"
-	Pending   CoordinationNoticeItemState = "pending"
+	CoordinationNoticeItemStateEscalated CoordinationNoticeItemState = "escalated"
+	CoordinationNoticeItemStateFailed    CoordinationNoticeItemState = "failed"
+	CoordinationNoticeItemStatePending   CoordinationNoticeItemState = "pending"
 )
 
 // Valid indicates whether the value is a known member of the CoordinationNoticeItemState enum.
 func (e CoordinationNoticeItemState) Valid() bool {
 	switch e {
-	case Escalated:
+	case CoordinationNoticeItemStateEscalated:
 		return true
-	case Failed:
+	case CoordinationNoticeItemStateFailed:
 		return true
-	case Pending:
+	case CoordinationNoticeItemStatePending:
 		return true
 	default:
 		return false
@@ -79,6 +79,267 @@ func (e DependencyState) Valid() bool {
 	case DependencyStateUnknown:
 		return true
 	case DependencyStateUp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlightRecordAlertsItemsSeverity.
+const (
+	Critical FlightRecordAlertsItemsSeverity = "critical"
+	Info     FlightRecordAlertsItemsSeverity = "info"
+	Warning  FlightRecordAlertsItemsSeverity = "warning"
+)
+
+// Valid indicates whether the value is a known member of the FlightRecordAlertsItemsSeverity enum.
+func (e FlightRecordAlertsItemsSeverity) Valid() bool {
+	switch e {
+	case Critical:
+		return true
+	case Info:
+		return true
+	case Warning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlightRecordAlertsItemsState.
+const (
+	Cleared FlightRecordAlertsItemsState = "cleared"
+	Raised  FlightRecordAlertsItemsState = "raised"
+	Updated FlightRecordAlertsItemsState = "updated"
+)
+
+// Valid indicates whether the value is a known member of the FlightRecordAlertsItemsState enum.
+func (e FlightRecordAlertsItemsState) Valid() bool {
+	switch e {
+	case Cleared:
+		return true
+	case Raised:
+		return true
+	case Updated:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlightRecordAlertsState.
+const (
+	FlightRecordAlertsStateIncluded    FlightRecordAlertsState = "included"
+	FlightRecordAlertsStateUnavailable FlightRecordAlertsState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the FlightRecordAlertsState enum.
+func (e FlightRecordAlertsState) Valid() bool {
+	switch e {
+	case FlightRecordAlertsStateIncluded:
+		return true
+	case FlightRecordAlertsStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlightRecordConformanceItemsState.
+const (
+	FlightRecordConformanceItemsStateConforming    FlightRecordConformanceItemsState = "conforming"
+	FlightRecordConformanceItemsStateContingent    FlightRecordConformanceItemsState = "contingent"
+	FlightRecordConformanceItemsStateLostLink      FlightRecordConformanceItemsState = "lost_link"
+	FlightRecordConformanceItemsStateNonconforming FlightRecordConformanceItemsState = "nonconforming"
+	FlightRecordConformanceItemsStateUnknown       FlightRecordConformanceItemsState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the FlightRecordConformanceItemsState enum.
+func (e FlightRecordConformanceItemsState) Valid() bool {
+	switch e {
+	case FlightRecordConformanceItemsStateConforming:
+		return true
+	case FlightRecordConformanceItemsStateContingent:
+		return true
+	case FlightRecordConformanceItemsStateLostLink:
+		return true
+	case FlightRecordConformanceItemsStateNonconforming:
+		return true
+	case FlightRecordConformanceItemsStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlightRecordConformanceState.
+const (
+	FlightRecordConformanceStateIncluded    FlightRecordConformanceState = "included"
+	FlightRecordConformanceStateUnavailable FlightRecordConformanceState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the FlightRecordConformanceState enum.
+func (e FlightRecordConformanceState) Valid() bool {
+	switch e {
+	case FlightRecordConformanceStateIncluded:
+		return true
+	case FlightRecordConformanceStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlightRecordCoordinationItemsKind.
+const (
+	FlightRecordCoordinationItemsKindContingent     FlightRecordCoordinationItemsKind = "contingent"
+	FlightRecordCoordinationItemsKindEnded          FlightRecordCoordinationItemsKind = "ended"
+	FlightRecordCoordinationItemsKindIntentNotice   FlightRecordCoordinationItemsKind = "intent_notice"
+	FlightRecordCoordinationItemsKindNonconformance FlightRecordCoordinationItemsKind = "nonconformance"
+)
+
+// Valid indicates whether the value is a known member of the FlightRecordCoordinationItemsKind enum.
+func (e FlightRecordCoordinationItemsKind) Valid() bool {
+	switch e {
+	case FlightRecordCoordinationItemsKindContingent:
+		return true
+	case FlightRecordCoordinationItemsKindEnded:
+		return true
+	case FlightRecordCoordinationItemsKindIntentNotice:
+		return true
+	case FlightRecordCoordinationItemsKindNonconformance:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlightRecordCoordinationItemsState.
+const (
+	FlightRecordCoordinationItemsStateAcknowledged FlightRecordCoordinationItemsState = "acknowledged"
+	FlightRecordCoordinationItemsStateEscalated    FlightRecordCoordinationItemsState = "escalated"
+	FlightRecordCoordinationItemsStateFailed       FlightRecordCoordinationItemsState = "failed"
+	FlightRecordCoordinationItemsStatePending      FlightRecordCoordinationItemsState = "pending"
+	FlightRecordCoordinationItemsStateReceived     FlightRecordCoordinationItemsState = "received"
+)
+
+// Valid indicates whether the value is a known member of the FlightRecordCoordinationItemsState enum.
+func (e FlightRecordCoordinationItemsState) Valid() bool {
+	switch e {
+	case FlightRecordCoordinationItemsStateAcknowledged:
+		return true
+	case FlightRecordCoordinationItemsStateEscalated:
+		return true
+	case FlightRecordCoordinationItemsStateFailed:
+		return true
+	case FlightRecordCoordinationItemsStatePending:
+		return true
+	case FlightRecordCoordinationItemsStateReceived:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlightRecordCoordinationState.
+const (
+	FlightRecordCoordinationStateIncluded    FlightRecordCoordinationState = "included"
+	FlightRecordCoordinationStateUnavailable FlightRecordCoordinationState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the FlightRecordCoordinationState enum.
+func (e FlightRecordCoordinationState) Valid() bool {
+	switch e {
+	case FlightRecordCoordinationStateIncluded:
+		return true
+	case FlightRecordCoordinationStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlightRecordIntentState.
+const (
+	FlightRecordIntentStateIncluded    FlightRecordIntentState = "included"
+	FlightRecordIntentStateUnavailable FlightRecordIntentState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the FlightRecordIntentState enum.
+func (e FlightRecordIntentState) Valid() bool {
+	switch e {
+	case FlightRecordIntentStateIncluded:
+		return true
+	case FlightRecordIntentStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlightRecordPolicyVersionsState.
+const (
+	FlightRecordPolicyVersionsStateIncluded    FlightRecordPolicyVersionsState = "included"
+	FlightRecordPolicyVersionsStateUnavailable FlightRecordPolicyVersionsState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the FlightRecordPolicyVersionsState enum.
+func (e FlightRecordPolicyVersionsState) Valid() bool {
+	switch e {
+	case FlightRecordPolicyVersionsStateIncluded:
+		return true
+	case FlightRecordPolicyVersionsStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlightRecordSchema.
+const (
+	Recordflightv1 FlightRecordSchema = "record/flight/v1"
+)
+
+// Valid indicates whether the value is a known member of the FlightRecordSchema enum.
+func (e FlightRecordSchema) Valid() bool {
+	switch e {
+	case Recordflightv1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlightRecordTelemetryState.
+const (
+	FlightRecordTelemetryStateIncluded    FlightRecordTelemetryState = "included"
+	FlightRecordTelemetryStateUnavailable FlightRecordTelemetryState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the FlightRecordTelemetryState enum.
+func (e FlightRecordTelemetryState) Valid() bool {
+	switch e {
+	case FlightRecordTelemetryStateIncluded:
+		return true
+	case FlightRecordTelemetryStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FlightRecordTrafficProductsState.
+const (
+	FlightRecordTrafficProductsStateIncluded    FlightRecordTrafficProductsState = "included"
+	FlightRecordTrafficProductsStateUnavailable FlightRecordTrafficProductsState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the FlightRecordTrafficProductsState enum.
+func (e FlightRecordTrafficProductsState) Valid() bool {
+	switch e {
+	case FlightRecordTrafficProductsStateIncluded:
+		return true
+	case FlightRecordTrafficProductsStateUnavailable:
 		return true
 	default:
 		return false
@@ -334,6 +595,24 @@ func (e Realm) Valid() bool {
 	case Console:
 		return true
 	case Portal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RecordSectionState.
+const (
+	RecordSectionStateIncluded    RecordSectionState = "included"
+	RecordSectionStateUnavailable RecordSectionState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the RecordSectionState enum.
+func (e RecordSectionState) Valid() bool {
+	switch e {
+	case RecordSectionStateIncluded:
+		return true
+	case RecordSectionStateUnavailable:
 		return true
 	default:
 		return false
@@ -692,6 +971,227 @@ type FieldProblem struct {
 	Field  string `json:"field"`
 	Reason string `json:"reason"`
 }
+
+// FlightRecord record/flight/v1: one flight's service record (spec 02 F7). Times
+// are UTC; every number carries the policy_version it was judged
+// under, and policy_versions holds those versions' values.
+type FlightRecord struct {
+	Alerts struct {
+		Items *[]struct {
+			AckedAt       *time.Time                      `json:"acked_at,omitempty"`
+			AlertId       openapi_types.UUID              `json:"alert_id"`
+			CapturedAt    *time.Time                      `json:"captured_at,omitempty"`
+			ClearReason   *string                         `json:"clear_reason"`
+			ClearedAt     *time.Time                      `json:"cleared_at"`
+			Detail        map[string]interface{}          `json:"detail"`
+			EscalatedAt   *time.Time                      `json:"escalated_at,omitempty"`
+			Kind          string                          `json:"kind"`
+			PeerRef       *string                         `json:"peer_ref,omitempty"`
+			PolicyVersion int                             `json:"policy_version"`
+			RaisedAt      time.Time                       `json:"raised_at"`
+			Severity      FlightRecordAlertsItemsSeverity `json:"severity"`
+			State         FlightRecordAlertsItemsState    `json:"state"`
+			UpdatedAt     time.Time                       `json:"updated_at"`
+		} `json:"items,omitempty"`
+
+		// Reason Why the section could not be read (state unavailable).
+		Reason    *string                 `json:"reason,omitempty"`
+		State     FlightRecordAlertsState `json:"state"`
+		Truncated *bool                   `json:"truncated,omitempty"`
+	} `json:"alerts"`
+	Conformance struct {
+		Items *[]struct {
+			At               time.Time                         `json:"at"`
+			AtsAckRef        *string                           `json:"ats_ack_ref"`
+			AtsNotifiedAt    *time.Time                        `json:"ats_notified_at"`
+			DistanceOutsideM *float32                          `json:"distance_outside_m,omitempty"`
+			HeightOverM      *float32                          `json:"height_over_m,omitempty"`
+			PolicyVersion    int                               `json:"policy_version"`
+			Reason           *string                           `json:"reason"`
+			State            FlightRecordConformanceItemsState `json:"state"`
+			TimeOutsideS     *float32                          `json:"time_outside_s,omitempty"`
+		} `json:"items,omitempty"`
+
+		// Reason Why the section could not be read (state unavailable).
+		Reason    *string                      `json:"reason,omitempty"`
+		State     FlightRecordConformanceState `json:"state"`
+		Truncated *bool                        `json:"truncated,omitempty"`
+	} `json:"conformance"`
+	Coordination struct {
+		Items *[]struct {
+			AckId          *string    `json:"ack_id,omitempty"`
+			AcknowledgedAt *time.Time `json:"acknowledged_at,omitempty"`
+
+			// AcknowledgedBy A role at the ANSP, never a person.
+			AcknowledgedBy *string                            `json:"acknowledged_by,omitempty"`
+			CreatedAt      time.Time                          `json:"created_at"`
+			EscalatedAt    *time.Time                         `json:"escalated_at,omitempty"`
+			FailedAt       *time.Time                         `json:"failed_at,omitempty"`
+			Kind           FlightRecordCoordinationItemsKind  `json:"kind"`
+			NoticeRef      string                             `json:"notice_ref"`
+			ReceivedAt     *time.Time                         `json:"received_at,omitempty"`
+			State          FlightRecordCoordinationItemsState `json:"state"`
+		} `json:"items,omitempty"`
+
+		// Reason Why the section could not be read (state unavailable).
+		Reason    *string                       `json:"reason,omitempty"`
+		State     FlightRecordCoordinationState `json:"state"`
+		Truncated *bool                         `json:"truncated,omitempty"`
+	} `json:"coordination"`
+	Flight struct {
+		AuthorisationNumber *string             `json:"authorisation_number"`
+		Emergency           bool                `json:"emergency"`
+		EndReason           *string             `json:"end_reason"`
+		EndedAt             *time.Time          `json:"ended_at"`
+		IntentId            *openapi_types.UUID `json:"intent_id"`
+		LastState           *string             `json:"last_state"`
+
+		// OperatorRegPublic The public part of the operator registration number (never the secret part).
+		OperatorRegPublic *string   `json:"operator_reg_public"`
+		RidFlightId       *string   `json:"rid_flight_id"`
+		StartedAt         time.Time `json:"started_at"`
+		UasSerial         string    `json:"uas_serial"`
+	} `json:"flight"`
+	FlightId    openapi_types.UUID `json:"flight_id"`
+	GeneratedAt time.Time          `json:"generated_at"`
+	Intent      struct {
+		// Intent The intent as it stands (null for a flight without one); the Annex IV items that are not free text, the decision and its inputs.
+		Intent *struct {
+			AuthorisationNumber *string                 `json:"authorisation_number"`
+			CisVersionChecked   *string                 `json:"cis_version_checked"`
+			Conflicts           *[]interface{}          `json:"conflicts"`
+			Decision            *string                 `json:"decision"`
+			DeviationThresholds *map[string]interface{} `json:"deviation_thresholds"`
+			IntentId            openapi_types.UUID      `json:"intent_id"`
+			LocalState          string                  `json:"local_state"`
+			OperatorRegPublic   *string                 `json:"operator_reg_public,omitempty"`
+			PolicyVersion       *int                    `json:"policy_version"`
+			RegistryCheckedAt   *time.Time              `json:"registry_checked_at"`
+			TimeEnd             time.Time               `json:"time_end"`
+			TimeStart           time.Time               `json:"time_start"`
+			Version             int                     `json:"version"`
+
+			// Volumes F3548 Volume4D list as authorised (W84).
+			Volumes []interface{} `json:"volumes"`
+		} `json:"intent"`
+
+		// Reason Why the section could not be read (state unavailable).
+		Reason   *string                 `json:"reason,omitempty"`
+		State    FlightRecordIntentState `json:"state"`
+		Versions []struct {
+			// Actor The client id that made the change, or system.
+			Actor        string    `json:"actor"`
+			At           time.Time `json:"at"`
+			ChangeReason string    `json:"change_reason"`
+
+			// Decision The decision of that version as it was taken (intent/decision/v1).
+			Decision interface{} `json:"decision"`
+			Version  int         `json:"version"`
+		} `json:"versions"`
+		VersionsTruncated *bool `json:"versions_truncated,omitempty"`
+	} `json:"intent"`
+	PolicyVersions struct {
+		Items *[]struct {
+			CreatedAt     time.Time              `json:"created_at"`
+			PolicyVersion int                    `json:"policy_version"`
+			Values        map[string]interface{} `json:"values"`
+		} `json:"items,omitempty"`
+		Missing *[]int `json:"missing,omitempty"`
+
+		// Reason Why the section could not be read (state unavailable).
+		Reason *string                         `json:"reason,omitempty"`
+		State  FlightRecordPolicyVersionsState `json:"state"`
+	} `json:"policy_versions"`
+	Schema    FlightRecordSchema `json:"schema"`
+	Telemetry struct {
+		// Bbox min_lng, min_lat, max_lng, max_lat in WGS84 degrees.
+		Bbox *[]float32 `json:"bbox"`
+
+		// Causes How a section of a record reads.
+		Causes  RecordSection `json:"causes"`
+		FirstAt *time.Time    `json:"first_at"`
+
+		// GapS The silence that makes a hole (policy record_gap_s).
+		GapS  float32 `json:"gap_s"`
+		Holes []struct {
+			After  time.Time `json:"after"`
+			Before time.Time `json:"before"`
+
+			// Cause The recorded cause, or no recorded cause.
+			Cause  string  `json:"cause"`
+			Detail *string `json:"detail,omitempty"`
+			GapS   float32 `json:"gap_s"`
+		} `json:"holes"`
+		HolesTruncated *bool      `json:"holes_truncated,omitempty"`
+		LastAt         *time.Time `json:"last_at"`
+
+		// MaxAltAmslM The highest AMSL altitude; null when no sample had one (not judged, never 0).
+		MaxAltAmslM   *float32 `json:"max_alt_amsl_m"`
+		PolicyVersion int      `json:"policy_version"`
+
+		// Reason Why the section could not be read (state unavailable).
+		Reason  *string                    `json:"reason,omitempty"`
+		Samples int                        `json:"samples"`
+		State   FlightRecordTelemetryState `json:"state"`
+	} `json:"telemetry"`
+	TrafficProducts struct {
+		Items *[]struct {
+			At            time.Time           `json:"at"`
+			Degraded      []string            `json:"degraded"`
+			IntentId      *openapi_types.UUID `json:"intent_id,omitempty"`
+			PolicyVersion int                 `json:"policy_version"`
+
+			// TracksShown The tracks shown (ids, trust, age) as traffic-ws sampled them.
+			TracksShown interface{} `json:"tracks_shown"`
+		} `json:"items,omitempty"`
+
+		// Reason Why the section could not be read (state unavailable).
+		Reason    *string                          `json:"reason,omitempty"`
+		State     FlightRecordTrafficProductsState `json:"state"`
+		Total     *int                             `json:"total,omitempty"`
+		Truncated *bool                            `json:"truncated,omitempty"`
+	} `json:"traffic_products"`
+	UsspId string `json:"ussp_id"`
+}
+
+// FlightRecordAlertsItemsSeverity defines model for FlightRecord.Alerts.Items.Severity.
+type FlightRecordAlertsItemsSeverity string
+
+// FlightRecordAlertsItemsState defines model for FlightRecord.Alerts.Items.State.
+type FlightRecordAlertsItemsState string
+
+// FlightRecordAlertsState defines model for FlightRecord.Alerts.State.
+type FlightRecordAlertsState string
+
+// FlightRecordConformanceItemsState defines model for FlightRecord.Conformance.Items.State.
+type FlightRecordConformanceItemsState string
+
+// FlightRecordConformanceState defines model for FlightRecord.Conformance.State.
+type FlightRecordConformanceState string
+
+// FlightRecordCoordinationItemsKind defines model for FlightRecord.Coordination.Items.Kind.
+type FlightRecordCoordinationItemsKind string
+
+// FlightRecordCoordinationItemsState defines model for FlightRecord.Coordination.Items.State.
+type FlightRecordCoordinationItemsState string
+
+// FlightRecordCoordinationState defines model for FlightRecord.Coordination.State.
+type FlightRecordCoordinationState string
+
+// FlightRecordIntentState defines model for FlightRecord.Intent.State.
+type FlightRecordIntentState string
+
+// FlightRecordPolicyVersionsState defines model for FlightRecord.PolicyVersions.State.
+type FlightRecordPolicyVersionsState string
+
+// FlightRecordSchema defines model for FlightRecord.Schema.
+type FlightRecordSchema string
+
+// FlightRecordTelemetryState defines model for FlightRecord.Telemetry.State.
+type FlightRecordTelemetryState string
+
+// FlightRecordTrafficProductsState defines model for FlightRecord.TrafficProducts.State.
+type FlightRecordTrafficProductsState string
 
 // GeoAirspace A U-space airspace with its Art. 3(4) requirements (cis/uspace_requirements/v1 as published, null with requirements_problem when they cannot be read).
 type GeoAirspace struct {
@@ -1202,6 +1702,16 @@ type ReadinessStatus string
 // Realm portal for operator users, console for staff (M20).
 type Realm string
 
+// RecordSection How a section of a record reads.
+type RecordSection struct {
+	// Reason Why the section could not be read (state unavailable).
+	Reason *string            `json:"reason,omitempty"`
+	State  RecordSectionState `json:"state"`
+}
+
+// RecordSectionState defines model for RecordSection.State.
+type RecordSectionState string
+
 // RegistryAnswer One entity's answer, status only.
 type RegistryAnswer struct {
 	// CacheAgeS The age of the answer in seconds (0 when the authority was just asked); absent when there is no answer.
@@ -1687,6 +2197,12 @@ type ServerInterface interface {
 	// ChangeIntent Activate, modify or end an intent
 	// (PATCH /v1/intents/{intent_id})
 	ChangeIntent(w http.ResponseWriter, r *http.Request, intentId IntentID)
+	// GetDailyRecords One day's bundle of service records
+	// (GET /v1/records/daily/{date})
+	GetDailyRecords(w http.ResponseWriter, r *http.Request, date openapi_types.Date)
+	// GetFlightRecord One flight's service record
+	// (GET /v1/records/flights/{flight_id})
+	GetFlightRecord(w http.ResponseWriter, r *http.Request, flightId openapi_types.UUID)
 	// ValidateRegistry Validity of an operator, a UAS and a remote pilot (F8, cached)
 	// (GET /v1/registry/validate)
 	ValidateRegistry(w http.ResponseWriter, r *http.Request, params ValidateRegistryParams)
@@ -2269,6 +2785,58 @@ func (siw *ServerInterfaceWrapper) ChangeIntent(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// GetDailyRecords operation middleware
+func (siw *ServerInterfaceWrapper) GetDailyRecords(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "date" -------------
+	var date openapi_types.Date
+
+	err = runtime.BindStyledParameterWithOptions("simple", "date", r.PathValue("date"), &date, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "date", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "date", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDailyRecords(w, r, date)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFlightRecord operation middleware
+func (siw *ServerInterfaceWrapper) GetFlightRecord(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "flight_id" -------------
+	var flightId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "flight_id", r.PathValue("flight_id"), &flightId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "flight_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFlightRecord(w, r, flightId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ValidateRegistry operation middleware
 func (siw *ServerInterfaceWrapper) ValidateRegistry(w http.ResponseWriter, r *http.Request) {
 
@@ -2473,6 +3041,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/geo/intents/{intent_id}", wrapper.GetGeoForIntent)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/alerts/{alert_id}/ack", wrapper.AckAlert)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/coordination", wrapper.ListCoordinationNotices)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/records/flights/{flight_id}", wrapper.GetFlightRecord)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/records/daily/{date}", wrapper.GetDailyRecords)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/oauth/token", wrapper.RequestToken)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/jwks.json", wrapper.GetJWKS)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/login", wrapper.Login)

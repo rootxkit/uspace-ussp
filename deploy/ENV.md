@@ -107,6 +107,7 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_TERRAIN_DIR` | `monitor` |  |  |  | directory of terrain tiles |
 | `USSP_CELL_OWNERSHIP` | `monitor` |  | `all` |  | cells this monitor instance owns: all, or a comma list of c3 cells |
 | `USSP_AUTHORITY_PUSH` | `rid-sp` |  | `off` |  | the optional WS /v1/authority/flights extension (D12) |
+| `USSP_RECORDS_DIR` | `api` |  |  |  | directory (a local volume) the daily record bundles are written to and served from (GET /v1/records/daily/{date}); unset, no bundle is built and /readyz says so |
 | `USSP_WEATHER_SOURCE` | `api` |  |  |  | weather source adapter and URL; unset means weather answers 503 weather_unavailable |
 | `USSP_ADSB_SOURCE` | `monitor` |  |  |  | e-conspicuity receiver feed; unset means no receiver, shown as such |
 | `USSP_WS_ALLOWED_ORIGINS` | `telemetry-ingest,traffic-ws` |  |  |  | Origin allow-list of browser WebSocket upgrades (M22), comma-separated |

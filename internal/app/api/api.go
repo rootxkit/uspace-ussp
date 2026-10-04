@@ -20,7 +20,9 @@
 // commit and authorised only once it is, the peers' notifications and
 // details, the subscriptions, the availability, the 24 h purge and the
 // exchange log; WP-15 the Annex V coordination with the ANSP
-// (internal/coordination) and GET /v1/admin/coordination.
+// (internal/coordination) and GET /v1/admin/coordination, and the
+// service records (internal/records): /v1/records, the daily bundles and
+// the gap records of telemetry-ingest.
 package api
 
 import (
@@ -211,9 +213,10 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	if err != nil {
 		return err
 	}
+	recordsAPI := startRecords(ctx, rt, pol)
 	cisState.Start(ctx, rt)
 	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc,
-		CIS: cisState.Receiver, Registry: reg.Cache, Intents: intents, Alerts: alertSvc, Geo: geoState, Coordination: notices, Logger: rt.Logger,
+		CIS: cisState.Receiver, Registry: reg.Cache, Intents: intents, Alerts: alertSvc, Geo: geoState, Coordination: notices, Records: recordsAPI, Logger: rt.Logger,
 		RegistryScope:   svc,
 		RegistryLimiter: httpx.NewRateLimiter(perMin(cfg.RegistryRatePerMin), burst(cfg.RegistryRatePerMin), 100_000, counters)}
 	if err := national.Register(mux, srv, guard.Require); err != nil {

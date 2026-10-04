@@ -68,7 +68,9 @@ type Server struct {
 	// Coordination lists the Annex V notices for the console
 	// (internal/coordination); nil answers 503 coordination_unavailable.
 	Coordination CoordinationLister
-	Logger       *slog.Logger
+	// Records serves /v1/records; nil answers 503 records_unavailable.
+	Records *Records
+	Logger  *slog.Logger
 }
 
 // RegistryValidator is the cached, audited F8 lookup
@@ -114,6 +116,8 @@ func AccessTable() map[string]httpx.Access {
 		"GET /v1/geo/intents/{intent_id}":                   {Scopes: []string{auth.ScopeGeo}},
 		"POST /v1/alerts/{alert_id}/ack":                    {Scopes: []string{auth.ScopeTraffic}},
 		"GET /v1/admin/coordination":                        consoleStaff,
+		"GET /v1/records/flights/{flight_id}":               {Scopes: []string{ScopeRecords}},
+		"GET /v1/records/daily/{date}":                      {Scopes: []string{ScopeRecords}},
 		"POST /v1/accounts/logout":                          anySession,
 		"GET /v1/accounts/me":                               anySession,
 		"GET /v1/accounts/operators/{operator_id}":          portalAdmin,

@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -14,7 +15,10 @@ import (
 // occurrences).
 type seeded struct {
 	operatorID, clientID, intentID, flightID, number, serial string
-	start, end                                               time.Time
+	// regPublic is the public part of the operator registration number
+	// the intent and the flight carry (its secret part is "-abc").
+	regPublic  string
+	start, end time.Time
 }
 
 // seedVolumes is the stored F3548 Volume4D list of a seeded intent.
@@ -37,6 +41,8 @@ func seedFlight(t *testing.T, localState string, airspaces []string, start time.
 	app := relApp(t)
 	u := unique()
 	s := seeded{number: "GEO-TEST-" + u, serial: "TEST" + u, clientID: "client-wp15-" + u, start: start.UTC().Truncate(time.Second)}
+	digits := strings.Repeat("0", 13) + u
+	s.regPublic = "GEO" + digits[len(digits)-13:]
 	s.end = s.start.Add(time.Hour)
 	if err := app.QueryRow(ctx, `INSERT INTO operator_accounts (authority_registration_number, display_name, contact_email, status)
 		VALUES ($1, 'WP-15 operator', 'wp15@example.invalid', 'active') RETURNING id::text`, s.number).Scan(&s.operatorID); err != nil {
@@ -54,7 +60,7 @@ func seedFlight(t *testing.T, localState string, airspaces []string, start time.
 		        $8, 'authorised', $9::text[], cardinality($9::text[]) > 0, 1, '{"h_m":50,"v_m":15,"t_s":60}', 'uspace_airspace:3', now(),
 		        $10, 'BVLOS', 'specific', 'normal')
 		RETURNING id::text`, s.operatorID, s.clientID, s.serial, localState, seedVolumes(s.start, s.end), s.start, s.end,
-		"GE-USSP-DEV-"+u, airspaces, s.number+"-abc").Scan(&s.intentID); err != nil {
+		"GE-USSP-DEV-"+u, airspaces, s.regPublic+"-abc").Scan(&s.intentID); err != nil {
 		t.Fatal(err)
 	}
 	for v, st := range []string{"accepted", "activated"} {
@@ -63,12 +69,12 @@ func seedFlight(t *testing.T, localState string, airspaces []string, start time.
 			        'authorisation_number', $7::text, 'deviation_thresholds', '{"h_m":50,"v_m":15,"t_s":60}'::jsonb, 'conflicts', '[]'::jsonb,
 			        'cis_version_checked', 'uspace_airspace:3', 'registry_checked_at', now(), 'policy_version', 1),
 			        'request', jsonb_build_object('uas_serial', $8::text, 'operator_reg', $9::text, 'loss_of_c2_procedure', 'call Nino on 555-0100')))`,
-			s.intentID, v+1, s.start.Add(time.Duration(v-2)*time.Minute), s.clientID, st, st, "GE-USSP-DEV-"+u, s.serial, s.number+"-abc"); err != nil {
+			s.intentID, v+1, s.start.Add(time.Duration(v-2)*time.Minute), s.clientID, st, st, "GE-USSP-DEV-"+u, s.serial, s.regPublic+"-abc"); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if err := app.QueryRow(ctx, `INSERT INTO flights (intent_id, authorisation_number, uas_serial, operator_reg, client_id, started_at)
-		VALUES ($1::uuid, $2, $3, $4, $5, $6) RETURNING id::text`, s.intentID, "GE-USSP-DEV-"+u, s.serial, s.number+"-abc", s.clientID, s.start).Scan(&s.flightID); err != nil {
+		VALUES ($1::uuid, $2, $3, $4, $5, $6) RETURNING id::text`, s.intentID, "GE-USSP-DEV-"+u, s.serial, s.regPublic+"-abc", s.clientID, s.start).Scan(&s.flightID); err != nil {
 		t.Fatal(err)
 	}
 	return s

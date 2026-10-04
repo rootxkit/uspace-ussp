@@ -252,6 +252,19 @@ type Flight struct {
 	LastState           *string     `json:"last_state"`
 }
 
+type IngestGap struct {
+	ID             int64      `json:"id"`
+	MsgID          string     `json:"msg_id"`
+	SourceInstance string     `json:"source_instance"`
+	Cause          string     `json:"cause"`
+	GapStarted     *time.Time `json:"gap_started"`
+	GapEnded       *time.Time `json:"gap_ended"`
+	Dropped        int32      `json:"dropped"`
+	FromSeq        *int64     `json:"from_seq"`
+	ToSeq          *int64     `json:"to_seq"`
+	RecordedAt     time.Time  `json:"recorded_at"`
+}
+
 type IntentVersion struct {
 	IntentID     pgtype.UUID `json:"intent_id"`
 	Version      int32       `json:"version"`

@@ -133,6 +133,7 @@ type Config struct {
 	TerrainDir              string   `env:"USSP_TERRAIN_DIR" by:"monitor" help:"directory of terrain tiles"`
 	CellOwnership           string   `env:"USSP_CELL_OWNERSHIP" default:"all" by:"monitor" help:"cells this monitor instance owns: all, or a comma list of c3 cells"`
 	AuthorityPush           string   `env:"USSP_AUTHORITY_PUSH" default:"off" by:"rid-sp" enum:"on|off" help:"the optional WS /v1/authority/flights extension (D12)"`
+	RecordsDir              string   `env:"USSP_RECORDS_DIR" by:"api" help:"directory (a local volume) the daily record bundles are written to and served from (GET /v1/records/daily/{date}); unset, no bundle is built and /readyz says so"`
 	WeatherSource           string   `env:"USSP_WEATHER_SOURCE" by:"api" help:"weather source adapter and URL; unset means weather answers 503 weather_unavailable"`
 	ADSBSource              string   `env:"USSP_ADSB_SOURCE" by:"monitor" help:"e-conspicuity receiver feed; unset means no receiver, shown as such"`
 	WSAllowedOrigins        []string `env:"USSP_WS_ALLOWED_ORIGINS" by:"telemetry-ingest,traffic-ws" help:"Origin allow-list of browser WebSocket upgrades (M22), comma-separated"`

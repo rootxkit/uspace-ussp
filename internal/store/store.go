@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -163,3 +164,18 @@ func UUIDText(u pgtype.UUID) string {
 
 // StateUniqueViolation is the SQLSTATE of a unique constraint (23505).
 const StateUniqueViolation = "23505"
+
+// Date is the database date of t's UTC day.
+func Date(t time.Time) pgtype.Date {
+	y, m, d := t.UTC().Date()
+	return pgtype.Date{Time: time.Date(y, m, d, 0, 0, 0, 0, time.UTC), Valid: true}
+}
+
+// DateTime is midnight UTC of d (the zero time when d is NULL).
+func DateTime(d pgtype.Date) time.Time {
+	if !d.Valid {
+		return time.Time{}
+	}
+	y, m, dd := d.Time.Date()
+	return time.Date(y, m, dd, 0, 0, 0, 0, time.UTC)
+}
