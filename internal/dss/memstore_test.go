@@ -81,6 +81,11 @@ func (m *memStore) Lock(_ context.Context, class int32, id string, fn func() err
 
 // enqueue is what intent.Tx.Enqueue and QueueDSS do.
 func (m *memStore) enqueue(kind, entity string, version int64, payload any) {
+	m.enqueueHeld(kind, entity, version, payload, 0)
+}
+
+// enqueueHeld is enqueue due hold later (store.EnqueueHeld).
+func (m *memStore) enqueueHeld(kind, entity string, version int64, payload any, hold time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.outbox {
@@ -90,7 +95,7 @@ func (m *memStore) enqueue(kind, entity string, version int64, payload any) {
 	}
 	b, _ := json.Marshal(payload)
 	m.seq++
-	m.outbox = append(m.outbox, store.OutboxItem{ID: m.seq, Kind: kind, EntityID: entity, EntityVersion: version, Payload: b, NextAt: m.now, CreatedAt: m.now})
+	m.outbox = append(m.outbox, store.OutboxItem{ID: m.seq, Kind: kind, EntityID: entity, EntityVersion: version, Payload: b, NextAt: m.now.Add(max(hold, 0)), CreatedAt: m.now})
 }
 
 func (m *memStore) pending(kinds ...string) []store.OutboxItem {
@@ -155,7 +160,7 @@ func (m *memStore) ClaimByKey(_ context.Context, kind, entity string, version in
 	defer m.mu.Unlock()
 	for i := range m.outbox {
 		it := &m.outbox[i]
-		if it.Kind == kind && it.EntityID == entity && it.EntityVersion == version && it.DoneAt == nil && !it.NextAt.After(m.now) {
+		if it.Kind == kind && it.EntityID == entity && it.EntityVersion == version && it.DoneAt == nil && (!it.NextAt.After(m.now) || it.Attempts == 0) {
 			it.Attempts++
 			it.NextAt = m.now.Add(time.Minute)
 			c := *it
@@ -541,7 +546,7 @@ func (f *fakeIntents) record(id string, held *intent.DSSHeld, notes []intent.Out
 	}
 	f.mu.Unlock()
 	for _, n := range notes {
-		f.st.enqueue(n.Kind, n.EntityID, n.Version, n.Payload)
+		f.st.enqueueHeld(n.Kind, n.EntityID, n.Version, n.Payload, n.Hold)
 	}
 }
 

@@ -71,9 +71,10 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_CONFORMANCE_STATE_BUCKET_MAX_BYTES` | `all` |  | `536870912` | bytes | size bound of the conformance_state bucket, reserved in the JetStream file store; a full bucket refuses puts |
 | `USSP_PROXIMITY_STATE_BUCKET_MAX_BYTES` | `all` |  | `67108864` | bytes | size bound of the proximity_state bucket, reserved in the JetStream file store; a full bucket refuses puts |
 | `USSP_SESSIONS_LIVE_BUCKET_MAX_BYTES` | `all` |  | `67108864` | bytes | size bound of the sessions_live bucket, reserved in the JetStream file store; a full bucket refuses puts |
-| `USSP_SYSTEM_ID` | `api,rid-sp,dss-sync` |  | `USSP-DEV` |  | the USSP code from the authority's certificate (M8); never an audience |
+| `USSP_RECORD_HOLDS_BUCKET_MAX_BYTES` | `all` |  | `16777216` | bytes | size bound of the record_holds bucket, reserved in the JetStream file store; a full bucket refuses puts |
+| `USSP_SYSTEM_ID` | `api,rid-sp,monitor,dss-sync` |  | `USSP-DEV` |  | the USSP code from the authority's certificate (M8); never an audience |
 | `USSP_AUDIENCES` | `api,telemetry-ingest,rid-sp,traffic-ws` |  |  |  | hosts accepted as JWT aud, comma-separated: the public host and a lab alias (M18) |
-| `USSP_TOKEN_ISSUERS` | `api,telemetry-ingest,rid-sp,traffic-ws` |  |  |  | allow-listed token issuers as iss=jwks_url, comma-separated; the first is the token service for outgoing calls |
+| `USSP_TOKEN_ISSUERS` | `api,telemetry-ingest,rid-sp,monitor,traffic-ws` |  |  |  | allow-listed token issuers as iss=jwks_url, comma-separated; the first is the token service for outgoing calls |
 | `USSP_CIS_NOTIFY_ISSUERS` | `api` |  |  |  | issuers of CIS change notifications (the CISP, the ANSP) as iss=jwks_url, comma-separated |
 | `USSP_USS_BASE_URL` | `api,rid-sp,dss-sync` |  |  |  | this USSP's published base URL (uss_base_url in the DSS) |
 | `USSP_DSS_BASE_URL` | `api,rid-sp,dss-sync` |  |  |  | InterUSS DSS base URL; its host is the outgoing aud |
@@ -83,13 +84,14 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_CIS_PUBLISHER_KEYS` | `api` |  |  |  | JWKS of the CIS publishers as authority=jwks_url,ansp=jwks_url: a dataset version is used only when its X-Publisher-Signature verifies with its publisher's key (the authority for zones, uspace_airspace and ussp_list, the ANSP for restrictions); otherwise it is held |
 | `USSP_CIS_PUBLISHER_SIG_MAX_AGE_S` | `api` |  | `31622400` | s | how old the iat of a publisher signature may be when this USSP first reads its version; the CISP forwards the signature made at publication, so it is as old as the version (default 366 days) |
 | `USSP_CIS_RECONCILE_S` | `api` |  | `60` | s | period of the conditional pull of every CIS dataset that bounds what a missed change notification costs (spec 02 F3: at most 60 s) |
+| `USSP_CERTIFICATE_ID` | `api` |  |  |  | the id of this USSP's certificate at the authority (32 hex characters), named by the Art. 7(6) operating-status notices; unset, no notice can be sent and /readyz says so |
 | `USSP_AUTHORITY_BASE_URL` | `api` |  |  |  | authority base URL (F8 registry, occurrences, status) |
 | `USSP_ANSP_BASE_URL` | `api` |  |  |  | ANSP base URL (Annex V coordination notices) |
-| `USSP_ANSP_STREAM_URL` | `monitor` |  |  |  | ANSP manned-traffic stream (F4) |
-| `USSP_MTLS_MODE` | `monitor` |  | `required` |  | mTLS towards the ANSP (M25); off only in the lab and on staging, and logged at error level |
-| `USSP_MTLS_CERT_FILE` | `monitor` |  |  |  | client certificate (PEM) for USSP_MTLS_MODE=required |
-| `USSP_MTLS_KEY_FILE` | `monitor` |  |  |  | client key (PEM) for USSP_MTLS_MODE=required |
-| `USSP_MTLS_CA_FILE` | `monitor` |  |  |  | CA bundle (PEM) the ANSP's certificate is checked against |
+| `USSP_ANSP_STREAM_URL` | `monitor` |  |  |  | ANSP manned-traffic stream (F4, wss://<ansp>/v1/manned-traffic/stream): monitor reads it with a token of scope ansp.traffic and mTLS per USSP_MTLS_MODE and reports it as ansp_feed on /readyz; the manned tracks are held, not published to man.v1, until WP-14's echo guard (PLAN §15 Q23) |
+| `USSP_MTLS_MODE` | `api,monitor` |  | `required` |  | mTLS towards the ANSP (M25): Annex V notices (api) and the manned-traffic stream (monitor); off only in the lab and on staging, and logged at error level |
+| `USSP_MTLS_CERT_FILE` | `api,monitor` |  |  |  | client certificate (PEM) for USSP_MTLS_MODE=required |
+| `USSP_MTLS_KEY_FILE` | `api,monitor` |  |  |  | client key (PEM) for USSP_MTLS_MODE=required |
+| `USSP_MTLS_CA_FILE` | `api,monitor` |  |  |  | CA bundle (PEM) the ANSP's certificate is checked against |
 | `USSP_ISSUER_KEY_FILE` | `api` |  |  |  | RSA key (PEM, at least 2048 bits) of this USSP's own token issuer (scripts/gen-issuer-key.sh); unset, api issues no token and starts no session, and says so on /readyz |
 | `USSP_ISSUER_PREVIOUS_KEY_FILE` | `api` |  |  |  | the previous issuer key (PEM) during a rotation: published in the JWKS and accepted, never used to sign |
 | `USSP_ISSUER_URL` | `api,telemetry-ingest` |  |  |  | iss of this USSP's own tokens; default https:// followed by the first USSP_AUDIENCES entry; telemetry-ingest honours operator scopes only on tokens of this iss (list it in USSP_TOKEN_ISSUERS with api's JWKS) |
@@ -107,6 +109,7 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_TERRAIN_DIR` | `monitor` |  |  |  | directory of terrain tiles |
 | `USSP_CELL_OWNERSHIP` | `monitor` |  | `all` |  | cells this monitor instance owns: all, or a comma list of c3 cells |
 | `USSP_AUTHORITY_PUSH` | `rid-sp` |  | `off` |  | the optional WS /v1/authority/flights extension (D12) |
+| `USSP_RECORDS_DIR` | `api` |  |  |  | directory (a local volume) the daily record bundles are written to and served from (GET /v1/records/daily/{date}); unset, no bundle is built and /readyz says so |
 | `USSP_WEATHER_SOURCE` | `api` |  |  |  | weather source adapter and URL; unset means weather answers 503 weather_unavailable |
 | `USSP_ADSB_SOURCE` | `monitor` |  |  |  | e-conspicuity receiver feed; unset means no receiver, shown as such |
 | `USSP_WS_ALLOWED_ORIGINS` | `telemetry-ingest,traffic-ws` |  |  |  | Origin allow-list of browser WebSocket upgrades (M22), comma-separated |

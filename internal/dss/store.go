@@ -93,8 +93,9 @@ type Store interface {
 	Done(ctx context.Context, id int64) error
 	Fail(ctx context.Context, id int64, cause error, backoff time.Duration) error
 	// ClaimByKey leases the due item of the key, as Claim does (a
-	// notification posted inline); nil when none is due: done, or held by
-	// the notification loop.
+	// notification posted inline), or one queued with a hold
+	// (OutboxSpec.Hold) that no worker has claimed yet; nil when none
+	// is: done, or held by the notification loop.
 	ClaimByKey(ctx context.Context, kind, entityID string, version int64) (*store.OutboxItem, error)
 	// DoneByKey marks the item of the key done (a notification posted
 	// inline); false when none was pending.

@@ -64,8 +64,20 @@ type Server struct {
 	Alerts AlertAcker
 	// Geo answers /v1/geo* from the CIS cache; nil answers 503
 	// cis_unavailable.
-	Geo    *Geo
-	Logger *slog.Logger
+	Geo *Geo
+	// Coordination lists the Annex V notices for the console
+	// (internal/coordination); nil answers 503 coordination_unavailable.
+	Coordination CoordinationLister
+	// Records serves /v1/records; nil answers 503 records_unavailable.
+	Records *Records
+	// Occurrences serves /v1/admin/occurrences; nil answers 503
+	// occurrences_unavailable.
+	Occurrences *Occurrences
+	// Status serves /v1/admin/status (CertificateID is
+	// USSP_CERTIFICATE_ID); nil answers 503 status_unavailable.
+	Status        StatusNotices
+	CertificateID string
+	Logger        *slog.Logger
 }
 
 // RegistryValidator is the cached, audited F8 lookup
@@ -85,6 +97,14 @@ var _ gen.ServerInterface = (*Server)(nil)
 var portalAdmin = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmPortal, Roles: []string{auth.RoleOperatorAdmin}}}}
 
 var anySession = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmPortal}, {Realm: auth.RealmConsole}}}
+
+var consoleStaff = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmConsole, Roles: []string{auth.RoleSupervisor, auth.RoleSupport}}}}
+
+var consoleSupervisor = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmConsole, Roles: []string{auth.RoleSupervisor}}}}
+
+var consoleAny = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmConsole, Roles: []string{auth.RoleSupervisor, auth.RoleSupport, auth.RoleAdmin}}}}
+
+var consoleAdmin = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmConsole, Roles: []string{auth.RoleAdmin}}}}
 
 // AccessTable is the access entry of every operation of
 // api/openapi.yaml this process serves, by ServeMux pattern. The
@@ -108,6 +128,13 @@ func AccessTable() map[string]httpx.Access {
 		"GET /v1/geo":                                       {Scopes: []string{auth.ScopeGeo}},
 		"GET /v1/geo/intents/{intent_id}":                   {Scopes: []string{auth.ScopeGeo}},
 		"POST /v1/alerts/{alert_id}/ack":                    {Scopes: []string{auth.ScopeTraffic}},
+		"GET /v1/admin/coordination":                        consoleStaff,
+		"GET /v1/admin/occurrences":                         consoleStaff,
+		"POST /v1/admin/occurrences":                        consoleSupervisor,
+		"GET /v1/admin/status":                              consoleAny,
+		"POST /v1/admin/status":                             consoleAdmin,
+		"GET /v1/records/flights/{flight_id}":               {Scopes: []string{ScopeRecords}},
+		"GET /v1/records/daily/{date}":                      {Scopes: []string{ScopeRecords}},
 		"POST /v1/accounts/logout":                          anySession,
 		"GET /v1/accounts/me":                               anySession,
 		"GET /v1/accounts/operators/{operator_id}":          portalAdmin,

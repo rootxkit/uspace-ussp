@@ -1,0 +1,14 @@
+# oapi-codegen configuration for internal/status/authclient: the one
+# operation of the authority's national API (api/clients/authority.yaml,
+# the pinned copy named in api/clients/SOURCE; reconciliation M11) that
+# carries this USSP's operating-status notices (Art. 7(6), 02 F7):
+# POST /v1/certificates/{id}/status, with the models it names. The rest
+# of the certificates tag is the authority's administration and is not
+# generated. Run through `make generate`; never edit the generated file.
+package: authclient
+generate:
+  client: true
+  models: true
+output-options:
+  include-operation-ids:
+    - postCertificateStatus

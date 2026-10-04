@@ -1,0 +1,67 @@
+{
+  "intents": [
+    {
+      "authorisation_number": "GE-USSP-DEV-20261004-0001",
+      "intent_ref": "6f1c0d2e-3b4a-4c5d-8e6f-7a8b9c0d1e2f",
+      "state": "Nonconforming",
+      "time_end": "2026-10-04T12:30:00Z",
+      "time_start": "2026-10-04T12:00:00Z",
+      "volumes": [
+        {
+          "time_end": {
+            "format": "RFC3339",
+            "value": "2026-10-04T12:30:00Z"
+          },
+          "time_start": {
+            "format": "RFC3339",
+            "value": "2026-10-04T12:00:00Z"
+          },
+          "volume": {
+            "altitude_lower": {
+              "reference": "W84",
+              "units": "M",
+              "value": 520.5
+            },
+            "altitude_upper": {
+              "reference": "W84",
+              "units": "M",
+              "value": 570.25
+            },
+            "outline_polygon": {
+              "vertices": [
+                {
+                  "lat": 41.71,
+                  "lng": 44.78
+                },
+                {
+                  "lat": 41.71,
+                  "lng": 44.79
+                },
+                {
+                  "lat": 41.72,
+                  "lng": 44.79
+                },
+                {
+                  "lat": 41.72,
+                  "lng": 44.78
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "kind": "nonconformance",
+  "nonconformance": {
+    "authorisation_number": "GE-USSP-DEV-20261004-0001",
+    "detected_at": "2026-10-04T12:10:04.123456789Z",
+    "intent_ref": "6f1c0d2e-3b4a-4c5d-8e6f-7a8b9c0d1e2f",
+    "reason": "lost_link"
+  },
+  "notice_ref": "USSP-DEV:6f1c0d2e-3b4a-4c5d-8e6f-7a8b9c0d1e2f:nonconformance:43",
+  "remarks": "conformance state lost_link (telemetry_lost)",
+  "schema": "coordination/annex_v/v1",
+  "sent_at": "2026-10-04T12:10:04.123Z",
+  "ussp_id": "USSP-DEV"
+}

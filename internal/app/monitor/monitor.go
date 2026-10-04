@@ -160,6 +160,11 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	if err != nil {
 		return err
 	}
+	// The ANSP's manned-traffic stream (USSP_ANSP_STREAM_URL): read and
+	// reported, its tracks held until WP-14 (anspfeed.go).
+	if err := startANSPFeed(ctx, rt); err != nil {
+		return err
+	}
 	js := rt.Bus.JetStream()
 	logger := rt.Logger
 

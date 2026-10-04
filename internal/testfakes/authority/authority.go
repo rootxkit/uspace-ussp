@@ -8,12 +8,23 @@
 // records a change for every status it is given. Down makes every
 // request answer 503; Misbehave adds a field F8 does not define to
 // every lookup answer; Requests counts what was asked.
+//
+// WP-15 adds the holder's operating-status notice of the pinned file
+// (POST /v1/certificates/{id}/status: started once, ceased only after a
+// start, restarted only after a cease; a retry with the same reference
+// and state answers 200 with the first notice, the same reference for
+// another state 409) and an occurrence inbox POST /v1/occurrences that
+// the authority's file does not have yet (spec 02 F7; the executable
+// reading of what WP-15 would send: 201 with an occurrence id, a repeat
+// of a report_ref with the same body 200, with another body 409).
 package authority
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -81,6 +92,24 @@ type Fake struct {
 	changes   []Change
 	requests  map[string]int
 	purposes  []string
+	notices   []StatusNotice
+	reports   []Occurrence
+}
+
+// StatusNotice is one operating-status notice the fake recorded.
+type StatusNotice struct {
+	CertificateID string    `json:"certificate_id"`
+	State         string    `json:"state"`
+	At            time.Time `json:"at"`
+	Reference     string    `json:"reference"`
+	ID            int64     `json:"id"`
+}
+
+// Occurrence is one occurrence report the fake received.
+type Occurrence struct {
+	ID        string
+	ReportRef string
+	Body      []byte
 }
 
 // New starts a fake.
@@ -188,6 +217,10 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 		f.validate(w, r)
 	case r.URL.Path == "/v1/registry/changes" && r.Method == http.MethodGet:
 		f.listChanges(w, r)
+	case strings.HasPrefix(r.URL.Path, "/v1/certificates/") && strings.HasSuffix(r.URL.Path, "/status") && r.Method == http.MethodPost:
+		f.status(w, r, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/certificates/"), "/status"))
+	case r.URL.Path == "/v1/occurrences" && r.Method == http.MethodPost:
+		f.occurrence(w, r)
 	default:
 		problem(w, http.StatusNotFound, "not_found")
 	}
@@ -333,4 +366,101 @@ func (f *Fake) listChanges(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// status is POST /v1/certificates/{id}/status (the pinned file's rules,
+// a subset: started once, ceased after a start, restarted after a cease).
+func (f *Fake) status(w http.ResponseWriter, r *http.Request, certID string) {
+	var n struct {
+		State     string    `json:"state"`
+		At        time.Time `json:"at"`
+		Reference string    `json:"reference"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&n); err != nil || n.At.IsZero() ||
+		(n.State != "started" && n.State != "ceased" && n.State != "restarted") {
+		problem(w, http.StatusBadRequest, "validation")
+		return
+	}
+	f.requests["status"]++
+	last := ""
+	for _, x := range f.notices {
+		if x.CertificateID != certID {
+			continue
+		}
+		if n.Reference != "" && x.Reference == n.Reference {
+			if x.State != n.State {
+				problem(w, http.StatusConflict, "reference_reused")
+				return
+			}
+			writeStatus(w, http.StatusOK, x, true)
+			return
+		}
+		last = x.State
+	}
+	ok := (n.State == "started" && last == "") || (n.State == "ceased" && (last == "started" || last == "restarted")) ||
+		(n.State == "restarted" && last == "ceased")
+	if !ok {
+		problem(w, http.StatusConflict, "status_not_admitted")
+		return
+	}
+	x := StatusNotice{CertificateID: certID, State: n.State, At: n.At.UTC(), Reference: n.Reference, ID: int64(len(f.notices) + 1)}
+	f.notices = append(f.notices, x)
+	writeStatus(w, http.StatusCreated, x, false)
+}
+
+func writeStatus(w http.ResponseWriter, status int, x StatusNotice, replayed bool) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"notice":           map[string]any{"id": x.ID, "state": x.State, "at": x.At, "reference": x.Reference, "source": "machine", "recorded_by": "fake", "received_at": x.At},
+		"certificate":      map[string]any{"id": x.CertificateID},
+		"replayed":         replayed,
+		"list_publication": map[string]any{"state": "queued"},
+	})
+}
+
+// occurrence is POST /v1/occurrences.
+func (f *Fake) occurrence(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	var p struct {
+		ReportRef string `json:"report_ref"`
+	}
+	if err != nil || json.Unmarshal(body, &p) != nil || p.ReportRef == "" {
+		problem(w, http.StatusBadRequest, "validation")
+		return
+	}
+	f.requests["occurrences"]++
+	for _, x := range f.reports {
+		if x.ReportRef == p.ReportRef {
+			if !bytes.Equal(x.Body, body) {
+				problem(w, http.StatusConflict, "report_ref_reused")
+				return
+			}
+			writeJSONStatus(w, http.StatusOK, map[string]any{"occurrence_id": x.ID})
+			return
+		}
+	}
+	x := Occurrence{ID: fmt.Sprintf("OCC-%d", len(f.reports)+1), ReportRef: p.ReportRef, Body: body}
+	f.reports = append(f.reports, x)
+	writeJSONStatus(w, http.StatusCreated, map[string]any{"occurrence_id": x.ID})
+}
+
+func writeJSONStatus(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// StatusNotices are the operating-status notices recorded, in order.
+func (f *Fake) StatusNotices() []StatusNotice {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.notices)
+}
+
+// Occurrences are the occurrence reports received, in order.
+func (f *Fake) Occurrences() []Occurrence {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.reports)
 }

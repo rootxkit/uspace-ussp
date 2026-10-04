@@ -43,7 +43,10 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/app/proc"
 	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/config"
+	"github.com/rootxkit/uspace-ussp/internal/policy"
+	"github.com/rootxkit/uspace-ussp/internal/records"
 	"github.com/rootxkit/uspace-ussp/internal/store"
+	"github.com/rootxkit/uspace-ussp/internal/telemetry"
 )
 
 // ConsumerPrefix names each stream's durable consumer.
@@ -137,7 +140,45 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	for _, p := range pipes {
 		rt.Go(ctx, p.Run)
 	}
+	if rt.Store.TS != nil {
+		startRetention(ctx, rt, counters)
+	}
 	return nil
+}
+
+// startRetention runs the retention of the hypertables (WP-15,
+// internal/records): telemetry's retention policy from the policy row,
+// set at start and on every change, and the remote pilot's position
+// removed from telemetry past operator_position_retention_days, except
+// the flights record_holds holds.
+func startRetention(ctx context.Context, rt *proc.Runtime, counters *core.Counters) {
+	js := rt.Bus.JetStream()
+	logger := rt.Logger.With("component", "retention")
+	pol := &bus.Follower[policy.Record]{JS: js, Bucket: bus.BucketPolicy, Key: bus.KeyPolicy, Decode: telemetry.DecodePolicy,
+		Core: rt.Bus.Conn, Push: bus.CtlPolicy, Counters: counters, Logger: logger}
+	holds := &bus.Mirror[records.Hold]{JS: js, Bucket: bus.BucketRecordHolds, Counters: counters, Logger: logger}
+	ret := &records.Retention{
+		Store: store.TSRetention{Pool: rt.Store.TS},
+		Policy: func() (policy.Values, bool) {
+			r, _, ok := pol.Value()
+			return r.Values, ok
+		},
+		Holds: func() ([]string, bool) {
+			m, _, ok := holds.Snapshot()
+			if !ok {
+				return nil, false
+			}
+			out := make([]string, 0, len(m))
+			for _, h := range m {
+				out = append(out, h.FlightID)
+			}
+			return out, true
+		},
+		Counters: counters, Logger: logger,
+	}
+	rt.Go(ctx, pol.Run)
+	rt.Go(ctx, holds.Run)
+	rt.Go(ctx, func(ctx context.Context) { ret.Run(ctx, records.HoldEvery) })
 }
 
 // metrics are the writer's own Prometheus series beside the counters:

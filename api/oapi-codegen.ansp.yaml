@@ -1,0 +1,23 @@
+# oapi-codegen configuration for internal/coordination/anspclient: the Go
+# client of the ANSP's national API (api/clients/ansp.yaml, the pinned
+# copy named in api/clients/SOURCE; reconciliation M11). Only the
+# coordination tag is generated (the Annex V inbox this USSP posts to
+# and the notice state it polls, M2), with the models it names. The
+# request body is the ANSP's own schema coordination/annex_v/v1, which
+# the copy references as ../schemas/coordination/annex_v/v1.json: the
+# generator runs on a staging tree in the ANSP repository's layout
+# (scripts/generate.sh) holding the pinned copy of that schema from
+# schemas/coordination/annex_v/v1/schema.json. JSON numbers are float64
+# (a float32 coordinate is off by up to half a metre). Run through
+# `make generate`; never edit the generated file.
+package: anspclient
+generate:
+  client: true
+  models: true
+output-options:
+  include-tags:
+    - coordination
+  type-mapping:
+    number:
+      default:
+        type: float64
