@@ -4,7 +4,8 @@
 //
 // WP-9 brings the F3411 side under /rid/v2/dss: identification service
 // areas (create, read, update and delete by version, search by area and
-// time) and subscriptions (create, delete), each change answered with
+// time) and subscriptions (create, read, update by version (WP-14),
+// delete), each change answered with
 // the subscribers to notify and their notification indexes, as the
 // pinned standard file (api/standards/f3411-v22a.yaml) and core's f3411
 // types shape them. WP-13 adds the F3548 side to the same fake (one
@@ -214,6 +215,10 @@ func (d *DSS) serve(w http.ResponseWriter, r *http.Request) {
 		d.deleteISA(rec, parts[1], parts[2])
 	case parts[0] == "subscriptions" && len(parts) == 2 && r.Method == http.MethodPut:
 		d.putSubscription(rec, r, parts[1])
+	case parts[0] == "subscriptions" && len(parts) == 2 && r.Method == http.MethodGet:
+		d.getSubscription(rec, parts[1])
+	case parts[0] == "subscriptions" && len(parts) == 3 && r.Method == http.MethodPut:
+		d.updateSubscription(rec, r, parts[1], parts[2])
 	case parts[0] == "subscriptions" && len(parts) == 3 && r.Method == http.MethodDelete:
 		d.deleteSubscription(rec, parts[1], parts[2])
 	default:
@@ -420,6 +425,60 @@ func (d *DSS) putSubscription(w http.ResponseWriter, r *http.Request, id string)
 		}
 	}
 	write(w, http.StatusOK, f3411.PutSubscriptionResponse{Subscription: s, ServiceAreas: &areas})
+}
+
+func (d *DSS) getSubscription(w http.ResponseWriter, id string) {
+	s, ok := d.subs[id]
+	if !ok {
+		fail(w, http.StatusNotFound, "subscription %s not found", id)
+		return
+	}
+	write(w, http.StatusOK, f3411.GetSubscriptionResponse{Subscription: s.s})
+}
+
+// updateSubscription is PUT subscriptions/{id}/{version} (WP-14: a
+// Display Provider renews its subscription before its 24 h end).
+func (d *DSS) updateSubscription(w http.ResponseWriter, r *http.Request, id, version string) {
+	var p f3411.UpdateSubscriptionParameters
+	if err := decode(r, &p); err != nil || p.UssBaseUrl == "" {
+		fail(w, http.StatusBadRequest, "not UpdateSubscriptionParameters")
+		return
+	}
+	box, start, end, err := d.window(p.Extents)
+	if err != nil {
+		fail(w, http.StatusBadRequest, "%v", err)
+		return
+	}
+	cur, ok := d.subs[id]
+	switch {
+	case !ok:
+		fail(w, http.StatusNotFound, "subscription %s not found", id)
+		return
+	case cur.s.Version != version:
+		fail(w, http.StatusConflict, "version %s is not the current one", version)
+		return
+	}
+	ts, te := wireTime(start), wireTime(end)
+	cur.s.UssBaseUrl, cur.s.Version, cur.s.TimeStart, cur.s.TimeEnd = p.UssBaseUrl, d.version(), &ts, &te
+	cur.box, cur.start, cur.end = box, start, end
+	var areas []f3411.IdentificationServiceArea
+	for _, i := range d.isas {
+		if overlaps(box, i.box) {
+			areas = append(areas, i.area)
+		}
+	}
+	write(w, http.StatusOK, f3411.PutSubscriptionResponse{Subscription: cur.s, ServiceAreas: &areas})
+}
+
+// Subscriptions returns the F3411 subscriptions held, by id.
+func (d *DSS) Subscriptions() map[string]f3411.Subscription {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make(map[string]f3411.Subscription, len(d.subs))
+	for id, s := range d.subs {
+		out[id] = s.s
+	}
+	return out
 }
 
 func (d *DSS) deleteSubscription(w http.ResponseWriter, id, version string) {
