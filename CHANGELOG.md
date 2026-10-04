@@ -29,6 +29,9 @@ additively within `/v1`.
     or snapshot over it raises an alarm (`ansp_feed_frame_oversize`, an
     error log, `ansp_feed` stale with why) until the next snapshot reads,
     instead of a silent reconnect;
+  - a manned aircraft's altitude is selected with the policy row's
+    `AltPolicy` (the monitor's CPA path and traffic-ws), as every other
+    source's is, not uspace-core's defaults;
 - This USSP's client id at the authority keeps the case of its code
   (`ussp-ABC1-01`, not `ussp-abc1-01`). The authority's token service
   registers only `ussp-<code>-<nn>` with an upper-case code (M8), and the

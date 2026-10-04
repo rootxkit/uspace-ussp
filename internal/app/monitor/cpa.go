@@ -40,6 +40,9 @@ type cpaPath struct {
 	und      geoid.Undulator
 	counters *core.Counters
 	logger   *slog.Logger
+	// policy is the current policy row's values (the altitude selection
+	// of a manned aircraft).
+	policy func() policy.Values
 	// onOwn is told of every sample of this USSP's flights on trk.v1
 	// (the echo guard of the peer and manned inputs, PLAN §15 Q23).
 	onOwn func(in traffic.Input)
@@ -66,7 +69,7 @@ func (c *cpaPath) offerManned(data []byte) {
 		c.counters.Inc(CounterCPAUnreadable)
 		return
 	}
-	c.eng.Offer(traffic.MannedInputOf(m, c.und))
+	c.eng.Offer(traffic.MannedInputOf(m, c.und, c.policy().AltPolicy()))
 }
 
 // startCPA builds the CPA path: the engine with its persisted alerts
@@ -100,7 +103,7 @@ func startCPA(ctx context.Context, rt *proc.Runtime, own cell.Ownership, current
 	if o.CPA != nil {
 		o.CPA(eng)
 	}
-	c := &cpaPath{eng: eng, und: und, counters: counters, logger: logger}
+	c := &cpaPath{eng: eng, und: und, counters: counters, logger: logger, policy: func() policy.Values { return current().Values }}
 	rt.Health.Register(DepProximityState, false, func(context.Context) (obs.State, string) {
 		_, age, loaded := mirror.Snapshot()
 		switch {

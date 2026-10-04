@@ -193,7 +193,7 @@ func (h *Hub) TakeManned(data []byte) {
 		h.mannedSeen = h.now()
 		h.mu.Unlock()
 	}
-	h.Picture.Put(traffic.MannedInputOf(m, h.Geoid), data)
+	h.Picture.Put(traffic.MannedInputOf(m, h.Geoid, h.policy().Values.AltPolicy()), data)
 }
 
 // TakeAlert takes one alrt.v1 message (alert/v1; a delivery record is

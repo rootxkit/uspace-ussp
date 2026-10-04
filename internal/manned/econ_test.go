@@ -19,6 +19,7 @@ import (
 	"github.com/rootxkit/uspace-core/core"
 
 	"github.com/rootxkit/uspace-ussp/internal/obs"
+	"github.com/rootxkit/uspace-ussp/internal/policy"
 	"github.com/rootxkit/uspace-ussp/internal/sources"
 	"github.com/rootxkit/uspace-ussp/internal/traffic"
 )
@@ -140,7 +141,7 @@ func TestEconspicuityPollsAircraftJSON(t *testing.T) {
 		body["trust"], body["source"] = "surveillance", "ansp_feed"
 		fixed, _ := json.Marshal(v)
 		validate(t, ss, "track/manned/v1", fixed)
-		in := traffic.MannedInputOf(m, und)
+		in := traffic.MannedInputOf(m, und, policy.Defaults().AltPolicy())
 		if in.Trust != core.TrustBroadcast || in.Source != SourceAdsbRx {
 			t.Fatalf("not broadcast: %+v", in)
 		}

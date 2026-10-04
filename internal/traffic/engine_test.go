@@ -12,6 +12,8 @@ import (
 	"github.com/rootxkit/uspace-core/alerting"
 	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/geodesy"
+	"github.com/rootxkit/uspace-core/geoid"
+	"github.com/rootxkit/uspace-core/rid"
 	coresources "github.com/rootxkit/uspace-core/sources"
 
 	"github.com/rootxkit/uspace-ussp/internal/cell"
@@ -367,7 +369,7 @@ func TestMannedCrossingRaisesWithSurveillancePeer(t *testing.T) {
 	p := geodesy.Destination(origin, 90, 700)
 	m.Body = MannedBody{ICAO24: "4ca7b5", Position: MannedPosition{Lat: p.LatDeg, Lng: p.LonDeg}, AltWGS84M: &alt, GSMS: &gs, TrackDeg: &trk,
 		SourceClass: "ads_b", Trust: core.TrustSurveillance, Source: SourceANSPFeed, SourceInstance: "adsb-tbs", State: StateLive}
-	in := MannedInputOf(m, flatGeoid{})
+	in := MannedInputOf(m, flatGeoid{}, policy.Defaults().AltPolicy())
 	r.feed(r.own(flightA, origin, 0, 0))
 	r.feed(&in)
 	r.tick()
@@ -384,6 +386,45 @@ func TestMannedCrossingRaisesWithSurveillancePeer(t *testing.T) {
 		}
 	}
 }
+
+// The manned altitude is selected with the policy row's thresholds
+// (policy.Values.AltPolicy), not uspace-core's defaults: the R-07, R-08
+// and R-09 cases of MannedInputOf under a policy whose fallback code
+// and hold differ from the defaults. A manned record carries no
+// vertical accuracy (code 0, unknown, never a flag) and the selection
+// is stateless, so today the thresholds change no answer; the same
+// selection as every other source keeps it so when one does.
+func TestMannedInputOfSelectsWithThePolicysAltPolicy(t *testing.T) {
+	v := policy.Defaults()
+	v.PressureFallbackAccuracyCode, v.PressureHoldS = policy.MaxPressureFallbackAccuracyCode, 30
+	ap := v.AltPolicy()
+	if ap == rid.DefaultAltPolicy() {
+		t.Fatal("the policy's altitude selection is core's default: the case shows nothing")
+	}
+	hae, pressure := 650.0, 600.0
+	for _, c := range []struct {
+		name          string
+		hae, pressure *float64
+		g             geoid.Undulator
+		want          *float64
+		source        core.AltSource
+	}{
+		{"geometric through the geoid", &hae, &pressure, flatGeoid{}, fp(600.0), core.AltGeodetic},
+		{"pressure without a geometric altitude", nil, &pressure, flatGeoid{}, &pressure, core.AltPressure},
+		{"geometric without a geoid is none", &hae, &pressure, nil, nil, core.AltNone},
+		{"nothing", nil, nil, flatGeoid{}, nil, core.AltNone},
+	} {
+		m := &MannedTrack{}
+		m.Body = MannedBody{ICAO24: "4ca7b5", Position: MannedPosition{Lat: origin.LatDeg, Lng: origin.LonDeg}, AltWGS84M: c.hae, AltPressureM: c.pressure,
+			SourceClass: "ads_b", Trust: core.TrustSurveillance, Source: SourceANSPFeed, SourceInstance: "adsb-tbs", State: StateLive}
+		in := MannedInputOf(m, c.g, ap)
+		if in.AltSource != c.source || (in.AltAMSLM == nil) != (c.want == nil) || (c.want != nil && *in.AltAMSLM != *c.want) {
+			t.Errorf("%s: %v %v, want %v %v", c.name, in.AltAMSLM, in.AltSource, c.want, c.source)
+		}
+	}
+}
+
+func fp(v float64) *float64 { return &v }
 
 type flatGeoid struct{}
 

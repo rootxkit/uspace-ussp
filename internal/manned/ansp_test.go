@@ -86,7 +86,7 @@ func TestANSPStreamPublishesTheANSPsAircraft(t *testing.T) {
 		if err != nil {
 			t.Fatalf("the CPA path refuses it: %v", err)
 		}
-		in := traffic.MannedInputOf(m, nil)
+		in := traffic.MannedInputOf(m, nil, policy.Defaults().AltPolicy())
 		if in.Trust != core.TrustSurveillance || in.Source != SourceANSPFeed || in.Instance != "fake-adsb-1" || in.AltSource != core.AltNone {
 			t.Fatalf("input %+v", in)
 		}
