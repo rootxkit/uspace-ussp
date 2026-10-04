@@ -460,3 +460,21 @@ func TestStateNames(t *testing.T) {
 		t.Fatal()
 	}
 }
+
+// The national API's view: WeatherAnswer is Answer, and the 503's
+// reason reads through WeatherUnavailable.
+func TestWeatherAnswerForTheNationalAPI(t *testing.T) {
+	svc := &Service{Store: newMem(obsAt)}
+	_, err := svc.WeatherAnswer(context.Background(), tbilisi, time.Time{})
+	var u interface{ WeatherUnavailable() (string, string) }
+	if !errors.As(err, &u) {
+		t.Fatal(err)
+	}
+	if r, d := u.WeatherUnavailable(); r != ReasonNotConfigured || d == "" {
+		t.Fatal(r, d)
+	}
+	r := newRig(t, "31013KT 9999 Q1026")
+	if a, err := r.svc.WeatherAnswer(context.Background(), tbilisi, time.Time{}); err != nil || !a.(Answer).Stale {
+		t.Fatal(a, err)
+	}
+}

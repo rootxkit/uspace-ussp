@@ -209,9 +209,13 @@ func wantStates(t *testing.T, body *client.Readiness, want map[string]client.Dep
 		// cis says what it is up with (its versions and age), registry
 		// its last success and the feed's cursor, dss this USSP's
 		// availability in the DSS (WP-13), geoid whether its grid is
-		// memory-mapped (WP-19).
-		if state == client.DependencyStateUp && (d.AgeS == nil || *d.AgeS != 0 || (d.Detail != nil) != (name == "cis" || name == "registry" || name == "dss" || name == "geoid")) {
+		// memory-mapped (WP-19), weather that no source is configured
+		// (WP-16: an optional service left unset is up with its reason).
+		if state == client.DependencyStateUp && (d.AgeS == nil || *d.AgeS != 0 || (d.Detail != nil) != (name == "cis" || name == "registry" || name == "dss" || name == "geoid" || name == "weather")) {
 			t.Errorf("%s up with age %v detail %v", name, d.AgeS, d.Detail)
+		}
+		if state == client.DependencyStateUp && name == "weather" && (d.Detail == nil || !strings.HasPrefix(*d.Detail, "not_configured: ")) {
+			t.Errorf("weather up with detail %v, want not_configured", d.Detail)
 		}
 		if state == client.DependencyStateUp && name == "geoid" && d.Detail != nil && *d.Detail != geoidMappedDetail() {
 			t.Errorf("geoid up with detail %q, want %q", *d.Detail, geoidMappedDetail())
@@ -243,6 +247,7 @@ func TestIntegrationAPIReadyWithEveryDependencyUp(t *testing.T) {
 		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
 		"registry": client.DependencyStateUp, "geoid": client.DependencyStateUp, "dss": client.DependencyStateUp,
 		"client_address": client.DependencyStateUp,
+		"weather":        client.DependencyStateUp,
 	})
 }
 
@@ -267,6 +272,7 @@ func TestIntegrationAPIDegradedWithoutAuthConfiguration(t *testing.T) {
 		"issuer": client.DependencyStateDown, "jwks": client.DependencyStateDown, "cis": client.DependencyStateUnknown,
 		"registry": client.DependencyStateDown, "geoid": client.DependencyStateDown, "dss": client.DependencyStateDown,
 		"client_address": client.DependencyStateUp,
+		"weather":        client.DependencyStateUp,
 	})
 	if d := body.Dependencies["geoid"].Detail; d == nil || !strings.Contains(*d, "USSP_GEOID_FILE is not set") {
 		t.Fatalf("geoid detail %v", d)
@@ -307,6 +313,7 @@ func TestIntegrationAPINotReadyWithoutNATS(t *testing.T) {
 		"cis": client.DependencyStateDegraded, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
 		"registry": client.DependencyStateUp, "geoid": client.DependencyStateUp, "dss": client.DependencyStateUp,
 		"client_address": client.DependencyStateUp,
+		"weather":        client.DependencyStateUp,
 	})
 	if d := body.Dependencies["cis"].Detail; d == nil || !strings.Contains(*d, "projection: ") || !strings.Contains(*d, "cis_current") {
 		t.Fatalf("cis detail %v", d)
@@ -423,6 +430,7 @@ func TestIntegrationAPIFollowsNATSAwayAndBack(t *testing.T) {
 		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
 		"registry": client.DependencyStateUp, "geoid": client.DependencyStateUp, "dss": client.DependencyStateUp,
 		"client_address": client.DependencyStateUp,
+		"weather":        client.DependencyStateUp,
 	})
 	if d := body.Dependencies["nats"]; d.AgeS == nil || *d.AgeS <= 0 {
 		t.Errorf("nats down without the age of its last good state: %+v", d)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,20 +13,24 @@ import (
 	"github.com/rootxkit/uspace-core/geodesy"
 
 	"github.com/rootxkit/uspace-ussp/internal/national/gen"
-	"github.com/rootxkit/uspace-ussp/internal/weather"
 )
 
 type weatherSvc struct {
-	a   weather.Answer
+	a   any
 	err error
 	box geodesy.BBox
 	at  time.Time
 }
 
-func (w *weatherSvc) Answer(_ context.Context, box geodesy.BBox, at time.Time) (weather.Answer, error) {
+func (w *weatherSvc) WeatherAnswer(_ context.Context, box geodesy.BBox, at time.Time) (any, error) {
 	w.box, w.at = box, at
 	return w.a, w.err
 }
+
+type unavailable struct{ reason string }
+
+func (u unavailable) Error() string                        { return "unavailable: " + u.reason }
+func (u unavailable) WeatherUnavailable() (string, string) { return u.reason, "x" }
 
 // GET /v1/weather: 200 with the answer and the instant passed through;
 // 503 weather_unavailable naming the reason under weather_source when
@@ -40,7 +45,7 @@ func TestWeatherRoute(t *testing.T) {
 		return rec.Code, body
 	}
 	at := time.Date(2026, 10, 4, 13, 0, 0, 0, time.UTC)
-	svc := &weatherSvc{a: weather.Answer{At: at, Stale: true, Products: []weather.Product{}}}
+	svc := &weatherSvc{a: map[string]any{"at": at, "stale": true, "products": []any{}}}
 	code, body := get(&Server{Weather: svc}, gen.GetWeatherParams{Bbox: "44.9,41.6,45.0,41.7", At: &at})
 	if code != 200 || body["stale"] != true || svc.box.MinLon != 44.9 || !svc.at.Equal(at) {
 		t.Fatalf("%d %v %+v", code, body, svc)
@@ -66,9 +71,9 @@ func TestWeatherRoute(t *testing.T) {
 		slug   string
 		reason string
 	}{
-		"not configured": {&Server{}, 503, "weather_unavailable", weather.ReasonNotConfigured},
-		"no source":      {&Server{Weather: &weatherSvc{err: &weather.UnavailableError{Reason: weather.ReasonNotConfigured, Detail: "x"}}}, 503, "weather_unavailable", weather.ReasonNotConfigured},
-		"no stations":    {&Server{Weather: &weatherSvc{err: &weather.UnavailableError{Reason: weather.ReasonNoStations, Detail: "x"}}}, 503, "weather_unavailable", weather.ReasonNoStations},
+		"not configured": {&Server{}, 503, "weather_unavailable", "not_configured"},
+		"no source":      {&Server{Weather: &weatherSvc{err: fmt.Errorf("answer: %w", unavailable{"not_configured"})}}, 503, "weather_unavailable", "not_configured"},
+		"no stations":    {&Server{Weather: &weatherSvc{err: unavailable{"no_stations"}}}, 503, "weather_unavailable", "no_stations"},
 		"other":          {&Server{Weather: &weatherSvc{err: errors.New("boom")}}, 500, "internal", ""},
 	} {
 		t.Run(name, func(t *testing.T) {

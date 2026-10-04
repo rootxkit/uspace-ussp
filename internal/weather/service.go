@@ -144,6 +144,10 @@ func (e *UnavailableError) Error() string {
 	return "weather unavailable: " + e.Reason + ": " + e.Detail
 }
 
+// WeatherUnavailable is the reason and the detail of the 503 (the
+// national API reads them without importing this package).
+func (e *UnavailableError) WeatherUnavailable() (reason, detail string) { return e.Reason, e.Detail }
+
 // Service polls the source, answers GET /v1/weather and the decision's
 // check.
 type Service struct {
@@ -377,6 +381,12 @@ func (s *Service) Answer(ctx context.Context, box geodesy.BBox, at time.Time) (A
 		s.count("answer_stale")
 	}
 	return Answer{At: at, Stale: stale, Source: src, PolicyVersion: rec.Version, Products: ps}, nil
+}
+
+// WeatherAnswer is Answer as the national API takes it (its
+// WeatherAnswerer).
+func (s *Service) WeatherAnswer(ctx context.Context, box geodesy.BBox, at time.Time) (any, error) {
+	return s.Answer(ctx, box, at)
 }
 
 // Check is what a decision consulted (Art. 10(3)): the products in force

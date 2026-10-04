@@ -12,17 +12,27 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/geo"
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/national/gen"
-	"github.com/rootxkit/uspace-ussp/internal/weather"
 )
 
-// WeatherAnswerer answers GET /v1/weather (internal/weather.Service).
+// WeatherAnswerer answers GET /v1/weather (internal/weather.Service):
+// the answer in the shape of the WeatherAnswer schema.
 type WeatherAnswerer interface {
-	Answer(ctx context.Context, box geodesy.BBox, at time.Time) (weather.Answer, error)
+	WeatherAnswer(ctx context.Context, box geodesy.BBox, at time.Time) (any, error)
+}
+
+// WeatherUnavailableError is a weather answer that cannot be given, with
+// its reason (internal/weather.UnavailableError).
+type WeatherUnavailableError interface {
+	error
+	WeatherUnavailable() (reason, detail string)
 }
 
 // SlugWeatherUnavailable is the problem of a weather answer that cannot
 // be given; errors[] names the reason under the field weather_source.
 const SlugWeatherUnavailable = "weather_unavailable"
+
+// WeatherNotConfigured is the reason when no weather service is wired.
+const WeatherNotConfigured = "not_configured"
 
 func weatherUnavailable(w http.ResponseWriter, r *http.Request, reason, detail string) {
 	httpx.NewProblem(http.StatusServiceUnavailable, SlugWeatherUnavailable, "", detail, core.Fieldf("weather_source", "%s", reason)).Write(w, r)
@@ -34,7 +44,7 @@ func weatherUnavailable(w http.ResponseWriter, r *http.Request, reason, detail s
 // answer (E-02).
 func (s *Server) GetWeather(w http.ResponseWriter, r *http.Request, params gen.GetWeatherParams) {
 	if s.Weather == nil {
-		weatherUnavailable(w, r, weather.ReasonNotConfigured, "no weather service is configured on this process")
+		weatherUnavailable(w, r, WeatherNotConfigured, "no weather service is configured on this process")
 		return
 	}
 	box, err := geo.ParseBBox(params.Bbox)
@@ -46,10 +56,11 @@ func (s *Server) GetWeather(w http.ResponseWriter, r *http.Request, params gen.G
 	if params.At != nil {
 		at = *params.At
 	}
-	a, err := s.Weather.Answer(r.Context(), box, at)
-	var u *weather.UnavailableError
+	a, err := s.Weather.WeatherAnswer(r.Context(), box, at)
+	var u WeatherUnavailableError
 	if errors.As(err, &u) {
-		weatherUnavailable(w, r, u.Reason, u.Detail)
+		reason, detail := u.WeatherUnavailable()
+		weatherUnavailable(w, r, reason, detail)
 		return
 	}
 	if err != nil {
