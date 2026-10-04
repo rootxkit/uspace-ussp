@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { pageTitle } from "@/i18n/server";
-import { HomePage } from "@/portal/HomePage";
+import { RegisterPage } from "@/portal/RegisterPage";
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: await pageTitle("portal.title.home") };
+  return { title: await pageTitle("portal.title.register") };
 }
 
 export default function Page() {
-  return <HomePage />;
+  return <RegisterPage />;
 }

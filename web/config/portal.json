@@ -1,0 +1,23 @@
+{
+  "_comment": "The portal's display configuration (brief WP-17). Every value is overridable by the environment named beside it (deploy/ENV.md, web). None is a judgement: thresholds, radii and limits come from the API's answers.",
+  "map": {
+    "_comment": "The maps' first view (USSP_WEB_MAP_CENTER as lng,lat; USSP_WEB_MAP_ZOOM): Tbilisi as the national default view, pending GCAA.",
+    "center": [44.8271, 41.7151],
+    "zoom": 10,
+    "status": "pending GCAA"
+  },
+  "geo": {
+    "_comment": "How much wider than the map's view the box of GET /v1/geo and GET /v1/weather is, as a fraction of the view (a display choice; the API caps a box at 5 degrees a side and says so).",
+    "margin_fraction": 0.25
+  },
+  "bff": {
+    "_comment": "The upstream timeout of every BFF call (USSP_WEB_BFF_TIMEOUT_MS) and the session cookie's lifetime, never longer than the API's session (at most 12 h, M20; the kit shortens it to the session's expires_at).",
+    "timeout_ms": 10000,
+    "session_max_age_s": 43200
+  },
+  "accessibility": {
+    "_comment": "The portal's accessibility target: the spec's default, pending GCAA.",
+    "target": "WCAG 2.2 AA",
+    "status": "pending GCAA"
+  }
+}
