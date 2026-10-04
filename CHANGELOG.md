@@ -44,6 +44,62 @@ additively within `/v1`.
 
 ### Added
 
+- WP-14: peer flights and manned traffic inputs (`internal/manned`,
+  `internal/peers`, run inside monitor, each behind its own source
+  switch and `/readyz` entry).
+  - The ANSP's manned-traffic stream (02 F4): `USSP_ANSP_STREAM_URL`
+    read with a token of scope `ansp.traffic` (aud the ANSP's host) and
+    mTLS per `USSP_MTLS_MODE` (`off` logged at error level every status
+    period, `required` without its files refuses the start, naming
+    them), bootstrapped from `/v1/manned-traffic/snapshot`, the bbox the
+    U-space airspaces' union padded by `manned_margin_m` (5 km) or
+    `USSP_TRAFFIC_INPUT_BBOX`. Every frame is dispatched on its schema:
+    `track/manned/v1` checked, placed by `timeplace.PlaceNetwork` and
+    published on `man.v1` with trust `surveillance`; `console/status/v1`
+    is the feed's status, an ANSP adapter stale or switched off is that
+    state on our `src.v1` with the ANSP's time; unknown schemas and
+    unreadable frames counted. A cut stream is unavailable since its
+    last frame at once, a silent one after `manned_unavailable_s`
+    (10 s); reconnects forever. This replaces WP-15's reader, which held
+    the tracks until the echo guard.
+  - The e-conspicuity receiver: `USSP_ADSB_SOURCE` as readsb/dump1090
+    `aircraft.json` over HTTP at 1 Hz, a BaseStation (`sbs://`) stream,
+    or a recorded `file://` replay re-based onto our clock; feet, knots
+    and feet per minute converted, the emergency from 7500/7600/7700 or
+    the feed's flag; published on `man.v1` with trust `broadcast` from
+    `adsb_rx` (`USSP_ADSB_RECEIVER_ID`), placed at arrival less the
+    position's own age (T-12).
+  - The peer Display Provider (F3411): one DSS subscription per area of
+    interest (24 h, renewed at 80 %), an ISA search per 7 km view, the
+    ISA notifications rid-sp keeps in `rid_isa_notifications`; one
+    poller per peer and view, `GET /uss/flights?view=` at 1 Hz with
+    `rid.display_provider`, one request in flight, a 3 s deadline, 0.5
+    Hz for a slow peer; answers through core's bounded unmarshal, an
+    answer over `peer_flights_max_count` (1000) refused whole; flights
+    on `peer.v1` with trust `provider`, placed by `PlaceNetwork`, AMSL
+    by `rid.SelectAltitude`, identified as broadcast. A peer that fails
+    is `down` on `src.v1` since its first failure; traffic-ws shows its
+    flights `peer_unavailable` for `peer_unavailable_s` (60 s), then
+    ages them out. The `network_rid` switch stops the polls at once.
+    `DP.Details` fetches a flight's details only for a view of at most
+    2 km. Our own ISAs are never polled.
+  - The echo guard of PLAN §15 Q23 (Q25): a peer flight with one of our
+    flight ids and a manned record whose callsign or registration is an
+    active intent's UA registration are never published, counted.
+  - Policy `manned_margin_m`, `manned_unavailable_s`,
+    `peer_unavailable_s`, `peer_flights_max_count`; variables
+    `USSP_ADSB_RECEIVER_ID`, `USSP_TRAFFIC_INPUT_BBOX`; monitor reads
+    `USSP_DSS_BASE_URL` and `USSP_USS_BASE_URL`, traffic-ws
+    `USSP_GEOID_FILE`.
+  - The traffic product: `degraded` names `manned` from the feed's own
+    status (unavailable or stale since T), `econspicuity` (no receiver
+    is shown as such) and `peers` (replacing the `dss` placeholder);
+    tracks carry `peer_unavailable`; a manned track's AMSL is
+    `rid.SelectAltitude`'s, through traffic-ws's geoid.
+  - Test fakes: the ANSP's stream and snapshot, a peer F3411 Service
+    Provider (`internal/testfakes/peersp`), subscription read and update
+    in `fakedss`.
+
 - WP-15: coordination with the ANSP, service records, occurrence reports
   and operating-status notices (`internal/coordination`,
   `internal/records`, `internal/occurrence`, `internal/status`, all in
