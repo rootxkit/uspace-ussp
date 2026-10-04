@@ -98,6 +98,7 @@ type Config struct {
 	ProximityStateBucketMaxBytes   int    `env:"USSP_PROXIMITY_STATE_BUCKET_MAX_BYTES" default:"67108864" by:"all" min:"1048576" max:"1099511627776" unit:"bytes" help:"size bound of the proximity_state bucket, reserved in the JetStream file store; a full bucket refuses puts"`
 	SessionsLiveBucketMaxBytes     int    `env:"USSP_SESSIONS_LIVE_BUCKET_MAX_BYTES" default:"67108864" by:"all" min:"1048576" max:"1099511627776" unit:"bytes" help:"size bound of the sessions_live bucket, reserved in the JetStream file store; a full bucket refuses puts"`
 	RecordHoldsBucketMaxBytes      int    `env:"USSP_RECORD_HOLDS_BUCKET_MAX_BYTES" default:"16777216" by:"all" min:"1048576" max:"1099511627776" unit:"bytes" help:"size bound of the record_holds bucket, reserved in the JetStream file store; a full bucket refuses puts"`
+	RIDSubscriptionsBucketMaxBytes int    `env:"USSP_RID_DP_SUBSCRIPTIONS_BUCKET_MAX_BYTES" default:"4194304" by:"all" min:"1048576" max:"1099511627776" unit:"bytes" help:"size bound of the rid_dp_subscriptions bucket, reserved in the JetStream file store; a full bucket refuses puts"`
 
 	SystemID                string   `env:"USSP_SYSTEM_ID" default:"USSP-DEV" by:"api,rid-sp,monitor,dss-sync" help:"the USSP code from the authority's certificate (M8); never an audience"`
 	Audiences               []string `env:"USSP_AUDIENCES" by:"api,telemetry-ingest,rid-sp,traffic-ws" help:"hosts accepted as JWT aud, comma-separated: the public host and a lab alias (M18)"`

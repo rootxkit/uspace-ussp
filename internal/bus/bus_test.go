@@ -327,8 +327,9 @@ func TestTopologyShape(t *testing.T) {
 			t.Errorf("%s: %+v", b.Bucket, b)
 		}
 		if (b.TTL != 0) != (b.Bucket == BucketRegistryValidity || b.Bucket == BucketTelemetrySeen || b.Bucket == BucketISANotifications ||
-			b.Bucket == BucketConformanceState || b.Bucket == BucketProximityState || b.Bucket == BucketSessionsLive) {
-			t.Errorf("%s TTL %v: only registry_validity, telemetry_seen, rid_isa_notifications, conformance_state, proximity_state and sessions_live have one", b.Bucket, b.TTL)
+			b.Bucket == BucketConformanceState || b.Bucket == BucketProximityState || b.Bucket == BucketSessionsLive ||
+			b.Bucket == BucketRIDSubscriptions) {
+			t.Errorf("%s TTL %v: only registry_validity, telemetry_seen, rid_isa_notifications, conformance_state, proximity_state, sessions_live and rid_dp_subscriptions have one", b.Bucket, b.TTL)
 		}
 	}
 	// The streams and the bucket WP-11 owns are bounded in size too.
@@ -339,6 +340,9 @@ func TestTopologyShape(t *testing.T) {
 	}
 	if b, _ := top.Bucket(BucketProximityState); b.MaxBytes != ProximityStateMaxBytes || b.TTL != ProximityStateTTL {
 		t.Errorf("proximity_state %+v", b)
+	}
+	if b, _ := top.Bucket(BucketRIDSubscriptions); b.MaxBytes != RIDSubscriptionsMaxBytes || b.TTL != 24*time.Hour {
+		t.Errorf("rid_dp_subscriptions %+v", b)
 	}
 	if _, ok := top.Bucket(BucketIntentActive); !ok {
 		t.Error("intent_active missing")

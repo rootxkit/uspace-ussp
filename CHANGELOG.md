@@ -34,6 +34,12 @@ additively within `/v1`.
     source's is, not uspace-core's defaults;
   - a peer flight's details are asked under the peer's normalised base
     URL, so a base written with a trailing slash meets the peer's switch;
+  - the peer Display Provider's DSS subscriptions are saved in the new
+    `rid_dp_subscriptions` bucket (TTL 24 h,
+    `USSP_RID_DP_SUBSCRIPTIONS_BUCKET_MAX_BYTES`, 4 MiB) and read back at
+    the start, so the subscription of an area dropped across a restart
+    is deleted at the DSS (a version another run renewed is read again);
+    an unread store is said on `network_rid`'s status.
 - This USSP's client id at the authority keeps the case of its code
   (`ussp-ABC1-01`, not `ussp-abc1-01`). The authority's token service
   registers only `ussp-<code>-<nn>` with an upper-case code (M8), and the

@@ -487,7 +487,14 @@ owner: its owner keeps publishing it, and clears it, until another
 instance has saved it; an owner whose anchor left its cells saves it as
 releasing, which the anchor's owner takes at once; a stop saves every
 owned alert released; and every tick carries the saves whose owner is
-released or silent for three heartbeats (30 s). Every
+released or silent for three heartbeats (30 s). A fifth is
+`rid_dp_subscriptions` (TTL 24 h, the DSS's longest subscription,
+rewritten at each renewal): the peer Display Provider's F3411
+subscriptions at the DSS, by subscription id, with the base URL, area,
+version and end, written by the monitor as each is put or deleted and
+read at its start, so that the subscription of an area dropped while it
+was down is deleted at the DSS instead of being notified until its 24 h
+end (WP-14 review); unread, the status of `network_rid` says so. Every
 follower logs the
 projection age in its status line and refuses nothing when the bucket is
 missing (everything enabled, identification `registry_unavailable`,

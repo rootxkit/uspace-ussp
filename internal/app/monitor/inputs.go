@@ -441,7 +441,8 @@ func startInputs(ctx context.Context, rt *proc.Runtime, in inputs) error {
 		notes := &bus.Mirror[peers.ISANotification]{JS: js, Bucket: bus.BucketISANotifications, Decode: peers.DecodeNotification,
 			Counters: pc, Logger: rt.Logger}
 		d := &peers.DP{DSSBaseURL: cfg.DSSBaseURL, USSBaseURL: cfg.USSBaseURL, Tokens: tokens, HTTP: &http.Client{Timeout: 5 * time.Second},
-			Areas: areas.peerAreas, Notifications: func() (map[string]peers.ISANotification, bool) {
+			Subscriptions: peers.KVSubscriptions{KV: bus.KVStore{JS: js, Bucket: bus.BucketRIDSubscriptions}},
+			Areas:         areas.peerAreas, Notifications: func() (map[string]peers.ISANotification, bool) {
 				m, _, ok := notes.Snapshot()
 				return m, ok
 			},
