@@ -148,6 +148,63 @@ func TestRecheckMarksAnActivatedIntent(t *testing.T) {
 	}
 }
 
+// A planned restriction is not in force (spec 02 F2): over an activated
+// intent it marks nothing and tells nothing, even with its starts_at
+// come; the same restriction activated (a new version, state active)
+// marks the intent and tells it once (the lab's ussp-wp12-restriction,
+// where the plan step raised restriction_activated before the activate
+// step).
+func TestRecheckIgnoresAPlannedRestrictionUntilItIsActivated(t *testing.T) {
+	g := newRig()
+	s, st, pr := newService(g)
+	d, _, err := submit(t, s, baseRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.now = t0.Add(-5 * time.Minute)
+	if a, err := patch(t, s, d.IntentID, map[string]any{"action": "activate"}); err != nil || a.State != StateActivated {
+		t.Fatalf("activate %v %+v", err, a)
+	}
+	published := len(pr.subjects)
+	g.cis.features = []cis.ZoneCandidate{restriction(t, "TRSPLAN", "planned").candidate(t)}
+	r, err := s.Recheck(t.Context(), d.IntentID, Cause{Kind: CauseRestriction})
+	if err != nil || r.Outcome != RecheckUntouched || r.Notice != nil {
+		t.Fatalf("planned: %+v %v", r, err)
+	}
+	if rec := st.byID[d.IntentID]; rec.Version != 2 || NoticeOf(rec) != nil || len(pr.subjects) != published {
+		t.Fatalf("planned wrote: v%d %+v %v", rec.Version, NoticeOf(rec), pr.subjects[published:])
+	}
+	g.cis.features = []cis.ZoneCandidate{restriction(t, "TRSPLAN", "active").candidate(t)}
+	r, err = s.Recheck(t.Context(), d.IntentID, Cause{Kind: CauseRestriction})
+	if err != nil || r.Outcome != RecheckMarked || r.Notice == nil || r.Notice.RestrictionID != "TRSPLAN" || !r.Notice.Withdrawn {
+		t.Fatalf("activated: %+v %v", r, err)
+	}
+	if rec := st.byID[d.IntentID]; rec.Version != 3 || rec.LocalState != StateActivated || NoticeOf(rec) == nil {
+		t.Fatalf("activated record v%d %s", rec.Version, rec.LocalState)
+	}
+}
+
+// A planned restriction refuses no new intent: it is told as the
+// condition restriction_planned and the intent is authorised; the same
+// restriction active refuses it (restriction_active).
+func TestDecisionTellsAPlannedRestrictionAndRefusesAnActiveOne(t *testing.T) {
+	g := newRig()
+	s, _, _ := newService(g)
+	g.cis.features = []cis.ZoneCandidate{restriction(t, "TRSPLAN", "planned").candidate(t)}
+	d, _, err := submit(t, s, baseRequest())
+	if err != nil || d.State != StateAccepted || len(d.Conflicts) != 0 ||
+		!slices.ContainsFunc(d.Conditions, func(c Condition) bool { return c.Code == CondRestrictionPlanned && c.Ref == "TRSPLAN" }) {
+		t.Fatalf("planned: %v %+v", err, d)
+	}
+	g.cis.features = []cis.ZoneCandidate{restriction(t, "TRSPLAN", "active").candidate(t)}
+	d, _, err = submit(t, s, with(baseRequest(), "client_ref", "second"))
+	if err != nil || d.State != StateRejected ||
+		!slices.ContainsFunc(d.Conflicts, func(c Conflict) bool { return c.Reason == ReasonRestrictionActive && c.Ref == "TRSPLAN" }) ||
+		slices.ContainsFunc(d.Conditions, func(c Condition) bool { return c.Code == CondRestrictionPlanned }) {
+		t.Fatalf("active: %v %+v", err, d)
+	}
+}
+
 // A stale CIS never withdraws: the re-check is not judged and owed, and
 // nothing is written; a current one withdraws (E-01 pair).
 func TestRecheckOnAStaleCISChangesNothing(t *testing.T) {

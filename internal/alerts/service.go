@@ -2,6 +2,7 @@ package alerts
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"sync"
@@ -77,8 +78,19 @@ type Service struct {
 	Counters *core.Counters
 	Logger   *slog.Logger
 	Now      func() time.Time
+	// Restrictions says whether the restriction a notice names is
+	// lifted (cis.Evaluator); nil: a notice clears only when its intent
+	// is over.
+	Restrictions RestrictionLifter
 
 	once sync.Once
+}
+
+// RestrictionLifter is the CIS cache's answer on one restriction
+// (cis.Evaluator.RestrictionLifted): lifted when it is no longer in
+// force, judged false when the cache cannot say (stale).
+type RestrictionLifter interface {
+	RestrictionLifted(id string) (lifted, judged bool)
 }
 
 func (s *Service) logger() *slog.Logger {
@@ -222,6 +234,78 @@ func (s *Service) ClearEndedNotices(ctx context.Context) (int, error) {
 	return len(rows), nil
 }
 
+// CounterNoticesLifted counts the restriction_activated alerts cleared
+// once their restriction was lifted.
+const CounterNoticesLifted = "alerts_notices_lifted"
+
+// noticeCause is the part of a notice's detail that names its cause
+// (intent.Notice).
+type noticeCause struct {
+	Cause         string `json:"cause"`
+	Ref           string `json:"ref"`
+	RestrictionID string `json:"restriction_id"`
+}
+
+// liftedRestriction is the restriction of a notice caused by one that
+// is no longer in force ("" otherwise, and while the CIS cannot say).
+func (s *Service) liftedRestriction(st Stored) string {
+	if s.Restrictions == nil || st.Kind != KindRestrictionActivated {
+		return ""
+	}
+	var c noticeCause
+	if json.Unmarshal(st.Detail, &c) != nil || c.Cause != "restriction" {
+		return ""
+	}
+	id := c.RestrictionID
+	if id == "" {
+		id = c.Ref
+	}
+	if id == "" {
+		return ""
+	}
+	if lifted, judged := s.Restrictions.RestrictionLifted(id); lifted && judged {
+		return id
+	}
+	return ""
+}
+
+// ClearLiftedNotices clears the open restriction_activated alerts
+// (WP-12) whose restriction the ANSP deactivated: ended or cancelled, or
+// gone from the CIS (resolved, with the restriction in clearing_detail).
+// The intent keeps its state and its change_reason: a withdrawn
+// authorisation stays withdrawn (the operator files anew), only the
+// alert that the restriction is in force ends. A stale CIS clears
+// nothing. The clear is published on alrt.v1 and recorded from there;
+// one that is not recorded yet is published again by the next pass.
+func (s *Service) ClearLiftedNotices(ctx context.Context) (int, error) {
+	if s.Restrictions == nil {
+		return 0, nil
+	}
+	rows, err := s.Store.OpenNotices(ctx, MaxNoticeRepublish)
+	if err != nil {
+		return 0, err
+	}
+	now := s.now().UTC()
+	reason := "resolved"
+	n := 0
+	for i := range rows {
+		st := rows[i]
+		id := s.liftedRestriction(st)
+		if id == "" {
+			continue
+		}
+		detail, err := json.Marshal(map[string]string{"cause": "restriction_lifted", "restriction_id": id})
+		if err != nil {
+			return n, err
+		}
+		st.State, st.ClearReason, st.UpdatedAt, st.ClearingDetail = StateCleared, &reason, now, detail
+		s.counters().Inc(CounterNoticesLifted)
+		s.republish(ctx, st)
+		n++
+	}
+	return n, nil
+}
+
 // Notice republishing (WP-12).
 const (
 	// CounterNoticesRepublished counts the open notices republished from
@@ -255,11 +339,18 @@ func (s *Service) RepublishOpenNotices(ctx context.Context) (int, error) {
 			slog.Int("bound", MaxNoticeRepublish))
 		rows = rows[:MaxNoticeRepublish]
 	}
+	n := 0
 	for i := range rows {
+		if s.liftedRestriction(rows[i]) != "" {
+			// Its clear is ClearLiftedNotices'; republishing it raised
+			// would undo the clear at traffic-ws.
+			continue
+		}
 		s.counters().Inc(CounterNoticesRepublished)
 		s.republish(ctx, rows[i])
+		n++
 	}
-	return len(rows), nil
+	return n, nil
 }
 
 // RunEscalation escalates every period until ctx ends, clears the
@@ -283,6 +374,9 @@ func (s *Service) RunEscalation(ctx context.Context, every time.Duration) {
 			}
 			if _, err := s.ClearEndedNotices(ctx); err != nil && ctx.Err() == nil {
 				s.logger().LogAttrs(ctx, slog.LevelError, "notice clearing pass failed; tried again at the next", obs.Err(err))
+			}
+			if _, err := s.ClearLiftedNotices(ctx); err != nil && ctx.Err() == nil {
+				s.logger().LogAttrs(ctx, slog.LevelError, "lifted notice clearing pass failed; tried again at the next", obs.Err(err))
 			}
 			if now := s.now(); republished.IsZero() || now.Sub(republished) >= NoticeRepublishEvery {
 				republished = now

@@ -183,3 +183,132 @@ func TestIntegrationRestrictionRecheck(t *testing.T) {
 		t.Fatalf("A's notice republished as %+v", again.Body)
 	}
 }
+
+// A planned restriction is not in force (spec 02 F2): published over an
+// activated intent it raises nothing, even with its starts_at come; the
+// same restriction activated raises restriction_activated within one
+// tick; ended, api's alerts record clears that alert resolved while the
+// intent keeps its change_reason (the lab's ussp-wp12-restriction plan,
+// activate and end steps, in process; presence and absence pairs).
+func TestIntegrationPlannedRestrictionRaisesOnActivationAndClearsOnEnd(t *testing.T) {
+	g := newIntentRig(t)
+	pol := policy.Record{Version: 1, Values: policy.Defaults()}
+	pol.Values.ActivationLeadS = 7200
+	g.pol.Store(&pol)
+	conn := busConn(t, mustEnv(t, "USSP_TEST_NATS_URL"), true)
+	pub := bus.NewPublisher(conn, g.counters)
+	g.svc.Projector = intent.BusProjector{KV: g.kv, Pub: pub, Notices: geo.NoticeBus{Pub: pub, Counters: g.counters}}
+	re := geo.NewRechecker(g.svc, g.cis.eval, g.counters, quiet())
+	hook := cis.ChangeHook(re.Changed)
+	g.cis.hook.Store(&hook)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go re.Run(ctx)
+	g.publishAll(nil, nil, nil)
+
+	number, serial, token := g.operatorWith("ussp.intents")
+	c := g.file(token, g.request(number, serial, "p-"+unique(), g.box(0.001, 0.001, 0.004)))
+	if c.status != 201 || c.str("state") != "accepted" {
+		t.Fatalf("file: %d %s", c.status, c.raw)
+	}
+	id := c.str("intent_id")
+	if r := g.stack.call("PATCH", "/v1/intents/"+id, map[string]any{"action": "activate"}, bearer(token)); r.status != 200 || r.str("state") != "activated" {
+		t.Fatalf("activate: %d %s", r.status, r.raw)
+	}
+	log := &noticeLog{}
+	stop, err := conn.Listen("alrt.v1.restriction_activated.>", func(_ string, data []byte) {
+		var m geo.NoticeMessage
+		if json.Unmarshal(data, &m) == nil {
+			log.mu.Lock()
+			log.msgs, log.at = append(log.msgs, m), append(log.at, time.Now())
+			log.mu.Unlock()
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(stop)
+	rec := &alerts.Recorder{
+		Source: &bus.StreamSource{Open: bus.PullOpener(conn.JetStream(), bus.DefaultTopology(), bus.StreamALRT, bus.PullSpec{
+			Durable: "it-planned-" + unique(), FilterSubject: "alrt.v1.restriction_activated.>", MaxAckPending: 256,
+		})},
+		Store: alertstore.Store{S: appStore(t)}, Logger: quiet(),
+	}
+	go rec.Run(ctx)
+
+	now := time.Now().UTC()
+	u := unique()
+	rid := "TP" + u[len(u)-5:]
+	feature := func(state string) json.RawMessage {
+		return geoFeature(rid, "PROHIBITED", g.box(-0.002, -0.002, 0.01), 0, 3000, period(now, now.Add(3*time.Hour)),
+			restrictionExt(rid, state, now, now.Add(3*time.Hour)))
+	}
+	// Planned with its start now: the re-check runs and tells nothing.
+	runs := g.counters.Get(geo.CounterRecheckRuns)
+	g.publish(cis.Restrictions, feature("planned"))
+	within(t, 10*time.Second, func() bool { return g.counters.Get(geo.CounterRecheckRuns) > runs })
+	if n := len(log.of(id)); n != 0 {
+		t.Fatalf("a planned restriction raised %d notices", n)
+	}
+	if gc := g.stack.call("GET", "/v1/intents/"+id, nil, bearer(token)); gc.str("state") != "activated" || gc.body["version"].(float64) != 2 {
+		t.Fatalf("after the plan: %s", gc.raw)
+	}
+	// Activated: raised within one tick.
+	published := time.Now()
+	g.publish(cis.Restrictions, feature("active"))
+	within(t, 10*time.Second, func() bool { return len(log.of(id)) == 1 })
+	log.mu.Lock()
+	raisedAfter := log.at[0].Sub(published)
+	log.mu.Unlock()
+	t.Logf("restriction %s activated to restriction_activated on the bus: %v", rid, raisedAfter)
+	if raisedAfter > 2*time.Second {
+		t.Fatalf("restriction_activated %v after the activation, beyond one tick", raisedAfter)
+	}
+	raised := log.of(id)[0]
+	if raised.Body.State != geo.StateRaised || raised.Body.Severity != core.SeverityCritical {
+		t.Fatalf("raised %+v", raised.Body)
+	}
+	db := relOwner(t)
+	within(t, 10*time.Second, func() bool {
+		return count(t, db, "SELECT count(*) FROM alerts WHERE id = $1::uuid AND cleared_at IS NULL", raised.Body.AlertID) == 1
+	})
+	// While it is active the clearing pass leaves it open (the twin).
+	// The record is shared with the other tests: what this pass clears
+	// of theirs (restrictions this rig's CIS does not hold) is theirs.
+	svc := &alerts.Service{Store: alertstore.Store{S: appStore(t)}, Bus: pub, Restrictions: g.cis.eval, Logger: quiet()}
+	if _, err := svc.ClearLiftedNotices(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(log.of(id)); n != 1 {
+		t.Fatalf("the clearing pass published %d messages of an active restriction's notice", n-1)
+	}
+	// Ended: the pass clears it resolved, recorded by api's record.
+	g.publish(cis.Restrictions, feature("ended"))
+	within(t, 10*time.Second, func() bool {
+		lifted, judged := g.cis.eval.RestrictionLifted(rid)
+		return lifted && judged
+	})
+	if n, err := svc.ClearLiftedNotices(ctx); err != nil || n < 1 {
+		t.Fatalf("cleared on the end: %d %v", n, err)
+	}
+	within(t, 10*time.Second, func() bool {
+		return count(t, db, "SELECT count(*) FROM alerts WHERE id = $1::uuid AND cleared_at IS NOT NULL AND clear_reason = 'resolved'",
+			raised.Body.AlertID) == 1
+	})
+	ms := log.of(id)
+	last := ms[len(ms)-1]
+	if last.Body.AlertID != raised.Body.AlertID || last.Body.State != "cleared" || last.Body.ClearReason == nil || *last.Body.ClearReason != "resolved" {
+		t.Fatalf("clear on the bus %+v", last.Body)
+	}
+	// The intent keeps its state and change_reason; nothing more is open.
+	if gc := g.stack.call("GET", "/v1/intents/"+id, nil, bearer(token)); gc.str("state") != "activated" || gc.str("change_reason") != "restriction "+rid {
+		t.Fatalf("after the end: %s", gc.raw)
+	}
+	before := len(log.of(id))
+	if _, err := svc.ClearLiftedNotices(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(log.of(id)); n != before {
+		t.Fatalf("cleared twice: %d messages after the record took the clear", n-before)
+	}
+}
