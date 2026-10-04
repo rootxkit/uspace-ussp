@@ -19,11 +19,13 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/store/relational"
 )
 
-// PolicyPutter stores a policy version (policy.Service.Put): validated,
-// with its events row and its KV projection in one transaction, a
+// PolicyPutter stores a policy version made on version base
+// (policy.Service.PutOn): validated, with its events row and its KV
+// projection in one transaction, a *policy.StaleBaseError when another
+// version was stored since base (decided under the policy lock), a
 // *policy.ProjectionError when the KV cannot take it.
 type PolicyPutter interface {
-	Put(ctx context.Context, actor, reason string, v policy.Values) (policy.Record, error)
+	PutOn(ctx context.Context, base int64, actor, reason string, v policy.Values) (policy.Record, error)
 }
 
 // SourceSwitcher writes and lists the source switches (sources.Writer
@@ -183,8 +185,11 @@ type PolicyPut struct {
 // PutPolicy stores a new version: the values given replace those of the
 // version in force (an unknown name is 400), base_version other than
 // the version in force is 409 (permanent), and the result is validated
-// before anything is written. The answer is the new version with its
-// changes from the one before.
+// before anything is written. The base is compared twice: here, to
+// refuse early, and again under the policy lock as the version is
+// inserted, which is the compare that decides; of two changes made on
+// the same version the second is 409, never stored over the first. The
+// answer is the new version with its changes from the one before.
 func (s *Service) PutPolicy(ctx context.Context, staffID string, in PolicyPut) (PolicyVersion, error) {
 	if err := reason("reason", in.Reason, MaxReason); err != nil {
 		return PolicyVersion{}, err
@@ -202,7 +207,7 @@ func (s *Service) PutPolicy(ctx context.Context, staffID string, in PolicyPut) (
 		return PolicyVersion{}, fmt.Errorf("policy in force: %w", err)
 	}
 	if in.BaseVersion != cur.Version {
-		return PolicyVersion{}, conflict(SlugPolicyChanged, fmt.Sprintf("the policy in force is version %d, not %d: read it again and make the change on it", cur.Version, in.BaseVersion))
+		return PolicyVersion{}, policyChanged(cur.Version, in.BaseVersion)
 	}
 	if len(in.Values) == 0 {
 		return PolicyVersion{}, core.Fieldf("values", "nothing to change")
@@ -223,7 +228,11 @@ func (s *Service) PutPolicy(ctx context.Context, staffID string, in PolicyPut) (
 	if err := next.Validate(); err != nil {
 		return PolicyVersion{}, err
 	}
-	rec, err := s.Policies.Put(ctx, staffID, in.Reason, next)
+	rec, err := s.Policies.PutOn(ctx, cur.Version, staffID, in.Reason, next)
+	var stale *policy.StaleBaseError
+	if errors.As(err, &stale) {
+		return PolicyVersion{}, policyChanged(stale.Current, in.BaseVersion)
+	}
 	if err != nil {
 		return PolicyVersion{}, err
 	}
@@ -232,6 +241,12 @@ func (s *Service) PutPolicy(ctx context.Context, staffID string, in PolicyPut) (
 	after := valuesMap(rec.Values)
 	return PolicyVersion{Version: rec.Version, CreatedAt: &at, Actor: &actor, Reason: &why, Values: after,
 		Changes: changes(valuesMap(cur.Values), after)}, nil
+}
+
+// policyChanged is the 409 of a change made on a version that is no
+// longer the one in force.
+func policyChanged(current, base int64) error {
+	return conflict(SlugPolicyChanged, fmt.Sprintf("the policy in force is version %d, not %d: read it again and make the change on it", current, base))
 }
 
 // decodeReason says why a values object does not decode, naming the

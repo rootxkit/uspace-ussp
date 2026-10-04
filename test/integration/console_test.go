@@ -37,15 +37,44 @@ func (r *republished) Republish(_ context.Context, st alerts.Stored) {
 
 func (r *republished) n() int { r.mu.Lock(); defer r.mu.Unlock(); return len(r.ids) }
 
-// switchableProjector refuses every projection while err is set.
+// switchableProjector refuses every projection while err is set. While
+// a gate is held, the next policy projection (inside its transaction,
+// under the policy lock) says so on entered and waits for release.
 type switchableProjector struct {
-	mu  sync.Mutex
-	err error
+	mu   sync.Mutex
+	err  error
+	gate *projectionGate
+}
+
+type projectionGate struct {
+	entered, release chan struct{}
 }
 
 func (p *switchableProjector) set(err error) { p.mu.Lock(); p.err = err; p.mu.Unlock() }
 func (p *switchableProjector) fail() error   { p.mu.Lock(); defer p.mu.Unlock(); return p.err }
-func (p *switchableProjector) ProjectPolicy(context.Context, policy.Record) error {
+
+// hold makes the next policy projection wait until the gate is released.
+func (p *switchableProjector) hold() *projectionGate {
+	g := &projectionGate{entered: make(chan struct{}), release: make(chan struct{})}
+	p.mu.Lock()
+	p.gate = g
+	p.mu.Unlock()
+	return g
+}
+
+func (p *switchableProjector) ProjectPolicy(ctx context.Context, _ policy.Record) error {
+	p.mu.Lock()
+	g := p.gate
+	p.gate = nil
+	p.mu.Unlock()
+	if g != nil {
+		close(g.entered)
+		select {
+		case <-g.release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	return p.fail()
 }
 func (p *switchableProjector) ProjectSources(context.Context, coresources.State) error {
@@ -362,6 +391,67 @@ func TestIntegrationConsolePolicy(t *testing.T) {
 }
 
 const store_EventPolicyPut = "policy_put"
+
+// Two admins change the policy on the same version at once (INV-03):
+// the first holds the policy lock inside its transaction while the
+// second has passed the early compare and waits for the lock; the
+// second is then 409 and stores nothing, so the first one's threshold
+// is the one in force, never silently overwritten. A change made on the
+// version the first stored is then accepted (E-01).
+func TestIntegrationConsolePolicyConcurrentPuts(t *testing.T) {
+	g := newConsoleRig(t)
+	admin_ := g.as(g.ad)
+	r := admin_(t, "GET", "/v1/admin/policy", nil)
+	cur, _ := r.body["current"].(map[string]any)
+	base := cur["version"]
+	values, _ := cur["values"].(map[string]any)
+	old, _ := values["cis_stale_s"].(float64)
+	put := func(v float64) resp {
+		return admin_(t, "PUT", "/v1/admin/policy", map[string]any{"base_version": base, "reason": "WP-18 concurrent test", "values": map[string]any{"cis_stale_s": v}})
+	}
+	rows := count(t, appPool(t), "SELECT count(*) FROM policy")
+	gate := g.proj.hold()
+	first, second := make(chan resp, 1), make(chan resp, 1)
+	go func() { first <- put(old + 1) }()
+	select {
+	case <-gate.entered:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the first change never reached its projection")
+	}
+	go func() { second <- put(old + 2) }()
+	// The second has read the version in force (still base: the first has
+	// not committed) and waits for the policy lock the first holds.
+	deadline := time.Now().Add(30 * time.Second)
+	for count(t, appPool(t), "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted") == 0 {
+		if time.Now().After(deadline) {
+			close(gate.release)
+			t.Fatal("the second change never waited for the policy lock")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	close(gate.release)
+	a, b := <-first, <-second
+	if a.status != 201 {
+		t.Fatalf("the first change: %d %s", a.status, a.raw)
+	}
+	if b.status != 409 || !strings.Contains(b.raw, "policy_changed") {
+		t.Fatalf("the second change on the same base: %d %s", b.status, b.raw)
+	}
+	if n := count(t, appPool(t), "SELECT count(*) FROM policy"); n != rows+1 {
+		t.Fatalf("%d versions stored, want 1", n-rows)
+	}
+	now := admin_(t, "GET", "/v1/admin/policy", nil)
+	cur, _ = now.body["current"].(map[string]any)
+	values, _ = cur["values"].(map[string]any)
+	if fmt.Sprint(cur["version"]) != fmt.Sprint(a.body["version"]) || values["cis_stale_s"] != old+1 {
+		t.Fatalf("in force: version %v cis_stale_s %v, want the first change's", cur["version"], values["cis_stale_s"])
+	}
+	// The change made again on the version in force is accepted.
+	base = a.body["version"]
+	if r := put(old); r.status != 201 {
+		t.Fatalf("a change on the new version: %d %s", r.status, r.raw)
+	}
+}
 
 // The source switches (SC-08): a support viewer gets 403 and nothing is
 // written; an admin's switch with a reason is a row, an events row and a
