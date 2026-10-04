@@ -14,16 +14,32 @@
 -- failed (refused for good, last_error says why).
 
 -- +goose Up
+-- The columns arrive nullable, a row already there (none in a
+-- deployment; a tree rolled back past this migration and up again keeps
+-- its rows) is given what it implies (a certificate of its own, a
+-- reference of its own), then the rules apply to every row.
 ALTER TABLE operating_status_notices
-    ADD COLUMN certificate_id text        NOT NULL CHECK (certificate_id ~ '^[0-9a-f]{32}$'),
-    ADD COLUMN reference      text        NOT NULL UNIQUE CHECK (length(reference) BETWEEN 1 AND 200),
-    ADD COLUMN requested_by   text        NOT NULL,
-    ADD COLUMN state          text        NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'delivered', 'failed')),
+    ADD COLUMN certificate_id text,
+    ADD COLUMN reference      text,
+    ADD COLUMN requested_by   text,
+    ADD COLUMN state          text        NOT NULL DEFAULT 'pending',
     ADD COLUMN attempts       integer     NOT NULL DEFAULT 0 CHECK (attempts >= 0),
     ADD COLUMN next_at        timestamptz NOT NULL DEFAULT now(),
     ADD COLUMN last_error     text,
     ADD COLUMN failed_at      timestamptz,
-    ADD COLUMN created_at     timestamptz NOT NULL DEFAULT now(),
+    ADD COLUMN created_at     timestamptz NOT NULL DEFAULT now();
+UPDATE operating_status_notices
+SET certificate_id = coalesce(certificate_id, md5(id::text)), reference = coalesce(reference, 'legacy:' || id::text),
+    requested_by = coalesce(requested_by, 'unknown'),
+    state = CASE WHEN submitted_at IS NOT NULL THEN 'delivered' ELSE 'pending' END;
+ALTER TABLE operating_status_notices
+    ALTER COLUMN certificate_id SET NOT NULL,
+    ALTER COLUMN reference SET NOT NULL,
+    ALTER COLUMN requested_by SET NOT NULL,
+    ADD CONSTRAINT operating_status_notices_certificate_check CHECK (certificate_id ~ '^[0-9a-f]{32}$'),
+    ADD CONSTRAINT operating_status_notices_reference_check CHECK (length(reference) BETWEEN 1 AND 200),
+    ADD CONSTRAINT operating_status_notices_reference_unique UNIQUE (reference),
+    ADD CONSTRAINT operating_status_notices_state_check CHECK (state IN ('pending', 'delivered', 'failed')),
     ADD CONSTRAINT operating_status_notices_delivered_check CHECK ((state = 'delivered') = (submitted_at IS NOT NULL)),
     ADD CONSTRAINT operating_status_notices_failed_check CHECK ((state = 'failed') = (failed_at IS NOT NULL));
 CREATE UNIQUE INDEX operating_status_notices_one_start_idx ON operating_status_notices (certificate_id)
@@ -38,6 +54,10 @@ DROP INDEX operating_status_notices_one_start_idx;
 ALTER TABLE operating_status_notices
     DROP CONSTRAINT operating_status_notices_failed_check,
     DROP CONSTRAINT operating_status_notices_delivered_check,
+    DROP CONSTRAINT operating_status_notices_state_check,
+    DROP CONSTRAINT operating_status_notices_reference_unique,
+    DROP CONSTRAINT operating_status_notices_reference_check,
+    DROP CONSTRAINT operating_status_notices_certificate_check,
     DROP COLUMN created_at,
     DROP COLUMN failed_at,
     DROP COLUMN last_error,

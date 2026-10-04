@@ -15,18 +15,38 @@
 -- console item. Times are the database clock.
 
 -- +goose Up
+-- The columns arrive nullable, a row already there (none in a
+-- deployment: nothing wrote the table before WP-15; a tree rolled back
+-- past this migration and up again keeps its rows) is given what it
+-- implies, then the rules apply to every row.
 ALTER TABLE occurrence_reports
-    ADD COLUMN source_kind  text        NOT NULL CHECK (source_kind IN ('alert', 'flight')),
-    ADD COLUMN source_ref   text        NOT NULL,
-    ADD COLUMN channel      text        NOT NULL CHECK (channel IN ('mandatory', 'voluntary')),
-    ADD COLUMN flagged_by   text        NOT NULL CHECK (flagged_by IN ('system', 'supervisor')),
-    ADD COLUMN reporter_ref text        NOT NULL,
+    ADD COLUMN source_kind  text,
+    ADD COLUMN source_ref   text,
+    ADD COLUMN channel      text,
+    ADD COLUMN flagged_by   text,
+    ADD COLUMN reporter_ref text,
     ADD COLUMN flight_ids   uuid[]      NOT NULL DEFAULT '{}',
     ADD COLUMN intent_ids   uuid[]      NOT NULL DEFAULT '{}',
-    ADD COLUMN state        text        NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'delivered', 'failed')),
+    ADD COLUMN state        text        NOT NULL DEFAULT 'pending',
     ADD COLUMN next_at      timestamptz NOT NULL DEFAULT now(),
     ADD COLUMN failed_at    timestamptz,
-    ADD COLUMN created_at   timestamptz NOT NULL DEFAULT now(),
+    ADD COLUMN created_at   timestamptz NOT NULL DEFAULT now();
+UPDATE occurrence_reports
+SET source_kind = coalesce(source_kind, 'alert'), source_ref = coalesce(source_ref, report_ref),
+    channel = coalesce(channel, 'mandatory'), flagged_by = coalesce(flagged_by, 'system'),
+    reporter_ref = coalesce(reporter_ref, 'system'),
+    state = CASE WHEN submitted_at IS NOT NULL THEN 'delivered' ELSE 'pending' END,
+    kind = CASE WHEN kind IN ('airprox', 'nonconformance_in_prohibited', 'lost_link_in_uspace', 'emergency') THEN kind ELSE 'other' END;
+ALTER TABLE occurrence_reports
+    ALTER COLUMN source_kind SET NOT NULL,
+    ALTER COLUMN source_ref SET NOT NULL,
+    ALTER COLUMN channel SET NOT NULL,
+    ALTER COLUMN flagged_by SET NOT NULL,
+    ALTER COLUMN reporter_ref SET NOT NULL,
+    ADD CONSTRAINT occurrence_reports_source_kind_check CHECK (source_kind IN ('alert', 'flight')),
+    ADD CONSTRAINT occurrence_reports_channel_check CHECK (channel IN ('mandatory', 'voluntary')),
+    ADD CONSTRAINT occurrence_reports_flagged_by_check CHECK (flagged_by IN ('system', 'supervisor')),
+    ADD CONSTRAINT occurrence_reports_state_check CHECK (state IN ('pending', 'delivered', 'failed')),
     ADD CONSTRAINT occurrence_reports_kind_check
         CHECK (kind IN ('airprox', 'nonconformance_in_prohibited', 'lost_link_in_uspace', 'emergency', 'other')),
     ADD CONSTRAINT occurrence_reports_source_unique UNIQUE (source_kind, source_ref),
@@ -50,6 +70,10 @@ ALTER TABLE occurrence_reports
     DROP CONSTRAINT occurrence_reports_delivered_check,
     DROP CONSTRAINT occurrence_reports_source_unique,
     DROP CONSTRAINT occurrence_reports_kind_check,
+    DROP CONSTRAINT occurrence_reports_state_check,
+    DROP CONSTRAINT occurrence_reports_flagged_by_check,
+    DROP CONSTRAINT occurrence_reports_channel_check,
+    DROP CONSTRAINT occurrence_reports_source_kind_check,
     DROP COLUMN created_at,
     DROP COLUMN failed_at,
     DROP COLUMN next_at,
