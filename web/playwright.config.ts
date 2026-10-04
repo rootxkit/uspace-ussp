@@ -38,7 +38,9 @@ export default defineConfig({
     {
       command: "node e2e/serve.mjs",
       url: `${WEB}/login`,
-      env: { PORT: "3100", HOSTNAME: "127.0.0.1", USSP_WEB_API_URL: API, USSP_WEB_SESSION_SECURE: "false" },
+      // USSP_WEB_BFF_SECRET seals a staff admin's MFA challenge between
+      // the console's two sign-in steps (brief WP-18): a test value.
+      env: { PORT: "3100", HOSTNAME: "127.0.0.1", USSP_WEB_API_URL: API, USSP_WEB_SESSION_SECURE: "false", USSP_WEB_BFF_SECRET: "e2e-only-bff-secret-of-at-least-32-bytes" },
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
     },

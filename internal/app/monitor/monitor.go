@@ -72,8 +72,9 @@ const (
 	DepSourceControl = "source_control"
 )
 
-// SummaryEvery is the period of the conformance status line.
-const SummaryEvery = 10 * time.Second
+// SummaryEvery is the period of the conformance status line (and of the
+// status written to monitor_status).
+const SummaryEvery = bus.MonitorStatusEvery
 
 // SubjectFlightEnded is the filter of the flight ends telemetry-ingest
 // publishes (flight.v1.ended.<flight_id>), read here on core NATS.
@@ -259,6 +260,9 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	if every <= 0 {
 		every = SummaryEvery
 	}
+	// The status line also goes to monitor_status for the console
+	// (WP-18): a monitor that stops writing it is down there.
+	statusKV := &statusWriter{KV: bus.KVStore{JS: js, Bucket: bus.BucketMonitorStatus}, Counters: pubCounters, Logger: logger}
 	for _, run := range []func(context.Context){
 		pol.Run, intents.Run, src.Run, cisM.Run, eng.Run,
 		// The feed opens once the saved flights are restored, so no
@@ -288,9 +292,13 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 					return
 				case <-t.C:
 					_, age, loaded := intents.Snapshot()
-					logger.LogAttrs(ctx, slog.LevelInfo, "conformance status", StatusAttrs(eng.Summary(), age, loaded, current().Version)...)
-					logger.LogAttrs(ctx, slog.LevelInfo, "cpa status", CPAStatusAttrs(cpa.eng.Summary())...)
-					logger.LogAttrs(ctx, slog.LevelInfo, "zone status", ZoneStatusAttrs(zoneSrc.Current(), zoneSrc.Freshness(), ground != nil, und != nil)...)
+					sum, cpaSum, zs, fr := eng.Summary(), cpa.eng.Summary(), zoneSrc.Current(), zoneSrc.Freshness()
+					pv := current().Version
+					logger.LogAttrs(ctx, slog.LevelInfo, "conformance status", StatusAttrs(sum, age, loaded, pv)...)
+					logger.LogAttrs(ctx, slog.LevelInfo, "cpa status", CPAStatusAttrs(cpaSum)...)
+					logger.LogAttrs(ctx, slog.LevelInfo, "zone status", ZoneStatusAttrs(zs, fr, ground != nil, und != nil)...)
+					st := StatusOf(instance, time.Now(), sum, cpaSum, zs, fr, age, loaded, pv, ground != nil, und != nil)
+					statusKV.write(ctx, st)
 				}
 			}
 		},

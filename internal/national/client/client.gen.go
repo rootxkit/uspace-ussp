@@ -18,6 +18,180 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AdminBusState.
+const (
+	Connected    AdminBusState = "connected"
+	Disconnected AdminBusState = "disconnected"
+)
+
+// Valid indicates whether the value is a known member of the AdminBusState enum.
+func (e AdminBusState) Valid() bool {
+	switch e {
+	case Connected:
+		return true
+	case Disconnected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminConformanceState.
+const (
+	AdminConformanceStateConforming    AdminConformanceState = "conforming"
+	AdminConformanceStateContingent    AdminConformanceState = "contingent"
+	AdminConformanceStateLostLink      AdminConformanceState = "lost_link"
+	AdminConformanceStateNonconforming AdminConformanceState = "nonconforming"
+	AdminConformanceStateUnknown       AdminConformanceState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AdminConformanceState enum.
+func (e AdminConformanceState) Valid() bool {
+	switch e {
+	case AdminConformanceStateConforming:
+		return true
+	case AdminConformanceStateContingent:
+		return true
+	case AdminConformanceStateLostLink:
+		return true
+	case AdminConformanceStateNonconforming:
+		return true
+	case AdminConformanceStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminDSSStateUssAvailability.
+const (
+	AdminDSSStateUssAvailabilityDown    AdminDSSStateUssAvailability = "Down"
+	AdminDSSStateUssAvailabilityNormal  AdminDSSStateUssAvailability = "Normal"
+	AdminDSSStateUssAvailabilityUnknown AdminDSSStateUssAvailability = "Unknown"
+)
+
+// Valid indicates whether the value is a known member of the AdminDSSStateUssAvailability enum.
+func (e AdminDSSStateUssAvailability) Valid() bool {
+	switch e {
+	case AdminDSSStateUssAvailabilityDown:
+		return true
+	case AdminDSSStateUssAvailabilityNormal:
+		return true
+	case AdminDSSStateUssAvailabilityUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminDisabledBy.
+const (
+	Instance AdminDisabledBy = "instance"
+	Type     AdminDisabledBy = "type"
+)
+
+// Valid indicates whether the value is a known member of the AdminDisabledBy enum.
+func (e AdminDisabledBy) Valid() bool {
+	switch e {
+	case Instance:
+		return true
+	case Type:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminInputState.
+const (
+	AdminInputStateDisabled    AdminInputState = "disabled"
+	AdminInputStateHealthy     AdminInputState = "healthy"
+	AdminInputStateLagging     AdminInputState = "lagging"
+	AdminInputStateNeverHeard  AdminInputState = "never_heard"
+	AdminInputStateStale       AdminInputState = "stale"
+	AdminInputStateUnknown     AdminInputState = "unknown"
+	AdminInputStateUnreachable AdminInputState = "unreachable"
+)
+
+// Valid indicates whether the value is a known member of the AdminInputState enum.
+func (e AdminInputState) Valid() bool {
+	switch e {
+	case AdminInputStateDisabled:
+		return true
+	case AdminInputStateHealthy:
+		return true
+	case AdminInputStateLagging:
+		return true
+	case AdminInputStateNeverHeard:
+		return true
+	case AdminInputStateStale:
+		return true
+	case AdminInputStateUnknown:
+		return true
+	case AdminInputStateUnreachable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminMonitorState.
+const (
+	AdminMonitorStateDown    AdminMonitorState = "down"
+	AdminMonitorStateUnknown AdminMonitorState = "unknown"
+	AdminMonitorStateUp      AdminMonitorState = "up"
+)
+
+// Valid indicates whether the value is a known member of the AdminMonitorState enum.
+func (e AdminMonitorState) Valid() bool {
+	switch e {
+	case AdminMonitorStateDown:
+		return true
+	case AdminMonitorStateUnknown:
+		return true
+	case AdminMonitorStateUp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminSubscriptionKind.
+const (
+	Rid AdminSubscriptionKind = "rid"
+	Utm AdminSubscriptionKind = "utm"
+)
+
+// Valid indicates whether the value is a known member of the AdminSubscriptionKind enum.
+func (e AdminSubscriptionKind) Valid() bool {
+	switch e {
+	case Rid:
+		return true
+	case Utm:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminSwitchesStateState.
+const (
+	AdminSwitchesStateStateRead        AdminSwitchesStateState = "read"
+	AdminSwitchesStateStateUnavailable AdminSwitchesStateState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the AdminSwitchesStateState enum.
+func (e AdminSwitchesStateState) Valid() bool {
+	switch e {
+	case AdminSwitchesStateStateRead:
+		return true
+	case AdminSwitchesStateStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CoordinationNoticeItemKind.
 const (
 	CoordinationNoticeItemKindContingent     CoordinationNoticeItemKind = "contingent"
@@ -81,6 +255,27 @@ func (e DependencyState) Valid() bool {
 	case DependencyStateUnknown:
 		return true
 	case DependencyStateUp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EmergencyActionAction.
+const (
+	Close EmergencyActionAction = "close"
+	Note  EmergencyActionAction = "note"
+	Open  EmergencyActionAction = "open"
+)
+
+// Valid indicates whether the value is a known member of the EmergencyActionAction enum.
+func (e EmergencyActionAction) Valid() bool {
+	switch e {
+	case Close:
+		return true
+	case Note:
+		return true
+	case Open:
 		return true
 	default:
 		return false
@@ -825,6 +1020,33 @@ func (e SerialBindingRequestClassLabel) Valid() bool {
 	}
 }
 
+// Defines values for SourceSwitchRequestSourceType.
+const (
+	AdsbRx     SourceSwitchRequestSourceType = "adsb_rx"
+	AnspFeed   SourceSwitchRequestSourceType = "ansp_feed"
+	DirectRid  SourceSwitchRequestSourceType = "direct_rid"
+	NetworkRid SourceSwitchRequestSourceType = "network_rid"
+	OperatorWs SourceSwitchRequestSourceType = "operator_ws"
+)
+
+// Valid indicates whether the value is a known member of the SourceSwitchRequestSourceType enum.
+func (e SourceSwitchRequestSourceType) Valid() bool {
+	switch e {
+	case AdsbRx:
+		return true
+	case AnspFeed:
+		return true
+	case DirectRid:
+		return true
+	case NetworkRid:
+		return true
+	case OperatorWs:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for StatusNoticeKind.
 const (
 	StatusNoticeKindCease   StatusNoticeKind = "cease"
@@ -1182,6 +1404,341 @@ func (e WeatherSourceState) Valid() bool {
 	}
 }
 
+// Defines values for ListAdminEventsParamsEntityType.
+const (
+	ListAdminEventsParamsEntityTypeAlert            ListAdminEventsParamsEntityType = "alert"
+	ListAdminEventsParamsEntityTypeEmergencyCase    ListAdminEventsParamsEntityType = "emergency_case"
+	ListAdminEventsParamsEntityTypeOccurrenceReport ListAdminEventsParamsEntityType = "occurrence_report"
+	ListAdminEventsParamsEntityTypePolicy           ListAdminEventsParamsEntityType = "policy"
+	ListAdminEventsParamsEntityTypeSourceControl    ListAdminEventsParamsEntityType = "source_control"
+)
+
+// Valid indicates whether the value is a known member of the ListAdminEventsParamsEntityType enum.
+func (e ListAdminEventsParamsEntityType) Valid() bool {
+	switch e {
+	case ListAdminEventsParamsEntityTypeAlert:
+		return true
+	case ListAdminEventsParamsEntityTypeEmergencyCase:
+		return true
+	case ListAdminEventsParamsEntityTypeOccurrenceReport:
+		return true
+	case ListAdminEventsParamsEntityTypePolicy:
+		return true
+	case ListAdminEventsParamsEntityTypeSourceControl:
+		return true
+	default:
+		return false
+	}
+}
+
+// AdminAlert defines model for AdminAlert.
+type AdminAlert struct {
+	AckedAt             *time.Time         `json:"acked_at,omitempty"`
+	AckedBy             *string            `json:"acked_by,omitempty"`
+	AlertId             openapi_types.UUID `json:"alert_id"`
+	AuthorisationNumber *string            `json:"authorisation_number,omitempty"`
+	ClearReason         *string            `json:"clear_reason,omitempty"`
+	ClearedAt           *time.Time         `json:"cleared_at,omitempty"`
+	CloseReason         *string            `json:"close_reason,omitempty"`
+	ClosedAt            *time.Time         `json:"closed_at,omitempty"`
+
+	// ClosedBy The username of the supervisor who closed it on the console (the stored id when it is not a staff account).
+	ClosedBy *string `json:"closed_by,omitempty"`
+
+	// Detail The alert's detail as the monitor sent it (alert/v1).
+	Detail      map[string]interface{} `json:"detail"`
+	EscalatedAt *time.Time             `json:"escalated_at,omitempty"`
+
+	// EscalatedBy The username of the supervisor who escalated it (the stored id when it is not a staff account); absent for the automatic escalation.
+	EscalatedBy      *string             `json:"escalated_by,omitempty"`
+	EscalationReason *string             `json:"escalation_reason,omitempty"`
+	FlightId         *openapi_types.UUID `json:"flight_id,omitempty"`
+	IntentId         *openapi_types.UUID `json:"intent_id,omitempty"`
+	Kind             string              `json:"kind"`
+
+	// MessagesRecorded How many alert/v1 messages of this alert api recorded (the monitor republishes an active alert every second).
+	MessagesRecorded int64     `json:"messages_recorded"`
+	PolicyVersion    int64     `json:"policy_version"`
+	RaisedAt         time.Time `json:"raised_at"`
+
+	// Severity info, warning or critical (alert/v1).
+	Severity string `json:"severity"`
+
+	// State raised, updated or cleared (alert/v1); the monitor alone sets it.
+	State     string    `json:"state"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// AdminAlerts defines model for AdminAlerts.
+type AdminAlerts struct {
+	Alerts []AdminAlert `json:"alerts"`
+
+	// EscalationAfterS The policy's delay before an unacknowledged critical alert escalates.
+	EscalationAfterS float64 `json:"escalation_after_s"`
+
+	// EscalationRepeatS The policy's repeat of an unacknowledged critical alert to the operator.
+	EscalationRepeatS float64 `json:"escalation_repeat_s"`
+
+	// PolicyVersion The policy version in force (0 while the defaults apply).
+	PolicyVersion int64 `json:"policy_version"`
+	Truncated     bool  `json:"truncated"`
+}
+
+// AdminBus defines model for AdminBus.
+type AdminBus struct {
+	Detail *string `json:"detail,omitempty"`
+
+	// Since When api's src.v1 subscription entered this state.
+	Since time.Time     `json:"since"`
+	State AdminBusState `json:"state"`
+}
+
+// AdminBusState defines model for AdminBus.State.
+type AdminBusState string
+
+// AdminConformance defines model for AdminConformance.
+type AdminConformance struct {
+	At     time.Time             `json:"at"`
+	Reason *string               `json:"reason,omitempty"`
+	State  AdminConformanceState `json:"state"`
+}
+
+// AdminConformanceState defines model for AdminConformance.State.
+type AdminConformanceState string
+
+// AdminDSS defines model for AdminDSS.
+type AdminDSS struct {
+	DssState      AdminDSSState       `json:"dss_state"`
+	LastErrors    []AdminOutboxError  `json:"last_errors"`
+	Outbox        AdminOutbox         `json:"outbox"`
+	Readiness     Dependency          `json:"readiness"`
+	Subscriptions []AdminSubscription `json:"subscriptions"`
+}
+
+// AdminDSSState defines model for AdminDSSState.
+type AdminDSSState struct {
+	DssReachableSince   *time.Time                    `json:"dss_reachable_since,omitempty"`
+	DssUnreachableSince *time.Time                    `json:"dss_unreachable_since,omitempty"`
+	SetAt               *time.Time                    `json:"set_at,omitempty"`
+	SetBy               *string                       `json:"set_by,omitempty"`
+	UssAvailability     *AdminDSSStateUssAvailability `json:"uss_availability,omitempty"`
+}
+
+// AdminDSSStateUssAvailability defines model for AdminDSSState.UssAvailability.
+type AdminDSSStateUssAvailability string
+
+// AdminDisabled defines model for AdminDisabled.
+type AdminDisabled struct {
+	At     time.Time       `json:"at"`
+	By     AdminDisabledBy `json:"by"`
+	ByWho  string          `json:"by_who"`
+	Reason string          `json:"reason"`
+}
+
+// AdminDisabledBy defines model for AdminDisabled.By.
+type AdminDisabledBy string
+
+// AdminEvent defines model for AdminEvent.
+type AdminEvent struct {
+	ActorId    string                 `json:"actor_id"`
+	ActorType  string                 `json:"actor_type"`
+	EntityId   *string                `json:"entity_id,omitempty"`
+	EntityType string                 `json:"entity_type"`
+	EventType  string                 `json:"event_type"`
+	Id         int64                  `json:"id"`
+	Payload    map[string]interface{} `json:"payload"`
+	Ts         time.Time              `json:"ts"`
+}
+
+// AdminEvents defines model for AdminEvents.
+type AdminEvents struct {
+	Events    []AdminEvent `json:"events"`
+	Truncated bool         `json:"truncated"`
+}
+
+// AdminFlight defines model for AdminFlight.
+type AdminFlight struct {
+	AuthorisationNumber *string `json:"authorisation_number,omitempty"`
+
+	// ClientId The operator client the samples come from (the source instance of operator_ws).
+	ClientId    *string           `json:"client_id,omitempty"`
+	Conformance *AdminConformance `json:"conformance,omitempty"`
+
+	// DssState The F3548 state the intent's decision asks the DSS to hold.
+	DssState *string `json:"dss_state,omitempty"`
+
+	// Emergency Whether the flight declared an emergency.
+	Emergency bool `json:"emergency"`
+
+	// EmergencyCaseOpen Whether an emergency case of this flight is open on the console.
+	EmergencyCaseOpen *bool               `json:"emergency_case_open,omitempty"`
+	FlightId          openapi_types.UUID  `json:"flight_id"`
+	IntentId          *openapi_types.UUID `json:"intent_id,omitempty"`
+
+	// IntentState The intent's local state.
+	IntentState    *string  `json:"intent_state,omitempty"`
+	LastSampleAgeS *float64 `json:"last_sample_age_s,omitempty"`
+
+	// LastSampleAt The capture time of the newest sample in the telemetry record.
+	LastSampleAt *time.Time `json:"last_sample_at,omitempty"`
+	LastState    *string    `json:"last_state,omitempty"`
+	OperatorReg  *string    `json:"operator_reg,omitempty"`
+	StartedAt    time.Time  `json:"started_at"`
+	UasSerial    string     `json:"uas_serial"`
+}
+
+// AdminFlights defines model for AdminFlights.
+type AdminFlights struct {
+	Flights   []AdminFlight `json:"flights"`
+	Samples   AdminSamples  `json:"samples"`
+	Truncated bool          `json:"truncated"`
+}
+
+// AdminInput defines model for AdminInput.
+type AdminInput struct {
+	// AgeS The source's own age of its newest record, as it said.
+	AgeS     *float64          `json:"age_s,omitempty"`
+	Counters *map[string]int64 `json:"counters,omitempty"`
+	Detail   *string           `json:"detail,omitempty"`
+	Disabled *AdminDisabled    `json:"disabled,omitempty"`
+	LagS     *float64          `json:"lag_s,omitempty"`
+
+	// LastHeardAt When api last received its status; absent when never.
+	LastHeardAt *time.Time `json:"last_heard_at,omitempty"`
+
+	// Since When it entered state, as the source said (or when api lost the bus, for unknown).
+	Since  *time.Time `json:"since,omitempty"`
+	Source string     `json:"source"`
+
+	// SourceInstance The instance; absent for the type as a whole.
+	SourceInstance *string         `json:"source_instance,omitempty"`
+	State          AdminInputState `json:"state"`
+}
+
+// AdminInputState defines model for AdminInput.State.
+type AdminInputState string
+
+// AdminInputs defines model for AdminInputs.
+type AdminInputs struct {
+	Bus AdminBus `json:"bus"`
+
+	// CheckedAt api's clock when the answer was made.
+	CheckedAt time.Time `json:"checked_at"`
+
+	// Dependencies The readiness of every dependency of api, by name (as /readyz).
+	Dependencies map[string]Dependency `json:"dependencies"`
+	Monitor      AdminMonitor          `json:"monitor"`
+	Sources      []AdminInput          `json:"sources"`
+
+	// SourcesTruncated More instances were heard than api holds (they are counted on /metrics).
+	SourcesTruncated *bool `json:"sources_truncated,omitempty"`
+
+	// Switches Whether the stored source switches were read for this answer. While they are unavailable no input is shown switched off by a switch, and whether one is is not known (counted as admin_source_switches_unread).
+	Switches AdminSwitchesState `json:"switches"`
+}
+
+// AdminMonitor defines model for AdminMonitor.
+type AdminMonitor struct {
+	Detail      string                 `json:"detail"`
+	Instances   []AdminMonitorInstance `json:"instances"`
+	LastHeardAt *time.Time             `json:"last_heard_at,omitempty"`
+
+	// State down when no instance was heard for monitor_status_missing_s; unknown while the bucket cannot be read.
+	State AdminMonitorState `json:"state"`
+}
+
+// AdminMonitorState down when no instance was heard for monitor_status_missing_s; unknown while the bucket cannot be read.
+type AdminMonitorState string
+
+// AdminMonitorInstance defines model for AdminMonitorInstance.
+type AdminMonitorInstance struct {
+	// AgeS Seconds since the status was stored, on the NATS server's clock against api's.
+	AgeS float64 `json:"age_s"`
+
+	// At When the instance wrote its status (its clock).
+	At                   time.Time `json:"at"`
+	CisAgeS              *float64  `json:"cis_age_s,omitempty"`
+	CisLoaded            bool      `json:"cis_loaded"`
+	CisStale             *bool     `json:"cis_stale,omitempty"`
+	CisVersion           *string   `json:"cis_version,omitempty"`
+	CpaEvaluationPeriodS *float64  `json:"cpa_evaluation_period_s,omitempty"`
+
+	// EvaluationPeriodS The longest conformance tick period measured in the last status period (05 §3).
+	EvaluationPeriodS float64 `json:"evaluation_period_s"`
+	FlightsTracked    int     `json:"flights_tracked"`
+	Geoid             bool    `json:"geoid"`
+	Instance          string  `json:"instance"`
+
+	// IntentActiveAgeS Absent while intent_active was never read (every flight unknown).
+	IntentActiveAgeS *float64        `json:"intent_active_age_s,omitempty"`
+	OutboxDepth      int             `json:"outbox_depth"`
+	PolicyVersion    int64           `json:"policy_version"`
+	States           *map[string]int `json:"states,omitempty"`
+	Terrain          bool            `json:"terrain"`
+	Workers          int             `json:"workers"`
+}
+
+// AdminOutbox defines model for AdminOutbox.
+type AdminOutbox struct {
+	ByKind          map[string]int64 `json:"by_kind"`
+	OldestCreatedAt *time.Time       `json:"oldest_created_at,omitempty"`
+
+	// Pending Items not done.
+	Pending int64 `json:"pending"`
+
+	// Retrying Items not done that failed at least once.
+	Retrying *int64 `json:"retrying,omitempty"`
+}
+
+// AdminOutboxError defines model for AdminOutboxError.
+type AdminOutboxError struct {
+	Attempts  int        `json:"attempts"`
+	DoneAt    *time.Time `json:"done_at,omitempty"`
+	EntityId  string     `json:"entity_id"`
+	Kind      string     `json:"kind"`
+	LastError string     `json:"last_error"`
+	NextAt    time.Time  `json:"next_at"`
+}
+
+// AdminPolicy defines model for AdminPolicy.
+type AdminPolicy struct {
+	Current PolicyVersion   `json:"current"`
+	History []PolicyVersion `json:"history"`
+
+	// PendingGcaa The value names whose defaults are national figures GCAA has not given (PLAN §15.2).
+	PendingGcaa []string `json:"pending_gcaa"`
+}
+
+// AdminSamples defines model for AdminSamples.
+type AdminSamples struct {
+	// Available Whether the last samples were read from the telemetry record.
+	Available bool `json:"available"`
+
+	// Detail Why they were not (TimescaleDB unavailable since T); absent while they were.
+	Detail *string `json:"detail,omitempty"`
+}
+
+// AdminSubscription defines model for AdminSubscription.
+type AdminSubscription struct {
+	Kind              AdminSubscriptionKind `json:"kind"`
+	NotificationIndex int                   `json:"notification_index"`
+	RenewedAt         *time.Time            `json:"renewed_at,omitempty"`
+	SubscriptionId    string                `json:"subscription_id"`
+	TimeEnd           time.Time             `json:"time_end"`
+}
+
+// AdminSubscriptionKind defines model for AdminSubscription.Kind.
+type AdminSubscriptionKind string
+
+// AdminSwitchesState Whether the stored source switches were read for this answer. While they are unavailable no input is shown switched off by a switch, and whether one is is not known (counted as admin_source_switches_unread).
+type AdminSwitchesState struct {
+	Detail *string                 `json:"detail,omitempty"`
+	State  AdminSwitchesStateState `json:"state"`
+}
+
+// AdminSwitchesStateState defines model for AdminSwitchesState.State.
+type AdminSwitchesStateState string
+
 // AlertAck An alert's acknowledgement as recorded.
 type AlertAck struct {
 	// AckedAt When it was first acknowledged, on the database clock.
@@ -1190,6 +1747,12 @@ type AlertAck struct {
 	// AckedBy The client that first acknowledged it, or operator_user:<account id> for a portal user.
 	AckedBy string             `json:"acked_by"`
 	AlertId openapi_types.UUID `json:"alert_id"`
+}
+
+// AlertAction defines model for AlertAction.
+type AlertAction struct {
+	// Reason Why; recorded in the events row. Free text that must name no person.
+	Reason string `json:"reason"`
 }
 
 // BoundSerial defines model for BoundSerial.
@@ -1296,6 +1859,73 @@ type Dependency struct {
 
 // DependencyState defines model for Dependency.State.
 type DependencyState string
+
+// EmergencyAction defines model for EmergencyAction.
+type EmergencyAction struct {
+	Action EmergencyActionAction `json:"action"`
+
+	// Outcome How the case ended (close).
+	Outcome *string `json:"outcome,omitempty"`
+
+	// Reason Why the case is opened (open).
+	Reason *string `json:"reason,omitempty"`
+
+	// Step The checklist step the note ticks (note); one of the policy's emergency_checklist.
+	Step *string `json:"step,omitempty"`
+
+	// Text The note (note).
+	Text *string `json:"text,omitempty"`
+}
+
+// EmergencyActionAction defines model for EmergencyAction.Action.
+type EmergencyActionAction string
+
+// EmergencyCase defines model for EmergencyCase.
+type EmergencyCase struct {
+	AuthorisationNumber *string            `json:"authorisation_number,omitempty"`
+	CaseId              openapi_types.UUID `json:"case_id"`
+	Checklist           []EmergencyStep    `json:"checklist"`
+	ClosedAt            *time.Time         `json:"closed_at,omitempty"`
+	ClosedBy            *string            `json:"closed_by,omitempty"`
+
+	// ContactProcedure The authority's contact procedure (policy emergency_contact_procedure).
+	ContactProcedure string `json:"contact_procedure"`
+
+	// ContactRef The intent's emergency contact reference; the authority resolves it (no PII here).
+	ContactRef *string             `json:"contact_ref,omitempty"`
+	FlightId   openapi_types.UUID  `json:"flight_id"`
+	IntentId   *openapi_types.UUID `json:"intent_id,omitempty"`
+	Notes      []EmergencyNote     `json:"notes"`
+	OpenedAt   time.Time           `json:"opened_at"`
+	OpenedBy   string              `json:"opened_by"`
+	Outcome    *string             `json:"outcome,omitempty"`
+	Reason     string              `json:"reason"`
+
+	// RecordLink The path of the flight's record (GET /v1/records/flights/{flight_id}).
+	RecordLink string `json:"record_link"`
+	UasSerial  string `json:"uas_serial"`
+}
+
+// EmergencyCases defines model for EmergencyCases.
+type EmergencyCases struct {
+	Cases     []EmergencyCase `json:"cases"`
+	Truncated bool            `json:"truncated"`
+}
+
+// EmergencyNote defines model for EmergencyNote.
+type EmergencyNote struct {
+	At     time.Time `json:"at"`
+	Author string    `json:"author"`
+	Step   *string   `json:"step,omitempty"`
+	Text   string    `json:"text"`
+}
+
+// EmergencyStep defines model for EmergencyStep.
+type EmergencyStep struct {
+	DoneAt *time.Time `json:"done_at,omitempty"`
+	DoneBy *string    `json:"done_by,omitempty"`
+	Step   string     `json:"step"`
+}
 
 // FieldProblem defines model for FieldProblem.
 type FieldProblem struct {
@@ -1918,6 +2548,25 @@ type LoginRequest struct {
 	Username string  `json:"username"`
 }
 
+// MFAChallenge defines model for MFAChallenge.
+type MFAChallenge struct {
+	ExpiresAt time.Time `json:"expires_at"`
+
+	// MfaToken An opaque challenge for POST /v1/accounts/login/mfa, held in the
+	// database (its hash) until expires_at on the database clock; one
+	// live challenge per account, at most five codes tried.
+	MfaToken string `json:"mfa_token"`
+}
+
+// MFAStep defines model for MFAStep.
+type MFAStep struct {
+	// Code The six digits of the admin's authenticator.
+	Code string `json:"code"`
+
+	// MfaToken The challenge of the password step.
+	MfaToken string `json:"mfa_token"`
+}
+
 // Me defines model for Me.
 type Me struct {
 	AccountId  string  `json:"account_id"`
@@ -2047,6 +2696,52 @@ type OperatorUpdate struct {
 	DisplayName  *string `json:"display_name,omitempty"`
 }
 
+// PolicyChange defines model for PolicyChange.
+type PolicyChange struct {
+	Field string `json:"field"`
+
+	// From The value before (any JSON value).
+	From interface{} `json:"from"`
+
+	// To The value after (any JSON value).
+	To interface{} `json:"to"`
+}
+
+// PolicyPut defines model for PolicyPut.
+type PolicyPut struct {
+	// BaseVersion The version the change was made from (0 for the defaults).
+	BaseVersion int64  `json:"base_version"`
+	Reason      string `json:"reason"`
+
+	// Values The thresholds of one version (internal/policy.Values), by their
+	// snake_case names with the unit in each name; numbers, strings and
+	// lists of strings.
+	Values PolicyValues `json:"values"`
+}
+
+// PolicyValues The thresholds of one version (internal/policy.Values), by their
+// snake_case names with the unit in each name; numbers, strings and
+// lists of strings.
+type PolicyValues map[string]interface{}
+
+// PolicyVersion defines model for PolicyVersion.
+type PolicyVersion struct {
+	Actor *string `json:"actor,omitempty"`
+
+	// Changes What differs from the version before it; empty for the first.
+	Changes   []PolicyChange `json:"changes"`
+	CreatedAt *time.Time     `json:"created_at,omitempty"`
+	Reason    *string        `json:"reason,omitempty"`
+
+	// Values The thresholds of one version (internal/policy.Values), by their
+	// snake_case names with the unit in each name; numbers, strings and
+	// lists of strings.
+	Values PolicyValues `json:"values"`
+
+	// Version 0 for the defaults while no version is stored.
+	Version int64 `json:"version"`
+}
+
 // Problem The ecosystem-wide error body (RFC 9457), the shape of
 // uspace-lab schemas/common/problem/v1, mirrored here until that
 // schema is published (reconciliation M28).
@@ -2087,6 +2782,22 @@ type ReadinessStatus string
 
 // Realm portal for operator users, console for staff (M20).
 type Realm string
+
+// RecordDay defines model for RecordDay.
+type RecordDay struct {
+	BuiltAt     time.Time          `json:"built_at"`
+	ContentHash string             `json:"content_hash"`
+	Date        openapi_types.Date `json:"date"`
+	Flights     int                `json:"flights"`
+}
+
+// RecordDays defines model for RecordDays.
+type RecordDays struct {
+	Days []RecordDay `json:"days"`
+
+	// Missing The days of the window before today without a bundle.
+	Missing []openapi_types.Date `json:"missing"`
+}
 
 // RecordSection How a section of a record reads.
 type RecordSection struct {
@@ -2188,6 +2899,40 @@ type Session struct {
 
 	// Token The session JWT, also set as the uspace_session cookie; the BFF carries it as a bearer.
 	Token string `json:"token"`
+}
+
+// SourceSwitch defines model for SourceSwitch.
+type SourceSwitch struct {
+	Actor     string    `json:"actor"`
+	ChangedAt time.Time `json:"changed_at"`
+	Enabled   bool      `json:"enabled"`
+
+	// InstanceId Absent for the switch of the whole type.
+	InstanceId *string `json:"instance_id,omitempty"`
+	Reason     string  `json:"reason"`
+	SourceType string  `json:"source_type"`
+	Version    int64   `json:"version"`
+}
+
+// SourceSwitchRequest defines model for SourceSwitchRequest.
+type SourceSwitchRequest struct {
+	Enabled bool `json:"enabled"`
+
+	// InstanceId Leave out to switch the whole type.
+	InstanceId *string                       `json:"instance_id,omitempty"`
+	Reason     string                        `json:"reason"`
+	SourceType SourceSwitchRequestSourceType `json:"source_type"`
+}
+
+// SourceSwitchRequestSourceType defines model for SourceSwitchRequest.SourceType.
+type SourceSwitchRequestSourceType string
+
+// SourceSwitches defines model for SourceSwitches.
+type SourceSwitches struct {
+	Epoch      string         `json:"epoch"`
+	KnownTypes []string       `json:"known_types"`
+	Switches   []SourceSwitch `json:"switches"`
+	Version    int64          `json:"version"`
 }
 
 // StatusNotice defines model for StatusNotice.
@@ -2500,6 +3245,22 @@ type OperatorID = openapi_types.UUID
 // problem.
 type OAuthError = OAuthProblem
 
+// ListAdminAlertsParams defines parameters for ListAdminAlerts.
+type ListAdminAlertsParams struct {
+	// View active (the default) or recent; any other value is 400.
+	View *string `form:"view,omitempty" json:"view,omitempty"`
+}
+
+// ListAdminEventsParams defines parameters for ListAdminEvents.
+type ListAdminEventsParams struct {
+	EntityType ListAdminEventsParamsEntityType `form:"entity_type" json:"entity_type"`
+	EntityId   string                          `form:"entity_id" json:"entity_id"`
+	Limit      *int                            `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListAdminEventsParamsEntityType defines parameters for ListAdminEvents.
+type ListAdminEventsParamsEntityType string
+
 // OpenAlertStreamParams defines parameters for OpenAlertStream.
 type OpenAlertStreamParams struct {
 	IntentId openapi_types.UUID `form:"intent_id" json:"intent_id"`
@@ -2560,6 +3321,9 @@ type RequestTokenFormdataRequestBody = TokenRequest
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
 
+// LoginMFAJSONRequestBody defines body for LoginMFA for application/json ContentType.
+type LoginMFAJSONRequestBody = MFAStep
+
 // RegisterOperatorJSONRequestBody defines body for RegisterOperator for application/json ContentType.
 type RegisterOperatorJSONRequestBody = OperatorRegistration
 
@@ -2572,8 +3336,23 @@ type CreateClientJSONRequestBody = ClientRequest
 // BindSerialJSONRequestBody defines body for BindSerial for application/json ContentType.
 type BindSerialJSONRequestBody = SerialBindingRequest
 
+// CloseAlertJSONRequestBody defines body for CloseAlert for application/json ContentType.
+type CloseAlertJSONRequestBody = AlertAction
+
+// EscalateAlertJSONRequestBody defines body for EscalateAlert for application/json ContentType.
+type EscalateAlertJSONRequestBody = AlertAction
+
+// ActOnEmergencyJSONRequestBody defines body for ActOnEmergency for application/json ContentType.
+type ActOnEmergencyJSONRequestBody = EmergencyAction
+
 // FlagOccurrenceJSONRequestBody defines body for FlagOccurrence for application/json ContentType.
 type FlagOccurrenceJSONRequestBody = OccurrenceFlag
+
+// PutAdminPolicyJSONRequestBody defines body for PutAdminPolicy for application/json ContentType.
+type PutAdminPolicyJSONRequestBody = PolicyPut
+
+// SwitchSourceJSONRequestBody defines body for SwitchSource for application/json ContentType.
+type SwitchSourceJSONRequestBody = SourceSwitchRequest
 
 // RequestStatusNoticeJSONRequestBody defines body for RequestStatusNotice for application/json ContentType.
 type RequestStatusNoticeJSONRequestBody = StatusRequest
@@ -2878,8 +3657,10 @@ type ClientInterface interface {
 	//
 	// Checks a username and password (argon2id) in the realm `portal`
 	// (operator users) or `console` (staff); a staff `admin` also sends
-	// a TOTP code. An unknown user, a wrong password and a wrong code
-	// are one answer. Ten consecutive failures for one username lock it
+	// a TOTP code: in totp_code, or, without one, the answer is 202
+	// with an MFAChallenge for POST /v1/accounts/login/mfa (the BFF's
+	// two-step sign-in, brief WP-18). An unknown user, a wrong password and a
+	// wrong code are one answer. Ten consecutive failures for one username lock it
 	// for 15 minutes (the lock is in the database and holds across
 	// replicas; 429 with `Retry-After`); attempts are also limited per
 	// client address. On success the answer carries the session JWT
@@ -2900,8 +3681,10 @@ type ClientInterface interface {
 	//
 	// Checks a username and password (argon2id) in the realm `portal`
 	// (operator users) or `console` (staff); a staff `admin` also sends
-	// a TOTP code. An unknown user, a wrong password and a wrong code
-	// are one answer. Ten consecutive failures for one username lock it
+	// a TOTP code: in totp_code, or, without one, the answer is 202
+	// with an MFAChallenge for POST /v1/accounts/login/mfa (the BFF's
+	// two-step sign-in, brief WP-18). An unknown user, a wrong password and a
+	// wrong code are one answer. Ten consecutive failures for one username lock it
 	// for 15 minutes (the lock is in the database and holds across
 	// replicas; 429 with `Retry-After`); attempts are also limited per
 	// client address. On success the answer carries the session JWT
@@ -2917,6 +3700,40 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /v1/accounts/login (the `Login` operationId).
 	Login(ctx context.Context, body LoginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LoginMFAWithBody The second step of a staff admin's sign-in
+	//
+	// Exchanges the challenge of the password step and the admin's TOTP
+	// code for the session (as POST /v1/accounts/login answers it, with
+	// the cookies). The challenge is held in the database until its
+	// expires_at (the database clock); a code already accepted is
+	// refused (replay), a wrong code counts against the username's
+	// lockout and against the challenge, which is spent after five
+	// codes. An unknown, expired or spent challenge, a wrong code and a
+	// replayed code are one answer (401). Every attempt is an events
+	// row.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/accounts/login/mfa (the `LoginMFA` operationId).
+	LoginMFAWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LoginMFA The second step of a staff admin's sign-in
+	//
+	// Exchanges the challenge of the password step and the admin's TOTP
+	// code for the session (as POST /v1/accounts/login answers it, with
+	// the cookies). The challenge is held in the database until its
+	// expires_at (the database clock); a code already accepted is
+	// refused (replay), a wrong code counts against the username's
+	// lockout and against the challenge, which is spent after five
+	// codes. An unknown, expired or spent challenge, a wrong code and a
+	// replayed code are one answer (401). Every attempt is an events
+	// row.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/accounts/login/mfa (the `LoginMFA` operationId).
+	LoginMFA(ctx context.Context, body LoginMFAJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// Logout End the caller's session
 	//
@@ -3066,6 +3883,78 @@ type ClientInterface interface {
 	// Corresponds with DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial} (the `UnbindSerial` operationId).
 	UnbindSerial(ctx context.Context, operatorId OperatorID, clientId ClientID, serial string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListAdminAlerts The active and recent alerts with acknowledgement and escalation
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// spec 02 F5, Art. 13). The alerts of the record (api never
+	// re-judges an alert: the monitor raised and clears it), newest
+	// first, at most 500: view active is every alert not cleared, view
+	// recent adds the ones cleared in the last 24 h. Each carries its
+	// acknowledgement (when and by whom), its escalation (automatic
+	// after the policy's escalation_after_s, or by a supervisor with a
+	// reason), the console's close (a supervisor's handling of it, which
+	// never clears the alert) and how many messages of it were
+	// recorded.
+	//
+	// Corresponds with GET /v1/admin/alerts (the `ListAdminAlerts` operationId).
+	ListAdminAlerts(ctx context.Context, params *ListAdminAlertsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CloseAlertWithBody Close an alert on the console
+	//
+	// Console session of a supervisor (served by api). Records that the
+	// console has handled the alert (when, by whom, why) with an events
+	// row in the same transaction; the alert leaves the escalations.
+	// Closing never clears the alert: an active one stays active, and
+	// the monitor alone clears it. An alert closed before is 409 (a
+	// permanent answer: it is not closed again).
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/admin/alerts/{alert_id}/close (the `CloseAlert` operationId).
+	CloseAlertWithBody(ctx context.Context, alertId AlertID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CloseAlert Close an alert on the console
+	//
+	// Console session of a supervisor (served by api). Records that the
+	// console has handled the alert (when, by whom, why) with an events
+	// row in the same transaction; the alert leaves the escalations.
+	// Closing never clears the alert: an active one stays active, and
+	// the monitor alone clears it. An alert closed before is 409 (a
+	// permanent answer: it is not closed again).
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/admin/alerts/{alert_id}/close (the `CloseAlert` operationId).
+	CloseAlert(ctx context.Context, alertId AlertID, body CloseAlertJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EscalateAlertWithBody Escalate an alert by hand
+	//
+	// Console session of a supervisor (served by api). Marks the alert
+	// escalated on the database clock with the supervisor and the
+	// reason, an events row in the same transaction, and republishes it
+	// on alrt.v1 after the commit. An alert escalated before answers 200
+	// unchanged, with nothing written. Escalation informs people; it
+	// never changes the alert's state, which the monitor alone sets.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/admin/alerts/{alert_id}/escalate (the `EscalateAlert` operationId).
+	EscalateAlertWithBody(ctx context.Context, alertId AlertID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EscalateAlert Escalate an alert by hand
+	//
+	// Console session of a supervisor (served by api). Marks the alert
+	// escalated on the database clock with the supervisor and the
+	// reason, an events row in the same transaction, and republishes it
+	// on alrt.v1 after the commit. An alert escalated before answers 200
+	// unchanged, with nothing written. Escalation informs people; it
+	// never changes the alert's state, which the monitor alone sets.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/admin/alerts/{alert_id}/escalate (the `EscalateAlert` operationId).
+	EscalateAlert(ctx context.Context, alertId AlertID, body EscalateAlertJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListCoordinationNotices The Annex V notices the console must see
 	//
 	// Console session of a supervisor or support (served by api; spec
@@ -3080,6 +3969,134 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /v1/admin/coordination (the `ListCoordinationNotices` operationId).
 	ListCoordinationNotices(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetAdminDSS The DSS state, the outbox and the subscriptions
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// spec 07 S-M5). This USSP's availability as the DSS knows it and
+	// since when the DSS is reachable or not (dss_state), the readiness
+	// of the DSS dependency, the outbox depth by kind with the oldest
+	// due item, the last errors of the outbox (at most 20) and the
+	// subscriptions held. A state that cannot be read is 503.
+	//
+	// Corresponds with GET /v1/admin/dss (the `GetAdminDSS` operationId).
+	GetAdminDSS(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListEmergencyCases The emergency cases, open first
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// spec 01 §3 S11: the emergency management and communication
+	// plan). Every open case and the cases closed in the last 7 days,
+	// open first, newest first, at most 200.
+	//
+	// Corresponds with GET /v1/admin/emergency (the `ListEmergencyCases` operationId).
+	ListEmergencyCases(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetEmergencyCase A flight's newest emergency case
+	//
+	// Console session of a supervisor, support or admin (served by api).
+	// The flight's newest case with its notes and checklist, the
+	// emergency contact reference of its intent (resolved by the
+	// authority, never here: the console shows the reference and the
+	// authority's contact procedure), and the link to the flight's
+	// record. 404 when the flight has no case.
+	//
+	// Corresponds with GET /v1/admin/emergency/{flight_id} (the `GetEmergencyCase` operationId).
+	GetEmergencyCase(ctx context.Context, flightId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ActOnEmergencyWithBody Open an emergency case, add a note, or close it
+	//
+	// Console session of a supervisor (served by api). open starts a
+	// case for one of this USSP's flights with a reason (409 while one
+	// is open: permanent, add notes to it); note adds a timestamped note
+	// (the database clock), optionally ticking one step of the policy's
+	// emergency_checklist; close ends it with an outcome. Every step is
+	// an events row with the supervisor and the text, in the
+	// transaction that writes it. The workflow is a communication
+	// checklist with timestamps: nothing in it reaches an aircraft. note
+	// and close without an open case are 409. 404 for a flight this USSP
+	// does not hold.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/admin/emergency/{flight_id} (the `ActOnEmergency` operationId).
+	ActOnEmergencyWithBody(ctx context.Context, flightId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ActOnEmergency Open an emergency case, add a note, or close it
+	//
+	// Console session of a supervisor (served by api). open starts a
+	// case for one of this USSP's flights with a reason (409 while one
+	// is open: permanent, add notes to it); note adds a timestamped note
+	// (the database clock), optionally ticking one step of the policy's
+	// emergency_checklist; close ends it with an outcome. Every step is
+	// an events row with the supervisor and the text, in the
+	// transaction that writes it. The workflow is a communication
+	// checklist with timestamps: nothing in it reaches an aircraft. note
+	// and close without an open case are 409. 404 for a flight this USSP
+	// does not hold.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/admin/emergency/{flight_id} (the `ActOnEmergency` operationId).
+	ActOnEmergency(ctx context.Context, flightId openapi_types.UUID, body ActOnEmergencyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListEscalations The escalated alerts the console has not closed
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// spec 02 F5: an unacknowledged critical alert escalates to the
+	// supervisor console). Every alert escalated and not closed on the
+	// console, oldest escalation first, at most 500. A cleared alert
+	// stays until a supervisor closes it: nothing disappears silently.
+	//
+	// Corresponds with GET /v1/admin/escalations (the `ListEscalations` operationId).
+	ListEscalations(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListAdminEvents The audit rows of one console entity
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// spec 06 T7). The events rows of one alert, emergency case, policy
+	// version, source switch or occurrence report, oldest first, at
+	// most limit (truncated when there are more). The rows of sign-ins
+	// and of operator accounts are not served here.
+	//
+	// Corresponds with GET /v1/admin/events (the `ListAdminEvents` operationId).
+	ListAdminEvents(ctx context.Context, params *ListAdminEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListAdminFlights The active flights the console must see
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// brief WP-18, spec 07 S-M5). Every flight not ended, newest first,
+	// at most 500 (truncated when there are more): its intent and the
+	// intent's local and DSS state, the last conformance state recorded
+	// with its time, the client its samples come from (the source
+	// instance), and the time and age of its last sample from the
+	// telemetry record. samples says whether the last samples could be
+	// read: while TimescaleDB is unavailable every flight's
+	// last_sample_at is null and samples.detail says since when, never
+	// a flight without telemetry. An empty list means no flight is
+	// active; a list that cannot be read is 503.
+	//
+	// Corresponds with GET /v1/admin/flights (the `ListAdminFlights` operationId).
+	ListAdminFlights(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetAdminInputs Every input with its state and its time
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// spec 05 §6, LESSONS B-11, SC-22). Every source type and instance
+	// api has heard on src.v1 or holds a switch for, each with one
+	// state: disabled (by whom, when, why), healthy, stale since,
+	// lagging (lag_s), unreachable since, never_heard, or unknown while
+	// the bus is not connected (since when). The monitor's status
+	// (published every 10 s; down when not heard for
+	// monitor_status_missing_s: "conformance and traffic alerts stopped
+	// since T") with its evaluation_period_s, CIS version and age,
+	// terrain and geoid presence; and the readiness of every dependency
+	// of api (the CISP, the registry feed, the DSS, the ANSP, the
+	// databases, NATS). Never an empty answer for an input that is
+	// unknown.
+	//
+	// Corresponds with GET /v1/admin/inputs (the `GetAdminInputs` operationId).
+	GetAdminInputs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListOccurrences The occurrence reports not yet delivered
 	//
@@ -3134,6 +4151,103 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /v1/admin/occurrences (the `FlagOccurrence` operationId).
 	FlagOccurrence(ctx context.Context, body FlagOccurrenceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetAdminPolicy The policy in force and its version history
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// LESSONS INV-03). The current version (or the defaults, version 0,
+	// while none is stored), the 50 newest versions newest first, each
+	// with who stored it, why, and what changed from the version before
+	// it, and the names of the values whose defaults are pending GCAA
+	// (PLAN §15.2 Q6 and the briefs).
+	//
+	// Corresponds with GET /v1/admin/policy (the `GetAdminPolicy` operationId).
+	GetAdminPolicy(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutAdminPolicyWithBody Store a new policy version
+	//
+	// Console session of an admin (served by api). The values given
+	// replace those of base_version (a value left out keeps the
+	// current one; an unknown name is 400); the result is validated,
+	// stored as the next version with its events row and projected to
+	// the KV bucket policy in one transaction: 503 when the KV cannot
+	// take it, and nothing is stored (B-09). base_version other than
+	// the current version is 409 (permanent: read the policy again).
+	// The answer is the new version with its changes.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /v1/admin/policy (the `PutAdminPolicy` operationId).
+	PutAdminPolicyWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutAdminPolicy Store a new policy version
+	//
+	// Console session of an admin (served by api). The values given
+	// replace those of base_version (a value left out keeps the
+	// current one; an unknown name is 400); the result is validated,
+	// stored as the next version with its events row and projected to
+	// the KV bucket policy in one transaction: 503 when the KV cannot
+	// take it, and nothing is stored (B-09). base_version other than
+	// the current version is 409 (permanent: read the policy again).
+	// The answer is the new version with its changes.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /v1/admin/policy (the `PutAdminPolicy` operationId).
+	PutAdminPolicy(ctx context.Context, body PutAdminPolicyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListRecordDays The daily record bundles of the last days, and the days without one
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// Art. 15(1)(g)). The bundles of the last 31 UTC days that are
+	// built (date, when, content hash, flights), and the days before
+	// today without one: a missing day is said, never left out.
+	//
+	// Corresponds with GET /v1/admin/records/days (the `ListRecordDays` operationId).
+	ListRecordDays(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListSourceSwitches The source switches with who set them and why
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// LESSONS B-09, B-11, SC-08). Every stored switch (a whole type when
+	// instance_id is null) with its reason, actor and time, the version
+	// and epoch of the state projected to source_control, and the source
+	// types this USSP knows. A source without a switch is enabled.
+	//
+	// Corresponds with GET /v1/admin/sources (the `ListSourceSwitches` operationId).
+	ListSourceSwitches(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SwitchSourceWithBody Switch a source type or instance on or off
+	//
+	// Console session of an admin; 403 for every other role, a support
+	// viewer included (SC-08). The switch, its events row and the KV
+	// projection of the whole state are written in one transaction;
+	// 503 with Retry-After when the KV cannot take it, and nothing
+	// changes (B-09). A switch is reversible: the same source switched
+	// on again is a new row version. A disabled source is labelled with
+	// who and when on every console and stream; its tracks age out
+	// source_disabled.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/admin/sources (the `SwitchSource` operationId).
+	SwitchSourceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SwitchSource Switch a source type or instance on or off
+	//
+	// Console session of an admin; 403 for every other role, a support
+	// viewer included (SC-08). The switch, its events row and the KV
+	// projection of the whole state are written in one transaction;
+	// 503 with Retry-After when the KV cannot take it, and nothing
+	// changes (B-09). A switch is reversible: the same source switched
+	// on again is a new row version. A disabled source is labelled with
+	// who and when on every console and stream; its tracks age out
+	// source_disabled.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/admin/sources (the `SwitchSource` operationId).
+	SwitchSource(ctx context.Context, body SwitchSourceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListStatusNotices This USSP's operating-status notices
 	//
@@ -3709,8 +4823,10 @@ func (c *Client) GetReadyz(ctx context.Context, reqEditors ...RequestEditorFn) (
 //
 // Checks a username and password (argon2id) in the realm `portal`
 // (operator users) or `console` (staff); a staff `admin` also sends
-// a TOTP code. An unknown user, a wrong password and a wrong code
-// are one answer. Ten consecutive failures for one username lock it
+// a TOTP code: in totp_code, or, without one, the answer is 202
+// with an MFAChallenge for POST /v1/accounts/login/mfa (the BFF's
+// two-step sign-in, brief WP-18). An unknown user, a wrong password and a
+// wrong code are one answer. Ten consecutive failures for one username lock it
 // for 15 minutes (the lock is in the database and holds across
 // replicas; 429 with `Retry-After`); attempts are also limited per
 // client address. On success the answer carries the session JWT
@@ -3741,8 +4857,10 @@ func (c *Client) LoginWithBody(ctx context.Context, contentType string, body io.
 //
 // Checks a username and password (argon2id) in the realm `portal`
 // (operator users) or `console` (staff); a staff `admin` also sends
-// a TOTP code. An unknown user, a wrong password and a wrong code
-// are one answer. Ten consecutive failures for one username lock it
+// a TOTP code: in totp_code, or, without one, the answer is 202
+// with an MFAChallenge for POST /v1/accounts/login/mfa (the BFF's
+// two-step sign-in, brief WP-18). An unknown user, a wrong password and a
+// wrong code are one answer. Ten consecutive failures for one username lock it
 // for 15 minutes (the lock is in the database and holds across
 // replicas; 429 with `Retry-After`); attempts are also limited per
 // client address. On success the answer carries the session JWT
@@ -3759,6 +4877,60 @@ func (c *Client) LoginWithBody(ctx context.Context, contentType string, body io.
 // Corresponds with POST /v1/accounts/login (the `Login` operationId).
 func (c *Client) Login(ctx context.Context, body LoginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewLoginRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// LoginMFAWithBody The second step of a staff admin's sign-in
+//
+// Exchanges the challenge of the password step and the admin's TOTP
+// code for the session (as POST /v1/accounts/login answers it, with
+// the cookies). The challenge is held in the database until its
+// expires_at (the database clock); a code already accepted is
+// refused (replay), a wrong code counts against the username's
+// lockout and against the challenge, which is spent after five
+// codes. An unknown, expired or spent challenge, a wrong code and a
+// replayed code are one answer (401). Every attempt is an events
+// row.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/accounts/login/mfa (the `LoginMFA` operationId).
+func (c *Client) LoginMFAWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLoginMFARequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// LoginMFA The second step of a staff admin's sign-in
+//
+// Exchanges the challenge of the password step and the admin's TOTP
+// code for the session (as POST /v1/accounts/login answers it, with
+// the cookies). The challenge is held in the database until its
+// expires_at (the database clock); a code already accepted is
+// refused (replay), a wrong code counts against the username's
+// lockout and against the challenge, which is spent after five
+// codes. An unknown, expired or spent challenge, a wrong code and a
+// replayed code are one answer (401). Every attempt is an events
+// row.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/accounts/login/mfa (the `LoginMFA` operationId).
+func (c *Client) LoginMFA(ctx context.Context, body LoginMFAJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLoginMFARequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -4057,6 +5229,128 @@ func (c *Client) UnbindSerial(ctx context.Context, operatorId OperatorID, client
 	return c.Client.Do(req)
 }
 
+// ListAdminAlerts The active and recent alerts with acknowledgement and escalation
+//
+// Console session of a supervisor, support or admin (served by api;
+// spec 02 F5, Art. 13). The alerts of the record (api never
+// re-judges an alert: the monitor raised and clears it), newest
+// first, at most 500: view active is every alert not cleared, view
+// recent adds the ones cleared in the last 24 h. Each carries its
+// acknowledgement (when and by whom), its escalation (automatic
+// after the policy's escalation_after_s, or by a supervisor with a
+// reason), the console's close (a supervisor's handling of it, which
+// never clears the alert) and how many messages of it were
+// recorded.
+//
+// Corresponds with GET /v1/admin/alerts (the `ListAdminAlerts` operationId).
+func (c *Client) ListAdminAlerts(ctx context.Context, params *ListAdminAlertsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListAdminAlertsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CloseAlertWithBody Close an alert on the console
+//
+// Console session of a supervisor (served by api). Records that the
+// console has handled the alert (when, by whom, why) with an events
+// row in the same transaction; the alert leaves the escalations.
+// Closing never clears the alert: an active one stays active, and
+// the monitor alone clears it. An alert closed before is 409 (a
+// permanent answer: it is not closed again).
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/admin/alerts/{alert_id}/close (the `CloseAlert` operationId).
+func (c *Client) CloseAlertWithBody(ctx context.Context, alertId AlertID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCloseAlertRequestWithBody(c.Server, alertId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CloseAlert Close an alert on the console
+//
+// Console session of a supervisor (served by api). Records that the
+// console has handled the alert (when, by whom, why) with an events
+// row in the same transaction; the alert leaves the escalations.
+// Closing never clears the alert: an active one stays active, and
+// the monitor alone clears it. An alert closed before is 409 (a
+// permanent answer: it is not closed again).
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/admin/alerts/{alert_id}/close (the `CloseAlert` operationId).
+func (c *Client) CloseAlert(ctx context.Context, alertId AlertID, body CloseAlertJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCloseAlertRequest(c.Server, alertId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// EscalateAlertWithBody Escalate an alert by hand
+//
+// Console session of a supervisor (served by api). Marks the alert
+// escalated on the database clock with the supervisor and the
+// reason, an events row in the same transaction, and republishes it
+// on alrt.v1 after the commit. An alert escalated before answers 200
+// unchanged, with nothing written. Escalation informs people; it
+// never changes the alert's state, which the monitor alone sets.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/admin/alerts/{alert_id}/escalate (the `EscalateAlert` operationId).
+func (c *Client) EscalateAlertWithBody(ctx context.Context, alertId AlertID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEscalateAlertRequestWithBody(c.Server, alertId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// EscalateAlert Escalate an alert by hand
+//
+// Console session of a supervisor (served by api). Marks the alert
+// escalated on the database clock with the supervisor and the
+// reason, an events row in the same transaction, and republishes it
+// on alrt.v1 after the commit. An alert escalated before answers 200
+// unchanged, with nothing written. Escalation informs people; it
+// never changes the alert's state, which the monitor alone sets.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/admin/alerts/{alert_id}/escalate (the `EscalateAlert` operationId).
+func (c *Client) EscalateAlert(ctx context.Context, alertId AlertID, body EscalateAlertJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEscalateAlertRequest(c.Server, alertId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ListCoordinationNotices The Annex V notices the console must see
 //
 // Console session of a supervisor or support (served by api; spec
@@ -4072,6 +5366,224 @@ func (c *Client) UnbindSerial(ctx context.Context, operatorId OperatorID, client
 // Corresponds with GET /v1/admin/coordination (the `ListCoordinationNotices` operationId).
 func (c *Client) ListCoordinationNotices(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListCoordinationNoticesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetAdminDSS The DSS state, the outbox and the subscriptions
+//
+// Console session of a supervisor, support or admin (served by api;
+// spec 07 S-M5). This USSP's availability as the DSS knows it and
+// since when the DSS is reachable or not (dss_state), the readiness
+// of the DSS dependency, the outbox depth by kind with the oldest
+// due item, the last errors of the outbox (at most 20) and the
+// subscriptions held. A state that cannot be read is 503.
+//
+// Corresponds with GET /v1/admin/dss (the `GetAdminDSS` operationId).
+func (c *Client) GetAdminDSS(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetAdminDSSRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListEmergencyCases The emergency cases, open first
+//
+// Console session of a supervisor, support or admin (served by api;
+// spec 01 §3 S11: the emergency management and communication
+// plan). Every open case and the cases closed in the last 7 days,
+// open first, newest first, at most 200.
+//
+// Corresponds with GET /v1/admin/emergency (the `ListEmergencyCases` operationId).
+func (c *Client) ListEmergencyCases(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListEmergencyCasesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetEmergencyCase A flight's newest emergency case
+//
+// Console session of a supervisor, support or admin (served by api).
+// The flight's newest case with its notes and checklist, the
+// emergency contact reference of its intent (resolved by the
+// authority, never here: the console shows the reference and the
+// authority's contact procedure), and the link to the flight's
+// record. 404 when the flight has no case.
+//
+// Corresponds with GET /v1/admin/emergency/{flight_id} (the `GetEmergencyCase` operationId).
+func (c *Client) GetEmergencyCase(ctx context.Context, flightId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetEmergencyCaseRequest(c.Server, flightId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ActOnEmergencyWithBody Open an emergency case, add a note, or close it
+//
+// Console session of a supervisor (served by api). open starts a
+// case for one of this USSP's flights with a reason (409 while one
+// is open: permanent, add notes to it); note adds a timestamped note
+// (the database clock), optionally ticking one step of the policy's
+// emergency_checklist; close ends it with an outcome. Every step is
+// an events row with the supervisor and the text, in the
+// transaction that writes it. The workflow is a communication
+// checklist with timestamps: nothing in it reaches an aircraft. note
+// and close without an open case are 409. 404 for a flight this USSP
+// does not hold.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/admin/emergency/{flight_id} (the `ActOnEmergency` operationId).
+func (c *Client) ActOnEmergencyWithBody(ctx context.Context, flightId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewActOnEmergencyRequestWithBody(c.Server, flightId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ActOnEmergency Open an emergency case, add a note, or close it
+//
+// Console session of a supervisor (served by api). open starts a
+// case for one of this USSP's flights with a reason (409 while one
+// is open: permanent, add notes to it); note adds a timestamped note
+// (the database clock), optionally ticking one step of the policy's
+// emergency_checklist; close ends it with an outcome. Every step is
+// an events row with the supervisor and the text, in the
+// transaction that writes it. The workflow is a communication
+// checklist with timestamps: nothing in it reaches an aircraft. note
+// and close without an open case are 409. 404 for a flight this USSP
+// does not hold.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/admin/emergency/{flight_id} (the `ActOnEmergency` operationId).
+func (c *Client) ActOnEmergency(ctx context.Context, flightId openapi_types.UUID, body ActOnEmergencyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewActOnEmergencyRequest(c.Server, flightId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListEscalations The escalated alerts the console has not closed
+//
+// Console session of a supervisor, support or admin (served by api;
+// spec 02 F5: an unacknowledged critical alert escalates to the
+// supervisor console). Every alert escalated and not closed on the
+// console, oldest escalation first, at most 500. A cleared alert
+// stays until a supervisor closes it: nothing disappears silently.
+//
+// Corresponds with GET /v1/admin/escalations (the `ListEscalations` operationId).
+func (c *Client) ListEscalations(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListEscalationsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListAdminEvents The audit rows of one console entity
+//
+// Console session of a supervisor, support or admin (served by api;
+// spec 06 T7). The events rows of one alert, emergency case, policy
+// version, source switch or occurrence report, oldest first, at
+// most limit (truncated when there are more). The rows of sign-ins
+// and of operator accounts are not served here.
+//
+// Corresponds with GET /v1/admin/events (the `ListAdminEvents` operationId).
+func (c *Client) ListAdminEvents(ctx context.Context, params *ListAdminEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListAdminEventsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListAdminFlights The active flights the console must see
+//
+// Console session of a supervisor, support or admin (served by api;
+// brief WP-18, spec 07 S-M5). Every flight not ended, newest first,
+// at most 500 (truncated when there are more): its intent and the
+// intent's local and DSS state, the last conformance state recorded
+// with its time, the client its samples come from (the source
+// instance), and the time and age of its last sample from the
+// telemetry record. samples says whether the last samples could be
+// read: while TimescaleDB is unavailable every flight's
+// last_sample_at is null and samples.detail says since when, never
+// a flight without telemetry. An empty list means no flight is
+// active; a list that cannot be read is 503.
+//
+// Corresponds with GET /v1/admin/flights (the `ListAdminFlights` operationId).
+func (c *Client) ListAdminFlights(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListAdminFlightsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetAdminInputs Every input with its state and its time
+//
+// Console session of a supervisor, support or admin (served by api;
+// spec 05 §6, LESSONS B-11, SC-22). Every source type and instance
+// api has heard on src.v1 or holds a switch for, each with one
+// state: disabled (by whom, when, why), healthy, stale since,
+// lagging (lag_s), unreachable since, never_heard, or unknown while
+// the bus is not connected (since when). The monitor's status
+// (published every 10 s; down when not heard for
+// monitor_status_missing_s: "conformance and traffic alerts stopped
+// since T") with its evaluation_period_s, CIS version and age,
+// terrain and geoid presence; and the readiness of every dependency
+// of api (the CISP, the registry feed, the DSS, the ANSP, the
+// databases, NATS). Never an empty answer for an input that is
+// unknown.
+//
+// Corresponds with GET /v1/admin/inputs (the `GetAdminInputs` operationId).
+func (c *Client) GetAdminInputs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetAdminInputsRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -4156,6 +5668,173 @@ func (c *Client) FlagOccurrenceWithBody(ctx context.Context, contentType string,
 // Corresponds with POST /v1/admin/occurrences (the `FlagOccurrence` operationId).
 func (c *Client) FlagOccurrence(ctx context.Context, body FlagOccurrenceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewFlagOccurrenceRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetAdminPolicy The policy in force and its version history
+//
+// Console session of a supervisor, support or admin (served by api;
+// LESSONS INV-03). The current version (or the defaults, version 0,
+// while none is stored), the 50 newest versions newest first, each
+// with who stored it, why, and what changed from the version before
+// it, and the names of the values whose defaults are pending GCAA
+// (PLAN §15.2 Q6 and the briefs).
+//
+// Corresponds with GET /v1/admin/policy (the `GetAdminPolicy` operationId).
+func (c *Client) GetAdminPolicy(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetAdminPolicyRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutAdminPolicyWithBody Store a new policy version
+//
+// Console session of an admin (served by api). The values given
+// replace those of base_version (a value left out keeps the
+// current one; an unknown name is 400); the result is validated,
+// stored as the next version with its events row and projected to
+// the KV bucket policy in one transaction: 503 when the KV cannot
+// take it, and nothing is stored (B-09). base_version other than
+// the current version is 409 (permanent: read the policy again).
+// The answer is the new version with its changes.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /v1/admin/policy (the `PutAdminPolicy` operationId).
+func (c *Client) PutAdminPolicyWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutAdminPolicyRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutAdminPolicy Store a new policy version
+//
+// Console session of an admin (served by api). The values given
+// replace those of base_version (a value left out keeps the
+// current one; an unknown name is 400); the result is validated,
+// stored as the next version with its events row and projected to
+// the KV bucket policy in one transaction: 503 when the KV cannot
+// take it, and nothing is stored (B-09). base_version other than
+// the current version is 409 (permanent: read the policy again).
+// The answer is the new version with its changes.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /v1/admin/policy (the `PutAdminPolicy` operationId).
+func (c *Client) PutAdminPolicy(ctx context.Context, body PutAdminPolicyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutAdminPolicyRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListRecordDays The daily record bundles of the last days, and the days without one
+//
+// Console session of a supervisor, support or admin (served by api;
+// Art. 15(1)(g)). The bundles of the last 31 UTC days that are
+// built (date, when, content hash, flights), and the days before
+// today without one: a missing day is said, never left out.
+//
+// Corresponds with GET /v1/admin/records/days (the `ListRecordDays` operationId).
+func (c *Client) ListRecordDays(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListRecordDaysRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListSourceSwitches The source switches with who set them and why
+//
+// Console session of a supervisor, support or admin (served by api;
+// LESSONS B-09, B-11, SC-08). Every stored switch (a whole type when
+// instance_id is null) with its reason, actor and time, the version
+// and epoch of the state projected to source_control, and the source
+// types this USSP knows. A source without a switch is enabled.
+//
+// Corresponds with GET /v1/admin/sources (the `ListSourceSwitches` operationId).
+func (c *Client) ListSourceSwitches(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListSourceSwitchesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SwitchSourceWithBody Switch a source type or instance on or off
+//
+// Console session of an admin; 403 for every other role, a support
+// viewer included (SC-08). The switch, its events row and the KV
+// projection of the whole state are written in one transaction;
+// 503 with Retry-After when the KV cannot take it, and nothing
+// changes (B-09). A switch is reversible: the same source switched
+// on again is a new row version. A disabled source is labelled with
+// who and when on every console and stream; its tracks age out
+// source_disabled.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/admin/sources (the `SwitchSource` operationId).
+func (c *Client) SwitchSourceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSwitchSourceRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SwitchSource Switch a source type or instance on or off
+//
+// Console session of an admin; 403 for every other role, a support
+// viewer included (SC-08). The switch, its events row and the KV
+// projection of the whole state are written in one transaction;
+// 503 with Retry-After when the KV cannot take it, and nothing
+// changes (B-09). A switch is reversible: the same source switched
+// on again is a new row version. A disabled source is labelled with
+// who and when on every console and stream; its tracks age out
+// source_disabled.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/admin/sources (the `SwitchSource` operationId).
+func (c *Client) SwitchSource(ctx context.Context, body SwitchSourceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSwitchSourceRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -5007,6 +6686,46 @@ func NewLoginRequestWithBody(server string, contentType string, body io.Reader) 
 	return req, nil
 }
 
+// NewLoginMFARequest calls the generic LoginMFA builder with application/json body
+func NewLoginMFARequest(server string, body LoginMFAJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewLoginMFARequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewLoginMFARequestWithBody constructs an http.Request for the LoginMFA method, with any body, and a specified content type
+func NewLoginMFARequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/accounts/login/mfa")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewLogoutRequest constructs an http.Request for the Logout method
 func NewLogoutRequest(server string) (*http.Request, error) {
 	var err error
@@ -5406,6 +7125,154 @@ func NewUnbindSerialRequest(server string, operatorId OperatorID, clientId Clien
 	return req, nil
 }
 
+// NewListAdminAlertsRequest constructs an http.Request for the ListAdminAlerts method
+func NewListAdminAlertsRequest(server string, params *ListAdminAlertsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/alerts")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.View != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "view", *params.View, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCloseAlertRequest calls the generic CloseAlert builder with application/json body
+func NewCloseAlertRequest(server string, alertId AlertID, body CloseAlertJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCloseAlertRequestWithBody(server, alertId, "application/json", bodyReader)
+}
+
+// NewCloseAlertRequestWithBody constructs an http.Request for the CloseAlert method, with any body, and a specified content type
+func NewCloseAlertRequestWithBody(server string, alertId AlertID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "alert_id", alertId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/alerts/%s/close", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewEscalateAlertRequest calls the generic EscalateAlert builder with application/json body
+func NewEscalateAlertRequest(server string, alertId AlertID, body EscalateAlertJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewEscalateAlertRequestWithBody(server, alertId, "application/json", bodyReader)
+}
+
+// NewEscalateAlertRequestWithBody constructs an http.Request for the EscalateAlert method, with any body, and a specified content type
+func NewEscalateAlertRequestWithBody(server string, alertId AlertID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "alert_id", alertId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/alerts/%s/escalate", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListCoordinationNoticesRequest constructs an http.Request for the ListCoordinationNotices method
 func NewListCoordinationNoticesRequest(server string) (*http.Request, error) {
 	var err error
@@ -5416,6 +7283,292 @@ func NewListCoordinationNoticesRequest(server string) (*http.Request, error) {
 	}
 
 	operationPath := fmt.Sprintf("/v1/admin/coordination")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetAdminDSSRequest constructs an http.Request for the GetAdminDSS method
+func NewGetAdminDSSRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/dss")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListEmergencyCasesRequest constructs an http.Request for the ListEmergencyCases method
+func NewListEmergencyCasesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/emergency")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetEmergencyCaseRequest constructs an http.Request for the GetEmergencyCase method
+func NewGetEmergencyCaseRequest(server string, flightId openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "flight_id", flightId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/emergency/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewActOnEmergencyRequest calls the generic ActOnEmergency builder with application/json body
+func NewActOnEmergencyRequest(server string, flightId openapi_types.UUID, body ActOnEmergencyJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewActOnEmergencyRequestWithBody(server, flightId, "application/json", bodyReader)
+}
+
+// NewActOnEmergencyRequestWithBody constructs an http.Request for the ActOnEmergency method, with any body, and a specified content type
+func NewActOnEmergencyRequestWithBody(server string, flightId openapi_types.UUID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "flight_id", flightId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/emergency/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListEscalationsRequest constructs an http.Request for the ListEscalations method
+func NewListEscalationsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/escalations")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListAdminEventsRequest constructs an http.Request for the ListAdminEvents method
+func NewListAdminEventsRequest(server string, params *ListAdminEventsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/events")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "entity_type", params.EntityType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "entity_id", params.EntityId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListAdminFlightsRequest constructs an http.Request for the ListAdminFlights method
+func NewListAdminFlightsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/flights")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetAdminInputsRequest constructs an http.Request for the GetAdminInputs method
+func NewGetAdminInputsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/inputs")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -5481,6 +7634,167 @@ func NewFlagOccurrenceRequestWithBody(server string, contentType string, body io
 	}
 
 	operationPath := fmt.Sprintf("/v1/admin/occurrences")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetAdminPolicyRequest constructs an http.Request for the GetAdminPolicy method
+func NewGetAdminPolicyRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/policy")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutAdminPolicyRequest calls the generic PutAdminPolicy builder with application/json body
+func NewPutAdminPolicyRequest(server string, body PutAdminPolicyJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutAdminPolicyRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPutAdminPolicyRequestWithBody constructs an http.Request for the PutAdminPolicy method, with any body, and a specified content type
+func NewPutAdminPolicyRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/policy")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListRecordDaysRequest constructs an http.Request for the ListRecordDays method
+func NewListRecordDaysRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/records/days")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListSourceSwitchesRequest constructs an http.Request for the ListSourceSwitches method
+func NewListSourceSwitchesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/sources")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSwitchSourceRequest calls the generic SwitchSource builder with application/json body
+func NewSwitchSourceRequest(server string, body SwitchSourceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSwitchSourceRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewSwitchSourceRequestWithBody constructs an http.Request for the SwitchSource method, with any body, and a specified content type
+func NewSwitchSourceRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/sources")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -6562,8 +8876,10 @@ type ClientWithResponsesInterface interface {
 	//
 	// Checks a username and password (argon2id) in the realm `portal`
 	// (operator users) or `console` (staff); a staff `admin` also sends
-	// a TOTP code. An unknown user, a wrong password and a wrong code
-	// are one answer. Ten consecutive failures for one username lock it
+	// a TOTP code: in totp_code, or, without one, the answer is 202
+	// with an MFAChallenge for POST /v1/accounts/login/mfa (the BFF's
+	// two-step sign-in, brief WP-18). An unknown user, a wrong password and a
+	// wrong code are one answer. Ten consecutive failures for one username lock it
 	// for 15 minutes (the lock is in the database and holds across
 	// replicas; 429 with `Retry-After`); attempts are also limited per
 	// client address. On success the answer carries the session JWT
@@ -6584,8 +8900,10 @@ type ClientWithResponsesInterface interface {
 	//
 	// Checks a username and password (argon2id) in the realm `portal`
 	// (operator users) or `console` (staff); a staff `admin` also sends
-	// a TOTP code. An unknown user, a wrong password and a wrong code
-	// are one answer. Ten consecutive failures for one username lock it
+	// a TOTP code: in totp_code, or, without one, the answer is 202
+	// with an MFAChallenge for POST /v1/accounts/login/mfa (the BFF's
+	// two-step sign-in, brief WP-18). An unknown user, a wrong password and a
+	// wrong code are one answer. Ten consecutive failures for one username lock it
 	// for 15 minutes (the lock is in the database and holds across
 	// replicas; 429 with `Retry-After`); attempts are also limited per
 	// client address. On success the answer carries the session JWT
@@ -6601,6 +8919,40 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /v1/accounts/login (the `Login` operationId).
 	LoginWithResponse(ctx context.Context, body LoginJSONRequestBody, reqEditors ...RequestEditorFn) (*LoginResponse, error)
+
+	// LoginMFAWithBodyWithResponse The second step of a staff admin's sign-in
+	//
+	// Exchanges the challenge of the password step and the admin's TOTP
+	// code for the session (as POST /v1/accounts/login answers it, with
+	// the cookies). The challenge is held in the database until its
+	// expires_at (the database clock); a code already accepted is
+	// refused (replay), a wrong code counts against the username's
+	// lockout and against the challenge, which is spent after five
+	// codes. An unknown, expired or spent challenge, a wrong code and a
+	// replayed code are one answer (401). Every attempt is an events
+	// row.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/accounts/login/mfa (the `LoginMFA` operationId).
+	LoginMFAWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LoginMFAResponse, error)
+
+	// LoginMFAWithResponse The second step of a staff admin's sign-in
+	//
+	// Exchanges the challenge of the password step and the admin's TOTP
+	// code for the session (as POST /v1/accounts/login answers it, with
+	// the cookies). The challenge is held in the database until its
+	// expires_at (the database clock); a code already accepted is
+	// refused (replay), a wrong code counts against the username's
+	// lockout and against the challenge, which is spent after five
+	// codes. An unknown, expired or spent challenge, a wrong code and a
+	// replayed code are one answer (401). Every attempt is an events
+	// row.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/accounts/login/mfa (the `LoginMFA` operationId).
+	LoginMFAWithResponse(ctx context.Context, body LoginMFAJSONRequestBody, reqEditors ...RequestEditorFn) (*LoginMFAResponse, error)
 
 	// LogoutWithResponse End the caller's session
 	//
@@ -6762,6 +9114,80 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial} (the `UnbindSerial` operationId).
 	UnbindSerialWithResponse(ctx context.Context, operatorId OperatorID, clientId ClientID, serial string, reqEditors ...RequestEditorFn) (*UnbindSerialResponse, error)
 
+	// ListAdminAlertsWithResponse The active and recent alerts with acknowledgement and escalation
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// spec 02 F5, Art. 13). The alerts of the record (api never
+	// re-judges an alert: the monitor raised and clears it), newest
+	// first, at most 500: view active is every alert not cleared, view
+	// recent adds the ones cleared in the last 24 h. Each carries its
+	// acknowledgement (when and by whom), its escalation (automatic
+	// after the policy's escalation_after_s, or by a supervisor with a
+	// reason), the console's close (a supervisor's handling of it, which
+	// never clears the alert) and how many messages of it were
+	// recorded.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/admin/alerts (the `ListAdminAlerts` operationId).
+	ListAdminAlertsWithResponse(ctx context.Context, params *ListAdminAlertsParams, reqEditors ...RequestEditorFn) (*ListAdminAlertsResponse, error)
+
+	// CloseAlertWithBodyWithResponse Close an alert on the console
+	//
+	// Console session of a supervisor (served by api). Records that the
+	// console has handled the alert (when, by whom, why) with an events
+	// row in the same transaction; the alert leaves the escalations.
+	// Closing never clears the alert: an active one stays active, and
+	// the monitor alone clears it. An alert closed before is 409 (a
+	// permanent answer: it is not closed again).
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/admin/alerts/{alert_id}/close (the `CloseAlert` operationId).
+	CloseAlertWithBodyWithResponse(ctx context.Context, alertId AlertID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CloseAlertResponse, error)
+
+	// CloseAlertWithResponse Close an alert on the console
+	//
+	// Console session of a supervisor (served by api). Records that the
+	// console has handled the alert (when, by whom, why) with an events
+	// row in the same transaction; the alert leaves the escalations.
+	// Closing never clears the alert: an active one stays active, and
+	// the monitor alone clears it. An alert closed before is 409 (a
+	// permanent answer: it is not closed again).
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/admin/alerts/{alert_id}/close (the `CloseAlert` operationId).
+	CloseAlertWithResponse(ctx context.Context, alertId AlertID, body CloseAlertJSONRequestBody, reqEditors ...RequestEditorFn) (*CloseAlertResponse, error)
+
+	// EscalateAlertWithBodyWithResponse Escalate an alert by hand
+	//
+	// Console session of a supervisor (served by api). Marks the alert
+	// escalated on the database clock with the supervisor and the
+	// reason, an events row in the same transaction, and republishes it
+	// on alrt.v1 after the commit. An alert escalated before answers 200
+	// unchanged, with nothing written. Escalation informs people; it
+	// never changes the alert's state, which the monitor alone sets.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/admin/alerts/{alert_id}/escalate (the `EscalateAlert` operationId).
+	EscalateAlertWithBodyWithResponse(ctx context.Context, alertId AlertID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EscalateAlertResponse, error)
+
+	// EscalateAlertWithResponse Escalate an alert by hand
+	//
+	// Console session of a supervisor (served by api). Marks the alert
+	// escalated on the database clock with the supervisor and the
+	// reason, an events row in the same transaction, and republishes it
+	// on alrt.v1 after the commit. An alert escalated before answers 200
+	// unchanged, with nothing written. Escalation informs people; it
+	// never changes the alert's state, which the monitor alone sets.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/admin/alerts/{alert_id}/escalate (the `EscalateAlert` operationId).
+	EscalateAlertWithResponse(ctx context.Context, alertId AlertID, body EscalateAlertJSONRequestBody, reqEditors ...RequestEditorFn) (*EscalateAlertResponse, error)
+
 	// ListCoordinationNoticesWithResponse The Annex V notices the console must see
 	//
 	// Console session of a supervisor or support (served by api; spec
@@ -6778,6 +9204,148 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /v1/admin/coordination (the `ListCoordinationNotices` operationId).
 	ListCoordinationNoticesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListCoordinationNoticesResponse, error)
+
+	// GetAdminDSSWithResponse The DSS state, the outbox and the subscriptions
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// spec 07 S-M5). This USSP's availability as the DSS knows it and
+	// since when the DSS is reachable or not (dss_state), the readiness
+	// of the DSS dependency, the outbox depth by kind with the oldest
+	// due item, the last errors of the outbox (at most 20) and the
+	// subscriptions held. A state that cannot be read is 503.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/admin/dss (the `GetAdminDSS` operationId).
+	GetAdminDSSWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetAdminDSSResponse, error)
+
+	// ListEmergencyCasesWithResponse The emergency cases, open first
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// spec 01 §3 S11: the emergency management and communication
+	// plan). Every open case and the cases closed in the last 7 days,
+	// open first, newest first, at most 200.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/admin/emergency (the `ListEmergencyCases` operationId).
+	ListEmergencyCasesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListEmergencyCasesResponse, error)
+
+	// GetEmergencyCaseWithResponse A flight's newest emergency case
+	//
+	// Console session of a supervisor, support or admin (served by api).
+	// The flight's newest case with its notes and checklist, the
+	// emergency contact reference of its intent (resolved by the
+	// authority, never here: the console shows the reference and the
+	// authority's contact procedure), and the link to the flight's
+	// record. 404 when the flight has no case.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/admin/emergency/{flight_id} (the `GetEmergencyCase` operationId).
+	GetEmergencyCaseWithResponse(ctx context.Context, flightId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetEmergencyCaseResponse, error)
+
+	// ActOnEmergencyWithBodyWithResponse Open an emergency case, add a note, or close it
+	//
+	// Console session of a supervisor (served by api). open starts a
+	// case for one of this USSP's flights with a reason (409 while one
+	// is open: permanent, add notes to it); note adds a timestamped note
+	// (the database clock), optionally ticking one step of the policy's
+	// emergency_checklist; close ends it with an outcome. Every step is
+	// an events row with the supervisor and the text, in the
+	// transaction that writes it. The workflow is a communication
+	// checklist with timestamps: nothing in it reaches an aircraft. note
+	// and close without an open case are 409. 404 for a flight this USSP
+	// does not hold.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/admin/emergency/{flight_id} (the `ActOnEmergency` operationId).
+	ActOnEmergencyWithBodyWithResponse(ctx context.Context, flightId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ActOnEmergencyResponse, error)
+
+	// ActOnEmergencyWithResponse Open an emergency case, add a note, or close it
+	//
+	// Console session of a supervisor (served by api). open starts a
+	// case for one of this USSP's flights with a reason (409 while one
+	// is open: permanent, add notes to it); note adds a timestamped note
+	// (the database clock), optionally ticking one step of the policy's
+	// emergency_checklist; close ends it with an outcome. Every step is
+	// an events row with the supervisor and the text, in the
+	// transaction that writes it. The workflow is a communication
+	// checklist with timestamps: nothing in it reaches an aircraft. note
+	// and close without an open case are 409. 404 for a flight this USSP
+	// does not hold.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/admin/emergency/{flight_id} (the `ActOnEmergency` operationId).
+	ActOnEmergencyWithResponse(ctx context.Context, flightId openapi_types.UUID, body ActOnEmergencyJSONRequestBody, reqEditors ...RequestEditorFn) (*ActOnEmergencyResponse, error)
+
+	// ListEscalationsWithResponse The escalated alerts the console has not closed
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// spec 02 F5: an unacknowledged critical alert escalates to the
+	// supervisor console). Every alert escalated and not closed on the
+	// console, oldest escalation first, at most 500. A cleared alert
+	// stays until a supervisor closes it: nothing disappears silently.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/admin/escalations (the `ListEscalations` operationId).
+	ListEscalationsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListEscalationsResponse, error)
+
+	// ListAdminEventsWithResponse The audit rows of one console entity
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// spec 06 T7). The events rows of one alert, emergency case, policy
+	// version, source switch or occurrence report, oldest first, at
+	// most limit (truncated when there are more). The rows of sign-ins
+	// and of operator accounts are not served here.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/admin/events (the `ListAdminEvents` operationId).
+	ListAdminEventsWithResponse(ctx context.Context, params *ListAdminEventsParams, reqEditors ...RequestEditorFn) (*ListAdminEventsResponse, error)
+
+	// ListAdminFlightsWithResponse The active flights the console must see
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// brief WP-18, spec 07 S-M5). Every flight not ended, newest first,
+	// at most 500 (truncated when there are more): its intent and the
+	// intent's local and DSS state, the last conformance state recorded
+	// with its time, the client its samples come from (the source
+	// instance), and the time and age of its last sample from the
+	// telemetry record. samples says whether the last samples could be
+	// read: while TimescaleDB is unavailable every flight's
+	// last_sample_at is null and samples.detail says since when, never
+	// a flight without telemetry. An empty list means no flight is
+	// active; a list that cannot be read is 503.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/admin/flights (the `ListAdminFlights` operationId).
+	ListAdminFlightsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListAdminFlightsResponse, error)
+
+	// GetAdminInputsWithResponse Every input with its state and its time
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// spec 05 §6, LESSONS B-11, SC-22). Every source type and instance
+	// api has heard on src.v1 or holds a switch for, each with one
+	// state: disabled (by whom, when, why), healthy, stale since,
+	// lagging (lag_s), unreachable since, never_heard, or unknown while
+	// the bus is not connected (since when). The monitor's status
+	// (published every 10 s; down when not heard for
+	// monitor_status_missing_s: "conformance and traffic alerts stopped
+	// since T") with its evaluation_period_s, CIS version and age,
+	// terrain and geoid presence; and the readiness of every dependency
+	// of api (the CISP, the registry feed, the DSS, the ANSP, the
+	// databases, NATS). Never an empty answer for an input that is
+	// unknown.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/admin/inputs (the `GetAdminInputs` operationId).
+	GetAdminInputsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetAdminInputsResponse, error)
 
 	// ListOccurrencesWithResponse The occurrence reports not yet delivered
 	//
@@ -6834,6 +9402,109 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /v1/admin/occurrences (the `FlagOccurrence` operationId).
 	FlagOccurrenceWithResponse(ctx context.Context, body FlagOccurrenceJSONRequestBody, reqEditors ...RequestEditorFn) (*FlagOccurrenceResponse, error)
+
+	// GetAdminPolicyWithResponse The policy in force and its version history
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// LESSONS INV-03). The current version (or the defaults, version 0,
+	// while none is stored), the 50 newest versions newest first, each
+	// with who stored it, why, and what changed from the version before
+	// it, and the names of the values whose defaults are pending GCAA
+	// (PLAN §15.2 Q6 and the briefs).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/admin/policy (the `GetAdminPolicy` operationId).
+	GetAdminPolicyWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetAdminPolicyResponse, error)
+
+	// PutAdminPolicyWithBodyWithResponse Store a new policy version
+	//
+	// Console session of an admin (served by api). The values given
+	// replace those of base_version (a value left out keeps the
+	// current one; an unknown name is 400); the result is validated,
+	// stored as the next version with its events row and projected to
+	// the KV bucket policy in one transaction: 503 when the KV cannot
+	// take it, and nothing is stored (B-09). base_version other than
+	// the current version is 409 (permanent: read the policy again).
+	// The answer is the new version with its changes.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /v1/admin/policy (the `PutAdminPolicy` operationId).
+	PutAdminPolicyWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutAdminPolicyResponse, error)
+
+	// PutAdminPolicyWithResponse Store a new policy version
+	//
+	// Console session of an admin (served by api). The values given
+	// replace those of base_version (a value left out keeps the
+	// current one; an unknown name is 400); the result is validated,
+	// stored as the next version with its events row and projected to
+	// the KV bucket policy in one transaction: 503 when the KV cannot
+	// take it, and nothing is stored (B-09). base_version other than
+	// the current version is 409 (permanent: read the policy again).
+	// The answer is the new version with its changes.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /v1/admin/policy (the `PutAdminPolicy` operationId).
+	PutAdminPolicyWithResponse(ctx context.Context, body PutAdminPolicyJSONRequestBody, reqEditors ...RequestEditorFn) (*PutAdminPolicyResponse, error)
+
+	// ListRecordDaysWithResponse The daily record bundles of the last days, and the days without one
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// Art. 15(1)(g)). The bundles of the last 31 UTC days that are
+	// built (date, when, content hash, flights), and the days before
+	// today without one: a missing day is said, never left out.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/admin/records/days (the `ListRecordDays` operationId).
+	ListRecordDaysWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListRecordDaysResponse, error)
+
+	// ListSourceSwitchesWithResponse The source switches with who set them and why
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// LESSONS B-09, B-11, SC-08). Every stored switch (a whole type when
+	// instance_id is null) with its reason, actor and time, the version
+	// and epoch of the state projected to source_control, and the source
+	// types this USSP knows. A source without a switch is enabled.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/admin/sources (the `ListSourceSwitches` operationId).
+	ListSourceSwitchesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListSourceSwitchesResponse, error)
+
+	// SwitchSourceWithBodyWithResponse Switch a source type or instance on or off
+	//
+	// Console session of an admin; 403 for every other role, a support
+	// viewer included (SC-08). The switch, its events row and the KV
+	// projection of the whole state are written in one transaction;
+	// 503 with Retry-After when the KV cannot take it, and nothing
+	// changes (B-09). A switch is reversible: the same source switched
+	// on again is a new row version. A disabled source is labelled with
+	// who and when on every console and stream; its tracks age out
+	// source_disabled.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/admin/sources (the `SwitchSource` operationId).
+	SwitchSourceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SwitchSourceResponse, error)
+
+	// SwitchSourceWithResponse Switch a source type or instance on or off
+	//
+	// Console session of an admin; 403 for every other role, a support
+	// viewer included (SC-08). The switch, its events row and the KV
+	// projection of the whole state are written in one transaction;
+	// 503 with Retry-After when the KV cannot take it, and nothing
+	// changes (B-09). A switch is reversible: the same source switched
+	// on again is a new row version. A disabled source is labelled with
+	// who and when on every console and stream; its tracks age out
+	// source_disabled.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/admin/sources (the `SwitchSource` operationId).
+	SwitchSourceWithResponse(ctx context.Context, body SwitchSourceJSONRequestBody, reqEditors ...RequestEditorFn) (*SwitchSourceResponse, error)
 
 	// ListStatusNoticesWithResponse This USSP's operating-status notices
 	//
@@ -7576,6 +10247,8 @@ type LoginResponse struct {
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *Session
+	// JSON202 the response for an HTTP 202 `application/json` response
+	JSON202 *MFAChallenge
 	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
 	ApplicationproblemJSON400 *Problem
 	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
@@ -7593,6 +10266,11 @@ type LoginResponse struct {
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
 func (r LoginResponse) GetJSON200() *Session {
 	return r.JSON200
+}
+
+// GetJSON202 returns the response for an HTTP 202 `application/json` response
+func (r LoginResponse) GetJSON202() *MFAChallenge {
+	return r.JSON202
 }
 
 // GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
@@ -7638,6 +10316,96 @@ func (r LoginResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r LoginResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// LoginMFAResponse200Headers the declared response headers of an HTTP 200 response for LoginMFA
+type LoginMFAResponse200Headers struct {
+	SetCookie *string
+}
+
+// LoginMFAResponse429Headers the declared response headers of an HTTP 429 response for LoginMFA
+type LoginMFAResponse429Headers struct {
+	RetryAfter *int
+}
+
+type LoginMFAResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Session
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON429 the response for an HTTP 429 `application/problem+json` response
+	ApplicationproblemJSON429 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *LoginMFAResponse200Headers
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *LoginMFAResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r LoginMFAResponse) GetJSON200() *Session {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r LoginMFAResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r LoginMFAResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON429 returns the response for an HTTP 429 `application/problem+json` response
+func (r LoginMFAResponse) GetApplicationproblemJSON429() *Problem {
+	return r.ApplicationproblemJSON429
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r LoginMFAResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r LoginMFAResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r LoginMFAResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r LoginMFAResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r LoginMFAResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r LoginMFAResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -8355,6 +11123,255 @@ func (r UnbindSerialResponse) ContentType() string {
 	return ""
 }
 
+type ListAdminAlertsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AdminAlerts
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListAdminAlertsResponse) GetJSON200() *AdminAlerts {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r ListAdminAlertsResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ListAdminAlertsResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ListAdminAlertsResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ListAdminAlertsResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListAdminAlertsResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListAdminAlertsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListAdminAlertsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListAdminAlertsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListAdminAlertsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CloseAlertResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AdminAlert
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CloseAlertResponse) GetJSON200() *AdminAlert {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r CloseAlertResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r CloseAlertResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r CloseAlertResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r CloseAlertResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r CloseAlertResponse) GetApplicationproblemJSON409() *Problem {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r CloseAlertResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r CloseAlertResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CloseAlertResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CloseAlertResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CloseAlertResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CloseAlertResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type EscalateAlertResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AdminAlert
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r EscalateAlertResponse) GetJSON200() *AdminAlert {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r EscalateAlertResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r EscalateAlertResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r EscalateAlertResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r EscalateAlertResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r EscalateAlertResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r EscalateAlertResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r EscalateAlertResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r EscalateAlertResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EscalateAlertResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r EscalateAlertResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListCoordinationNoticesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8418,6 +11435,593 @@ func (r ListCoordinationNoticesResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ListCoordinationNoticesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetAdminDSSResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AdminDSS
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetAdminDSSResponse) GetJSON200() *AdminDSS {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r GetAdminDSSResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r GetAdminDSSResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r GetAdminDSSResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetAdminDSSResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetAdminDSSResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetAdminDSSResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetAdminDSSResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetAdminDSSResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListEmergencyCasesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *EmergencyCases
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListEmergencyCasesResponse) GetJSON200() *EmergencyCases {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ListEmergencyCasesResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ListEmergencyCasesResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ListEmergencyCasesResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListEmergencyCasesResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListEmergencyCasesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListEmergencyCasesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListEmergencyCasesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListEmergencyCasesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetEmergencyCaseResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *EmergencyCase
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetEmergencyCaseResponse) GetJSON200() *EmergencyCase {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r GetEmergencyCaseResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r GetEmergencyCaseResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r GetEmergencyCaseResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r GetEmergencyCaseResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetEmergencyCaseResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetEmergencyCaseResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetEmergencyCaseResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetEmergencyCaseResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetEmergencyCaseResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ActOnEmergencyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *EmergencyCase
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *EmergencyCase
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ActOnEmergencyResponse) GetJSON200() *EmergencyCase {
+	return r.JSON200
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r ActOnEmergencyResponse) GetJSON201() *EmergencyCase {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r ActOnEmergencyResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ActOnEmergencyResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ActOnEmergencyResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r ActOnEmergencyResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r ActOnEmergencyResponse) GetApplicationproblemJSON409() *Problem {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ActOnEmergencyResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ActOnEmergencyResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ActOnEmergencyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ActOnEmergencyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ActOnEmergencyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ActOnEmergencyResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListEscalationsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AdminAlerts
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListEscalationsResponse) GetJSON200() *AdminAlerts {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ListEscalationsResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ListEscalationsResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ListEscalationsResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListEscalationsResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListEscalationsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListEscalationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListEscalationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListEscalationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListAdminEventsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AdminEvents
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListAdminEventsResponse) GetJSON200() *AdminEvents {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r ListAdminEventsResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ListAdminEventsResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ListAdminEventsResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ListAdminEventsResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListAdminEventsResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListAdminEventsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListAdminEventsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListAdminEventsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListAdminEventsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListAdminFlightsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AdminFlights
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListAdminFlightsResponse) GetJSON200() *AdminFlights {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ListAdminFlightsResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ListAdminFlightsResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ListAdminFlightsResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListAdminFlightsResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListAdminFlightsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListAdminFlightsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListAdminFlightsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListAdminFlightsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetAdminInputsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AdminInputs
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetAdminInputsResponse) GetJSON200() *AdminInputs {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r GetAdminInputsResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r GetAdminInputsResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetAdminInputsResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetAdminInputsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetAdminInputsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetAdminInputsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetAdminInputsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -8577,6 +12181,372 @@ func (r FlagOccurrenceResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r FlagOccurrenceResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetAdminPolicyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AdminPolicy
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetAdminPolicyResponse) GetJSON200() *AdminPolicy {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r GetAdminPolicyResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r GetAdminPolicyResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r GetAdminPolicyResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetAdminPolicyResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetAdminPolicyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetAdminPolicyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetAdminPolicyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetAdminPolicyResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PutAdminPolicyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *PolicyVersion
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r PutAdminPolicyResponse) GetJSON201() *PolicyVersion {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r PutAdminPolicyResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r PutAdminPolicyResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r PutAdminPolicyResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r PutAdminPolicyResponse) GetApplicationproblemJSON409() *Problem {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r PutAdminPolicyResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r PutAdminPolicyResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PutAdminPolicyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutAdminPolicyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutAdminPolicyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutAdminPolicyResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListRecordDaysResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *RecordDays
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListRecordDaysResponse) GetJSON200() *RecordDays {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ListRecordDaysResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ListRecordDaysResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ListRecordDaysResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListRecordDaysResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListRecordDaysResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListRecordDaysResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListRecordDaysResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListRecordDaysResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListSourceSwitchesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SourceSwitches
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListSourceSwitchesResponse) GetJSON200() *SourceSwitches {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ListSourceSwitchesResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ListSourceSwitchesResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ListSourceSwitchesResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListSourceSwitchesResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListSourceSwitchesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListSourceSwitchesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListSourceSwitchesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListSourceSwitchesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SwitchSourceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SourceSwitches
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SwitchSourceResponse) GetJSON200() *SourceSwitches {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r SwitchSourceResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r SwitchSourceResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r SwitchSourceResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r SwitchSourceResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r SwitchSourceResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SwitchSourceResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SwitchSourceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SwitchSourceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SwitchSourceResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -10251,8 +14221,10 @@ func (c *ClientWithResponses) GetReadyzWithResponse(ctx context.Context, reqEdit
 //
 // Checks a username and password (argon2id) in the realm `portal`
 // (operator users) or `console` (staff); a staff `admin` also sends
-// a TOTP code. An unknown user, a wrong password and a wrong code
-// are one answer. Ten consecutive failures for one username lock it
+// a TOTP code: in totp_code, or, without one, the answer is 202
+// with an MFAChallenge for POST /v1/accounts/login/mfa (the BFF's
+// two-step sign-in, brief WP-18). An unknown user, a wrong password and a
+// wrong code are one answer. Ten consecutive failures for one username lock it
 // for 15 minutes (the lock is in the database and holds across
 // replicas; 429 with `Retry-After`); attempts are also limited per
 // client address. On success the answer carries the session JWT
@@ -10279,8 +14251,10 @@ func (c *ClientWithResponses) LoginWithBodyWithResponse(ctx context.Context, con
 //
 // Checks a username and password (argon2id) in the realm `portal`
 // (operator users) or `console` (staff); a staff `admin` also sends
-// a TOTP code. An unknown user, a wrong password and a wrong code
-// are one answer. Ten consecutive failures for one username lock it
+// a TOTP code: in totp_code, or, without one, the answer is 202
+// with an MFAChallenge for POST /v1/accounts/login/mfa (the BFF's
+// two-step sign-in, brief WP-18). An unknown user, a wrong password and a
+// wrong code are one answer. Ten consecutive failures for one username lock it
 // for 15 minutes (the lock is in the database and holds across
 // replicas; 429 with `Retry-After`); attempts are also limited per
 // client address. On success the answer carries the session JWT
@@ -10301,6 +14275,52 @@ func (c *ClientWithResponses) LoginWithResponse(ctx context.Context, body LoginJ
 		return nil, err
 	}
 	return ParseLoginResponse(rsp)
+}
+
+// LoginMFAWithBodyWithResponse The second step of a staff admin's sign-in
+//
+// Exchanges the challenge of the password step and the admin's TOTP
+// code for the session (as POST /v1/accounts/login answers it, with
+// the cookies). The challenge is held in the database until its
+// expires_at (the database clock); a code already accepted is
+// refused (replay), a wrong code counts against the username's
+// lockout and against the challenge, which is spent after five
+// codes. An unknown, expired or spent challenge, a wrong code and a
+// replayed code are one answer (401). Every attempt is an events
+// row.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/accounts/login/mfa (the `LoginMFA` operationId).
+func (c *ClientWithResponses) LoginMFAWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LoginMFAResponse, error) {
+	rsp, err := c.LoginMFAWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLoginMFAResponse(rsp)
+}
+
+// LoginMFAWithResponse The second step of a staff admin's sign-in
+//
+// Exchanges the challenge of the password step and the admin's TOTP
+// code for the session (as POST /v1/accounts/login answers it, with
+// the cookies). The challenge is held in the database until its
+// expires_at (the database clock); a code already accepted is
+// refused (replay), a wrong code counts against the username's
+// lockout and against the challenge, which is spent after five
+// codes. An unknown, expired or spent challenge, a wrong code and a
+// replayed code are one answer (401). Every attempt is an events
+// row.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/accounts/login/mfa (the `LoginMFA` operationId).
+func (c *ClientWithResponses) LoginMFAWithResponse(ctx context.Context, body LoginMFAJSONRequestBody, reqEditors ...RequestEditorFn) (*LoginMFAResponse, error) {
+	rsp, err := c.LoginMFA(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLoginMFAResponse(rsp)
 }
 
 // LogoutWithResponse End the caller's session
@@ -10547,6 +14567,110 @@ func (c *ClientWithResponses) UnbindSerialWithResponse(ctx context.Context, oper
 	return ParseUnbindSerialResponse(rsp)
 }
 
+// ListAdminAlertsWithResponse The active and recent alerts with acknowledgement and escalation
+//
+// Console session of a supervisor, support or admin (served by api;
+// spec 02 F5, Art. 13). The alerts of the record (api never
+// re-judges an alert: the monitor raised and clears it), newest
+// first, at most 500: view active is every alert not cleared, view
+// recent adds the ones cleared in the last 24 h. Each carries its
+// acknowledgement (when and by whom), its escalation (automatic
+// after the policy's escalation_after_s, or by a supervisor with a
+// reason), the console's close (a supervisor's handling of it, which
+// never clears the alert) and how many messages of it were
+// recorded.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/admin/alerts (the `ListAdminAlerts` operationId).
+func (c *ClientWithResponses) ListAdminAlertsWithResponse(ctx context.Context, params *ListAdminAlertsParams, reqEditors ...RequestEditorFn) (*ListAdminAlertsResponse, error) {
+	rsp, err := c.ListAdminAlerts(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListAdminAlertsResponse(rsp)
+}
+
+// CloseAlertWithBodyWithResponse Close an alert on the console
+//
+// Console session of a supervisor (served by api). Records that the
+// console has handled the alert (when, by whom, why) with an events
+// row in the same transaction; the alert leaves the escalations.
+// Closing never clears the alert: an active one stays active, and
+// the monitor alone clears it. An alert closed before is 409 (a
+// permanent answer: it is not closed again).
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/admin/alerts/{alert_id}/close (the `CloseAlert` operationId).
+func (c *ClientWithResponses) CloseAlertWithBodyWithResponse(ctx context.Context, alertId AlertID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CloseAlertResponse, error) {
+	rsp, err := c.CloseAlertWithBody(ctx, alertId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCloseAlertResponse(rsp)
+}
+
+// CloseAlertWithResponse Close an alert on the console
+//
+// Console session of a supervisor (served by api). Records that the
+// console has handled the alert (when, by whom, why) with an events
+// row in the same transaction; the alert leaves the escalations.
+// Closing never clears the alert: an active one stays active, and
+// the monitor alone clears it. An alert closed before is 409 (a
+// permanent answer: it is not closed again).
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/admin/alerts/{alert_id}/close (the `CloseAlert` operationId).
+func (c *ClientWithResponses) CloseAlertWithResponse(ctx context.Context, alertId AlertID, body CloseAlertJSONRequestBody, reqEditors ...RequestEditorFn) (*CloseAlertResponse, error) {
+	rsp, err := c.CloseAlert(ctx, alertId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCloseAlertResponse(rsp)
+}
+
+// EscalateAlertWithBodyWithResponse Escalate an alert by hand
+//
+// Console session of a supervisor (served by api). Marks the alert
+// escalated on the database clock with the supervisor and the
+// reason, an events row in the same transaction, and republishes it
+// on alrt.v1 after the commit. An alert escalated before answers 200
+// unchanged, with nothing written. Escalation informs people; it
+// never changes the alert's state, which the monitor alone sets.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/admin/alerts/{alert_id}/escalate (the `EscalateAlert` operationId).
+func (c *ClientWithResponses) EscalateAlertWithBodyWithResponse(ctx context.Context, alertId AlertID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EscalateAlertResponse, error) {
+	rsp, err := c.EscalateAlertWithBody(ctx, alertId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEscalateAlertResponse(rsp)
+}
+
+// EscalateAlertWithResponse Escalate an alert by hand
+//
+// Console session of a supervisor (served by api). Marks the alert
+// escalated on the database clock with the supervisor and the
+// reason, an events row in the same transaction, and republishes it
+// on alrt.v1 after the commit. An alert escalated before answers 200
+// unchanged, with nothing written. Escalation informs people; it
+// never changes the alert's state, which the monitor alone sets.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/admin/alerts/{alert_id}/escalate (the `EscalateAlert` operationId).
+func (c *ClientWithResponses) EscalateAlertWithResponse(ctx context.Context, alertId AlertID, body EscalateAlertJSONRequestBody, reqEditors ...RequestEditorFn) (*EscalateAlertResponse, error) {
+	rsp, err := c.EscalateAlert(ctx, alertId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEscalateAlertResponse(rsp)
+}
+
 // ListCoordinationNoticesWithResponse The Annex V notices the console must see
 //
 // Console session of a supervisor or support (served by api; spec
@@ -10568,6 +14692,202 @@ func (c *ClientWithResponses) ListCoordinationNoticesWithResponse(ctx context.Co
 		return nil, err
 	}
 	return ParseListCoordinationNoticesResponse(rsp)
+}
+
+// GetAdminDSSWithResponse The DSS state, the outbox and the subscriptions
+//
+// Console session of a supervisor, support or admin (served by api;
+// spec 07 S-M5). This USSP's availability as the DSS knows it and
+// since when the DSS is reachable or not (dss_state), the readiness
+// of the DSS dependency, the outbox depth by kind with the oldest
+// due item, the last errors of the outbox (at most 20) and the
+// subscriptions held. A state that cannot be read is 503.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/admin/dss (the `GetAdminDSS` operationId).
+func (c *ClientWithResponses) GetAdminDSSWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetAdminDSSResponse, error) {
+	rsp, err := c.GetAdminDSS(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetAdminDSSResponse(rsp)
+}
+
+// ListEmergencyCasesWithResponse The emergency cases, open first
+//
+// Console session of a supervisor, support or admin (served by api;
+// spec 01 §3 S11: the emergency management and communication
+// plan). Every open case and the cases closed in the last 7 days,
+// open first, newest first, at most 200.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/admin/emergency (the `ListEmergencyCases` operationId).
+func (c *ClientWithResponses) ListEmergencyCasesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListEmergencyCasesResponse, error) {
+	rsp, err := c.ListEmergencyCases(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListEmergencyCasesResponse(rsp)
+}
+
+// GetEmergencyCaseWithResponse A flight's newest emergency case
+//
+// Console session of a supervisor, support or admin (served by api).
+// The flight's newest case with its notes and checklist, the
+// emergency contact reference of its intent (resolved by the
+// authority, never here: the console shows the reference and the
+// authority's contact procedure), and the link to the flight's
+// record. 404 when the flight has no case.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/admin/emergency/{flight_id} (the `GetEmergencyCase` operationId).
+func (c *ClientWithResponses) GetEmergencyCaseWithResponse(ctx context.Context, flightId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetEmergencyCaseResponse, error) {
+	rsp, err := c.GetEmergencyCase(ctx, flightId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetEmergencyCaseResponse(rsp)
+}
+
+// ActOnEmergencyWithBodyWithResponse Open an emergency case, add a note, or close it
+//
+// Console session of a supervisor (served by api). open starts a
+// case for one of this USSP's flights with a reason (409 while one
+// is open: permanent, add notes to it); note adds a timestamped note
+// (the database clock), optionally ticking one step of the policy's
+// emergency_checklist; close ends it with an outcome. Every step is
+// an events row with the supervisor and the text, in the
+// transaction that writes it. The workflow is a communication
+// checklist with timestamps: nothing in it reaches an aircraft. note
+// and close without an open case are 409. 404 for a flight this USSP
+// does not hold.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/admin/emergency/{flight_id} (the `ActOnEmergency` operationId).
+func (c *ClientWithResponses) ActOnEmergencyWithBodyWithResponse(ctx context.Context, flightId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ActOnEmergencyResponse, error) {
+	rsp, err := c.ActOnEmergencyWithBody(ctx, flightId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseActOnEmergencyResponse(rsp)
+}
+
+// ActOnEmergencyWithResponse Open an emergency case, add a note, or close it
+//
+// Console session of a supervisor (served by api). open starts a
+// case for one of this USSP's flights with a reason (409 while one
+// is open: permanent, add notes to it); note adds a timestamped note
+// (the database clock), optionally ticking one step of the policy's
+// emergency_checklist; close ends it with an outcome. Every step is
+// an events row with the supervisor and the text, in the
+// transaction that writes it. The workflow is a communication
+// checklist with timestamps: nothing in it reaches an aircraft. note
+// and close without an open case are 409. 404 for a flight this USSP
+// does not hold.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/admin/emergency/{flight_id} (the `ActOnEmergency` operationId).
+func (c *ClientWithResponses) ActOnEmergencyWithResponse(ctx context.Context, flightId openapi_types.UUID, body ActOnEmergencyJSONRequestBody, reqEditors ...RequestEditorFn) (*ActOnEmergencyResponse, error) {
+	rsp, err := c.ActOnEmergency(ctx, flightId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseActOnEmergencyResponse(rsp)
+}
+
+// ListEscalationsWithResponse The escalated alerts the console has not closed
+//
+// Console session of a supervisor, support or admin (served by api;
+// spec 02 F5: an unacknowledged critical alert escalates to the
+// supervisor console). Every alert escalated and not closed on the
+// console, oldest escalation first, at most 500. A cleared alert
+// stays until a supervisor closes it: nothing disappears silently.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/admin/escalations (the `ListEscalations` operationId).
+func (c *ClientWithResponses) ListEscalationsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListEscalationsResponse, error) {
+	rsp, err := c.ListEscalations(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListEscalationsResponse(rsp)
+}
+
+// ListAdminEventsWithResponse The audit rows of one console entity
+//
+// Console session of a supervisor, support or admin (served by api;
+// spec 06 T7). The events rows of one alert, emergency case, policy
+// version, source switch or occurrence report, oldest first, at
+// most limit (truncated when there are more). The rows of sign-ins
+// and of operator accounts are not served here.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/admin/events (the `ListAdminEvents` operationId).
+func (c *ClientWithResponses) ListAdminEventsWithResponse(ctx context.Context, params *ListAdminEventsParams, reqEditors ...RequestEditorFn) (*ListAdminEventsResponse, error) {
+	rsp, err := c.ListAdminEvents(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListAdminEventsResponse(rsp)
+}
+
+// ListAdminFlightsWithResponse The active flights the console must see
+//
+// Console session of a supervisor, support or admin (served by api;
+// brief WP-18, spec 07 S-M5). Every flight not ended, newest first,
+// at most 500 (truncated when there are more): its intent and the
+// intent's local and DSS state, the last conformance state recorded
+// with its time, the client its samples come from (the source
+// instance), and the time and age of its last sample from the
+// telemetry record. samples says whether the last samples could be
+// read: while TimescaleDB is unavailable every flight's
+// last_sample_at is null and samples.detail says since when, never
+// a flight without telemetry. An empty list means no flight is
+// active; a list that cannot be read is 503.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/admin/flights (the `ListAdminFlights` operationId).
+func (c *ClientWithResponses) ListAdminFlightsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListAdminFlightsResponse, error) {
+	rsp, err := c.ListAdminFlights(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListAdminFlightsResponse(rsp)
+}
+
+// GetAdminInputsWithResponse Every input with its state and its time
+//
+// Console session of a supervisor, support or admin (served by api;
+// spec 05 §6, LESSONS B-11, SC-22). Every source type and instance
+// api has heard on src.v1 or holds a switch for, each with one
+// state: disabled (by whom, when, why), healthy, stale since,
+// lagging (lag_s), unreachable since, never_heard, or unknown while
+// the bus is not connected (since when). The monitor's status
+// (published every 10 s; down when not heard for
+// monitor_status_missing_s: "conformance and traffic alerts stopped
+// since T") with its evaluation_period_s, CIS version and age,
+// terrain and geoid presence; and the readiness of every dependency
+// of api (the CISP, the registry feed, the DSS, the ANSP, the
+// databases, NATS). Never an empty answer for an input that is
+// unknown.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/admin/inputs (the `GetAdminInputs` operationId).
+func (c *ClientWithResponses) GetAdminInputsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetAdminInputsResponse, error) {
+	rsp, err := c.GetAdminInputs(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetAdminInputsResponse(rsp)
 }
 
 // ListOccurrencesWithResponse The occurrence reports not yet delivered
@@ -10642,6 +14962,151 @@ func (c *ClientWithResponses) FlagOccurrenceWithResponse(ctx context.Context, bo
 		return nil, err
 	}
 	return ParseFlagOccurrenceResponse(rsp)
+}
+
+// GetAdminPolicyWithResponse The policy in force and its version history
+//
+// Console session of a supervisor, support or admin (served by api;
+// LESSONS INV-03). The current version (or the defaults, version 0,
+// while none is stored), the 50 newest versions newest first, each
+// with who stored it, why, and what changed from the version before
+// it, and the names of the values whose defaults are pending GCAA
+// (PLAN §15.2 Q6 and the briefs).
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/admin/policy (the `GetAdminPolicy` operationId).
+func (c *ClientWithResponses) GetAdminPolicyWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetAdminPolicyResponse, error) {
+	rsp, err := c.GetAdminPolicy(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetAdminPolicyResponse(rsp)
+}
+
+// PutAdminPolicyWithBodyWithResponse Store a new policy version
+//
+// Console session of an admin (served by api). The values given
+// replace those of base_version (a value left out keeps the
+// current one; an unknown name is 400); the result is validated,
+// stored as the next version with its events row and projected to
+// the KV bucket policy in one transaction: 503 when the KV cannot
+// take it, and nothing is stored (B-09). base_version other than
+// the current version is 409 (permanent: read the policy again).
+// The answer is the new version with its changes.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /v1/admin/policy (the `PutAdminPolicy` operationId).
+func (c *ClientWithResponses) PutAdminPolicyWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutAdminPolicyResponse, error) {
+	rsp, err := c.PutAdminPolicyWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutAdminPolicyResponse(rsp)
+}
+
+// PutAdminPolicyWithResponse Store a new policy version
+//
+// Console session of an admin (served by api). The values given
+// replace those of base_version (a value left out keeps the
+// current one; an unknown name is 400); the result is validated,
+// stored as the next version with its events row and projected to
+// the KV bucket policy in one transaction: 503 when the KV cannot
+// take it, and nothing is stored (B-09). base_version other than
+// the current version is 409 (permanent: read the policy again).
+// The answer is the new version with its changes.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /v1/admin/policy (the `PutAdminPolicy` operationId).
+func (c *ClientWithResponses) PutAdminPolicyWithResponse(ctx context.Context, body PutAdminPolicyJSONRequestBody, reqEditors ...RequestEditorFn) (*PutAdminPolicyResponse, error) {
+	rsp, err := c.PutAdminPolicy(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutAdminPolicyResponse(rsp)
+}
+
+// ListRecordDaysWithResponse The daily record bundles of the last days, and the days without one
+//
+// Console session of a supervisor, support or admin (served by api;
+// Art. 15(1)(g)). The bundles of the last 31 UTC days that are
+// built (date, when, content hash, flights), and the days before
+// today without one: a missing day is said, never left out.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/admin/records/days (the `ListRecordDays` operationId).
+func (c *ClientWithResponses) ListRecordDaysWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListRecordDaysResponse, error) {
+	rsp, err := c.ListRecordDays(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListRecordDaysResponse(rsp)
+}
+
+// ListSourceSwitchesWithResponse The source switches with who set them and why
+//
+// Console session of a supervisor, support or admin (served by api;
+// LESSONS B-09, B-11, SC-08). Every stored switch (a whole type when
+// instance_id is null) with its reason, actor and time, the version
+// and epoch of the state projected to source_control, and the source
+// types this USSP knows. A source without a switch is enabled.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/admin/sources (the `ListSourceSwitches` operationId).
+func (c *ClientWithResponses) ListSourceSwitchesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListSourceSwitchesResponse, error) {
+	rsp, err := c.ListSourceSwitches(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListSourceSwitchesResponse(rsp)
+}
+
+// SwitchSourceWithBodyWithResponse Switch a source type or instance on or off
+//
+// Console session of an admin; 403 for every other role, a support
+// viewer included (SC-08). The switch, its events row and the KV
+// projection of the whole state are written in one transaction;
+// 503 with Retry-After when the KV cannot take it, and nothing
+// changes (B-09). A switch is reversible: the same source switched
+// on again is a new row version. A disabled source is labelled with
+// who and when on every console and stream; its tracks age out
+// source_disabled.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/admin/sources (the `SwitchSource` operationId).
+func (c *ClientWithResponses) SwitchSourceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SwitchSourceResponse, error) {
+	rsp, err := c.SwitchSourceWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSwitchSourceResponse(rsp)
+}
+
+// SwitchSourceWithResponse Switch a source type or instance on or off
+//
+// Console session of an admin; 403 for every other role, a support
+// viewer included (SC-08). The switch, its events row and the KV
+// projection of the whole state are written in one transaction;
+// 503 with Retry-After when the KV cannot take it, and nothing
+// changes (B-09). A switch is reversible: the same source switched
+// on again is a new row version. A disabled source is labelled with
+// who and when on every console and stream; its tracks age out
+// source_disabled.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/admin/sources (the `SwitchSource` operationId).
+func (c *ClientWithResponses) SwitchSourceWithResponse(ctx context.Context, body SwitchSourceJSONRequestBody, reqEditors ...RequestEditorFn) (*SwitchSourceResponse, error) {
+	rsp, err := c.SwitchSource(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSwitchSourceResponse(rsp)
 }
 
 // ListStatusNoticesWithResponse This USSP's operating-status notices
@@ -11489,6 +15954,13 @@ func ParseLoginResponse(rsp *http.Response) (*LoginResponse, error) {
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest MFAChallenge
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest Problem
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -11532,6 +16004,90 @@ func ParseLoginResponse(rsp *http.Response) (*LoginResponse, error) {
 		response.Headers200 = &headers
 	case rsp.StatusCode == 429:
 		var headers LoginResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseLoginMFAResponse parses an HTTP response from a LoginMFAWithResponse call
+func ParseLoginMFAResponse(rsp *http.Response) (*LoginMFAResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &LoginMFAResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Session
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers LoginMFAResponse200Headers
+		if values := rsp.Header.Values("Set-Cookie"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Set-Cookie", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.SetCookie = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 429:
+		var headers LoginMFAResponse429Headers
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value int
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
@@ -12130,6 +16686,210 @@ func ParseUnbindSerialResponse(rsp *http.Response) (*UnbindSerialResponse, error
 	return response, nil
 }
 
+// ParseListAdminAlertsResponse parses an HTTP response from a ListAdminAlertsWithResponse call
+func ParseListAdminAlertsResponse(rsp *http.Response) (*ListAdminAlertsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListAdminAlertsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AdminAlerts
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCloseAlertResponse parses an HTTP response from a CloseAlertWithResponse call
+func ParseCloseAlertResponse(rsp *http.Response) (*CloseAlertResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CloseAlertResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AdminAlert
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEscalateAlertResponse parses an HTTP response from a EscalateAlertWithResponse call
+func ParseEscalateAlertResponse(rsp *http.Response) (*EscalateAlertResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EscalateAlertResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AdminAlert
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListCoordinationNoticesResponse parses an HTTP response from a ListCoordinationNoticesWithResponse call
 func ParseListCoordinationNoticesResponse(rsp *http.Response) (*ListCoordinationNoticesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -12171,6 +16931,473 @@ func ParseListCoordinationNoticesResponse(rsp *http.Response) (*ListCoordination
 			return nil, err
 		}
 		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetAdminDSSResponse parses an HTTP response from a GetAdminDSSWithResponse call
+func ParseGetAdminDSSResponse(rsp *http.Response) (*GetAdminDSSResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetAdminDSSResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AdminDSS
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListEmergencyCasesResponse parses an HTTP response from a ListEmergencyCasesWithResponse call
+func ParseListEmergencyCasesResponse(rsp *http.Response) (*ListEmergencyCasesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListEmergencyCasesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest EmergencyCases
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetEmergencyCaseResponse parses an HTTP response from a GetEmergencyCaseWithResponse call
+func ParseGetEmergencyCaseResponse(rsp *http.Response) (*GetEmergencyCaseResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetEmergencyCaseResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest EmergencyCase
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseActOnEmergencyResponse parses an HTTP response from a ActOnEmergencyWithResponse call
+func ParseActOnEmergencyResponse(rsp *http.Response) (*ActOnEmergencyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ActOnEmergencyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest EmergencyCase
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest EmergencyCase
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListEscalationsResponse parses an HTTP response from a ListEscalationsWithResponse call
+func ParseListEscalationsResponse(rsp *http.Response) (*ListEscalationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListEscalationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AdminAlerts
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListAdminEventsResponse parses an HTTP response from a ListAdminEventsWithResponse call
+func ParseListAdminEventsResponse(rsp *http.Response) (*ListAdminEventsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListAdminEventsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AdminEvents
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListAdminFlightsResponse parses an HTTP response from a ListAdminFlightsWithResponse call
+func ParseListAdminFlightsResponse(rsp *http.Response) (*ListAdminFlightsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListAdminFlightsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AdminFlights
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetAdminInputsResponse parses an HTTP response from a GetAdminInputsWithResponse call
+func ParseGetAdminInputsResponse(rsp *http.Response) (*GetAdminInputsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetAdminInputsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AdminInputs
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Problem
@@ -12293,6 +17520,297 @@ func ParseFlagOccurrenceResponse(rsp *http.Response) (*FlagOccurrenceResponse, e
 			return nil, err
 		}
 		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetAdminPolicyResponse parses an HTTP response from a GetAdminPolicyWithResponse call
+func ParseGetAdminPolicyResponse(rsp *http.Response) (*GetAdminPolicyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetAdminPolicyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AdminPolicy
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutAdminPolicyResponse parses an HTTP response from a PutAdminPolicyWithResponse call
+func ParsePutAdminPolicyResponse(rsp *http.Response) (*PutAdminPolicyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutAdminPolicyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest PolicyVersion
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListRecordDaysResponse parses an HTTP response from a ListRecordDaysWithResponse call
+func ParseListRecordDaysResponse(rsp *http.Response) (*ListRecordDaysResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListRecordDaysResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RecordDays
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListSourceSwitchesResponse parses an HTTP response from a ListSourceSwitchesWithResponse call
+func ParseListSourceSwitchesResponse(rsp *http.Response) (*ListSourceSwitchesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListSourceSwitchesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SourceSwitches
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSwitchSourceResponse parses an HTTP response from a SwitchSourceWithResponse call
+func ParseSwitchSourceResponse(rsp *http.Response) (*SwitchSourceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SwitchSourceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SourceSwitches
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Problem

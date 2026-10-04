@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
 import { CONTROL } from "../playwright.config";
 
@@ -28,4 +29,22 @@ export function sameOrigin(page: Page): () => string[] {
   const origins = new Set<string>();
   page.on("request", (req) => origins.add(new URL(req.url()).origin));
   return () => [...origins].filter((o) => o !== new URL(page.url()).origin && o !== "null");
+}
+
+/** The RFC 6238 code of a base32 TOTP secret at now (30 s steps, SHA-1, six digits): the authenticator of a test admin. */
+export function totp(secret: string, nowMs = Date.now()): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = "";
+  for (const ch of secret.replace(/=+$/, "").toUpperCase()) {
+    const v = alphabet.indexOf(ch);
+    if (v < 0) throw new Error(`not base32: ${ch}`);
+    bits += v.toString(2).padStart(5, "0");
+  }
+  const key = Buffer.from(bits.match(/.{8}/g)?.map((b) => parseInt(b, 2)) ?? []);
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(nowMs / 1000 / 30)));
+  const mac = createHmac("sha1", key).update(counter).digest();
+  const off = (mac[mac.length - 1] ?? 0) & 0xf;
+  const code = (mac.readUInt32BE(off) & 0x7fffffff) % 1_000_000;
+  return String(code).padStart(6, "0");
 }

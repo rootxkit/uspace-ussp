@@ -16,6 +16,180 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AdminBusState.
+const (
+	Connected    AdminBusState = "connected"
+	Disconnected AdminBusState = "disconnected"
+)
+
+// Valid indicates whether the value is a known member of the AdminBusState enum.
+func (e AdminBusState) Valid() bool {
+	switch e {
+	case Connected:
+		return true
+	case Disconnected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminConformanceState.
+const (
+	AdminConformanceStateConforming    AdminConformanceState = "conforming"
+	AdminConformanceStateContingent    AdminConformanceState = "contingent"
+	AdminConformanceStateLostLink      AdminConformanceState = "lost_link"
+	AdminConformanceStateNonconforming AdminConformanceState = "nonconforming"
+	AdminConformanceStateUnknown       AdminConformanceState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the AdminConformanceState enum.
+func (e AdminConformanceState) Valid() bool {
+	switch e {
+	case AdminConformanceStateConforming:
+		return true
+	case AdminConformanceStateContingent:
+		return true
+	case AdminConformanceStateLostLink:
+		return true
+	case AdminConformanceStateNonconforming:
+		return true
+	case AdminConformanceStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminDSSStateUssAvailability.
+const (
+	AdminDSSStateUssAvailabilityDown    AdminDSSStateUssAvailability = "Down"
+	AdminDSSStateUssAvailabilityNormal  AdminDSSStateUssAvailability = "Normal"
+	AdminDSSStateUssAvailabilityUnknown AdminDSSStateUssAvailability = "Unknown"
+)
+
+// Valid indicates whether the value is a known member of the AdminDSSStateUssAvailability enum.
+func (e AdminDSSStateUssAvailability) Valid() bool {
+	switch e {
+	case AdminDSSStateUssAvailabilityDown:
+		return true
+	case AdminDSSStateUssAvailabilityNormal:
+		return true
+	case AdminDSSStateUssAvailabilityUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminDisabledBy.
+const (
+	Instance AdminDisabledBy = "instance"
+	Type     AdminDisabledBy = "type"
+)
+
+// Valid indicates whether the value is a known member of the AdminDisabledBy enum.
+func (e AdminDisabledBy) Valid() bool {
+	switch e {
+	case Instance:
+		return true
+	case Type:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminInputState.
+const (
+	AdminInputStateDisabled    AdminInputState = "disabled"
+	AdminInputStateHealthy     AdminInputState = "healthy"
+	AdminInputStateLagging     AdminInputState = "lagging"
+	AdminInputStateNeverHeard  AdminInputState = "never_heard"
+	AdminInputStateStale       AdminInputState = "stale"
+	AdminInputStateUnknown     AdminInputState = "unknown"
+	AdminInputStateUnreachable AdminInputState = "unreachable"
+)
+
+// Valid indicates whether the value is a known member of the AdminInputState enum.
+func (e AdminInputState) Valid() bool {
+	switch e {
+	case AdminInputStateDisabled:
+		return true
+	case AdminInputStateHealthy:
+		return true
+	case AdminInputStateLagging:
+		return true
+	case AdminInputStateNeverHeard:
+		return true
+	case AdminInputStateStale:
+		return true
+	case AdminInputStateUnknown:
+		return true
+	case AdminInputStateUnreachable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminMonitorState.
+const (
+	AdminMonitorStateDown    AdminMonitorState = "down"
+	AdminMonitorStateUnknown AdminMonitorState = "unknown"
+	AdminMonitorStateUp      AdminMonitorState = "up"
+)
+
+// Valid indicates whether the value is a known member of the AdminMonitorState enum.
+func (e AdminMonitorState) Valid() bool {
+	switch e {
+	case AdminMonitorStateDown:
+		return true
+	case AdminMonitorStateUnknown:
+		return true
+	case AdminMonitorStateUp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminSubscriptionKind.
+const (
+	Rid AdminSubscriptionKind = "rid"
+	Utm AdminSubscriptionKind = "utm"
+)
+
+// Valid indicates whether the value is a known member of the AdminSubscriptionKind enum.
+func (e AdminSubscriptionKind) Valid() bool {
+	switch e {
+	case Rid:
+		return true
+	case Utm:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminSwitchesStateState.
+const (
+	AdminSwitchesStateStateRead        AdminSwitchesStateState = "read"
+	AdminSwitchesStateStateUnavailable AdminSwitchesStateState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the AdminSwitchesStateState enum.
+func (e AdminSwitchesStateState) Valid() bool {
+	switch e {
+	case AdminSwitchesStateStateRead:
+		return true
+	case AdminSwitchesStateStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CoordinationNoticeItemKind.
 const (
 	CoordinationNoticeItemKindContingent     CoordinationNoticeItemKind = "contingent"
@@ -79,6 +253,27 @@ func (e DependencyState) Valid() bool {
 	case DependencyStateUnknown:
 		return true
 	case DependencyStateUp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EmergencyActionAction.
+const (
+	Close EmergencyActionAction = "close"
+	Note  EmergencyActionAction = "note"
+	Open  EmergencyActionAction = "open"
+)
+
+// Valid indicates whether the value is a known member of the EmergencyActionAction enum.
+func (e EmergencyActionAction) Valid() bool {
+	switch e {
+	case Close:
+		return true
+	case Note:
+		return true
+	case Open:
 		return true
 	default:
 		return false
@@ -823,6 +1018,33 @@ func (e SerialBindingRequestClassLabel) Valid() bool {
 	}
 }
 
+// Defines values for SourceSwitchRequestSourceType.
+const (
+	AdsbRx     SourceSwitchRequestSourceType = "adsb_rx"
+	AnspFeed   SourceSwitchRequestSourceType = "ansp_feed"
+	DirectRid  SourceSwitchRequestSourceType = "direct_rid"
+	NetworkRid SourceSwitchRequestSourceType = "network_rid"
+	OperatorWs SourceSwitchRequestSourceType = "operator_ws"
+)
+
+// Valid indicates whether the value is a known member of the SourceSwitchRequestSourceType enum.
+func (e SourceSwitchRequestSourceType) Valid() bool {
+	switch e {
+	case AdsbRx:
+		return true
+	case AnspFeed:
+		return true
+	case DirectRid:
+		return true
+	case NetworkRid:
+		return true
+	case OperatorWs:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for StatusNoticeKind.
 const (
 	StatusNoticeKindCease   StatusNoticeKind = "cease"
@@ -1180,6 +1402,341 @@ func (e WeatherSourceState) Valid() bool {
 	}
 }
 
+// Defines values for ListAdminEventsParamsEntityType.
+const (
+	ListAdminEventsParamsEntityTypeAlert            ListAdminEventsParamsEntityType = "alert"
+	ListAdminEventsParamsEntityTypeEmergencyCase    ListAdminEventsParamsEntityType = "emergency_case"
+	ListAdminEventsParamsEntityTypeOccurrenceReport ListAdminEventsParamsEntityType = "occurrence_report"
+	ListAdminEventsParamsEntityTypePolicy           ListAdminEventsParamsEntityType = "policy"
+	ListAdminEventsParamsEntityTypeSourceControl    ListAdminEventsParamsEntityType = "source_control"
+)
+
+// Valid indicates whether the value is a known member of the ListAdminEventsParamsEntityType enum.
+func (e ListAdminEventsParamsEntityType) Valid() bool {
+	switch e {
+	case ListAdminEventsParamsEntityTypeAlert:
+		return true
+	case ListAdminEventsParamsEntityTypeEmergencyCase:
+		return true
+	case ListAdminEventsParamsEntityTypeOccurrenceReport:
+		return true
+	case ListAdminEventsParamsEntityTypePolicy:
+		return true
+	case ListAdminEventsParamsEntityTypeSourceControl:
+		return true
+	default:
+		return false
+	}
+}
+
+// AdminAlert defines model for AdminAlert.
+type AdminAlert struct {
+	AckedAt             *time.Time         `json:"acked_at,omitempty"`
+	AckedBy             *string            `json:"acked_by,omitempty"`
+	AlertId             openapi_types.UUID `json:"alert_id"`
+	AuthorisationNumber *string            `json:"authorisation_number,omitempty"`
+	ClearReason         *string            `json:"clear_reason,omitempty"`
+	ClearedAt           *time.Time         `json:"cleared_at,omitempty"`
+	CloseReason         *string            `json:"close_reason,omitempty"`
+	ClosedAt            *time.Time         `json:"closed_at,omitempty"`
+
+	// ClosedBy The username of the supervisor who closed it on the console (the stored id when it is not a staff account).
+	ClosedBy *string `json:"closed_by,omitempty"`
+
+	// Detail The alert's detail as the monitor sent it (alert/v1).
+	Detail      map[string]interface{} `json:"detail"`
+	EscalatedAt *time.Time             `json:"escalated_at,omitempty"`
+
+	// EscalatedBy The username of the supervisor who escalated it (the stored id when it is not a staff account); absent for the automatic escalation.
+	EscalatedBy      *string             `json:"escalated_by,omitempty"`
+	EscalationReason *string             `json:"escalation_reason,omitempty"`
+	FlightId         *openapi_types.UUID `json:"flight_id,omitempty"`
+	IntentId         *openapi_types.UUID `json:"intent_id,omitempty"`
+	Kind             string              `json:"kind"`
+
+	// MessagesRecorded How many alert/v1 messages of this alert api recorded (the monitor republishes an active alert every second).
+	MessagesRecorded int64     `json:"messages_recorded"`
+	PolicyVersion    int64     `json:"policy_version"`
+	RaisedAt         time.Time `json:"raised_at"`
+
+	// Severity info, warning or critical (alert/v1).
+	Severity string `json:"severity"`
+
+	// State raised, updated or cleared (alert/v1); the monitor alone sets it.
+	State     string    `json:"state"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// AdminAlerts defines model for AdminAlerts.
+type AdminAlerts struct {
+	Alerts []AdminAlert `json:"alerts"`
+
+	// EscalationAfterS The policy's delay before an unacknowledged critical alert escalates.
+	EscalationAfterS float64 `json:"escalation_after_s"`
+
+	// EscalationRepeatS The policy's repeat of an unacknowledged critical alert to the operator.
+	EscalationRepeatS float64 `json:"escalation_repeat_s"`
+
+	// PolicyVersion The policy version in force (0 while the defaults apply).
+	PolicyVersion int64 `json:"policy_version"`
+	Truncated     bool  `json:"truncated"`
+}
+
+// AdminBus defines model for AdminBus.
+type AdminBus struct {
+	Detail *string `json:"detail,omitempty"`
+
+	// Since When api's src.v1 subscription entered this state.
+	Since time.Time     `json:"since"`
+	State AdminBusState `json:"state"`
+}
+
+// AdminBusState defines model for AdminBus.State.
+type AdminBusState string
+
+// AdminConformance defines model for AdminConformance.
+type AdminConformance struct {
+	At     time.Time             `json:"at"`
+	Reason *string               `json:"reason,omitempty"`
+	State  AdminConformanceState `json:"state"`
+}
+
+// AdminConformanceState defines model for AdminConformance.State.
+type AdminConformanceState string
+
+// AdminDSS defines model for AdminDSS.
+type AdminDSS struct {
+	DssState      AdminDSSState       `json:"dss_state"`
+	LastErrors    []AdminOutboxError  `json:"last_errors"`
+	Outbox        AdminOutbox         `json:"outbox"`
+	Readiness     Dependency          `json:"readiness"`
+	Subscriptions []AdminSubscription `json:"subscriptions"`
+}
+
+// AdminDSSState defines model for AdminDSSState.
+type AdminDSSState struct {
+	DssReachableSince   *time.Time                    `json:"dss_reachable_since,omitempty"`
+	DssUnreachableSince *time.Time                    `json:"dss_unreachable_since,omitempty"`
+	SetAt               *time.Time                    `json:"set_at,omitempty"`
+	SetBy               *string                       `json:"set_by,omitempty"`
+	UssAvailability     *AdminDSSStateUssAvailability `json:"uss_availability,omitempty"`
+}
+
+// AdminDSSStateUssAvailability defines model for AdminDSSState.UssAvailability.
+type AdminDSSStateUssAvailability string
+
+// AdminDisabled defines model for AdminDisabled.
+type AdminDisabled struct {
+	At     time.Time       `json:"at"`
+	By     AdminDisabledBy `json:"by"`
+	ByWho  string          `json:"by_who"`
+	Reason string          `json:"reason"`
+}
+
+// AdminDisabledBy defines model for AdminDisabled.By.
+type AdminDisabledBy string
+
+// AdminEvent defines model for AdminEvent.
+type AdminEvent struct {
+	ActorId    string                 `json:"actor_id"`
+	ActorType  string                 `json:"actor_type"`
+	EntityId   *string                `json:"entity_id,omitempty"`
+	EntityType string                 `json:"entity_type"`
+	EventType  string                 `json:"event_type"`
+	Id         int64                  `json:"id"`
+	Payload    map[string]interface{} `json:"payload"`
+	Ts         time.Time              `json:"ts"`
+}
+
+// AdminEvents defines model for AdminEvents.
+type AdminEvents struct {
+	Events    []AdminEvent `json:"events"`
+	Truncated bool         `json:"truncated"`
+}
+
+// AdminFlight defines model for AdminFlight.
+type AdminFlight struct {
+	AuthorisationNumber *string `json:"authorisation_number,omitempty"`
+
+	// ClientId The operator client the samples come from (the source instance of operator_ws).
+	ClientId    *string           `json:"client_id,omitempty"`
+	Conformance *AdminConformance `json:"conformance,omitempty"`
+
+	// DssState The F3548 state the intent's decision asks the DSS to hold.
+	DssState *string `json:"dss_state,omitempty"`
+
+	// Emergency Whether the flight declared an emergency.
+	Emergency bool `json:"emergency"`
+
+	// EmergencyCaseOpen Whether an emergency case of this flight is open on the console.
+	EmergencyCaseOpen *bool               `json:"emergency_case_open,omitempty"`
+	FlightId          openapi_types.UUID  `json:"flight_id"`
+	IntentId          *openapi_types.UUID `json:"intent_id,omitempty"`
+
+	// IntentState The intent's local state.
+	IntentState    *string  `json:"intent_state,omitempty"`
+	LastSampleAgeS *float64 `json:"last_sample_age_s,omitempty"`
+
+	// LastSampleAt The capture time of the newest sample in the telemetry record.
+	LastSampleAt *time.Time `json:"last_sample_at,omitempty"`
+	LastState    *string    `json:"last_state,omitempty"`
+	OperatorReg  *string    `json:"operator_reg,omitempty"`
+	StartedAt    time.Time  `json:"started_at"`
+	UasSerial    string     `json:"uas_serial"`
+}
+
+// AdminFlights defines model for AdminFlights.
+type AdminFlights struct {
+	Flights   []AdminFlight `json:"flights"`
+	Samples   AdminSamples  `json:"samples"`
+	Truncated bool          `json:"truncated"`
+}
+
+// AdminInput defines model for AdminInput.
+type AdminInput struct {
+	// AgeS The source's own age of its newest record, as it said.
+	AgeS     *float64          `json:"age_s,omitempty"`
+	Counters *map[string]int64 `json:"counters,omitempty"`
+	Detail   *string           `json:"detail,omitempty"`
+	Disabled *AdminDisabled    `json:"disabled,omitempty"`
+	LagS     *float64          `json:"lag_s,omitempty"`
+
+	// LastHeardAt When api last received its status; absent when never.
+	LastHeardAt *time.Time `json:"last_heard_at,omitempty"`
+
+	// Since When it entered state, as the source said (or when api lost the bus, for unknown).
+	Since  *time.Time `json:"since,omitempty"`
+	Source string     `json:"source"`
+
+	// SourceInstance The instance; absent for the type as a whole.
+	SourceInstance *string         `json:"source_instance,omitempty"`
+	State          AdminInputState `json:"state"`
+}
+
+// AdminInputState defines model for AdminInput.State.
+type AdminInputState string
+
+// AdminInputs defines model for AdminInputs.
+type AdminInputs struct {
+	Bus AdminBus `json:"bus"`
+
+	// CheckedAt api's clock when the answer was made.
+	CheckedAt time.Time `json:"checked_at"`
+
+	// Dependencies The readiness of every dependency of api, by name (as /readyz).
+	Dependencies map[string]Dependency `json:"dependencies"`
+	Monitor      AdminMonitor          `json:"monitor"`
+	Sources      []AdminInput          `json:"sources"`
+
+	// SourcesTruncated More instances were heard than api holds (they are counted on /metrics).
+	SourcesTruncated *bool `json:"sources_truncated,omitempty"`
+
+	// Switches Whether the stored source switches were read for this answer. While they are unavailable no input is shown switched off by a switch, and whether one is is not known (counted as admin_source_switches_unread).
+	Switches AdminSwitchesState `json:"switches"`
+}
+
+// AdminMonitor defines model for AdminMonitor.
+type AdminMonitor struct {
+	Detail      string                 `json:"detail"`
+	Instances   []AdminMonitorInstance `json:"instances"`
+	LastHeardAt *time.Time             `json:"last_heard_at,omitempty"`
+
+	// State down when no instance was heard for monitor_status_missing_s; unknown while the bucket cannot be read.
+	State AdminMonitorState `json:"state"`
+}
+
+// AdminMonitorState down when no instance was heard for monitor_status_missing_s; unknown while the bucket cannot be read.
+type AdminMonitorState string
+
+// AdminMonitorInstance defines model for AdminMonitorInstance.
+type AdminMonitorInstance struct {
+	// AgeS Seconds since the status was stored, on the NATS server's clock against api's.
+	AgeS float64 `json:"age_s"`
+
+	// At When the instance wrote its status (its clock).
+	At                   time.Time `json:"at"`
+	CisAgeS              *float64  `json:"cis_age_s,omitempty"`
+	CisLoaded            bool      `json:"cis_loaded"`
+	CisStale             *bool     `json:"cis_stale,omitempty"`
+	CisVersion           *string   `json:"cis_version,omitempty"`
+	CpaEvaluationPeriodS *float64  `json:"cpa_evaluation_period_s,omitempty"`
+
+	// EvaluationPeriodS The longest conformance tick period measured in the last status period (05 §3).
+	EvaluationPeriodS float64 `json:"evaluation_period_s"`
+	FlightsTracked    int     `json:"flights_tracked"`
+	Geoid             bool    `json:"geoid"`
+	Instance          string  `json:"instance"`
+
+	// IntentActiveAgeS Absent while intent_active was never read (every flight unknown).
+	IntentActiveAgeS *float64        `json:"intent_active_age_s,omitempty"`
+	OutboxDepth      int             `json:"outbox_depth"`
+	PolicyVersion    int64           `json:"policy_version"`
+	States           *map[string]int `json:"states,omitempty"`
+	Terrain          bool            `json:"terrain"`
+	Workers          int             `json:"workers"`
+}
+
+// AdminOutbox defines model for AdminOutbox.
+type AdminOutbox struct {
+	ByKind          map[string]int64 `json:"by_kind"`
+	OldestCreatedAt *time.Time       `json:"oldest_created_at,omitempty"`
+
+	// Pending Items not done.
+	Pending int64 `json:"pending"`
+
+	// Retrying Items not done that failed at least once.
+	Retrying *int64 `json:"retrying,omitempty"`
+}
+
+// AdminOutboxError defines model for AdminOutboxError.
+type AdminOutboxError struct {
+	Attempts  int        `json:"attempts"`
+	DoneAt    *time.Time `json:"done_at,omitempty"`
+	EntityId  string     `json:"entity_id"`
+	Kind      string     `json:"kind"`
+	LastError string     `json:"last_error"`
+	NextAt    time.Time  `json:"next_at"`
+}
+
+// AdminPolicy defines model for AdminPolicy.
+type AdminPolicy struct {
+	Current PolicyVersion   `json:"current"`
+	History []PolicyVersion `json:"history"`
+
+	// PendingGcaa The value names whose defaults are national figures GCAA has not given (PLAN §15.2).
+	PendingGcaa []string `json:"pending_gcaa"`
+}
+
+// AdminSamples defines model for AdminSamples.
+type AdminSamples struct {
+	// Available Whether the last samples were read from the telemetry record.
+	Available bool `json:"available"`
+
+	// Detail Why they were not (TimescaleDB unavailable since T); absent while they were.
+	Detail *string `json:"detail,omitempty"`
+}
+
+// AdminSubscription defines model for AdminSubscription.
+type AdminSubscription struct {
+	Kind              AdminSubscriptionKind `json:"kind"`
+	NotificationIndex int                   `json:"notification_index"`
+	RenewedAt         *time.Time            `json:"renewed_at,omitempty"`
+	SubscriptionId    string                `json:"subscription_id"`
+	TimeEnd           time.Time             `json:"time_end"`
+}
+
+// AdminSubscriptionKind defines model for AdminSubscription.Kind.
+type AdminSubscriptionKind string
+
+// AdminSwitchesState Whether the stored source switches were read for this answer. While they are unavailable no input is shown switched off by a switch, and whether one is is not known (counted as admin_source_switches_unread).
+type AdminSwitchesState struct {
+	Detail *string                 `json:"detail,omitempty"`
+	State  AdminSwitchesStateState `json:"state"`
+}
+
+// AdminSwitchesStateState defines model for AdminSwitchesState.State.
+type AdminSwitchesStateState string
+
 // AlertAck An alert's acknowledgement as recorded.
 type AlertAck struct {
 	// AckedAt When it was first acknowledged, on the database clock.
@@ -1188,6 +1745,12 @@ type AlertAck struct {
 	// AckedBy The client that first acknowledged it, or operator_user:<account id> for a portal user.
 	AckedBy string             `json:"acked_by"`
 	AlertId openapi_types.UUID `json:"alert_id"`
+}
+
+// AlertAction defines model for AlertAction.
+type AlertAction struct {
+	// Reason Why; recorded in the events row. Free text that must name no person.
+	Reason string `json:"reason"`
 }
 
 // BoundSerial defines model for BoundSerial.
@@ -1294,6 +1857,73 @@ type Dependency struct {
 
 // DependencyState defines model for Dependency.State.
 type DependencyState string
+
+// EmergencyAction defines model for EmergencyAction.
+type EmergencyAction struct {
+	Action EmergencyActionAction `json:"action"`
+
+	// Outcome How the case ended (close).
+	Outcome *string `json:"outcome,omitempty"`
+
+	// Reason Why the case is opened (open).
+	Reason *string `json:"reason,omitempty"`
+
+	// Step The checklist step the note ticks (note); one of the policy's emergency_checklist.
+	Step *string `json:"step,omitempty"`
+
+	// Text The note (note).
+	Text *string `json:"text,omitempty"`
+}
+
+// EmergencyActionAction defines model for EmergencyAction.Action.
+type EmergencyActionAction string
+
+// EmergencyCase defines model for EmergencyCase.
+type EmergencyCase struct {
+	AuthorisationNumber *string            `json:"authorisation_number,omitempty"`
+	CaseId              openapi_types.UUID `json:"case_id"`
+	Checklist           []EmergencyStep    `json:"checklist"`
+	ClosedAt            *time.Time         `json:"closed_at,omitempty"`
+	ClosedBy            *string            `json:"closed_by,omitempty"`
+
+	// ContactProcedure The authority's contact procedure (policy emergency_contact_procedure).
+	ContactProcedure string `json:"contact_procedure"`
+
+	// ContactRef The intent's emergency contact reference; the authority resolves it (no PII here).
+	ContactRef *string             `json:"contact_ref,omitempty"`
+	FlightId   openapi_types.UUID  `json:"flight_id"`
+	IntentId   *openapi_types.UUID `json:"intent_id,omitempty"`
+	Notes      []EmergencyNote     `json:"notes"`
+	OpenedAt   time.Time           `json:"opened_at"`
+	OpenedBy   string              `json:"opened_by"`
+	Outcome    *string             `json:"outcome,omitempty"`
+	Reason     string              `json:"reason"`
+
+	// RecordLink The path of the flight's record (GET /v1/records/flights/{flight_id}).
+	RecordLink string `json:"record_link"`
+	UasSerial  string `json:"uas_serial"`
+}
+
+// EmergencyCases defines model for EmergencyCases.
+type EmergencyCases struct {
+	Cases     []EmergencyCase `json:"cases"`
+	Truncated bool            `json:"truncated"`
+}
+
+// EmergencyNote defines model for EmergencyNote.
+type EmergencyNote struct {
+	At     time.Time `json:"at"`
+	Author string    `json:"author"`
+	Step   *string   `json:"step,omitempty"`
+	Text   string    `json:"text"`
+}
+
+// EmergencyStep defines model for EmergencyStep.
+type EmergencyStep struct {
+	DoneAt *time.Time `json:"done_at,omitempty"`
+	DoneBy *string    `json:"done_by,omitempty"`
+	Step   string     `json:"step"`
+}
 
 // FieldProblem defines model for FieldProblem.
 type FieldProblem struct {
@@ -1916,6 +2546,25 @@ type LoginRequest struct {
 	Username string  `json:"username"`
 }
 
+// MFAChallenge defines model for MFAChallenge.
+type MFAChallenge struct {
+	ExpiresAt time.Time `json:"expires_at"`
+
+	// MfaToken An opaque challenge for POST /v1/accounts/login/mfa, held in the
+	// database (its hash) until expires_at on the database clock; one
+	// live challenge per account, at most five codes tried.
+	MfaToken string `json:"mfa_token"`
+}
+
+// MFAStep defines model for MFAStep.
+type MFAStep struct {
+	// Code The six digits of the admin's authenticator.
+	Code string `json:"code"`
+
+	// MfaToken The challenge of the password step.
+	MfaToken string `json:"mfa_token"`
+}
+
 // Me defines model for Me.
 type Me struct {
 	AccountId  string  `json:"account_id"`
@@ -2045,6 +2694,52 @@ type OperatorUpdate struct {
 	DisplayName  *string `json:"display_name,omitempty"`
 }
 
+// PolicyChange defines model for PolicyChange.
+type PolicyChange struct {
+	Field string `json:"field"`
+
+	// From The value before (any JSON value).
+	From interface{} `json:"from"`
+
+	// To The value after (any JSON value).
+	To interface{} `json:"to"`
+}
+
+// PolicyPut defines model for PolicyPut.
+type PolicyPut struct {
+	// BaseVersion The version the change was made from (0 for the defaults).
+	BaseVersion int64  `json:"base_version"`
+	Reason      string `json:"reason"`
+
+	// Values The thresholds of one version (internal/policy.Values), by their
+	// snake_case names with the unit in each name; numbers, strings and
+	// lists of strings.
+	Values PolicyValues `json:"values"`
+}
+
+// PolicyValues The thresholds of one version (internal/policy.Values), by their
+// snake_case names with the unit in each name; numbers, strings and
+// lists of strings.
+type PolicyValues map[string]interface{}
+
+// PolicyVersion defines model for PolicyVersion.
+type PolicyVersion struct {
+	Actor *string `json:"actor,omitempty"`
+
+	// Changes What differs from the version before it; empty for the first.
+	Changes   []PolicyChange `json:"changes"`
+	CreatedAt *time.Time     `json:"created_at,omitempty"`
+	Reason    *string        `json:"reason,omitempty"`
+
+	// Values The thresholds of one version (internal/policy.Values), by their
+	// snake_case names with the unit in each name; numbers, strings and
+	// lists of strings.
+	Values PolicyValues `json:"values"`
+
+	// Version 0 for the defaults while no version is stored.
+	Version int64 `json:"version"`
+}
+
 // Problem The ecosystem-wide error body (RFC 9457), the shape of
 // uspace-lab schemas/common/problem/v1, mirrored here until that
 // schema is published (reconciliation M28).
@@ -2085,6 +2780,22 @@ type ReadinessStatus string
 
 // Realm portal for operator users, console for staff (M20).
 type Realm string
+
+// RecordDay defines model for RecordDay.
+type RecordDay struct {
+	BuiltAt     time.Time          `json:"built_at"`
+	ContentHash string             `json:"content_hash"`
+	Date        openapi_types.Date `json:"date"`
+	Flights     int                `json:"flights"`
+}
+
+// RecordDays defines model for RecordDays.
+type RecordDays struct {
+	Days []RecordDay `json:"days"`
+
+	// Missing The days of the window before today without a bundle.
+	Missing []openapi_types.Date `json:"missing"`
+}
 
 // RecordSection How a section of a record reads.
 type RecordSection struct {
@@ -2186,6 +2897,40 @@ type Session struct {
 
 	// Token The session JWT, also set as the uspace_session cookie; the BFF carries it as a bearer.
 	Token string `json:"token"`
+}
+
+// SourceSwitch defines model for SourceSwitch.
+type SourceSwitch struct {
+	Actor     string    `json:"actor"`
+	ChangedAt time.Time `json:"changed_at"`
+	Enabled   bool      `json:"enabled"`
+
+	// InstanceId Absent for the switch of the whole type.
+	InstanceId *string `json:"instance_id,omitempty"`
+	Reason     string  `json:"reason"`
+	SourceType string  `json:"source_type"`
+	Version    int64   `json:"version"`
+}
+
+// SourceSwitchRequest defines model for SourceSwitchRequest.
+type SourceSwitchRequest struct {
+	Enabled bool `json:"enabled"`
+
+	// InstanceId Leave out to switch the whole type.
+	InstanceId *string                       `json:"instance_id,omitempty"`
+	Reason     string                        `json:"reason"`
+	SourceType SourceSwitchRequestSourceType `json:"source_type"`
+}
+
+// SourceSwitchRequestSourceType defines model for SourceSwitchRequest.SourceType.
+type SourceSwitchRequestSourceType string
+
+// SourceSwitches defines model for SourceSwitches.
+type SourceSwitches struct {
+	Epoch      string         `json:"epoch"`
+	KnownTypes []string       `json:"known_types"`
+	Switches   []SourceSwitch `json:"switches"`
+	Version    int64          `json:"version"`
 }
 
 // StatusNotice defines model for StatusNotice.
@@ -2498,6 +3243,22 @@ type OperatorID = openapi_types.UUID
 // problem.
 type OAuthError = OAuthProblem
 
+// ListAdminAlertsParams defines parameters for ListAdminAlerts.
+type ListAdminAlertsParams struct {
+	// View active (the default) or recent; any other value is 400.
+	View *string `form:"view,omitempty" json:"view,omitempty"`
+}
+
+// ListAdminEventsParams defines parameters for ListAdminEvents.
+type ListAdminEventsParams struct {
+	EntityType ListAdminEventsParamsEntityType `form:"entity_type" json:"entity_type"`
+	EntityId   string                          `form:"entity_id" json:"entity_id"`
+	Limit      *int                            `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListAdminEventsParamsEntityType defines parameters for ListAdminEvents.
+type ListAdminEventsParamsEntityType string
+
 // GetGeoParams defines parameters for GetGeo.
 type GetGeoParams struct {
 	// Bbox west,south,east,north in WGS84 degrees; at most 5 degrees a side.
@@ -2538,6 +3299,9 @@ type RequestTokenFormdataRequestBody = TokenRequest
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
 
+// LoginMFAJSONRequestBody defines body for LoginMFA for application/json ContentType.
+type LoginMFAJSONRequestBody = MFAStep
+
 // RegisterOperatorJSONRequestBody defines body for RegisterOperator for application/json ContentType.
 type RegisterOperatorJSONRequestBody = OperatorRegistration
 
@@ -2550,8 +3314,23 @@ type CreateClientJSONRequestBody = ClientRequest
 // BindSerialJSONRequestBody defines body for BindSerial for application/json ContentType.
 type BindSerialJSONRequestBody = SerialBindingRequest
 
+// CloseAlertJSONRequestBody defines body for CloseAlert for application/json ContentType.
+type CloseAlertJSONRequestBody = AlertAction
+
+// EscalateAlertJSONRequestBody defines body for EscalateAlert for application/json ContentType.
+type EscalateAlertJSONRequestBody = AlertAction
+
+// ActOnEmergencyJSONRequestBody defines body for ActOnEmergency for application/json ContentType.
+type ActOnEmergencyJSONRequestBody = EmergencyAction
+
 // FlagOccurrenceJSONRequestBody defines body for FlagOccurrence for application/json ContentType.
 type FlagOccurrenceJSONRequestBody = OccurrenceFlag
+
+// PutAdminPolicyJSONRequestBody defines body for PutAdminPolicy for application/json ContentType.
+type PutAdminPolicyJSONRequestBody = PolicyPut
+
+// SwitchSourceJSONRequestBody defines body for SwitchSource for application/json ContentType.
+type SwitchSourceJSONRequestBody = SourceSwitchRequest
 
 // RequestStatusNoticeJSONRequestBody defines body for RequestStatusNotice for application/json ContentType.
 type RequestStatusNoticeJSONRequestBody = StatusRequest
@@ -2713,6 +3492,9 @@ type ServerInterface interface {
 	// Login Start a portal or console session
 	// (POST /v1/accounts/login)
 	Login(w http.ResponseWriter, r *http.Request)
+	// LoginMFA The second step of a staff admin's sign-in
+	// (POST /v1/accounts/login/mfa)
+	LoginMFA(w http.ResponseWriter, r *http.Request)
 	// Logout End the caller's session
 	// (POST /v1/accounts/logout)
 	Logout(w http.ResponseWriter, r *http.Request)
@@ -2743,15 +3525,63 @@ type ServerInterface interface {
 	// UnbindSerial Unbind a serial from a client
 	// (DELETE /v1/accounts/operators/{operator_id}/clients/{client_id}/serials/{serial})
 	UnbindSerial(w http.ResponseWriter, r *http.Request, operatorId OperatorID, clientId ClientID, serial string)
+	// ListAdminAlerts The active and recent alerts with acknowledgement and escalation
+	// (GET /v1/admin/alerts)
+	ListAdminAlerts(w http.ResponseWriter, r *http.Request, params ListAdminAlertsParams)
+	// CloseAlert Close an alert on the console
+	// (POST /v1/admin/alerts/{alert_id}/close)
+	CloseAlert(w http.ResponseWriter, r *http.Request, alertId AlertID)
+	// EscalateAlert Escalate an alert by hand
+	// (POST /v1/admin/alerts/{alert_id}/escalate)
+	EscalateAlert(w http.ResponseWriter, r *http.Request, alertId AlertID)
 	// ListCoordinationNotices The Annex V notices the console must see
 	// (GET /v1/admin/coordination)
 	ListCoordinationNotices(w http.ResponseWriter, r *http.Request)
+	// GetAdminDSS The DSS state, the outbox and the subscriptions
+	// (GET /v1/admin/dss)
+	GetAdminDSS(w http.ResponseWriter, r *http.Request)
+	// ListEmergencyCases The emergency cases, open first
+	// (GET /v1/admin/emergency)
+	ListEmergencyCases(w http.ResponseWriter, r *http.Request)
+	// GetEmergencyCase A flight's newest emergency case
+	// (GET /v1/admin/emergency/{flight_id})
+	GetEmergencyCase(w http.ResponseWriter, r *http.Request, flightId openapi_types.UUID)
+	// ActOnEmergency Open an emergency case, add a note, or close it
+	// (POST /v1/admin/emergency/{flight_id})
+	ActOnEmergency(w http.ResponseWriter, r *http.Request, flightId openapi_types.UUID)
+	// ListEscalations The escalated alerts the console has not closed
+	// (GET /v1/admin/escalations)
+	ListEscalations(w http.ResponseWriter, r *http.Request)
+	// ListAdminEvents The audit rows of one console entity
+	// (GET /v1/admin/events)
+	ListAdminEvents(w http.ResponseWriter, r *http.Request, params ListAdminEventsParams)
+	// ListAdminFlights The active flights the console must see
+	// (GET /v1/admin/flights)
+	ListAdminFlights(w http.ResponseWriter, r *http.Request)
+	// GetAdminInputs Every input with its state and its time
+	// (GET /v1/admin/inputs)
+	GetAdminInputs(w http.ResponseWriter, r *http.Request)
 	// ListOccurrences The occurrence reports not yet delivered
 	// (GET /v1/admin/occurrences)
 	ListOccurrences(w http.ResponseWriter, r *http.Request)
 	// FlagOccurrence Report an alert as an occurrence
 	// (POST /v1/admin/occurrences)
 	FlagOccurrence(w http.ResponseWriter, r *http.Request)
+	// GetAdminPolicy The policy in force and its version history
+	// (GET /v1/admin/policy)
+	GetAdminPolicy(w http.ResponseWriter, r *http.Request)
+	// PutAdminPolicy Store a new policy version
+	// (PUT /v1/admin/policy)
+	PutAdminPolicy(w http.ResponseWriter, r *http.Request)
+	// ListRecordDays The daily record bundles of the last days, and the days without one
+	// (GET /v1/admin/records/days)
+	ListRecordDays(w http.ResponseWriter, r *http.Request)
+	// ListSourceSwitches The source switches with who set them and why
+	// (GET /v1/admin/sources)
+	ListSourceSwitches(w http.ResponseWriter, r *http.Request)
+	// SwitchSource Switch a source type or instance on or off
+	// (POST /v1/admin/sources)
+	SwitchSource(w http.ResponseWriter, r *http.Request)
 	// ListStatusNotices This USSP's operating-status notices
 	// (GET /v1/admin/status)
 	ListStatusNotices(w http.ResponseWriter, r *http.Request)
@@ -2866,6 +3696,20 @@ func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.Login(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// LoginMFA operation middleware
+func (siw *ServerInterfaceWrapper) LoginMFA(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.LoginMFA(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3135,11 +3979,277 @@ func (siw *ServerInterfaceWrapper) UnbindSerial(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListAdminAlerts operation middleware
+func (siw *ServerInterfaceWrapper) ListAdminAlerts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAdminAlertsParams
+
+	// ------------- Optional query parameter "view" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "view", r.URL.Query(), &params.View, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "view"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "view", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAdminAlerts(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CloseAlert operation middleware
+func (siw *ServerInterfaceWrapper) CloseAlert(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "alert_id" -------------
+	var alertId AlertID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "alert_id", r.PathValue("alert_id"), &alertId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "alert_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CloseAlert(w, r, alertId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EscalateAlert operation middleware
+func (siw *ServerInterfaceWrapper) EscalateAlert(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "alert_id" -------------
+	var alertId AlertID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "alert_id", r.PathValue("alert_id"), &alertId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "alert_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EscalateAlert(w, r, alertId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListCoordinationNotices operation middleware
 func (siw *ServerInterfaceWrapper) ListCoordinationNotices(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListCoordinationNotices(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAdminDSS operation middleware
+func (siw *ServerInterfaceWrapper) GetAdminDSS(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAdminDSS(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListEmergencyCases operation middleware
+func (siw *ServerInterfaceWrapper) ListEmergencyCases(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListEmergencyCases(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetEmergencyCase operation middleware
+func (siw *ServerInterfaceWrapper) GetEmergencyCase(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "flight_id" -------------
+	var flightId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "flight_id", r.PathValue("flight_id"), &flightId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "flight_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetEmergencyCase(w, r, flightId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ActOnEmergency operation middleware
+func (siw *ServerInterfaceWrapper) ActOnEmergency(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "flight_id" -------------
+	var flightId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "flight_id", r.PathValue("flight_id"), &flightId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "flight_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ActOnEmergency(w, r, flightId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListEscalations operation middleware
+func (siw *ServerInterfaceWrapper) ListEscalations(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListEscalations(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListAdminEvents operation middleware
+func (siw *ServerInterfaceWrapper) ListAdminEvents(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAdminEventsParams
+
+	// ------------- Required query parameter "entity_type" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "entity_type", r.URL.Query(), &params.EntityType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "entity_type"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "entity_type", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "entity_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "entity_id", r.URL.Query(), &params.EntityId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "entity_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "entity_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAdminEvents(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListAdminFlights operation middleware
+func (siw *ServerInterfaceWrapper) ListAdminFlights(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAdminFlights(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAdminInputs operation middleware
+func (siw *ServerInterfaceWrapper) GetAdminInputs(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAdminInputs(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3168,6 +4278,76 @@ func (siw *ServerInterfaceWrapper) FlagOccurrence(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.FlagOccurrence(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAdminPolicy operation middleware
+func (siw *ServerInterfaceWrapper) GetAdminPolicy(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAdminPolicy(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutAdminPolicy operation middleware
+func (siw *ServerInterfaceWrapper) PutAdminPolicy(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutAdminPolicy(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListRecordDays operation middleware
+func (siw *ServerInterfaceWrapper) ListRecordDays(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRecordDays(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSourceSwitches operation middleware
+func (siw *ServerInterfaceWrapper) ListSourceSwitches(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSourceSwitches(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SwitchSource operation middleware
+func (siw *ServerInterfaceWrapper) SwitchSource(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SwitchSource(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3764,9 +4944,26 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/occurrences", wrapper.FlagOccurrence)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/status", wrapper.ListStatusNotices)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/status", wrapper.RequestStatusNotice)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/flights", wrapper.ListAdminFlights)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/alerts", wrapper.ListAdminAlerts)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/escalations", wrapper.ListEscalations)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/alerts/{alert_id}/escalate", wrapper.EscalateAlert)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/alerts/{alert_id}/close", wrapper.CloseAlert)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/dss", wrapper.GetAdminDSS)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/inputs", wrapper.GetAdminInputs)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/policy", wrapper.GetAdminPolicy)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/admin/policy", wrapper.PutAdminPolicy)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/sources", wrapper.ListSourceSwitches)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/sources", wrapper.SwitchSource)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/emergency", wrapper.ListEmergencyCases)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/emergency/{flight_id}", wrapper.GetEmergencyCase)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/emergency/{flight_id}", wrapper.ActOnEmergency)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/records/days", wrapper.ListRecordDays)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/events", wrapper.ListAdminEvents)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/oauth/token", wrapper.RequestToken)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/jwks.json", wrapper.GetJWKS)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/login", wrapper.Login)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/login/mfa", wrapper.LoginMFA)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/logout", wrapper.Logout)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/accounts/me", wrapper.GetMe)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/operators", wrapper.RegisterOperator)

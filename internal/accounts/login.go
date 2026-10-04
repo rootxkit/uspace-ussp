@@ -2,6 +2,7 @@ package accounts
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -46,7 +47,30 @@ type SessionResult struct {
 	OperatorID    string
 	ExpiresAt     time.Time
 	IdleExpiresAt time.Time
+	// Challenge is set, and nothing else, when a staff admin signed in
+	// with the password and no code (WP-18): the second step is
+	// LoginMFA with Challenge.Token.
+	Challenge *MFAChallenge
 }
+
+// MFAChallenge is the answer of a staff admin's password step without a
+// code: an opaque token, held as its SHA-256 in staff_mfa_challenges
+// until ExpiresAt (the database clock).
+type MFAChallenge struct {
+	Token     string
+	ExpiresAt time.Time
+}
+
+// The bounds of the second step (E-10): a challenge lives
+// MFAChallengeTTL and is spent after MaxMFAAttempts codes.
+const (
+	MFAChallengeTTL = 5 * time.Minute
+	MaxMFAAttempts  = 5
+)
+
+// EventMFAChallenged is the audit event of a password step answered
+// with a challenge.
+const EventMFAChallenged = "login_mfa_challenged"
 
 // account is the realm-independent view of a user that signs in.
 type account struct {
@@ -145,22 +169,146 @@ func (s *Service) Login(ctx context.Context, in LoginInput, ip string) (SessionR
 			return SessionResult{}, refuse(http.StatusServiceUnavailable, SlugMFAUnavailable, "the admin's second factor cannot be checked: no MFA key or no enrolment")
 		}
 		if in.TOTPCode == "" {
-			s.loginRefused(ctx, in.Realm, user, acc.id, "mfa_required", ip)
-			return SessionResult{}, &Error{Status: http.StatusUnauthorized, Slug: SlugMFARequired, Detail: "a staff admin also sends a TOTP code",
-				Field: &core.FieldError{Field: "totp_code", Reason: "required"}}
+			return s.challenge(ctx, in.Realm, acc, ip)
 		}
-		secret, err := s.MFA.Open(*acc.mfaRef, acc.username)
+		step, err := s.checkCode(ctx, in.Realm, acc, in.TOTPCode, now, ip)
 		if err != nil {
-			obs.Error(ctx, s.logger(), "MFA secret does not open", err)
-			return SessionResult{}, refuse(http.StatusServiceUnavailable, SlugMFAUnavailable, "the admin's second factor cannot be checked")
-		}
-		step, ok := VerifyTOTP(secret, in.TOTPCode, now, acc.mfaLastStep)
-		if !ok {
-			return SessionResult{}, s.failure(ctx, in.Realm, user, acc.id, "wrong_code", ip)
+			return SessionResult{}, err
 		}
 		mfaStep = step
 	}
 	return s.startSession(ctx, in.Realm, acc, mfaStep, ip, now)
+}
+
+// checkCode verifies an admin's TOTP code: its step, or the failure
+// (counted against the username) of a wrong or spent code.
+func (s *Service) checkCode(ctx context.Context, realm string, acc account, code string, now time.Time, ip string) (int64, error) {
+	secret, err := s.MFA.Open(*acc.mfaRef, acc.username)
+	if err != nil {
+		obs.Error(ctx, s.logger(), "MFA secret does not open", err)
+		return 0, refuse(http.StatusServiceUnavailable, SlugMFAUnavailable, "the admin's second factor cannot be checked")
+	}
+	step, ok := VerifyTOTP(secret, code, now, acc.mfaLastStep)
+	if !ok {
+		return 0, s.failure(ctx, realm, acc.username, acc.id, "wrong_code", ip)
+	}
+	return step, nil
+}
+
+// challenge stores the second step of an admin's sign-in: a new random
+// token, its SHA-256 in staff_mfa_challenges (replacing the account's
+// last one) expiring MFAChallengeTTL later on the database clock, with
+// its events row; the token is answered once.
+func (s *Service) challenge(ctx context.Context, realm string, acc account, ip string) (SessionResult, error) {
+	token, err := auth.RandomSecret(32)
+	if err != nil {
+		return SessionResult{}, err
+	}
+	accountID, err := store.UUID("sub", acc.id)
+	if err != nil {
+		return SessionResult{}, err
+	}
+	sum := sha256.Sum256([]byte(token))
+	var exp time.Time
+	err = s.Store.Tx(ctx, func(q *relational.Queries) error {
+		var err error
+		if exp, err = q.PutMFAChallenge(ctx, relational.PutMFAChallengeParams{TokenHash: sum[:], AccountID: accountID,
+			TtlS: MFAChallengeTTL.Seconds(), RemoteIp: nonEmptyPtr(ip)}); err != nil {
+			return err
+		}
+		return s.audit(ctx, q, loginEvent(realm, acc.username, acc.id, EventMFAChallenged, map[string]any{"expires_at": exp, "remote_ip": ip}))
+	})
+	if err != nil {
+		return SessionResult{}, fmt.Errorf("MFA challenge: %w", err)
+	}
+	s.count(CounterMFAChallenged)
+	return SessionResult{Challenge: &MFAChallenge{Token: token, ExpiresAt: exp.UTC()}}, nil
+}
+
+// LoginMFA is the second step of a staff admin's sign-in (WP-18): the
+// challenge of the password step and a TOTP code. An unknown, expired or
+// spent challenge, a wrong code and a replayed code are one answer
+// (401); a wrong code is a failure of the username (the lockout) and of
+// the challenge, which is deleted after MaxMFAAttempts codes or once it
+// starts a session. A locked username is refused with Retry-After.
+// Every attempt is an events row.
+func (s *Service) LoginMFA(ctx context.Context, token, code, ip string) (SessionResult, error) {
+	if s.LoginLimiter != nil {
+		if ok, wait := s.LoginLimiter.Allow("ip:" + ip); !ok {
+			s.loginRefused(ctx, auth.RealmConsole, invalidUsername, "", "rate_limited_address", ip)
+			return SessionResult{}, &Error{Status: http.StatusTooManyRequests, Slug: httpx.SlugRateLimited,
+				Detail: "too many sign-in attempts from this address; wait and try again", RetryAfter: wait}
+		}
+	}
+	if token == "" || len(token) > 128 || code == "" || len(code) > 16 {
+		return SessionResult{}, core.Fieldf("body", "mfa_token and code are required and bounded")
+	}
+	if s.Issuer == nil {
+		return SessionResult{}, refuse(http.StatusServiceUnavailable, SlugSessionUnavailable, "this USSP has no issuer key: no session can start")
+	}
+	if s.MFA == nil {
+		return SessionResult{}, refuse(http.StatusServiceUnavailable, SlugMFAUnavailable, "the admin's second factor cannot be checked: no MFA key")
+	}
+	sum := sha256.Sum256([]byte(token))
+	q := s.Store.Queries()
+	ch, err := q.TakeMFAChallenge(ctx, sum[:])
+	if store.IsNoRows(err) {
+		s.loginRefused(ctx, auth.RealmConsole, invalidUsername, "", "mfa_challenge_unknown", ip)
+		return SessionResult{}, invalidCredentials()
+	}
+	if err != nil {
+		return SessionResult{}, err
+	}
+	if ch.Attempts >= MaxMFAAttempts {
+		// The last code this challenge admits: it is spent after this one,
+		// whatever the code says.
+		if _, err := q.DeleteMFAChallenge(ctx, sum[:]); err != nil {
+			obs.Error(ctx, s.logger(), "spent MFA challenge not deleted; it expires on its own", err)
+		}
+	}
+	st, err := q.StaffByID(ctx, ch.AccountID)
+	if store.IsNoRows(err) {
+		return SessionResult{}, invalidCredentials()
+	}
+	if err != nil {
+		return SessionResult{}, err
+	}
+	acc := account{id: store.UUIDText(st.ID), username: st.Username, hash: st.PasswordHash, role: st.Role, status: st.Status,
+		mfaRef: st.MfaSecretRef, mfaLastStep: st.MfaLastStep}
+	now := s.now()
+	if lock, err := q.LockoutByUsername(ctx, relational.LockoutByUsernameParams{Realm: auth.RealmConsole, Username: acc.username}); err == nil &&
+		lock.LockedUntil != nil && now.Before(*lock.LockedUntil) {
+		s.count(CounterLoginLockedOut)
+		s.loginRefused(ctx, auth.RealmConsole, acc.username, acc.id, "locked", ip)
+		return SessionResult{}, &Error{Status: http.StatusTooManyRequests, Slug: SlugAccountLocked,
+			Detail: "too many failed sign-ins: this username is locked", RetryAfter: lock.LockedUntil.Sub(now)}
+	} else if err != nil && !store.IsNoRows(err) {
+		return SessionResult{}, err
+	}
+	if acc.status != StatusActive || acc.role != auth.RoleAdmin || acc.mfaRef == nil {
+		return SessionResult{}, s.failure(ctx, auth.RealmConsole, acc.username, acc.id, "account_disabled", ip)
+	}
+	step, err := s.checkCode(ctx, auth.RealmConsole, acc, code, now, ip)
+	if err != nil {
+		return SessionResult{}, err
+	}
+	res, err := s.startSession(ctx, auth.RealmConsole, acc, step, ip, now)
+	if err != nil {
+		return SessionResult{}, err
+	}
+	if _, err := q.DeleteMFAChallenge(ctx, sum[:]); err != nil {
+		// The session started; the challenge expires on its own and its
+		// code is spent (mfa_last_step), so it cannot start another.
+		obs.Error(ctx, s.logger(), "used MFA challenge not deleted; it expires on its own", err)
+	}
+	return res, nil
+}
+
+func nonEmptyPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // failure counts one failed sign-in of (realm, username) in its own
@@ -549,7 +697,10 @@ func (s *Service) Sweep(ctx context.Context) (sessions, lockouts int64, err erro
 		if sessions, err = q.SweepSessions(ctx, now.Add(-SweepRetention)); err != nil {
 			return err
 		}
-		lockouts, err = q.SweepLockouts(ctx, relational.SweepLockoutsParams{Before: now.Add(-SweepRetention), Now: &now})
+		if lockouts, err = q.SweepLockouts(ctx, relational.SweepLockoutsParams{Before: now.Add(-SweepRetention), Now: &now}); err != nil {
+			return err
+		}
+		_, err = q.SweepMFAChallenges(ctx)
 		return err
 	})
 	if err == nil {

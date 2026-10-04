@@ -12,6 +12,7 @@ import { LANGS, useLang } from "@rootxkit/uspace-ui/i18n";
 import { useTheme } from "@rootxkit/uspace-ui/theme";
 import { Button } from "@rootxkit/uspace-ui/ui";
 import { useRuntimeConfig } from "@/components/Providers";
+import { ConsoleShell } from "@/console/ConsoleShell";
 import type { AppKey } from "@/i18n/catalogues";
 import { useAppT } from "@/i18n/t";
 
@@ -25,7 +26,14 @@ const NAV: { href: string; key: AppKey; roles?: string[] }[] = [
   { href: "/clients", key: "portal.nav.clients" },
 ];
 
+/** The frame of the page: the console's under /console (brief WP-18), the portal's elsewhere. */
 export function Shell({ children }: { children: ReactNode }) {
+  const path = usePathname();
+  if (path === "/console" || path.startsWith("/console/")) return <ConsoleShell>{children}</ConsoleShell>;
+  return <PortalShell>{children}</PortalShell>;
+}
+
+function PortalShell({ children }: { children: ReactNode }) {
   const t = useAppT();
   const { lang, setLang } = useLang();
   const { session, signOut } = useSession();

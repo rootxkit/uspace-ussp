@@ -69,6 +69,12 @@ const (
 	// subscription id, so that one whose area was dropped while the
 	// process was down is deleted at its next start (WP-14).
 	BucketRIDSubscriptions = "rid_dp_subscriptions"
+	// BucketMonitorStatus holds each monitor instance's status line (the
+	// conformance, CPA and zone paths' summary), by instance, written by
+	// that instance every MonitorStatusEvery and read by api for the
+	// console (WP-18): a monitor not heard for the policy's
+	// monitor_status_missing_s means alerts stopped.
+	BucketMonitorStatus = "monitor_status"
 )
 
 // Bounds (E-10). The server's max_payload is 1 MiB by default, so no
@@ -117,6 +123,12 @@ const (
 	RIDSubscriptionsTTL = time.Duration(f3411.NetDSSMaxSubscriptionDurationHours) * time.Hour
 	// RIDSubscriptionBytes bounds one saved subscription.
 	RIDSubscriptionBytes = 4 << 10
+	// MonitorStatusTTL is monitor_status's TTL: an instance rewrites its
+	// key every 10 s, so a key a day old is an instance long gone (the
+	// console still shows it, down, until then).
+	MonitorStatusTTL = 24 * time.Hour
+	// MonitorStatusBytes bounds one instance's status.
+	MonitorStatusBytes = 16 << 10
 )
 
 // ALRT's and TRAFFIC's bounds (every stream bounded in age and size):
@@ -167,6 +179,7 @@ const (
 	SessionsLiveMaxBytes     = int64(64 << 20)
 	RecordHoldsMaxBytes      = int64(16 << 20)
 	RIDSubscriptionsMaxBytes = int64(4 << 20)
+	MonitorStatusMaxBytes    = int64(4 << 20)
 )
 
 // RecordHoldBytes bounds one record hold (a flight id, its reasons and
@@ -297,6 +310,7 @@ func defaultTopology() Topology {
 			bucket(BucketSessionsLive, "live sessions by jti: subject, realm, expiry and idle end (api)", SessionsLiveBytes, SessionsLiveTTL, SessionsLiveMaxBytes),
 			bucket(BucketRecordHolds, "flights whose records an occurrence holds past their retention, by flight id (api)", RecordHoldBytes, 0, RecordHoldsMaxBytes),
 			bucket(BucketRIDSubscriptions, "the peer Display Provider's DSS subscriptions, by subscription id (monitor)", RIDSubscriptionBytes, RIDSubscriptionsTTL, RIDSubscriptionsMaxBytes),
+			bucket(BucketMonitorStatus, "each monitor instance's status line, by instance (monitor)", MonitorStatusBytes, MonitorStatusTTL, MonitorStatusMaxBytes),
 		},
 	}
 }

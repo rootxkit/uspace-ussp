@@ -342,6 +342,7 @@ func TopologyOf(cfg config.Config) bus.Topology {
 			bus.BucketSessionsLive:     int64(cfg.SessionsLiveBucketMaxBytes),
 			bus.BucketRecordHolds:      int64(cfg.RecordHoldsBucketMaxBytes),
 			bus.BucketRIDSubscriptions: int64(cfg.RIDSubscriptionsBucketMaxBytes),
+			bus.BucketMonitorStatus:    int64(cfg.MonitorStatusBucketMaxBytes),
 		},
 	})
 }

@@ -26,6 +26,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -51,6 +52,7 @@ import (
 	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/geodesy"
 
+	"github.com/rootxkit/uspace-ussp/internal/accounts"
 	"github.com/rootxkit/uspace-ussp/internal/app/api"
 	"github.com/rootxkit/uspace-ussp/internal/app/dsssync"
 	"github.com/rootxkit/uspace-ussp/internal/app/monitor"
@@ -62,6 +64,7 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/auth"
 	"github.com/rootxkit/uspace-ussp/internal/config"
 	"github.com/rootxkit/uspace-ussp/internal/dss/fakedss"
+	"github.com/rootxkit/uspace-ussp/internal/testfakes/ansp"
 	"github.com/rootxkit/uspace-ussp/internal/testfakes/authority"
 	"github.com/rootxkit/uspace-ussp/internal/testfakes/cisp"
 	"github.com/rootxkit/uspace-ussp/internal/testfakes/operator"
@@ -106,6 +109,7 @@ type fakes struct {
 	registry *authority.Fake
 	cisp     *cisp.Fake
 	dss      *fakedss.DSS
+	ansp     *ansp.Fake
 }
 
 func (f *fakes) close() {
@@ -113,6 +117,7 @@ func (f *fakes) close() {
 	f.registry.Close()
 	f.cisp.Close()
 	f.dss.Close()
+	f.ansp.Close()
 }
 
 // startFakes starts the token service (the ecosystem issuer's JWKS and
@@ -152,6 +157,9 @@ func startFakes(zoneAt core.LatLon) (*fakes, error) {
 	f.cisp.Publish("uspace_airspace")
 	f.cisp.Publish("restrictions")
 	f.dss = fakedss.New()
+	if f.ansp, err = ansp.New(); err != nil {
+		return nil, err
+	}
 	return f, nil
 }
 
@@ -172,29 +180,38 @@ func zone(id, typ string, b [4]float64) json.RawMessage {
 	return raw
 }
 
-// files writes the issuer key, the client secret of the outgoing token
-// and a flat geoid grid (20 m) into dir.
-func files(dir string) (keyFile, secretFile, geoidFile string, err error) {
+// files writes the issuer key, the client secret of the outgoing token,
+// a flat geoid grid (20 m) and the MFA key of the staff admins' TOTP
+// secrets into dir.
+func files(dir string) (keyFile, secretFile, geoidFile, mfaFile string, err error) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
+	}
+	mfa := make([]byte, 32)
+	if _, err := rand.Read(mfa); err != nil {
+		return "", "", "", "", err
+	}
+	mfaFile = filepath.Join(dir, "mfa-key")
+	if err := os.WriteFile(mfaFile, []byte(base64.StdEncoding.EncodeToString(mfa)+"\n"), 0o600); err != nil {
+		return "", "", "", "", err
 	}
 	keyFile = filepath.Join(dir, "issuer-key.pem")
 	if err := os.WriteFile(keyFile, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}), 0o600); err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
 	secretFile = filepath.Join(dir, "client-secret")
 	if err := os.WriteFile(secretFile, []byte("e2e-client-secret\n"), 0o600); err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
 	var g bytes.Buffer
 	g.WriteString("P5\n# Description e2e grid, N = 20 m\n# Offset 20\n# Scale 1\n2 3\n65535\n")
 	g.Write(make([]byte, 2*2*3))
 	geoidFile = filepath.Join(dir, "geoid.pgm")
 	if err := os.WriteFile(geoidFile, g.Bytes(), 0o600); err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
-	return keyFile, secretFile, geoidFile, nil
+	return keyFile, secretFile, geoidFile, mfaFile, nil
 }
 
 func run(ctx context.Context, logger *slog.Logger) error {
@@ -224,7 +241,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	keyFile, secretFile, geoidFile, err := files(dir)
+	keyFile, secretFile, geoidFile, mfaFile, err := files(dir)
 	if err != nil {
 		return err
 	}
@@ -234,6 +251,17 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return err
 	}
 	defer f.close()
+	// Every process reaches NATS through this proxy, so a test can cut
+	// the bus and restore it (brief WP-18: the console with NATS down).
+	natsProxy, err := newTCPProxy(hostOf(natsURL), logger)
+	if err != nil {
+		return err
+	}
+	defer natsProxy.close()
+	viaProxy, err := natsVia(natsURL, natsProxy.addr())
+	if err != nil {
+		return err
+	}
 
 	vars := map[string]string{
 		"USSP_LOG_LEVEL":                "warn",
@@ -247,7 +275,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		"USSP_TSDB_WRITER_ADDR":         addr(6),
 		"USSP_PG_URL":                   pg,
 		"USSP_TS_URL":                   ts,
-		"USSP_NATS_URL":                 natsURL,
+		"USSP_NATS_URL":                 viaProxy,
 		"USSP_AUDIENCES":                audience,
 		"USSP_ISSUER_URL":               "https://" + audience,
 		"USSP_ISSUER_KEY_FILE":          keyFile,
@@ -264,6 +292,15 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		"USSP_MTLS_MODE":                "off",
 		"USSP_WS_ALLOWED_ORIGINS":       "http://" + front,
 		"USSP_TRUSTED_PROXIES":          "127.0.0.1",
+		"USSP_MFA_KEY_FILE":             mfaFile,
+		// Every browser sign-in of the tests comes from 127.0.0.1: the
+		// per-address budget is raised so a run of console tests, each
+		// signing in staff of several roles, is not refused (the budget
+		// itself has its integration tests).
+		"USSP_LOGIN_RATE_PER_MIN": "600",
+		"USSP_ANSP_BASE_URL":      f.ansp.URL(),
+		"USSP_ANSP_STREAM_URL":    f.ansp.StreamURL(),
+		"USSP_TRAFFIC_INPUT_BBOX": "44.4,41.5,45.2,42.0",
 	}
 	lookup := func(n string) (string, bool) { v, ok := vars[n]; return v, ok }
 	for _, spec := range []proc.Spec{api.Spec, tsdbwriter.Spec} {
@@ -313,7 +350,13 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		}
 	}
 	apiURL := "http://" + addr(0)
-	c := &control{logger: logger, registry: f.registry, apiURL: apiURL, telemetryURL: "http://" + addr(1)}
+	staffSvc, closeStaff, err := staffService(ctx, pg, mfaFile)
+	if err != nil {
+		return err
+	}
+	defer closeStaff()
+	c := &control{logger: logger, registry: f.registry, apiURL: apiURL, telemetryURL: "http://" + addr(1), accounts: staffSvc,
+		downs: &downs{cisp: f.cisp, registry: f.registry, dss: f.dss, ansp: f.ansp, nats: natsProxy}}
 	frontSrv, err := frontServer(webURL, "http://"+addr(4))
 	if err != nil {
 		return err
@@ -412,6 +455,8 @@ type control struct {
 	registry     *authority.Fake
 	apiURL       string
 	telemetryURL string
+	accounts     *accounts.Service
+	downs        *downs
 
 	mu      sync.Mutex
 	flights []context.CancelFunc
@@ -432,6 +477,8 @@ func (c *control) routes() http.Handler {
 	mux.HandleFunc("POST /registry", c.handle(c.registryValid))
 	mux.HandleFunc("POST /fly", c.handle(c.fly))
 	mux.HandleFunc("POST /intruder", c.handle(c.intruder))
+	mux.HandleFunc("POST /staff", c.handle(c.staff))
+	mux.HandleFunc("POST /fake", c.handle(c.fake))
 	return mux
 }
 
@@ -653,5 +700,14 @@ func (c *control) intruder(ctx context.Context, in map[string]any) (any, error) 
 	if _, err := c.start(tok, serial, dec.IntentID, beside.LatDeg, beside.LonDeg); err != nil {
 		return nil, err
 	}
-	return map[string]any{"intent_id": dec.IntentID, "serial": serial}, nil
+	return map[string]any{"intent_id": dec.IntentID, "serial": serial, "client_id": cl.ClientID}, nil
+}
+
+// hostOf is the host:port of a NATS URL.
+func hostOf(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	return u.Host
 }

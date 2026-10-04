@@ -287,6 +287,42 @@ type Values struct {
 	WeatherStaleS            float64  `json:"weather_stale_s"`
 	WeatherObservationValidS float64  `json:"weather_observation_valid_s"`
 	WeatherAdvisoryWindMS    float64  `json:"weather_advisory_wind_ms"`
+
+	// The console (WP-18). MonitorStatusMissingS is how long api goes
+	// without a monitor's status (written every 10 s) before the console
+	// says "conformance and traffic alerts stopped since T".
+	// EmergencyChecklist is the communication plan of the emergency
+	// workflow (spec 01 §3 S11): the steps a supervisor ticks, in order.
+	// EmergencyContactProcedure is the authority's procedure for
+	// resolving an intent's emergency contact reference, shown beside it
+	// (the USSP holds the reference only, rule 8). The checklist and the
+	// procedure are pending GCAA.
+	MonitorStatusMissingS     float64  `json:"monitor_status_missing_s"`
+	EmergencyChecklist        []string `json:"emergency_checklist_ids"`
+	EmergencyContactProcedure string   `json:"emergency_contact_procedure_text"`
+}
+
+// Bounds of the emergency workflow's settings (E-10).
+const (
+	MaxEmergencyChecklistSteps   = 32
+	MaxEmergencyContactProcedure = 1000
+)
+
+// emergencyStep is one checklist step: a snake_case slug the console
+// translates.
+var emergencyStep = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+
+// PendingGCAA are the names of the values whose defaults are national
+// figures or procedures GCAA has not given (docs/PLAN.md §15.2 Q6, the
+// WP-14, WP-16 and WP-18 briefs): the console marks them so.
+var PendingGCAA = []string{
+	"deviation_h_m", "deviation_v_m", "deviation_t_s", "telemetry_lost_s", "lost_link_s",
+	"nonconformance_nearby_radius_m", "proximity_radius_m",
+	"cpa_tcpa_max_s", "cpa_horizontal_min_m", "cpa_vertical_min_m", "cpa_neighbour_radius_m",
+	"echo_colocation_m", "echo_colocation_s",
+	"weather_station_ids", "weather_area_radius_m", "weather_refresh_s", "weather_stale_s",
+	"weather_observation_valid_s", "weather_advisory_wind_ms",
+	"emergency_checklist_ids", "emergency_contact_procedure_text",
 }
 
 // MaxWeatherStationIDs bounds WeatherStationIDs (one fetch asks for all of
@@ -503,6 +539,14 @@ func Defaults() Values {
 		WeatherStaleS:            1800,
 		WeatherObservationValidS: 3600,
 		WeatherAdvisoryWindMS:    10,
+
+		// WP-18: three missed monitor status periods; the checklist and
+		// the procedure pending GCAA.
+		MonitorStatusMissingS: 30,
+		EmergencyChecklist: []string{
+			"operator_contacted", "authority_informed", "ansp_informed", "nearby_operators_informed", "outcome_confirmed",
+		},
+		EmergencyContactProcedure: "Ask the authority's duty officer to resolve the emergency contact reference of the intent; this USSP keeps the reference only (pending GCAA).",
 	}
 }
 
@@ -579,6 +623,7 @@ func (v Values) Validate() error {
 		{"airprox_report_m", v.AirproxReportM}, {"airprox_report_v_m", v.AirproxReportVM},
 		{"manned_unavailable_s", v.MannedUnavailableS}, {"peer_unavailable_s", v.PeerUnavailableS},
 		{"echo_colocation_m", v.EchoColocationM}, {"echo_colocation_s", v.EchoColocationS},
+		{"monitor_status_missing_s", v.MonitorStatusMissingS},
 	}
 	for _, f := range positive {
 		if !finite(f.v) || f.v <= 0 {
@@ -670,6 +715,7 @@ func (v Values) Validate() error {
 		errs = append(errs, core.Fieldf("peer_flights_max_count", "must be from 1 to %d, got %d", MaxPeerFlightsMax, v.PeerFlightsMax))
 	}
 	errs = append(errs, v.validateWeather()...)
+	errs = append(errs, v.validateEmergency()...)
 	if v.ClientSecretOverlapS < 0 || v.ClientSecretOverlapS > MaxClientSecretOverlapS {
 		errs = append(errs, core.Fieldf("client_secret_overlap_s", "must be from 0 to %d, got %d", MaxClientSecretOverlapS, v.ClientSecretOverlapS))
 	}
@@ -710,6 +756,31 @@ func (v Values) validateWeather() []error {
 	}
 	if !finite(v.WeatherAdvisoryWindMS) || v.WeatherAdvisoryWindMS < 0 {
 		errs = append(errs, core.Fieldf("weather_advisory_wind_ms", "must be a finite number of at least 0, got %v", v.WeatherAdvisoryWindMS))
+	}
+	return errs
+}
+
+// validateEmergency refuses an emergency checklist the console cannot
+// show: at least one and at most MaxEmergencyChecklistSteps distinct
+// snake_case steps, and a contact procedure of 1 to
+// MaxEmergencyContactProcedure bytes.
+func (v Values) validateEmergency() []error {
+	var errs []error
+	if len(v.EmergencyChecklist) < 1 || len(v.EmergencyChecklist) > MaxEmergencyChecklistSteps {
+		errs = append(errs, core.Fieldf("emergency_checklist_ids", "must have 1 to %d steps, got %d", MaxEmergencyChecklistSteps, len(v.EmergencyChecklist)))
+	}
+	seen := make(map[string]bool, len(v.EmergencyChecklist))
+	for i, s := range v.EmergencyChecklist {
+		switch {
+		case !emergencyStep.MatchString(s):
+			errs = append(errs, core.Fieldf(fmt.Sprintf("emergency_checklist_ids[%d]", i), "not a snake_case step of at most 64 characters"))
+		case seen[s]:
+			errs = append(errs, core.Fieldf(fmt.Sprintf("emergency_checklist_ids[%d]", i), "%s is listed twice", s))
+		}
+		seen[s] = true
+	}
+	if v.EmergencyContactProcedure == "" || len(v.EmergencyContactProcedure) > MaxEmergencyContactProcedure {
+		errs = append(errs, core.Fieldf("emergency_contact_procedure_text", "must be 1 to %d bytes, got %d", MaxEmergencyContactProcedure, len(v.EmergencyContactProcedure)))
 	}
 	return errs
 }

@@ -201,6 +201,7 @@ services:
     ports: ["127.0.0.1:57300:3000"]
     environment:
       USSP_WEB_API_URL: http://api:8080
+      USSP_WEB_BFF_SECRET: ${USSP_WEB_BFF_SECRET:-}
     depends_on:
       api: {condition: service_healthy}
     healthcheck:

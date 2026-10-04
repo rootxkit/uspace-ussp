@@ -159,3 +159,27 @@ FROM (SELECT b.client_id, b.serial, b.bound_at,
       WHERE b.client_id = ANY (sqlc.arg(client_ids)::text[]) AND b.unbound_at IS NULL) live
 WHERE live.n <= sqlc.arg(per_client)::bigint
 ORDER BY client_id, bound_at, serial;
+
+-- name: PutMFAChallenge :one
+-- The challenge of a staff admin's password step (WP-18): one per
+-- account, a new one replacing the last, expiring ttl_s later on the
+-- database clock.
+INSERT INTO staff_mfa_challenges (token_hash, account_id, expires_at, remote_ip)
+VALUES (sqlc.arg(token_hash), sqlc.arg(account_id), now() + make_interval(secs => sqlc.arg(ttl_s)::double precision), sqlc.narg(remote_ip))
+ON CONFLICT (account_id) DO UPDATE
+SET token_hash = EXCLUDED.token_hash, created_at = now(), expires_at = EXCLUDED.expires_at, attempts = 0, remote_ip = EXCLUDED.remote_ip
+RETURNING expires_at;
+
+-- name: TakeMFAChallenge :one
+-- A live challenge (not expired on the database clock) with one more
+-- code counted against it; no row when there is none.
+UPDATE staff_mfa_challenges
+SET attempts = attempts + 1
+WHERE token_hash = sqlc.arg(token_hash) AND expires_at > now()
+RETURNING account_id, attempts, expires_at;
+
+-- name: DeleteMFAChallenge :execrows
+DELETE FROM staff_mfa_challenges WHERE token_hash = sqlc.arg(token_hash);
+
+-- name: SweepMFAChallenges :execrows
+DELETE FROM staff_mfa_challenges WHERE expires_at < now();

@@ -152,3 +152,30 @@ func TestIntegrationReadyzReportsAnOlderSchema(t *testing.T) {
 		t.Fatalf("after migrate: %d %+v", code, body)
 	}
 }
+
+// The three CHECKs 00025 adds to the live alerts table NOT VALID
+// (internal/store's TestChecksOnLiveTablesAreAddedNotValid) are
+// validated by 00027 (WP-18): at the latest version each is valid, so
+// the rows that predate 00025 were checked too, and each still refuses
+// a row that breaks it.
+func TestIntegrationConsoleAlertChecksAreValidated(t *testing.T) {
+	ensureSchemas(t)
+	names := []string{"alerts_messages_recorded_check", "alerts_escalated_by_check", "alerts_closed_check"}
+	for _, n := range names {
+		if c := count(t, relOwner(t), `SELECT count(*) FROM pg_constraint WHERE conrelid = 'alerts'::regclass AND conname = $1 AND convalidated`, n); c != 1 {
+			t.Errorf("%s: not validated at the latest version", n)
+		}
+	}
+	seed := seedFlight(t, "activated", nil, time.Now().Add(-10*time.Minute))
+	id := seedProximity(t, seed, "pair-"+unique(), 12.0, 3.0, time.Now().Add(-time.Minute))
+	for i, upd := range []string{
+		"UPDATE alerts SET messages_recorded = 0 WHERE id = $1",
+		"UPDATE alerts SET escalated_by = 'staff-1', escalated_at = NULL WHERE id = $1",
+		"UPDATE alerts SET closed_at = now() WHERE id = $1",
+	} {
+		_, err := relOwner(t).Exec(context.Background(), upd, id)
+		if err == nil || !strings.Contains(err.Error(), names[i]) {
+			t.Errorf("%s: %v, want a refusal by %s", upd, err, names[i])
+		}
+	}
+}

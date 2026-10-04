@@ -45,7 +45,8 @@ WITH f AS (
         policy_version = EXCLUDED.policy_version,
         authorisation_number = COALESCE(EXCLUDED.authorisation_number, alerts.authorisation_number),
         peer_ref = COALESCE(EXCLUDED.peer_ref, alerts.peer_ref),
-        cell5 = COALESCE(EXCLUDED.cell5, alerts.cell5)
+        cell5 = COALESCE(EXCLUDED.cell5, alerts.cell5),
+        messages_recorded = alerts.messages_recorded + 1
     WHERE alerts.cleared_at IS NULL
     RETURNING 1
 )

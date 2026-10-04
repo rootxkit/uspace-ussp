@@ -153,6 +153,18 @@ func (q *Queries) ClientsOfOperator(ctx context.Context, arg ClientsOfOperatorPa
 	return items, nil
 }
 
+const deleteMFAChallenge = `-- name: DeleteMFAChallenge :execrows
+DELETE FROM staff_mfa_challenges WHERE token_hash = $1
+`
+
+func (q *Queries) DeleteMFAChallenge(ctx context.Context, tokenHash []byte) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteMFAChallenge, tokenHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const ensureLockout = `-- name: EnsureLockout :exec
 INSERT INTO login_lockouts (realm, username) VALUES ($1, $2)
 ON CONFLICT (realm, username) DO NOTHING
@@ -600,6 +612,36 @@ func (q *Queries) PortalUserByUsername(ctx context.Context, username string) (Po
 	return i, err
 }
 
+const putMFAChallenge = `-- name: PutMFAChallenge :one
+INSERT INTO staff_mfa_challenges (token_hash, account_id, expires_at, remote_ip)
+VALUES ($1, $2, now() + make_interval(secs => $3::double precision), $4)
+ON CONFLICT (account_id) DO UPDATE
+SET token_hash = EXCLUDED.token_hash, created_at = now(), expires_at = EXCLUDED.expires_at, attempts = 0, remote_ip = EXCLUDED.remote_ip
+RETURNING expires_at
+`
+
+type PutMFAChallengeParams struct {
+	TokenHash []byte      `json:"token_hash"`
+	AccountID pgtype.UUID `json:"account_id"`
+	TtlS      float64     `json:"ttl_s"`
+	RemoteIp  *string     `json:"remote_ip"`
+}
+
+// The challenge of a staff admin's password step (WP-18): one per
+// account, a new one replacing the last, expiring ttl_s later on the
+// database clock.
+func (q *Queries) PutMFAChallenge(ctx context.Context, arg PutMFAChallengeParams) (time.Time, error) {
+	row := q.db.QueryRow(ctx, putMFAChallenge,
+		arg.TokenHash,
+		arg.AccountID,
+		arg.TtlS,
+		arg.RemoteIp,
+	)
+	var expires_at time.Time
+	err := row.Scan(&expires_at)
+	return expires_at, err
+}
+
 const revokeSession = `-- name: RevokeSession :execrows
 UPDATE sessions SET revoked_at = $1, revoke_reason = $2
 WHERE jti = $3 AND revoked_at IS NULL
@@ -831,6 +873,18 @@ func (q *Queries) SweepLockouts(ctx context.Context, arg SweepLockoutsParams) (i
 	return result.RowsAffected(), nil
 }
 
+const sweepMFAChallenges = `-- name: SweepMFAChallenges :execrows
+DELETE FROM staff_mfa_challenges WHERE expires_at < now()
+`
+
+func (q *Queries) SweepMFAChallenges(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, sweepMFAChallenges)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const sweepSessions = `-- name: SweepSessions :execrows
 DELETE FROM sessions WHERE expires_at < $1
 `
@@ -841,6 +895,28 @@ func (q *Queries) SweepSessions(ctx context.Context, before time.Time) (int64, e
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const takeMFAChallenge = `-- name: TakeMFAChallenge :one
+UPDATE staff_mfa_challenges
+SET attempts = attempts + 1
+WHERE token_hash = $1 AND expires_at > now()
+RETURNING account_id, attempts, expires_at
+`
+
+type TakeMFAChallengeRow struct {
+	AccountID pgtype.UUID `json:"account_id"`
+	Attempts  int32       `json:"attempts"`
+	ExpiresAt time.Time   `json:"expires_at"`
+}
+
+// A live challenge (not expired on the database clock) with one more
+// code counted against it; no row when there is none.
+func (q *Queries) TakeMFAChallenge(ctx context.Context, tokenHash []byte) (TakeMFAChallengeRow, error) {
+	row := q.db.QueryRow(ctx, takeMFAChallenge, tokenHash)
+	var i TakeMFAChallengeRow
+	err := row.Scan(&i.AccountID, &i.Attempts, &i.ExpiresAt)
+	return i, err
 }
 
 const touchSession = `-- name: TouchSession :exec
