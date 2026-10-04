@@ -65,6 +65,10 @@ additively within `/v1`.
     acknowledgement, portal or machine client, answers instead of 404
     until the recorder's next redelivery; the browser test acknowledges
     with one click instead of retrying for up to 60 s.
+  - `docs/PLAN.md` §15.1 Q28 records the gaps of `uspace-ui` 0.1.0, the
+    kit the portal is built on (no drawing tool, no `console/status/v1`
+    system extras, a release-URL pin), held to the pinned version by a
+    test.
 - WP-16 review follow-ups:
   - a weather fetch that answers but delivers nothing in force (every
     report refused, no report for any station, or only reports held
