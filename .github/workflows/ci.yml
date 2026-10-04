@@ -276,7 +276,10 @@ jobs:
           else
             range="$GITHUB_SHA"
           fi
-          echo "gitleaks commits: $range ($(git rev-list --count "$range") commits)"
+          # An empty range would scan nothing and pass: refuse it.
+          n=$(git rev-list --count "$range")
+          [ "$n" -gt 0 ] || { echo "empty scan range: $range"; exit 1; }
+          echo "gitleaks commits: $range ($n commits)"
           ./gitleaks git --no-banner --redact --verbose --log-opts="$range" .
 
   # Both images, built on a pull request and not pushed. This job holds
