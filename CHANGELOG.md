@@ -9,6 +9,18 @@ additively within `/v1`.
 
 ### Fixed
 
+- WP-16 review follow-ups:
+  - a weather fetch that answers but delivers nothing in force (every
+    report refused, no report for any station, or only reports held
+    whose validity has ended) is recorded as a failure: the source is
+    failing, its products `stale` and `/readyz` `degraded`
+    (`weather_nothing_delivered`);
+  - a decision with no weather product in force while the source is
+    failing carries `weather_stale` with the failure and its time
+    beside `weather_unavailable`;
+  - the runbook gives the count of rows migration 00024 deletes (0 on a
+    first Up) and the query that counts them, run by the migration
+    test.
 - WP-14 review follow-ups:
   - the echo guard of the manned inputs no longer hides an aircraft on
     its mark alone: a record whose callsign or registration is an active
