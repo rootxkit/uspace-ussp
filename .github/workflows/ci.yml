@@ -67,11 +67,20 @@ jobs:
               - '**/testdata/**'
               - 'schemas/**'
               - 'test/**'
+            # The browser tests run the portal against the processes
+            # (test/e2e/stack): a change to them runs the web job too.
             web:
               - 'web/**'
               - 'api/**'
               - 'deploy/web.Dockerfile'
               - '.github/workflows/ci.yml'
+              - 'test/e2e/**'
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'migrations/**'
+              - 'internal/store/queries/**'
+              - 'schemas/**'
 
   build-vet-lint:
     name: build, vet, lint, checks
@@ -194,12 +203,28 @@ jobs:
     needs: changes
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
+    services:
+      timescaledb:
+        image: timescale/timescaledb-ha:pg16
+        env:
+          POSTGRES_PASSWORD: ci-superuser-only-in-this-job
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -h 127.0.0.1"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
     defaults:
       run:
         working-directory: web
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
         with:
           package_json_file: web/package.json
@@ -211,19 +236,48 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: generated API types are current
         run: pnpm check:api
+      - name: catalogues (en/ka complete, no duplicate key, no manoeuvre advice)
+        run: node scripts/check-i18n.mjs --self-test && pnpm check:i18n
       - run: pnpm lint
-      - name: tsc (a missing ka/en key fails here)
+      - name: tsc (a key missing from ka.json fails here)
         run: pnpm typecheck
       - run: pnpm build
       - name: playwright (chromium)
         run: pnpm exec playwright install --with-deps chromium
-      - name: smoke test of / in ka and en
+      # The e2e stack (test/e2e/stack) runs the seven processes against
+      # these, as make integration does.
+      - name: nats:2-alpine with JetStream
+        run: |
+          docker run -d --name nats -p 4222:4222 -p 8222:8222 nats:2-alpine -js -m 8222
+          for _ in $(seq 1 30); do
+            curl -fsS 'http://127.0.0.1:8222/healthz?js-enabled-only=true' && exit 0
+            sleep 1
+          done
+          docker logs nats; exit 1
+      - name: create both databases and roles (deploy/compose/initdb/10-ussp.sql)
+        working-directory: .
+        run: |
+          api_pw="$(openssl rand -hex 16)"; tsdb_pw="$(openssl rand -hex 16)"
+          echo "::add-mask::$api_pw"; echo "::add-mask::$tsdb_pw"
+          docker exec -i -e USSP_PG_API_PASSWORD="$api_pw" -e USSP_PG_TSDB_PASSWORD="$tsdb_pw" \
+            "${{ job.services.timescaledb.id }}" psql -U postgres -v ON_ERROR_STOP=1 -f - < deploy/compose/initdb/10-ussp.sql
+          {
+            echo "USSP_TEST_PG_URL=postgres://ussp_api:${api_pw}@127.0.0.1:5432/ussp_relational?sslmode=disable"
+            echo "USSP_TEST_TS_OWNER_URL=postgres://ussp_tsdb:${tsdb_pw}@127.0.0.1:5432/ussp_timeseries?sslmode=disable"
+            echo "USSP_TEST_NATS_URL=nats://127.0.0.1:4222"
+          } >> "$GITHUB_ENV"
+      - name: the stack builds before the browser tests start it
+        working-directory: .
+        run: go build -o /dev/null ./test/e2e/stack
+      - name: browser tests of the operator flows, ka and en (traces recorded)
         run: pnpm test:e2e
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: failure()
+        if: always()
         with:
-          name: playwright-report
-          path: web/playwright-report
+          name: playwright-traces
+          path: |
+            web/playwright-report
+            web/test-results
 
   govulncheck:
     name: govulncheck
