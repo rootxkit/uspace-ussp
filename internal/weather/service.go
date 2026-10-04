@@ -430,8 +430,8 @@ type Check struct {
 	ProductIDs []string
 	// Unavailable says why none was consulted ("" when some were).
 	Unavailable string
-	// Stale says why those consulted may not be the newest ("" when
-	// fresh).
+	// Stale says why those consulted may not be the newest, or why none
+	// was in force, with the failure and its time ("" when fresh).
 	Stale string
 	// Advisories name each product whose wind or gust reaches the
 	// policy's weather_advisory_wind_ms.
@@ -464,21 +464,25 @@ func (s *Service) Check(ctx context.Context, boxes []geodesy.BBox, from, to time
 		s.count("check_failed")
 		return Check{Unavailable: "the weather products could not be read"}
 	}
-	if len(ps) == 0 {
-		return Check{Unavailable: "no weather product of the source is in force over the volumes and their window"}
-	}
+	// The source's state is read whether or not a product is in force:
+	// none in force while the source is failing says both, with the
+	// failure and its time.
 	var c Check
-	for i := range ps {
-		c.ProductIDs = append(c.ProductIDs, ps[i].ID)
-		if a := advisory(&ps[i], pol.WeatherAdvisoryWindMS); a != "" {
-			c.Advisories = append(c.Advisories, a)
-		}
-	}
 	st, err := s.Store.Status(ctx, s.Source.Name())
 	if err != nil {
 		c.Stale = "the source's state could not be read"
 	} else if src, stale := state(s.Source.Name(), st, now, pol.WeatherStaleS); stale {
 		c.Stale = staleDetail(src)
+	}
+	if len(ps) == 0 {
+		c.Unavailable = "no weather product of the source is in force over the volumes and their window"
+		return c
+	}
+	for i := range ps {
+		c.ProductIDs = append(c.ProductIDs, ps[i].ID)
+		if a := advisory(&ps[i], pol.WeatherAdvisoryWindMS); a != "" {
+			c.Advisories = append(c.Advisories, a)
+		}
 	}
 	return c
 }

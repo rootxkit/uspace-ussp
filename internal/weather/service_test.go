@@ -529,3 +529,26 @@ func TestPollNothingDeliveredIsAFailure(t *testing.T) {
 		t.Fatalf("a stuck station: %v", err)
 	}
 }
+
+// A decision over a window with nothing in force while the source is
+// failing says both: none consulted, and the source failed since T. Its
+// twin: nothing in force with the source up says only the first.
+func TestCheckNothingInForceCarriesTheFailure(t *testing.T) {
+	ctx := context.Background()
+	r := newRig(t, "31013KT 9999 Q1026")
+	if err := r.svc.Poll(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ahead := []time.Time{obsAt.Add(72 * time.Hour), obsAt.Add(73 * time.Hour)}
+	if c := r.svc.Check(ctx, []geodesy.BBox{tbilisi}, ahead[0], ahead[1]); c.Ref() != nil || c.Unavailable == "" || c.Stale != "" {
+		t.Fatalf("up, nothing in force: %+v", c)
+	}
+	r.f.Down()
+	r.st.advance(10 * time.Minute)
+	_ = r.svc.Poll(ctx)
+	c := r.svc.Check(ctx, []geodesy.BBox{tbilisi}, ahead[0], ahead[1])
+	if c.Ref() != nil || !strings.Contains(c.Unavailable, "no weather product") ||
+		!strings.Contains(c.Stale, "failed since 2026-10-04T13:15:00Z") || !strings.Contains(c.Stale, "503") {
+		t.Fatalf("failing, nothing in force: %+v", c)
+	}
+}
