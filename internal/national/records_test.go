@@ -15,25 +15,24 @@ import (
 	coreauth "github.com/rootxkit/uspace-core/auth"
 
 	"github.com/rootxkit/uspace-ussp/internal/auth"
-	"github.com/rootxkit/uspace-ussp/internal/records"
 )
 
 type recBuilder struct {
-	rec records.Record
+	rec any
 	err error
 }
 
-func (b recBuilder) Flight(context.Context, string) (records.Record, error) { return b.rec, b.err }
+func (b recBuilder) Flight(context.Context, string) (any, error) { return b.rec, b.err }
 
 type recDaily struct {
 	path string
-	b    records.Bundle
+	b    RecordBundle
 	err  error
 }
 
-func (d recDaily) Open(context.Context, time.Time) (records.Bundle, *os.File, error) {
+func (d recDaily) Open(context.Context, time.Time) (RecordBundle, *os.File, error) {
 	if d.err != nil {
-		return records.Bundle{}, nil, d.err
+		return RecordBundle{}, nil, d.err
 	}
 	f, err := os.Open(d.path)
 	return d.b, f, err
@@ -69,7 +68,7 @@ func TestGetFlightRecord(t *testing.T) {
 		return rec
 	}
 	var seen []string
-	ok := &Records{Builder: recBuilder{rec: records.Record{Schema: records.Schema, FlightID: id.String()}}, Audit: recAudit{seen: &seen}}
+	ok := &Records{Builder: recBuilder{rec: map[string]string{"schema": "record/flight/v1", "flight_id": id.String()}}, Audit: recAudit{seen: &seen}}
 	if rec := call(&Server{Records: ok}); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"schema":"record/flight/v1"`) ||
 		len(seen) != 1 || seen[0] != "authority-01|flight|"+id.String() {
 		t.Fatalf("%d %s %v", rec.Code, rec.Body, seen)
@@ -78,7 +77,7 @@ func TestGetFlightRecord(t *testing.T) {
 		s    *Server
 		code int
 	}{
-		"not held":     {&Server{Records: &Records{Builder: recBuilder{err: records.ErrNotFound}, Audit: recAudit{}}}, 404},
+		"not held":     {&Server{Records: &Records{Builder: recBuilder{err: ErrRecordNotFound}, Audit: recAudit{}}}, 404},
 		"flights down": {&Server{Records: &Records{Builder: recBuilder{err: errors.New("db")}, Audit: recAudit{}}}, 503},
 		"audit down":   {&Server{Records: &Records{Builder: recBuilder{}, Audit: recAudit{err: errors.New("db")}}}, 503},
 		"none":         {&Server{}, 503},
@@ -103,7 +102,7 @@ func TestGetDailyRecords(t *testing.T) {
 		return rec
 	}
 	var seen []string
-	b := records.Bundle{Date: day.Time, Hash: strings.Repeat("a", 64), Ref: filepath.Base(path), Flights: 3}
+	b := RecordBundle{Date: day.Time, Hash: strings.Repeat("a", 64), Flights: 3}
 	rec := call(&Server{Records: &Records{Daily: recDaily{path: path, b: b}, Audit: recAudit{seen: &seen}}})
 	if rec.Code != 200 || rec.Body.String() != "gzip bytes" || rec.Header().Get("X-Content-SHA256") != b.Hash ||
 		rec.Header().Get("X-Record-Flights") != "3" || rec.Header().Get("Content-Type") != "application/gzip" || len(seen) != 1 {
@@ -113,8 +112,8 @@ func TestGetDailyRecords(t *testing.T) {
 		s    *Server
 		code int
 	}{
-		"no bundle": {&Server{Records: &Records{Daily: recDaily{err: records.ErrNotFound}, Audit: recAudit{}}}, 404},
-		"changed":   {&Server{Records: &Records{Daily: recDaily{err: records.ErrBundleCorrupt}, Audit: recAudit{}}}, 500},
+		"no bundle": {&Server{Records: &Records{Daily: recDaily{err: ErrRecordNotFound}, Audit: recAudit{}}}, 404},
+		"changed":   {&Server{Records: &Records{Daily: recDaily{err: ErrBundleCorrupt}, Audit: recAudit{}}}, 500},
 		"down":      {&Server{Records: &Records{Daily: recDaily{err: errors.New("db")}, Audit: recAudit{}}}, 503},
 		"unaudited": {&Server{Records: &Records{Daily: recDaily{path: path, b: b}, Audit: recAudit{err: errors.New("db")}}}, 503},
 		"none":      {&Server{}, 503},

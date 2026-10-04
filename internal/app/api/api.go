@@ -223,9 +223,9 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	}
 	cisState.Start(ctx, rt)
 	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc,
-		CIS: cisState.Receiver, Registry: reg.Cache, Intents: intents, Alerts: alertSvc, Geo: geoState, Coordination: notices, Records: recordsAPI, Logger: rt.Logger,
-		Occurrences: &national.Occurrences{Service: occurrences, List: occurrences.Store, Delivery: deliveryOf(occurrences)},
-		Status:      statusSvc, CertificateID: cfg.CertificateID,
+		CIS: cisState.Receiver, Registry: reg.Cache, Intents: intents, Alerts: alertSvc, Geo: geoState, Coordination: coordinationList{Store: notices}, Records: recordsAPI, Logger: rt.Logger,
+		Occurrences: occurrencesAPI(occurrences),
+		Status:      statusNotices{Service: statusSvc}, CertificateID: cfg.CertificateID,
 		RegistryScope:   svc,
 		RegistryLimiter: httpx.NewRateLimiter(perMin(cfg.RegistryRatePerMin), burst(cfg.RegistryRatePerMin), 100_000, counters)}
 	if err := national.Register(mux, srv, guard.Require); err != nil {

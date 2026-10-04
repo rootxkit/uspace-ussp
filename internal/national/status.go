@@ -7,23 +7,17 @@ import (
 
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/national/gen"
-	"github.com/rootxkit/uspace-ussp/internal/status"
 )
 
-// StatusNotices serves /v1/admin/status (internal/status).
+// StatusNotices serves /v1/admin/status (internal/status, adapted by
+// internal/app). A kind the notices do not admit is a *RefusedError.
 type StatusNotices interface {
-	Request(ctx context.Context, staffID, kind string) (status.Notice, bool, error)
-	List(ctx context.Context) ([]status.Notice, error)
+	Request(ctx context.Context, staffID, kind string) (gen.StatusNotice, bool, error)
+	List(ctx context.Context) ([]gen.StatusNotice, error)
 }
 
 func statusUnavailable(w http.ResponseWriter, r *http.Request, detail string) {
 	httpx.NewProblem(http.StatusServiceUnavailable, "status_unavailable", "", detail).Write(w, r)
-}
-
-func statusNotice(n *status.Notice) gen.StatusNotice {
-	return gen.StatusNotice{Kind: gen.StatusNoticeKind(n.Kind), At: n.At, CertificateId: n.CertificateID, Reference: n.Reference,
-		RequestedBy: n.RequestedBy, State: gen.StatusNoticeState(n.State), Attempts: n.Attempts, NextAt: n.NextAt, LastError: n.LastError,
-		SubmittedAt: n.SubmittedAt, AuthorityRef: n.AuthorityRef, FailedAt: n.FailedAt, CreatedAt: n.CreatedAt}
 }
 
 // ListStatusNotices is GET /v1/admin/status.
@@ -34,16 +28,17 @@ func (s *Server) ListStatusNotices(w http.ResponseWriter, r *http.Request) {
 	}
 	ns, err := s.Status.List(r.Context())
 	if err != nil {
+		obsError(r, s, "operating-status notices not listed", err)
 		statusUnavailable(w, r, "the operating-status notices cannot be read")
 		return
 	}
-	out := gen.StatusNotices{Notices: make([]gen.StatusNotice, 0, len(ns))}
+	out := gen.StatusNotices{Notices: ns}
+	if out.Notices == nil {
+		out.Notices = []gen.StatusNotice{}
+	}
 	if s.CertificateID != "" {
 		id := s.CertificateID
 		out.CertificateId = &id
-	}
-	for i := range ns {
-		out.Notices = append(out.Notices, statusNotice(&ns[i]))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -61,12 +56,13 @@ func (s *Server) RequestStatusNotice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n, created, err := s.Status.Request(r.Context(), principal(r).Claims.Subject, string(body.Kind))
-	var re *status.RequestError
+	var re *RefusedError
 	switch {
 	case errors.As(err, &re):
 		httpx.NewProblem(http.StatusBadRequest, "status_not_admitted", "", re.Reason).Write(w, r)
 		return
 	case err != nil:
+		obsError(r, s, "operating-status notice not stored", err)
 		statusUnavailable(w, r, "the notice cannot be stored")
 		return
 	}
@@ -74,5 +70,5 @@ func (s *Server) RequestStatusNotice(w http.ResponseWriter, r *http.Request) {
 	if created {
 		code = http.StatusCreated
 	}
-	writeJSON(w, code, statusNotice(&n))
+	writeJSON(w, code, n)
 }

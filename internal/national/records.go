@@ -14,20 +14,38 @@ import (
 
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
-	"github.com/rootxkit/uspace-ussp/internal/records"
 )
 
 // ScopeRecords is the scope of the service-record reads (02 F7; the
 // authority's token).
 const ScopeRecords = "ussp.records"
 
-// Records serves /v1/records (internal/records).
+// Errors of the record seams; internal/app maps internal/records' own
+// onto them.
+var (
+	// ErrRecordNotFound: no flight with this id, or no bundle for this day.
+	ErrRecordNotFound = errors.New("record not found")
+	// ErrBundleCorrupt: the stored bundle does not match its recorded hash.
+	ErrBundleCorrupt = errors.New("record bundle does not match its recorded hash")
+)
+
+// RecordBundle is what the route says of a daily bundle besides its bytes.
+type RecordBundle struct {
+	Date    time.Time
+	Hash    string
+	Flights int
+}
+
+// Records serves /v1/records (internal/records, adapted by
+// internal/app).
 type Records struct {
+	// Builder answers one flight's record, served as its JSON
+	// (record/flight/v1, the FlightRecord schema).
 	Builder interface {
-		Flight(ctx context.Context, flightID string) (records.Record, error)
+		Flight(ctx context.Context, flightID string) (any, error)
 	}
 	Daily interface {
-		Open(ctx context.Context, day time.Time) (records.Bundle, *os.File, error)
+		Open(ctx context.Context, day time.Time) (RecordBundle, *os.File, error)
 	}
 	// Audit writes the events row of a read, before the body is sent.
 	Audit interface {
@@ -57,9 +75,10 @@ func (s *Server) GetFlightRecord(w http.ResponseWriter, r *http.Request, flightI
 		recordsUnavailable(w, r, "the service records are not configured on this process")
 		return
 	}
-	rec, err := s.Records.Builder.Flight(r.Context(), flightID.String())
+	id := flightID.String()
+	rec, err := s.Records.Builder.Flight(r.Context(), id)
 	switch {
-	case errors.Is(err, records.ErrNotFound):
+	case errors.Is(err, ErrRecordNotFound):
 		httpx.NewProblem(http.StatusNotFound, "record_not_found", "", "this USSP holds no flight with this id").Write(w, r)
 		return
 	case err != nil:
@@ -67,7 +86,7 @@ func (s *Server) GetFlightRecord(w http.ResponseWriter, r *http.Request, flightI
 		recordsUnavailable(w, r, "the flight cannot be read")
 		return
 	}
-	if !s.auditRead(w, r, "flight", rec.FlightID) {
+	if !s.auditRead(w, r, "flight", id) {
 		return
 	}
 	writeJSON(w, http.StatusOK, rec)
@@ -84,10 +103,10 @@ func (s *Server) GetDailyRecords(w http.ResponseWriter, r *http.Request, date op
 	day := date.Time
 	b, f, err := s.Records.Daily.Open(r.Context(), day)
 	switch {
-	case errors.Is(err, records.ErrNotFound):
+	case errors.Is(err, ErrRecordNotFound):
 		httpx.NewProblem(http.StatusNotFound, "record_bundle_not_found", "", "no bundle is built for this day").Write(w, r)
 		return
-	case errors.Is(err, records.ErrBundleCorrupt):
+	case errors.Is(err, ErrBundleCorrupt):
 		obs.Error(r.Context(), s.logger(), "daily record bundle refused", err)
 		httpx.NewProblem(http.StatusInternalServerError, "record_bundle_corrupt", "", "the stored bundle does not match its recorded hash").Write(w, r)
 		return

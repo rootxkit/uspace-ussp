@@ -50,7 +50,7 @@ func startRecords(ctx context.Context, rt *proc.Runtime, pol *policy.Service) *n
 	rt.Health.Register(records.DepRecords, false, daily.Probe())
 	rt.Go(ctx, func(ctx context.Context) { daily.Run(ctx, time.Minute) })
 	rt.Go(ctx, func(ctx context.Context) { purgeGaps(ctx, reader, pol, counters, logger) })
-	return &national.Records{Builder: b, Daily: daily, Audit: reader}
+	return &national.Records{Builder: flightRecords{Builder: b}, Daily: dailyRecords{Daily: daily}, Audit: reader}
 }
 
 // listenGaps keeps the subscription to the gap records open, retrying

@@ -13,27 +13,27 @@ import (
 	coreauth "github.com/rootxkit/uspace-core/auth"
 
 	"github.com/rootxkit/uspace-ussp/internal/auth"
-	"github.com/rootxkit/uspace-ussp/internal/status"
+	"github.com/rootxkit/uspace-ussp/internal/national/gen"
 )
 
 type statusSvc struct {
-	n       status.Notice
+	n       gen.StatusNotice
 	created bool
 	err     error
-	list    []status.Notice
+	list    []gen.StatusNotice
 	listErr error
 	got     []string
 }
 
-func (s *statusSvc) Request(_ context.Context, staff, kind string) (status.Notice, bool, error) {
+func (s *statusSvc) Request(_ context.Context, staff, kind string) (gen.StatusNotice, bool, error) {
 	s.got = append(s.got, staff+"|"+kind)
 	return s.n, s.created, s.err
 }
 
-func (s *statusSvc) List(context.Context) ([]status.Notice, error) { return s.list, s.listErr }
+func (s *statusSvc) List(context.Context) ([]gen.StatusNotice, error) { return s.list, s.listErr }
 
-func notice() status.Notice {
-	return status.Notice{Kind: "start", At: time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC), CertificateID: "0123456789abcdef0123456789abcdef",
+func notice() gen.StatusNotice {
+	return gen.StatusNotice{Kind: "start", At: time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC), CertificateId: "0123456789abcdef0123456789abcdef",
 		Reference: "USSP-DEV:status:start:1", RequestedBy: "staff-1", State: "pending"}
 }
 
@@ -54,7 +54,7 @@ func TestStatusRoutes(t *testing.T) {
 		s.RequestStatusNotice(rec, req)
 		return rec
 	}
-	svc := &statusSvc{n: notice(), created: true, list: []status.Notice{notice()}}
+	svc := &statusSvc{n: notice(), created: true, list: []gen.StatusNotice{notice()}}
 	s := &Server{Status: svc, CertificateID: "0123456789abcdef0123456789abcdef"}
 	rec := get(s)
 	var body map[string]any
@@ -62,7 +62,7 @@ func TestStatusRoutes(t *testing.T) {
 	if rec.Code != 200 || body["certificate_id"] != s.CertificateID || len(body["notices"].([]any)) != 1 {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
-	if rec := get(&Server{Status: &statusSvc{}}); !strings.Contains(rec.Body.String(), `"certificate_id":null`) {
+	if rec := get(&Server{Status: &statusSvc{}}); !strings.Contains(rec.Body.String(), `"certificate_id":null`) || !strings.Contains(rec.Body.String(), `"notices":[]`) {
 		t.Fatalf("no certificate: %s", rec.Body)
 	}
 	if rec := post(s, `{"kind":"start"}`); rec.Code != 201 || svc.got[0] != "staff-1|start" {
@@ -74,7 +74,7 @@ func TestStatusRoutes(t *testing.T) {
 		code int
 	}{
 		"stored":       {&Server{Status: &statusSvc{n: notice()}}, `{"kind":"start"}`, 200},
-		"not admitted": {&Server{Status: &statusSvc{err: &status.RequestError{Reason: "a restart follows a cease"}}}, `{"kind":"restart"}`, 400},
+		"not admitted": {&Server{Status: &statusSvc{err: &RefusedError{Reason: "a restart follows a cease"}}}, `{"kind":"restart"}`, 400},
 		"db":           {&Server{Status: &statusSvc{err: errors.New("db")}}, `{"kind":"cease"}`, 503},
 		"bad body":     {&Server{Status: &statusSvc{}}, `{"kind":"start","extra":1}`, 400},
 		"none":         {&Server{}, `{"kind":"start"}`, 503},
