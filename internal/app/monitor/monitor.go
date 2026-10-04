@@ -208,6 +208,8 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	proc.Publish(rt, "zones", zoneCounters)
 	cisM := &bus.Mirror[telemetry.CISValue]{JS: js, Bucket: bus.BucketCISCurrent, Decode: telemetry.DecodeCIS, Counters: followCounters, Logger: logger}
 	zoneSrc := &geo.ZoneSource{M: cisM, Counters: zoneCounters, StaleS: func() float64 { return current().Values.CISStaleS }}
+	// The basis is aged from its receipt on this host's clock.
+	cisM.OnChange = zoneSrc.Observe
 	rt.Health.Register(DepCISCurrent, false, zoneProbe(zoneSrc))
 
 	// The engine and its feed.

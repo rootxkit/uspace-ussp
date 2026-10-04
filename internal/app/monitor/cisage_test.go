@@ -121,3 +121,45 @@ func TestZoneSourceAgesTheProjectedBasis(t *testing.T) {
 		t.Fatalf("behind the api's clock %+v", f)
 	}
 }
+
+// Clock skew between the api's host and the monitor's: the api's clock
+// 120 s ahead puts the projection's at in the monitor's future, so its
+// wall-clock age reads 0 for two minutes. The monitor ages it from its
+// own receipt of the projection (the mirror's OnChange), never less:
+// projected 250 s old, it is stale 51 s after receipt whatever the api's
+// clock says, and fresh 40 s after.
+func TestZoneSourceAgesFromLocalReceiptUnderSkew(t *testing.T) {
+	t0 := time.Date(2026, 10, 4, 6, 25, 48, 0, time.UTC)
+	clk := t0
+	m := &cisMirror{}
+	src := &geo.ZoneSource{M: m, Now: func() time.Time { return clk }}
+	m.project(cis.Basis{CISVersion: "zones:1,uspace_airspace:1,restrictions:0", CISAgeS: 250}, t0.Add(120*time.Second))
+	src.Observe(cis.KeyBasis)
+
+	clk = t0.Add(40 * time.Second)
+	if f := src.Freshness(); f.Stale || f.CISAgeS != 290 {
+		t.Fatalf("40 s after receipt: %+v", f)
+	}
+	clk = t0.Add(51 * time.Second)
+	if f := src.Freshness(); !f.Stale || f.CISAgeS != 301 {
+		t.Fatalf("51 s after receipt: %+v", f)
+	}
+
+	// The api projects again (same at, a new age): received now, aged
+	// from now.
+	m.project(cis.Basis{CISVersion: "zones:1,uspace_airspace:1,restrictions:0", CISAgeS: 0}, t0.Add(180*time.Second))
+	src.Observe(cis.KeyBasis)
+	clk = clk.Add(30 * time.Second)
+	if f := src.Freshness(); f.Stale || f.CISAgeS != 30 {
+		t.Fatalf("30 s after the second receipt: %+v", f)
+	}
+
+	// A projection that sat in the KV before this process read it (a
+	// monitor restarted after the api stopped) keeps its wall-clock age:
+	// receipt never makes it younger.
+	old := &geo.ZoneSource{M: m, Now: func() time.Time { return t0.Add(600 * time.Second) }}
+	old.Observe(cis.KeyBasis)
+	if f := old.Freshness(); !f.Stale || f.CISAgeS != 420 {
+		t.Fatalf("read late: %+v", f)
+	}
+}

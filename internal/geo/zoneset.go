@@ -218,6 +218,13 @@ type ZoneSource struct {
 	// policy default).
 	StaleS func() float64
 
+	// seen is the basis last received and seenAt when, on this
+	// process's clock (Observe, or the first read that found it).
+	rmu    sync.Mutex
+	seen   cis.BasisValue
+	seenAt time.Time
+	seenOK bool
+
 	mu  sync.Mutex
 	cur *ZoneSet
 }
@@ -270,25 +277,57 @@ type Freshness struct {
 	Stale bool
 }
 
-// Freshness is the basis of the projection now in cis_current, aged to
-// now as traffic-ws ages the same basis. The api projects again on
-// every confirmation by the CISP (cis.Cache), so a basis that is not
-// refreshed is one whose writer stopped: it goes stale here past
-// cis_stale_s, never frozen at the age it had when written.
-func (z *ZoneSource) Freshness() Freshness {
-	now := time.Now()
-	if z.Now != nil {
-		now = z.Now()
+// Observe notes the receipt of a cis_current key on this process's
+// clock (the mirror's OnChange): a new basis is aged from now. Without
+// it the first read that finds a new basis notes it.
+func (z *ZoneSource) Observe(key string) {
+	if key == cis.KeyBasis || key == "" {
+		z.received(z.now())
 	}
+}
+
+func (z *ZoneSource) now() time.Time {
+	if z.Now != nil {
+		return z.Now()
+	}
+	return time.Now()
+}
+
+// received is the basis now in the mirror and when this process first
+// saw it (now when it is new); ok false when there is none.
+func (z *ZoneSource) received(now time.Time) (b cis.BasisValue, at time.Time, ok bool) {
 	basis, found, _, loaded := z.M.Get(cis.KeyBasis)
 	if !loaded || !found || basis.Basis == nil {
+		return cis.BasisValue{}, time.Time{}, false
+	}
+	z.rmu.Lock()
+	defer z.rmu.Unlock()
+	if !z.seenOK || z.seen != *basis.Basis {
+		z.seen, z.seenAt, z.seenOK = *basis.Basis, now, true
+	}
+	return z.seen, z.seenAt, true
+}
+
+// Freshness is the basis of the projection now in cis_current, aged to
+// now: the age projected plus the time since this process received it,
+// on its own clock, so a clock skew between hosts never makes it
+// younger; or plus the time since its at when that is longer (a basis
+// that sat in the KV before this process read it, as traffic-ws ages
+// it). The api projects again on every confirmation by the CISP
+// (cis.Cache), so a basis that is not refreshed is one whose writer
+// stopped: it goes stale here past cis_stale_s, never frozen at the age
+// it had when written.
+func (z *ZoneSource) Freshness() Freshness {
+	now := z.now()
+	b, at, ok := z.received(now)
+	if !ok {
 		return Freshness{Stale: true}
 	}
-	b := basis.Basis
 	bound := policy.Defaults().CISStaleS
 	if z.StaleS != nil {
 		bound = z.StaleS()
 	}
-	age := b.CISAgeS + max(0, now.Sub(b.At).Seconds())
+	since := max(0, now.Sub(at).Seconds(), now.Sub(b.At).Seconds())
+	age := b.CISAgeS + since
 	return Freshness{Loaded: true, CISVersion: b.CISVersion, CISAgeS: age, Stale: b.Stale || !(age <= bound)}
 }
