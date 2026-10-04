@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rootxkit/uspace-core/core"
+	coresources "github.com/rootxkit/uspace-core/sources"
 
 	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
@@ -66,6 +67,7 @@ type heard struct {
 	body     sources.StatusBody
 	counters map[string]uint64
 	lagS     *float64
+	lagging  bool
 	at       time.Time
 }
 
@@ -110,7 +112,8 @@ func (in *Inputs) Take(_ string, data []byte) {
 		Schema string `json:"schema"`
 		Body   struct {
 			sources.StatusBody
-			LagS *float64 `json:"lag_s"`
+			LagS    *float64 `json:"lag_s"`
+			Lagging bool     `json:"lagging"`
 		} `json:"body"`
 	}
 	if len(data) > MaxStatusBytes || json.Unmarshal(data, &m) != nil || m.Schema != sources.SchemaStatus || m.Body.Source == "" {
@@ -132,7 +135,7 @@ func (in *Inputs) Take(_ string, data []byte) {
 		in.count(CounterSourcesOverBound)
 		return
 	}
-	in.srcs[key] = heard{body: m.Body.StatusBody, counters: maps.Clone(m.Body.Counters), lagS: m.Body.LagS, at: now}
+	in.srcs[key] = heard{body: m.Body.StatusBody, counters: maps.Clone(m.Body.Counters), lagS: m.Body.LagS, lagging: m.Body.Lagging, at: now}
 }
 
 // Run keeps the src.v1 subscription open until ctx ends, retrying while
@@ -223,11 +226,13 @@ type SwitchRow struct {
 	ChangedAt  time.Time
 }
 
-// stateOf maps a source/status/v1 state onto the console's.
-func stateOf(s string, lag *float64) string {
+// stateOf maps a source/status/v1 state onto the console's: a live
+// source that says it is lagging (its own judgement, the B-03 extra of
+// operator_ws) is lagging.
+func stateOf(s string, lagging bool) string {
 	switch s {
 	case sources.StateLive:
-		if lag != nil && *lag > 0 {
+		if lagging {
 			return InputLagging
 		}
 		return InputHealthy
@@ -295,7 +300,7 @@ func (in *Inputs) view(now time.Time, switches []SwitchRow, staff func(string) s
 		i := get(h.body.Source, inst)
 		heardAt, st := h.at.UTC(), h.body.Since.UTC()
 		i.LastHeardAt, i.AgeS, i.LagS, i.Counters = &heardAt, h.body.AgeS, h.lagS, h.counters
-		i.State, i.Since = stateOf(h.body.State, h.lagS), &st
+		i.State, i.Since = stateOf(h.body.State, h.lagging), &st
 		if h.body.Detail != "" {
 			d := h.body.Detail
 			i.Detail = &d
@@ -306,38 +311,38 @@ func (in *Inputs) view(now time.Time, switches []SwitchRow, staff func(string) s
 			i.Detail = &d
 		}
 	}
-	// The switches: a type switch disables every instance of the type, an
-	// instance switch its instance, the instance's row winning.
-	typeOff := map[string]SwitchRow{}
+	// The switches, decided by core's source-control model (the one
+	// judgement of which source is enabled, CLAUDE.md rule 3): a type
+	// switched off disables every instance of it, even one whose own row
+	// is on; an instance row decides its instance. A disabled input is
+	// labelled with the row that disables it: who, when and why.
+	st := coresources.State{Controls: make([]coresources.Control, 0, len(switches))}
+	typeRow, instRow := map[string]SwitchRow{}, map[key]SwitchRow{}
 	for _, w := range switches {
-		i := get(w.SourceType, w.InstanceID)
-		if w.InstanceID == nil && !w.Enabled {
-			typeOff[w.SourceType] = w
-		}
-		if !w.Enabled {
-			by := "instance"
-			if w.InstanceID == nil {
-				by = "type"
-			}
-			at := w.ChangedAt.UTC()
-			i.State, i.Since = InputDisabled, &at
-			i.Disabled = &Disabled{By: by, ByWho: staff(w.Actor), At: at, Reason: w.Reason}
-		}
-	}
-	instanceRow := map[key]bool{}
-	for _, w := range switches {
-		if w.InstanceID != nil {
-			instanceRow[key{w.SourceType, *w.InstanceID}] = true
+		get(w.SourceType, w.InstanceID)
+		st.Controls = append(st.Controls, coresources.Control{SourceType: w.SourceType, InstanceID: w.InstanceID, Enabled: w.Enabled})
+		if w.InstanceID == nil {
+			typeRow[w.SourceType] = w
+		} else {
+			instRow[key{w.SourceType, *w.InstanceID}] = w
 		}
 	}
 	for k, i := range all {
-		w, off := typeOff[k.src]
-		if !off || k.inst == "" || instanceRow[k] {
+		var inst *string
+		if k.inst != "" {
+			inst = &k.inst
+		}
+		d := st.Query(k.src, inst)
+		if d.Enabled || d.WhyDisabled == nil {
 			continue
+		}
+		w, by := typeRow[k.src], string(coresources.WhyType)
+		if *d.WhyDisabled == coresources.WhyInstance {
+			w, by = instRow[k], string(coresources.WhyInstance)
 		}
 		at := w.ChangedAt.UTC()
 		i.State, i.Since = InputDisabled, &at
-		i.Disabled = &Disabled{By: "type", ByWho: staff(w.Actor), At: at, Reason: w.Reason}
+		i.Disabled = &Disabled{By: by, ByWho: staff(w.Actor), At: at, Reason: w.Reason}
 	}
 	if !connected {
 		s := since.UTC()

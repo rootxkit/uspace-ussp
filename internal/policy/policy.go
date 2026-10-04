@@ -546,7 +546,7 @@ func Defaults() Values {
 		EmergencyChecklist: []string{
 			"operator_contacted", "authority_informed", "ansp_informed", "nearby_operators_informed", "outcome_confirmed",
 		},
-		EmergencyContactProcedure: "Ask the authority's duty officer to resolve the emergency contact reference of the intent; this USSP holds the reference only (pending GCAA).",
+		EmergencyContactProcedure: "Ask the authority's duty officer to resolve the emergency contact reference of the intent; this USSP keeps the reference only (pending GCAA).",
 	}
 }
 

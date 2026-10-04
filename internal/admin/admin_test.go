@@ -59,13 +59,14 @@ func TestInputsStates(t *testing.T) {
 		}
 	}
 	in.Take("src.v1.operator_ws.op-1", status("operator_ws", ptr("op-1"), "live", t0.Add(-time.Minute), nil))
-	in.Take("src.v1.operator_ws.op-2", status("operator_ws", ptr("op-2"), "live", t0.Add(-time.Minute), map[string]any{"lag_s": 4.5}))
+	in.Take("src.v1.operator_ws.op-2", status("operator_ws", ptr("op-2"), "live", t0.Add(-time.Minute), map[string]any{"lag_s": 4.5, "lagging": true}))
+	in.Take("src.v1.operator_ws.op-3", status("operator_ws", ptr("op-3"), "live", t0.Add(-time.Minute), map[string]any{"lag_s": 0.4, "lagging": false}))
 	in.Take("src.v1.ansp_feed._all", status("ansp_feed", nil, "down", t0.Add(-2*time.Minute), map[string]any{"detail": "stream cut"}))
 	in.Take("src.v1.adsb_rx.r1", status("adsb_rx", ptr("r1"), "stale", t0.Add(-3*time.Minute), nil))
 	_, out, _ = in.view(now, nil, func(s string) string { return s })
 	for _, c := range []struct {
 		src, inst, want string
-	}{{"operator_ws", "op-1", InputHealthy}, {"operator_ws", "op-2", InputLagging}, {"ansp_feed", "", InputUnreachable}, {"adsb_rx", "r1", InputStale}} {
+	}{{"operator_ws", "op-1", InputHealthy}, {"operator_ws", "op-2", InputLagging}, {"operator_ws", "op-3", InputHealthy}, {"ansp_feed", "", InputUnreachable}, {"adsb_rx", "r1", InputStale}} {
 		i, ok := find(out, c.src, c.inst)
 		if !ok || i.State != c.want || i.LastHeardAt == nil || i.Since == nil {
 			t.Errorf("%s/%s: %+v (want %s)", c.src, c.inst, i, c.want)
@@ -86,8 +87,9 @@ func TestInputsStates(t *testing.T) {
 }
 
 // A switch disables what it names, labelled by whom, when and why; a
-// type switch disables every instance of the type unless the instance
-// has its own row; an enabled row changes nothing.
+// type switch disables every instance of the type, even one whose own
+// row is on (core's sources model decides); an enabled row changes
+// nothing.
 func TestInputsSwitches(t *testing.T) {
 	in := &Inputs{Now: func() time.Time { return t0 }}
 	in.Take("", status("operator_ws", ptr("op-1"), "live", t0, nil))
@@ -111,9 +113,15 @@ func TestInputsSwitches(t *testing.T) {
 	if i, _ := find(out, "adsb_rx", ""); i.State != InputDisabled || i.Disabled.By != "type" {
 		t.Errorf("type switch: %+v", i)
 	}
-	// r1 has its own (enabled) row: the instance's row wins.
-	if i, _ := find(out, "adsb_rx", "r1"); i.State != InputHealthy {
-		t.Errorf("instance row under a type switch: %+v", i)
+	// r1 has its own (enabled) row: the type's switch still disables it.
+	if i, _ := find(out, "adsb_rx", "r1"); i.State != InputDisabled || i.Disabled == nil || i.Disabled.By != "type" || i.Disabled.Reason != "receiver maintenance" {
+		t.Errorf("instance row under a type switch: %+v %+v", i, i.Disabled)
+	}
+	// The presence twin: with the type switched on again, r1 is enabled.
+	rows[1].Enabled = true
+	_, out, _ = in.view(t0, rows, names)
+	if i, _ := find(out, "adsb_rx", "r1"); i.State != InputHealthy || i.Disabled != nil {
+		t.Errorf("the type on again: %+v", i)
 	}
 	if i, _ := find(out, "network_rid", ""); i.State != InputNeverHeard || i.Disabled != nil {
 		t.Errorf("enabled row: %+v", i)
@@ -168,13 +176,12 @@ func TestInputsBound(t *testing.T) {
 }
 
 func TestStateOf(t *testing.T) {
-	lag, none := 2.0, 0.0
 	for _, c := range []struct {
 		in   string
-		lag  *float64
+		lag  bool
 		want string
-	}{{"live", nil, InputHealthy}, {"live", &none, InputHealthy}, {"live", &lag, InputLagging}, {"stale", nil, InputStale},
-		{"down", nil, InputUnreachable}, {"disabled", nil, InputDisabled}, {"unknown", nil, InputUnknown}, {"other", nil, InputUnknown}} {
+	}{{"live", false, InputHealthy}, {"live", true, InputLagging}, {"stale", false, InputStale},
+		{"down", false, InputUnreachable}, {"disabled", false, InputDisabled}, {"unknown", false, InputUnknown}, {"other", false, InputUnknown}} {
 		if got := stateOf(c.in, c.lag); got != c.want {
 			t.Errorf("%s: %s, want %s", c.in, got, c.want)
 		}
