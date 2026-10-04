@@ -1439,13 +1439,15 @@ type AdminAlert struct {
 	ClearedAt           *time.Time         `json:"cleared_at,omitempty"`
 	CloseReason         *string            `json:"close_reason,omitempty"`
 	ClosedAt            *time.Time         `json:"closed_at,omitempty"`
-	ClosedBy            *string            `json:"closed_by,omitempty"`
+
+	// ClosedBy The username of the supervisor who closed it on the console (the stored id when it is not a staff account).
+	ClosedBy *string `json:"closed_by,omitempty"`
 
 	// Detail The alert's detail as the monitor sent it (alert/v1).
 	Detail      map[string]interface{} `json:"detail"`
 	EscalatedAt *time.Time             `json:"escalated_at,omitempty"`
 
-	// EscalatedBy The supervisor who escalated it; absent for the automatic escalation.
+	// EscalatedBy The username of the supervisor who escalated it (the stored id when it is not a staff account); absent for the automatic escalation.
 	EscalatedBy      *string             `json:"escalated_by,omitempty"`
 	EscalationReason *string             `json:"escalation_reason,omitempty"`
 	FlightId         *openapi_types.UUID `json:"flight_id,omitempty"`

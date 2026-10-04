@@ -108,6 +108,7 @@ type consoleRig struct {
 	proj                    *switchableProjector
 	supervisor, support, ad string
 	superID, adminID        string
+	superName               string
 }
 
 func newConsoleRig(t *testing.T) *consoleRig {
@@ -146,6 +147,7 @@ func newConsoleRig(t *testing.T) *consoleRig {
 		return r.str("token"), created.ID
 	}
 	g.supervisor, g.superID = sign(auth.RoleSupervisor)
+	g.superName = auth.RoleSupervisor + ".console." + u
 	g.support, _ = sign(auth.RoleSupport)
 	g.ad, g.adminID = sign(auth.RoleAdmin)
 	return g
@@ -207,7 +209,7 @@ func TestIntegrationConsoleAlerts(t *testing.T) {
 		t.Fatalf("a refusal wrote %d events, %d republishes", n, g.rep.n())
 	}
 	r = super(t, "POST", "/v1/admin/alerts/"+id+"/escalate", map[string]any{"reason": "operator does not answer"})
-	if r.status != 200 || r.str("escalated_by") != g.superID || r.str("escalation_reason") != "operator does not answer" || r.str("escalated_at") == "" {
+	if r.status != 200 || r.str("escalated_by") != g.superName || r.str("escalation_reason") != "operator does not answer" || r.str("escalated_at") == "" {
 		t.Fatalf("escalate: %d %s", r.status, r.raw)
 	}
 	if n := events(t, admin.EntityAlert, id, admin.EventAlertEscalated); n != 1 || g.rep.n() != 1 {
@@ -219,11 +221,12 @@ func TestIntegrationConsoleAlerts(t *testing.T) {
 	if n := events(t, admin.EntityAlert, id, admin.EventAlertEscalated); n != 1 || g.rep.n() != 1 {
 		t.Fatalf("a repeat wrote: %d events, %d republishes", n, g.rep.n())
 	}
-	if e := byID(list(support(t, "GET", "/v1/admin/escalations", nil), "alerts"), "alert_id", id); e == nil {
-		t.Fatal("the escalation is not listed")
+	// The console shows the staff by username, never by account id.
+	if e := byID(list(support(t, "GET", "/v1/admin/escalations", nil), "alerts"), "alert_id", id); e == nil || e["escalated_by"] != g.superName {
+		t.Fatalf("the escalation is not listed by its supervisor's name: %+v", e)
 	}
 	if r := super(t, "POST", "/v1/admin/alerts/"+id+"/close", map[string]any{"reason": "operator landed, confirmed by phone"}); r.status != 200 ||
-		r.str("closed_by") != g.superID || r.str("state") != "raised" {
+		r.str("closed_by") != g.superName || r.str("state") != "raised" {
 		t.Fatalf("close: %d %s", r.status, r.raw)
 	}
 	if r := super(t, "POST", "/v1/admin/alerts/"+id+"/close", map[string]any{"reason": "again"}); r.status != 409 || r.slug() != admin.SlugAlreadyClosed {
@@ -234,6 +237,9 @@ func TestIntegrationConsoleAlerts(t *testing.T) {
 	}
 	if e := byID(list(support(t, "GET", "/v1/admin/escalations", nil), "alerts"), "alert_id", id); e != nil {
 		t.Fatal("a closed escalation is still listed")
+	}
+	if a := byID(list(support(t, "GET", "/v1/admin/alerts", nil), "alerts"), "alert_id", id); a == nil || a["escalated_by"] != g.superName || a["closed_by"] != g.superName {
+		t.Fatalf("the alerts list without the supervisor's name: %+v", a)
 	}
 	var state string
 	if err := appPool(t).QueryRow(context.Background(), "SELECT state FROM alerts WHERE id = $1::uuid", id).Scan(&state); err != nil || state != "raised" {

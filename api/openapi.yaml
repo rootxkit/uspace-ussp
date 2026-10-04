@@ -4107,10 +4107,12 @@ components:
         escalated_at: {type: string, format: date-time}
         escalated_by:
           type: string
-          description: The supervisor who escalated it; absent for the automatic escalation.
+          description: The username of the supervisor who escalated it (the stored id when it is not a staff account); absent for the automatic escalation.
         escalation_reason: {type: string}
         closed_at: {type: string, format: date-time}
-        closed_by: {type: string}
+        closed_by:
+          type: string
+          description: The username of the supervisor who closed it on the console (the stored id when it is not a staff account).
         close_reason: {type: string}
         messages_recorded:
           type: integer

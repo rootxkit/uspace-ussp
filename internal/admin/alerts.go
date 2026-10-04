@@ -81,24 +81,50 @@ type alertRow struct {
 	PolicyVersion, MessagesRecorded                      int64
 }
 
-func (r *alertRow) view() Alert {
+// view is the alert as the console shows it, the staff who escalated
+// and closed it by their usernames (names, staffNames).
+func (r *alertRow) view(names func(string) string) Alert {
 	return Alert{AlertID: r.ID, Kind: r.Kind, Severity: r.Severity, State: r.State, ClearReason: r.ClearReason,
 		FlightID: strp(r.FlightID), IntentID: strp(r.IntentID), AuthorisationNumber: r.AuthorisationNumber,
 		RaisedAt: r.RaisedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(), ClearedAt: utc(r.ClearedAt), AckedAt: utc(r.AckedAt), AckedBy: r.AckedBy,
-		EscalatedAt: utc(r.EscalatedAt), EscalatedBy: r.EscalatedBy, EscalationReason: r.EscalationReason,
-		ClosedAt: utc(r.ClosedAt), ClosedBy: r.ClosedBy, CloseReason: r.CloseReason,
+		EscalatedAt: utc(r.EscalatedAt), EscalatedBy: named(names, r.EscalatedBy), EscalationReason: r.EscalationReason,
+		ClosedAt: utc(r.ClosedAt), ClosedBy: named(names, r.ClosedBy), CloseReason: r.CloseReason,
 		MessagesRecorded: max(r.MessagesRecorded, 1), PolicyVersion: r.PolicyVersion, Detail: object(r.Detail)}
 }
 
-func (s *Service) alertList(rows []alertRow) Alerts {
+// named is the display name of a staff id, nil kept nil.
+func named(names func(string) string, id *string) *string {
+	if id == nil {
+		return nil
+	}
+	n := names(*id)
+	return &n
+}
+
+// alertNames resolves the staff of rows (who escalated and closed each)
+// to their usernames.
+func (s *Service) alertNames(ctx context.Context, rows ...alertRow) func(string) string {
+	ids := make([]string, 0, 2*len(rows))
+	for i := range rows {
+		for _, id := range []*string{rows[i].EscalatedBy, rows[i].ClosedBy} {
+			if id != nil {
+				ids = append(ids, *id)
+			}
+		}
+	}
+	return s.staffNames(ctx, ids)
+}
+
+func (s *Service) alertList(ctx context.Context, rows []alertRow) Alerts {
 	pol := s.policy()
 	out := Alerts{Alerts: make([]Alert, 0, min(len(rows), MaxAlerts)), EscalationAfterS: pol.Values.EscalationAfterS,
 		EscalationRepeatS: pol.Values.EscalationRepeatS, PolicyVersion: pol.Version}
 	if len(rows) > MaxAlerts {
 		rows, out.Truncated = rows[:MaxAlerts], true
 	}
+	names := s.alertNames(ctx, rows...)
 	for i := range rows {
-		out.Alerts = append(out.Alerts, rows[i].view())
+		out.Alerts = append(out.Alerts, rows[i].view(names))
 	}
 	return out
 }
@@ -120,7 +146,7 @@ func (s *Service) Alerts(ctx context.Context, recent bool) (Alerts, error) {
 			AckedAt: r.AckedAt, EscalatedAt: r.EscalatedAt, ClosedAt: r.ClosedAt, Detail: r.Detail, PolicyVersion: r.PolicyVersion,
 			MessagesRecorded: r.MessagesRecorded}
 	}
-	return s.alertList(rs), nil
+	return s.alertList(ctx, rs), nil
 }
 
 // Escalations lists the alerts escalated and not closed on the console,
@@ -140,7 +166,7 @@ func (s *Service) Escalations(ctx context.Context) (Alerts, error) {
 			AckedAt: r.AckedAt, EscalatedAt: r.EscalatedAt, ClosedAt: r.ClosedAt, Detail: r.Detail, PolicyVersion: r.PolicyVersion,
 			MessagesRecorded: r.MessagesRecorded}
 	}
-	return s.alertList(rs), nil
+	return s.alertList(ctx, rs), nil
 }
 
 func lockedRow(r relational.AdminAlertForUpdateRow) alertRow {
@@ -228,7 +254,7 @@ func (s *Service) Escalate(ctx context.Context, staffID, id, why string) (Alert,
 		}
 	}
 	lr := lockedRow(row)
-	return lr.view(), nil
+	return lr.view(s.alertNames(ctx, lr)), nil
 }
 
 // CloseAlert is the console's close of an alert (a supervisor handled
@@ -270,5 +296,5 @@ func (s *Service) CloseAlert(ctx context.Context, staffID, id, why string) (Aler
 	}
 	s.count(CounterClosed)
 	lr := lockedRow(row)
-	return lr.view(), nil
+	return lr.view(s.alertNames(ctx, lr)), nil
 }
