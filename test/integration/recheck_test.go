@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/cis"
 	"github.com/rootxkit/uspace-ussp/internal/geo"
 	"github.com/rootxkit/uspace-ussp/internal/intent"
+	"github.com/rootxkit/uspace-ussp/internal/obs"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
 )
 
@@ -275,19 +277,37 @@ func TestIntegrationPlannedRestrictionRaisesOnActivationAndClearsOnEnd(t *testin
 	// While it is active the clearing pass leaves it open (the twin).
 	// The record is shared with the other tests: what this pass clears
 	// of theirs (restrictions this rig's CIS does not hold) is theirs.
-	svc := &alerts.Service{Store: alertstore.Store{S: appStore(t)}, Bus: pub, Restrictions: g.cis.eval, Logger: quiet()}
+	svc := &alerts.Service{Store: alertstore.Store{S: appStore(t)}, Bus: pub, Restrictions: g.cis.cache, Logger: quiet()}
 	if _, err := svc.ClearLiftedNotices(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if n := len(log.of(id)); n != 1 {
 		t.Fatalf("the clearing pass published %d messages of an active restriction's notice", n-1)
 	}
-	// Ended: the pass clears it resolved, recorded by api's record.
-	g.publish(cis.Restrictions, feature("ended"))
-	within(t, 10*time.Second, func() bool {
-		lifted, judged := g.cis.eval.RestrictionLifted(rid)
-		return lifted && judged
-	})
+	// Gone: the restriction leaves the set while the CISP holds its head
+	// active (a CIS inconsistency). The alert stays raised and the CIS
+	// cache alarms.
+	g.cis.fake.SetRestrictionHead(rid, "active")
+	g.publish(cis.Restrictions)
+	if l := g.cis.cache.RestrictionLift(ctx, rid); l != cis.LiftGone {
+		t.Fatalf("gone without an end: %v", l)
+	}
+	if _, err := svc.ClearLiftedNotices(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(log.of(id)); n != 1 || g.counters.Get(cis.CounterInconsistency) < 1 {
+		t.Fatalf("a gone restriction: %d messages, cis_inconsistency %d", n-1, g.counters.Get(cis.CounterInconsistency))
+	}
+	if st, detail := g.cis.cache.Probe(ctx); st != obs.StateDegraded || !strings.Contains(detail, "cis_inconsistency") {
+		t.Fatalf("probe %s %s", st, detail)
+	}
+	// Ended, as the CISP ends one: out of the current set, its head
+	// ended. The pass clears it resolved, recorded by api's record.
+	g.cis.fake.SetRestrictionHead(rid, "ended")
+	g.publish(cis.Restrictions)
+	if l := g.cis.cache.RestrictionLift(ctx, rid); l != cis.LiftEnded {
+		t.Fatalf("ended: %v", l)
+	}
 	if n, err := svc.ClearLiftedNotices(ctx); err != nil || n < 1 {
 		t.Fatalf("cleared on the end: %d %v", n, err)
 	}

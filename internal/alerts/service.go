@@ -11,6 +11,7 @@ import (
 	"github.com/rootxkit/uspace-core/core"
 
 	"github.com/rootxkit/uspace-ussp/internal/bus"
+	"github.com/rootxkit/uspace-ussp/internal/cis"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
 )
@@ -79,18 +80,18 @@ type Service struct {
 	Logger   *slog.Logger
 	Now      func() time.Time
 	// Restrictions says whether the restriction a notice names is
-	// lifted (cis.Evaluator); nil: a notice clears only when its intent
-	// is over.
+	// lifted (cis.Cache); nil: a notice clears only when its intent is
+	// over.
 	Restrictions RestrictionLifter
 
 	once sync.Once
 }
 
 // RestrictionLifter is the CIS cache's answer on one restriction
-// (cis.Evaluator.RestrictionLifted): lifted when it is no longer in
-// force, judged false when the cache cannot say (stale).
+// (cis.Cache.RestrictionLift): ended, in force, gone from the set
+// without an end, or not judged (stale).
 type RestrictionLifter interface {
-	RestrictionLifted(id string) (lifted, judged bool)
+	RestrictionLift(ctx context.Context, id string) cis.Lift
 }
 
 func (s *Service) logger() *slog.Logger {
@@ -246,35 +247,76 @@ type noticeCause struct {
 	RestrictionID string `json:"restriction_id"`
 }
 
-// liftedRestriction is the restriction of a notice caused by one that
-// is no longer in force ("" otherwise, and while the CIS cannot say).
-func (s *Service) liftedRestriction(st Stored) string {
-	if s.Restrictions == nil || st.Kind != KindRestrictionActivated {
+// Counters of the lifted notices (WP-12).
+const (
+	// CounterNoticesKeptGone counts, at every pass, the notices kept
+	// raised because their restriction is gone from the CIS without an
+	// end (the CIS cache raises the cis_inconsistency alarm).
+	CounterNoticesKeptGone = "alerts_notices_kept_restriction_gone"
+	// CounterNoticesGoneCleared counts the notices cleared although
+	// their restriction is gone without an end, because the policy says
+	// so (restriction_gone_clear_enabled).
+	CounterNoticesGoneCleared = "alerts_notices_gone_cleared"
+)
+
+// noticeRestriction is the restriction of a notice caused by one ("" for
+// another kind or cause).
+func noticeRestriction(st Stored) string {
+	if st.Kind != KindRestrictionActivated {
 		return ""
 	}
 	var c noticeCause
 	if json.Unmarshal(st.Detail, &c) != nil || c.Cause != "restriction" {
 		return ""
 	}
-	id := c.RestrictionID
-	if id == "" {
-		id = c.Ref
+	if c.RestrictionID != "" {
+		return c.RestrictionID
 	}
-	if id == "" {
-		return ""
+	return c.Ref
+}
+
+// liftOf is the restriction of a notice and what the CIS says of it
+// (LiftUnjudged without a CIS or a restriction).
+func (s *Service) liftOf(ctx context.Context, st Stored) (string, cis.Lift) {
+	id := noticeRestriction(st)
+	if s.Restrictions == nil || id == "" {
+		return id, cis.LiftUnjudged
 	}
-	if lifted, judged := s.Restrictions.RestrictionLifted(id); lifted && judged {
-		return id
+	return id, s.Restrictions.RestrictionLift(ctx, id)
+}
+
+// gone reports whether l says the restriction left the set without an
+// end: LiftGone, or LiftAbsent from a lifter that does not ask the CISP
+// (fail-safe: an absence is never an end).
+func gone(l cis.Lift) bool { return l == cis.LiftGone || l == cis.LiftAbsent }
+
+// clears reports whether a notice whose restriction the CIS answers l
+// for is cleared: an ended one always, a gone one only when the policy
+// sets restriction_gone_clear_enabled (default false, pending GCAA).
+func (s *Service) clears(l cis.Lift) bool {
+	if l == cis.LiftEnded {
+		return true
 	}
-	return ""
+	if !gone(l) {
+		return false
+	}
+	pol := policy.Defaults()
+	if s.Policy != nil {
+		pol = s.Policy()
+	}
+	return pol.RestrictionGoneClearEnabled
 }
 
 // ClearLiftedNotices clears the open restriction_activated alerts
-// (WP-12) whose restriction the ANSP deactivated: ended or cancelled, or
-// gone from the CIS (resolved, with the restriction in clearing_detail).
-// The intent keeps its state and its change_reason: a withdrawn
-// authorisation stays withdrawn (the operator files anew), only the
-// alert that the restriction is in force ends. A stale CIS clears
+// (WP-12) whose restriction the ANSP deactivated: ended or cancelled in
+// the CIS, or gone from its current set with the CISP holding it ended
+// or cancelled (resolved, with the restriction in clearing_detail). A
+// restriction gone from the set without an end is a CIS inconsistency,
+// not a lift: its alert stays raised and is counted (the CIS cache
+// raises the alarm), unless the policy's restriction_gone_clear_enabled says
+// otherwise. The intent keeps its state and its change_reason: a
+// withdrawn authorisation stays withdrawn (the operator files anew), only
+// the alert that the restriction is in force ends. A stale CIS clears
 // nothing. The clear is published on alrt.v1 and recorded from there;
 // one that is not recorded yet is published again by the next pass.
 func (s *Service) ClearLiftedNotices(ctx context.Context) (int, error) {
@@ -290,11 +332,21 @@ func (s *Service) ClearLiftedNotices(ctx context.Context) (int, error) {
 	n := 0
 	for i := range rows {
 		st := rows[i]
-		id := s.liftedRestriction(st)
-		if id == "" {
+		id, l := s.liftOf(ctx, st)
+		if !s.clears(l) {
+			if gone(l) {
+				s.counters().Inc(CounterNoticesKeptGone)
+				s.logger().LogAttrs(ctx, slog.LevelWarn, "restriction gone from the CIS without an end: its alert stays raised",
+					slog.String("alert_id", st.AlertID), slog.String("restriction_id", id))
+			}
 			continue
 		}
-		detail, err := json.Marshal(map[string]string{"cause": "restriction_lifted", "restriction_id": id})
+		cause := "restriction_lifted"
+		if gone(l) {
+			cause = "restriction_gone"
+			s.counters().Inc(CounterNoticesGoneCleared)
+		}
+		detail, err := json.Marshal(map[string]string{"cause": cause, "restriction_id": id})
 		if err != nil {
 			return n, err
 		}
@@ -341,7 +393,7 @@ func (s *Service) RepublishOpenNotices(ctx context.Context) (int, error) {
 	}
 	n := 0
 	for i := range rows {
-		if s.liftedRestriction(rows[i]) != "" {
+		if _, l := s.liftOf(ctx, rows[i]); s.clears(l) {
 			// Its clear is ClearLiftedNotices'; republishing it raised
 			// would undo the clear at traffic-ws.
 			continue
