@@ -1185,9 +1185,39 @@ type AlertAck struct {
 	// AckedAt When it was first acknowledged, on the database clock.
 	AckedAt time.Time `json:"acked_at"`
 
-	// AckedBy The client that first acknowledged it.
+	// AckedBy The client that first acknowledged it, or operator_user:<account id> for a portal user.
 	AckedBy string             `json:"acked_by"`
 	AlertId openapi_types.UUID `json:"alert_id"`
+}
+
+// BoundSerial defines model for BoundSerial.
+type BoundSerial struct {
+	BoundAt time.Time `json:"bound_at"`
+	Serial  string    `json:"serial"`
+}
+
+// ClientInfo defines model for ClientInfo.
+type ClientInfo struct {
+	ClientId  string    `json:"client_id"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// PreviousValidUntil Set by a rotation; the previous secret works until then.
+	PreviousValidUntil *time.Time      `json:"previous_valid_until,omitempty"`
+	RotatedAt          *time.Time      `json:"rotated_at,omitempty"`
+	Scopes             []OperatorScope `json:"scopes"`
+	Serials            []BoundSerial   `json:"serials"`
+
+	// SerialsTruncated True when the client has more live bindings than the list holds.
+	SerialsTruncated bool   `json:"serials_truncated"`
+	Status           string `json:"status"`
+}
+
+// ClientList defines model for ClientList.
+type ClientList struct {
+	Clients []ClientInfo `json:"clients"`
+
+	// Truncated True when the operator has more clients than the list holds.
+	Truncated bool `json:"truncated"`
 }
 
 // ClientRequest defines model for ClientRequest.
@@ -2698,6 +2728,9 @@ type ServerInterface interface {
 	// UpdateOperator Change the operator's record
 	// (PATCH /v1/accounts/operators/{operator_id})
 	UpdateOperator(w http.ResponseWriter, r *http.Request, operatorId OperatorID)
+	// ListClients The operator's machine clients and their bound serials
+	// (GET /v1/accounts/operators/{operator_id}/clients)
+	ListClients(w http.ResponseWriter, r *http.Request, operatorId OperatorID)
 	// CreateClient Create a machine client of the operator
 	// (POST /v1/accounts/operators/{operator_id}/clients)
 	CreateClient(w http.ResponseWriter, r *http.Request, operatorId OperatorID)
@@ -2927,6 +2960,32 @@ func (siw *ServerInterfaceWrapper) UpdateOperator(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateOperator(w, r, operatorId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListClients operation middleware
+func (siw *ServerInterfaceWrapper) ListClients(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "operator_id" -------------
+	var operatorId OperatorID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operator_id", r.PathValue("operator_id"), &operatorId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "operator_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListClients(w, r, operatorId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3713,6 +3772,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/operators", wrapper.RegisterOperator)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/accounts/operators/{operator_id}", wrapper.GetOperator)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/accounts/operators/{operator_id}", wrapper.UpdateOperator)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/accounts/operators/{operator_id}/clients", wrapper.ListClients)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/operators/{operator_id}/clients", wrapper.CreateClient)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/operators/{operator_id}/clients/{client_id}/rotate", wrapper.RotateClientSecret)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/operators/{operator_id}/clients/{client_id}/serials", wrapper.BindSerial)

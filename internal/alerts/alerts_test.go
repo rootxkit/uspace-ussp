@@ -134,6 +134,21 @@ func (m *memStore) Ack(_ context.Context, alertID, clientID string) (Stored, err
 	return Stored{Body: b, Cell5: r.Cell5, AckedBy: &clientID}, nil
 }
 
+// opA is the operator of client-a in the memory store.
+const opA = "0b0b0b0b-0b0b-4b0b-8b0b-0b0b0b0b0b0b"
+
+// AckForOperator acknowledges as a portal user of opA.
+func (m *memStore) AckForOperator(ctx context.Context, alertID, operatorID, actor string) (Stored, error) {
+	if operatorID != opA {
+		return Stored{}, ErrNotFound
+	}
+	st, err := m.Ack(ctx, alertID, "client-a")
+	if err == nil && st.AckedBy != nil && *st.AckedBy == "client-a" {
+		st.AckedBy = &actor
+	}
+	return st, err
+}
+
 func (m *memStore) Escalate(context.Context, float64, int) ([]Stored, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -639,5 +654,29 @@ func TestRepublishOpenNotices(t *testing.T) {
 	st.fail = errors.New("down")
 	if _, err := svc.RepublishOpenNotices(t.Context()); err == nil {
 		t.Fatal("a failed store not reported")
+	}
+}
+
+// A portal user's acknowledgement (brief WP-17) is recorded as the
+// actor and republished; another operator's alert and a malformed id are
+// not found, counted, nothing published (E-01).
+func TestAckForOperatorRecordsTheActor(t *testing.T) {
+	st := newMem()
+	r := &Recorder{Store: st}
+	r.Take(context.Background(), []bus.Msg{alertMsg(t, body(StateRaised, t0))})
+	p := &pub{}
+	s := &Service{Store: st, Bus: p}
+	actor := "operator_user:1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+	res, err := s.AckForOperator(context.Background(), alertA, opA, actor)
+	if err != nil || res.AckedBy != actor || len(p.msgs) != 1 || p.msgs[0].Body.AckedAt == nil {
+		t.Fatalf("%+v %v %+v", res, err, p.msgs)
+	}
+	for _, c := range []struct{ id, op string }{{alertA, "0e0e0e0e-0e0e-4e0e-8e0e-0e0e0e0e0e0e"}, {"not-a-uuid", opA}} {
+		if _, err := s.AckForOperator(context.Background(), c.id, c.op, actor); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("%v: %v", c, err)
+		}
+	}
+	if len(p.msgs) != 1 || s.Counters.Get(CounterAckNotFound) != 2 {
+		t.Fatal("a refused ack published or was not counted")
 	}
 }

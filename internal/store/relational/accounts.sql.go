@@ -102,6 +102,57 @@ func (q *Queries) ClientForUpdate(ctx context.Context, clientID string) (OauthCl
 	return i, err
 }
 
+const clientsOfOperator = `-- name: ClientsOfOperator :many
+SELECT client_id, scopes, status, created_at, rotated_at, previous_valid_until
+FROM oauth_clients
+WHERE operator_id = $1
+ORDER BY created_at, client_id
+LIMIT $2
+`
+
+type ClientsOfOperatorParams struct {
+	OperatorID pgtype.UUID `json:"operator_id"`
+	MaxRows    int32       `json:"max_rows"`
+}
+
+type ClientsOfOperatorRow struct {
+	ClientID           string     `json:"client_id"`
+	Scopes             []string   `json:"scopes"`
+	Status             string     `json:"status"`
+	CreatedAt          time.Time  `json:"created_at"`
+	RotatedAt          *time.Time `json:"rotated_at"`
+	PreviousValidUntil *time.Time `json:"previous_valid_until"`
+}
+
+// The operator's clients for its portal (WP-17), oldest first, at most
+// max_rows; never a secret or its hash.
+func (q *Queries) ClientsOfOperator(ctx context.Context, arg ClientsOfOperatorParams) ([]ClientsOfOperatorRow, error) {
+	rows, err := q.db.Query(ctx, clientsOfOperator, arg.OperatorID, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ClientsOfOperatorRow
+	for rows.Next() {
+		var i ClientsOfOperatorRow
+		if err := rows.Scan(
+			&i.ClientID,
+			&i.Scopes,
+			&i.Status,
+			&i.CreatedAt,
+			&i.RotatedAt,
+			&i.PreviousValidUntil,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ensureLockout = `-- name: EnsureLockout :exec
 INSERT INTO login_lockouts (realm, username) VALUES ($1, $2)
 ON CONFLICT (realm, username) DO NOTHING
@@ -347,6 +398,49 @@ func (q *Queries) LiveBindingByFold(ctx context.Context, serialFold string) (Cli
 		&i.UnboundAt,
 	)
 	return i, err
+}
+
+const liveBindingsOfClients = `-- name: LiveBindingsOfClients :many
+SELECT client_id, serial, bound_at
+FROM (SELECT b.client_id, b.serial, b.bound_at,
+             row_number() OVER (PARTITION BY b.client_id ORDER BY b.bound_at, b.serial) AS n
+      FROM client_serial_bindings b
+      WHERE b.client_id = ANY ($1::text[]) AND b.unbound_at IS NULL) live
+WHERE live.n <= $2::bigint
+ORDER BY client_id, bound_at, serial
+`
+
+type LiveBindingsOfClientsParams struct {
+	ClientIds []string `json:"client_ids"`
+	PerClient int64    `json:"per_client"`
+}
+
+type LiveBindingsOfClientsRow struct {
+	ClientID string    `json:"client_id"`
+	Serial   string    `json:"serial"`
+	BoundAt  time.Time `json:"bound_at"`
+}
+
+// The live serial bindings of the clients, at most per_client of each
+// (oldest first), for the portal's client list (WP-17).
+func (q *Queries) LiveBindingsOfClients(ctx context.Context, arg LiveBindingsOfClientsParams) ([]LiveBindingsOfClientsRow, error) {
+	rows, err := q.db.Query(ctx, liveBindingsOfClients, arg.ClientIds, arg.PerClient)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LiveBindingsOfClientsRow
+	for rows.Next() {
+		var i LiveBindingsOfClientsRow
+		if err := rows.Scan(&i.ClientID, &i.Serial, &i.BoundAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const liveFoldsOfClient = `-- name: LiveFoldsOfClient :many

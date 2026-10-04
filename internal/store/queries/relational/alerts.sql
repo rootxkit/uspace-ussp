@@ -74,6 +74,27 @@ WHERE a.id = sqlc.arg(id)::uuid
 RETURNING a.id, a.kind, a.flight_id, a.intent_id, a.authorisation_number, a.severity, a.state, a.raised_at, a.updated_at,
           a.cleared_at, a.clear_reason, a.detail, a.captured_at, a.policy_version, a.acked_at, a.acked_by, a.escalated_at, a.cell5;
 
+-- name: AckAlertForOperator :one
+-- The acknowledgement by a portal user of the operator (brief WP-17;
+-- actor = operator_user:<account id>) of an alert of one of the
+-- operator's flights, or of its intents for an alert without a flight,
+-- on the database clock; a repeat keeps the first. No row: not this
+-- operator's alert, or no such alert.
+UPDATE alerts a
+SET acked_at = COALESCE(a.acked_at, now()),
+    acked_by = COALESCE(a.acked_by, sqlc.arg(actor)::text),
+    delivery = jsonb_set(a.delivery, ARRAY[sqlc.arg(actor)::text],
+                         COALESCE(a.delivery -> sqlc.arg(actor)::text, '{}'::jsonb)
+                         || jsonb_build_object('acked_at', to_jsonb(COALESCE(a.acked_at, now()))))
+WHERE a.id = sqlc.arg(id)::uuid
+  AND sqlc.arg(operator_id)::uuid = (
+      SELECT owner.operator_id FROM oauth_clients owner
+      WHERE owner.client_id = COALESCE(
+          (SELECT f.client_id FROM flights f WHERE f.id = a.flight_id),
+          (SELECT oi.client_id FROM operational_intents oi WHERE oi.id = a.intent_id AND a.flight_id IS NULL)))
+RETURNING a.id, a.kind, a.flight_id, a.intent_id, a.authorisation_number, a.severity, a.state, a.raised_at, a.updated_at,
+          a.cleared_at, a.clear_reason, a.detail, a.captured_at, a.policy_version, a.acked_at, a.acked_by, a.escalated_at, a.cell5;
+
 -- name: RecordAlertDelivery :execrows
 -- The first time an alert was sent to a client (traffic-ws); a later
 -- send keeps it.

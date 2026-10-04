@@ -139,6 +139,26 @@ func (p Store) Ack(ctx context.Context, alertID, clientID string) (alerts.Stored
 	return row(r).stored(), nil
 }
 
+// AckForOperator implements alerts.FactStore.
+func (p Store) AckForOperator(ctx context.Context, alertID, operatorID, actor string) (alerts.Stored, error) {
+	id, err := store.UUID("alert_id", alertID)
+	if err != nil {
+		return alerts.Stored{}, alerts.ErrNotFound
+	}
+	op, err := store.UUID("operator_id", operatorID)
+	if err != nil {
+		return alerts.Stored{}, alerts.ErrNotFound
+	}
+	r, err := p.S.Queries().AckAlertForOperator(ctx, relational.AckAlertForOperatorParams{Actor: actor, ID: id, OperatorID: op})
+	if store.IsNoRows(err) {
+		return alerts.Stored{}, alerts.ErrNotFound
+	}
+	if err != nil {
+		return alerts.Stored{}, fmt.Errorf("alert acknowledgement: %w", err)
+	}
+	return row(r).stored(), nil
+}
+
 // Escalate implements alerts.FactStore.
 func (p Store) Escalate(ctx context.Context, afterS float64, maxRows int) ([]alerts.Stored, error) {
 	rs, err := p.S.Queries().EscalateAlerts(ctx, relational.EscalateAlertsParams{AfterS: afterS, MaxRows: int32(min(maxRows, 10_000))})

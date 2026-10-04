@@ -226,7 +226,7 @@ func newStackWith(t *testing.T, c *clock, logs *logBuffer, intents national.Inte
 	token := &auth.TokenEndpoint{Issuer: iss, Clients: s.svc, Hasher: hasher, Audit: s.svc, Counters: s.counters, Logger: logger, Now: c.Now,
 		TTL: func() time.Duration { return time.Duration(pol.OperatorTokenTTLS) * time.Second }}
 	mux := http.NewServeMux()
-	ns := &national.Server{Health: noHealth{}, Token: token, Issuer: iss, Accounts: s.svc, Intents: intents, Logger: logger}
+	ns := &national.Server{Health: noHealth{}, Token: token, Issuer: iss, Accounts: s.svc, Portal: s.svc, Intents: intents, Logger: logger}
 	for _, f := range with {
 		f(ns)
 	}

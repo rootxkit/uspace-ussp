@@ -58,7 +58,18 @@ func (s *Server) GetGeoForIntent(w http.ResponseWriter, r *http.Request, intentI
 		httpx.NewProblem(http.StatusServiceUnavailable, "intents_unavailable", "", "the intent service is not configured on this process").Write(w, r)
 		return
 	}
-	a, err := s.Geo.Service.Intent(r.Context(), s.Geo.Intents, principal(r).Claims.Subject, intentID.String())
+	client := principal(r).Claims.Subject
+	if portalSession(r) {
+		if s.Intents == nil {
+			s.intentsUnavailable(w, r)
+			return
+		}
+		var ok bool
+		if client, r, ok = s.actingClient(w, r, intentID.String(), nil, false); !ok {
+			return
+		}
+	}
+	a, err := s.Geo.Service.Intent(r.Context(), s.Geo.Intents, client, intentID.String())
 	if err != nil {
 		s.failIntent(w, r, err)
 		return

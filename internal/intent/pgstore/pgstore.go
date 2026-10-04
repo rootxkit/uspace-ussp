@@ -476,14 +476,19 @@ func (t tx) version(ctx context.Context, r *intent.Record, event string) error {
 	if r.Actor == "system" {
 		actorType = store.ActorSystem
 	}
+	payload := map[string]any{
+		"version": r.Version, "local_state": r.LocalState, "decision": r.Decision.Decision,
+		"authorisation_number": r.Decision.AuthorisationNumber, "change_reason": r.ChangeReason,
+		"policy_version": r.Decision.PolicyVersion, "cis_version_checked": r.Decision.CISVersionChecked,
+	}
+	// A version a portal user wrote names the person beside the client
+	// it was written as (brief WP-17).
+	if who := intent.PortalUserFrom(ctx); who != "" && r.Actor != "system" {
+		payload["portal_user"] = who
+	}
 	_, err = store.Audit(ctx, t.q, store.Event{
 		ActorType: actorType, ActorID: r.Actor, Purpose: intent.PurposeAuthorisation,
-		EntityType: "operational_intent", EntityID: r.ID, EventType: event,
-		Payload: map[string]any{
-			"version": r.Version, "local_state": r.LocalState, "decision": r.Decision.Decision,
-			"authorisation_number": r.Decision.AuthorisationNumber, "change_reason": r.ChangeReason,
-			"policy_version": r.Decision.PolicyVersion, "cis_version_checked": r.Decision.CISVersionChecked,
-		},
+		EntityType: "operational_intent", EntityID: r.ID, EventType: event, Payload: payload,
 	})
 	return err
 }

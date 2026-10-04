@@ -16,7 +16,9 @@ info:
     tags. Every later work package adds its paths under its tag. WP-4:
     the CIS change-notification receiver. WP-5: the cached registry
     validity lookup. WP-7: operational intents and flight authorisation.
-    WP-12: geo-awareness from the CIS cache.
+    WP-12: geo-awareness from the CIS cache. WP-17: the operator
+    portal's sessions on the intents, geo, weather, traffic and alert
+    operations, and the list of the operator's clients.
     WP-8: operator telemetry (served by telemetry-ingest). WP-9: the
     optional authority flight push (served by rid-sp). WP-11: traffic
     information and the alert stream (served by traffic-ws), the alert
@@ -230,9 +232,13 @@ paths:
         intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent
         on (client, client_ref): the same body answers the decision as it stands (200), another body 409.
         The UAS serial must be bound to the client and operator_reg must be the client''s operator (403).
-        503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).'
+        503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+        With a portal session (realm portal, brief WP-17) the intent is filed for the session''s operator by an
+        operator_admin or a remote_pilot, under the operator''s client the UAS serial is bound to (403 serial_not_bound
+        when none is), and the audit row names the portal user; a viewer is 403.'
       security:
       - operatorToken: []
+      - session: []
       requestBody:
         required: true
         content:
@@ -263,9 +269,11 @@ paths:
       tags:
       - intents
       summary: The operator's intents, newest first
-      description: At most 500; from and to keep the intents whose window overlaps them; state filters.
+      description: At most 500; from and to keep the intents whose window overlaps them; state filters. A portal
+        session (any role) lists its operator's intents.
       security:
       - operatorToken: []
+      - session: []
       parameters:
       - name: from
         in: query
@@ -308,9 +316,10 @@ paths:
       tags:
       - intents
       summary: 'One of the operator''s intents: its decision and state'
-      description: Another operator's intent is 404, never 403.
+      description: Another operator's intent is 404, never 403. A portal session (any role) reads its operator's.
       security:
       - operatorToken: []
+      - session: []
       responses:
         '200':
           description: The decision as it stands.
@@ -329,9 +338,12 @@ paths:
         on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent''s new
         volumes decided as a new version that keeps the id and, when still authorised, the authorisation
         number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision''s
-        state without a number; end: any open intent. A transition the state does not allow is 409.'
+        state without a number; end: any open intent. A transition the state does not allow is 409. A portal
+        session of an operator_admin or a remote_pilot changes its operator''s intents (a viewer is 403), as the
+        client the intent was filed under; the audit row names the portal user.'
       security:
       - operatorToken: []
+      - session: []
       requestBody:
         required: true
         content:
@@ -373,8 +385,10 @@ paths:
         cis_stale_s): a stale cache still answers and says so. A list cut
         at 2000 features says truncated. The geo change push of the
         traffic stream (geo/changed/v1) tells a subscriber to refetch.
+        A portal session (any role) reads it as an operator client does.
       security:
       - operatorToken: []
+      - session: []
       parameters:
       - name: bbox
         in: query
@@ -416,8 +430,10 @@ paths:
         applies at some time of its window (its applicability says how:
         always, during from/to, or scheduled on daily windows from/to). The
         operator's own intent only: another operator's is 404, never 403.
+        A portal session (any role) reads its operator's intents.
       security:
       - operatorToken: []
+      - session: []
       responses:
         '200':
           description: The answer from the CIS cache.
@@ -467,8 +483,10 @@ paths:
         weather_stale_s answers its last products with stale true and,
         while failing, the failure and its time. The station list, the
         area radius and the thresholds are policy values pending GCAA.
+        A portal session (any role) reads it as an operator client does.
       security:
       - operatorToken: []
+      - session: []
       parameters:
       - name: bbox
         in: query
@@ -642,7 +660,11 @@ paths:
         A WebSocket upgrade (served by traffic-ws; Art. 11, spec 02 F5).
         An operator machine client with a bearer token granting
         ussp.traffic (issued by this USSP) subscribes with intent_id, an
-        intent whose aircraft is bound to the client; a console user
+        intent whose aircraft is bound to the client; an operator portal
+        user (a session of realm portal, any role; brief WP-17) subscribes
+        with intent_id, an intent of the session's operator, on a
+        same-origin upgrade with the uspace_session cookie from an Origin
+        on USSP_WS_ALLOWED_ORIGINS; a console user
         with a staff session (realm console) subscribes with bbox, or
         with console/subscribe/v1 frames, on a same-origin upgrade with
         the uspace_session cookie from an Origin on
@@ -702,7 +724,8 @@ paths:
       description: |
         One traffic/product/v1 message (schemas/traffic/product/v1) for
         intent_id (an operator token granting ussp.traffic, the intent's
-        aircraft bound to the client) or bbox (a staff session), as the
+        aircraft bound to the client, or a portal session of the intent's
+        operator) or bbox (a staff session), as the
         stream would send it now: the bootstrap of a client. Another
         operator's intent is 404, never 403. 503 names the input that is
         missing when the product cannot be assembled.
@@ -746,17 +769,23 @@ paths:
       description: |
         A WebSocket upgrade (served by traffic-ws; Art. 13, spec 02 F5)
         for an operator machine client with a bearer token granting
-        ussp.traffic; intent_id must be an intent whose aircraft is bound
-        to the client. Server to client, in the common envelope:
+        ussp.traffic, intent_id an intent whose aircraft is bound to the
+        client; or for an operator portal user (a session of realm portal,
+        any role; brief WP-17) on a same-origin upgrade with the
+        uspace_session cookie from an Origin on USSP_WS_ALLOWED_ORIGINS,
+        intent_id an intent of the session's operator. Server to client,
+        in the common envelope:
         console/status/v1 on connect and every 2 s, every alert/v1 of the
         intent's flight as it comes (conformance and proximity alerts,
         raised, updated and cleared, with the peer's track id and trust),
         the active ones on connect, and every unacknowledged critical
         alert repeated every escalation_repeat_s (10 s) until it is
         acknowledged (POST /v1/alerts/{alert_id}/ack) or cleared. The
-        first send of each alert to the client is recorded (delivery).
+        first send of each alert to the client is recorded (delivery; for
+        a portal session under operator_user:<account id>).
       security:
       - operatorToken: []
+      - session: []
       parameters:
       - name: intent_id
         in: query
@@ -785,9 +814,13 @@ paths:
         acknowledged alert is republished to traffic-ws, which stops
         repeating it, and a critical alert acknowledged within
         escalation_after_s (30 s) is not escalated. An alert of another
-        operator's flight is 404, never 403. No body.
+        operator's flight is 404, never 403. No body. A portal session of
+        an operator_admin or a remote_pilot acknowledges its operator's
+        alerts, recorded as acked_by operator_user:<account id> (a viewer
+        is 403; brief WP-17).
       security:
       - operatorToken: []
+      - session: []
       parameters:
       - $ref: "#/components/parameters/AlertID"
       responses:
@@ -1368,6 +1401,34 @@ paths:
   /v1/accounts/operators/{operator_id}/clients:
     parameters:
       - $ref: "#/components/parameters/OperatorID"
+    get:
+      operationId: listClients
+      tags: [accounts]
+      summary: The operator's machine clients and their bound serials
+      description: |
+        Every client of the caller's operator (a portal session of any
+        role of that operator), oldest first, at most 200, each with its
+        scopes, status, creation and rotation times and its live serial
+        bindings (at most 200 per client). Never a secret or its hash.
+        Another operator's id is 403.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The clients.
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientList"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
     post:
       operationId: createClient
       tags: [accounts]
@@ -1590,7 +1651,7 @@ components:
           description: When it was first acknowledged, on the database clock.
         acked_by:
           type: string
-          description: The client that first acknowledged it.
+          description: The client that first acknowledged it, or operator_user:<account id> for a portal user.
     CoordinationNotices:
       type: object
       description: The Annex V notices the console must see (GET /v1/admin/coordination).
@@ -2301,6 +2362,54 @@ components:
           type: string
           format: date-time
           description: Set by a rotation; the previous secret works until then.
+    ClientList:
+      type: object
+      required: [clients, truncated]
+      properties:
+        clients:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/ClientInfo"
+        truncated:
+          type: boolean
+          description: True when the operator has more clients than the list holds.
+    ClientInfo:
+      type: object
+      required: [client_id, scopes, status, created_at, serials, serials_truncated]
+      properties:
+        client_id: {type: string}
+        scopes:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperatorScope"
+        status: {type: string}
+        created_at:
+          type: string
+          format: date-time
+        rotated_at:
+          type: string
+          format: date-time
+        previous_valid_until:
+          type: string
+          format: date-time
+          description: Set by a rotation; the previous secret works until then.
+        serials:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/BoundSerial"
+        serials_truncated:
+          type: boolean
+          description: True when the client has more live bindings than the list holds.
+    BoundSerial:
+      type: object
+      required: [serial, bound_at]
+      properties:
+        serial: {type: string}
+        bound_at:
+          type: string
+          format: date-time
     SerialBindingRequest:
       type: object
       required: [serial]

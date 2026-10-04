@@ -44,6 +44,9 @@ type Server struct {
 	// Issuer publishes the JWKS; nil answers 503.
 	Issuer   *auth.Issuer
 	Accounts *accounts.Service
+	// Portal resolves portal sessions on the intents, geo and alert
+	// operations (brief WP-17); nil answers them 503 portal_unavailable.
+	Portal PortalMembers
 	// CIS is POST /v1/cis/notifications (internal/cis.Receiver); nil
 	// answers 503 cis_unavailable.
 	CIS http.Handler
@@ -99,6 +102,14 @@ var _ gen.ServerInterface = (*Server)(nil)
 
 var portalAdmin = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmPortal, Roles: []string{auth.RoleOperatorAdmin}}}}
 
+// operatorOrPortal admits an operator token granting scope or any
+// portal session (brief WP-17; the handlers refuse a viewer's writes).
+func operatorOrPortal(scope string) httpx.Access {
+	return httpx.Access{Scopes: []string{scope}, Sessions: []httpx.SessionAccess{{Realm: auth.RealmPortal}}}
+}
+
+var portalAny = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmPortal}}}
+
 var anySession = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmPortal}, {Realm: auth.RealmConsole}}}
 
 var consoleStaff = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmConsole, Roles: []string{auth.RoleSupervisor, auth.RoleSupport}}}}
@@ -124,14 +135,14 @@ func AccessTable() map[string]httpx.Access {
 		"POST /v1/accounts/operators":                       public, // self-registration, limited per address
 		"POST /v1/cis/notifications":                        public, // no bearer: the compact JWS in the body is verified by internal/cis.Receiver (issuer allow-list, aud, iat, jti)
 		"GET /v1/registry/validate":                         {Scopes: []string{auth.ScopeIntents}},
-		"POST /v1/intents":                                  {Scopes: []string{auth.ScopeIntents}},
-		"GET /v1/intents":                                   {Scopes: []string{auth.ScopeIntents}},
-		"GET /v1/intents/{intent_id}":                       {Scopes: []string{auth.ScopeIntents}},
-		"PATCH /v1/intents/{intent_id}":                     {Scopes: []string{auth.ScopeIntents}},
-		"GET /v1/geo":                                       {Scopes: []string{auth.ScopeGeo}},
-		"GET /v1/geo/intents/{intent_id}":                   {Scopes: []string{auth.ScopeGeo}},
-		"GET /v1/weather":                                   {Scopes: []string{auth.ScopeGeo}},
-		"POST /v1/alerts/{alert_id}/ack":                    {Scopes: []string{auth.ScopeTraffic}},
+		"POST /v1/intents":                                  operatorOrPortal(auth.ScopeIntents),
+		"GET /v1/intents":                                   operatorOrPortal(auth.ScopeIntents),
+		"GET /v1/intents/{intent_id}":                       operatorOrPortal(auth.ScopeIntents),
+		"PATCH /v1/intents/{intent_id}":                     operatorOrPortal(auth.ScopeIntents),
+		"GET /v1/geo":                                       operatorOrPortal(auth.ScopeGeo),
+		"GET /v1/geo/intents/{intent_id}":                   operatorOrPortal(auth.ScopeGeo),
+		"GET /v1/weather":                                   operatorOrPortal(auth.ScopeGeo),
+		"POST /v1/alerts/{alert_id}/ack":                    operatorOrPortal(auth.ScopeTraffic),
 		"GET /v1/admin/coordination":                        consoleStaff,
 		"GET /v1/admin/occurrences":                         consoleStaff,
 		"POST /v1/admin/occurrences":                        consoleSupervisor,
@@ -143,6 +154,7 @@ func AccessTable() map[string]httpx.Access {
 		"GET /v1/accounts/me":                               anySession,
 		"GET /v1/accounts/operators/{operator_id}":          portalAdmin,
 		"PATCH /v1/accounts/operators/{operator_id}":        portalAdmin,
+		"GET /v1/accounts/operators/{operator_id}/clients":  portalAny,
 		"POST /v1/accounts/operators/{operator_id}/clients": portalAdmin,
 		"POST /v1/accounts/operators/{operator_id}/clients/{client_id}/rotate":             portalAdmin,
 		"POST /v1/accounts/operators/{operator_id}/clients/{client_id}/serials":            portalAdmin,

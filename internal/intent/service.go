@@ -801,16 +801,30 @@ func (s *Service) List(ctx context.Context, clientID string, f ListFilter) ([]De
 	if err != nil {
 		return nil, err
 	}
+	if err := checkFilter(&f); err != nil {
+		return nil, err
+	}
+	return s.list(ctx, o.OperatorID, f)
+}
+
+// checkFilter refuses a state that does not exist and a window that ends
+// before it starts, and bounds the limit to MaxList.
+func checkFilter(f *ListFilter) error {
 	if f.State != "" && !slices.Contains(append(slices.Clone(OpenStates), StateEnded, StateRejected, StateWithdrawn), f.State) {
-		return nil, core.Fieldf("state", "%q is not a state", f.State)
+		return core.Fieldf("state", "%q is not a state", f.State)
 	}
 	if f.From != nil && f.To != nil && f.To.Before(*f.From) {
-		return nil, core.Fieldf("to", "is before from")
+		return core.Fieldf("to", "is before from")
 	}
 	if f.Limit <= 0 || f.Limit > MaxList {
 		f.Limit = MaxList
 	}
-	rs, err := s.Store.List(ctx, o.OperatorID, f)
+	return nil
+}
+
+// list is the operator's intents under a checked filter.
+func (s *Service) list(ctx context.Context, operatorID string, f ListFilter) ([]Decision, error) {
+	rs, err := s.Store.List(ctx, operatorID, f)
 	if err != nil {
 		return nil, &UnavailableError{Dependency: "database", Detail: "the intents could not be read"}
 	}

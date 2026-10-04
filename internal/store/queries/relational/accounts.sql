@@ -139,3 +139,23 @@ WHERE jti = sqlc.arg(jti) AND revoked_at IS NULL;
 
 -- name: SweepSessions :execrows
 DELETE FROM sessions WHERE expires_at < sqlc.arg(before);
+
+-- name: ClientsOfOperator :many
+-- The operator's clients for its portal (WP-17), oldest first, at most
+-- max_rows; never a secret or its hash.
+SELECT client_id, scopes, status, created_at, rotated_at, previous_valid_until
+FROM oauth_clients
+WHERE operator_id = sqlc.arg(operator_id)
+ORDER BY created_at, client_id
+LIMIT sqlc.arg(max_rows);
+
+-- name: LiveBindingsOfClients :many
+-- The live serial bindings of the clients, at most per_client of each
+-- (oldest first), for the portal's client list (WP-17).
+SELECT client_id, serial, bound_at
+FROM (SELECT b.client_id, b.serial, b.bound_at,
+             row_number() OVER (PARTITION BY b.client_id ORDER BY b.bound_at, b.serial) AS n
+      FROM client_serial_bindings b
+      WHERE b.client_id = ANY (sqlc.arg(client_ids)::text[]) AND b.unbound_at IS NULL) live
+WHERE live.n <= sqlc.arg(per_client)::bigint
+ORDER BY client_id, bound_at, serial;

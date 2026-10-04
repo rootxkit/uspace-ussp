@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -72,7 +73,7 @@ type trafficRig struct {
 }
 
 type trafficOperator struct {
-	client, serial, intent, flight, token string
+	client, serial, intent, flight, token, op string
 }
 
 type recvProx struct {
@@ -104,7 +105,7 @@ func newTrafficRig(t *testing.T) *trafficRig {
 	for i := range g.ops {
 		opID, session, _ := st.operator(accounts.RegistryValid)
 		clientID, _ := st.client(opID, session, auth.ScopeTraffic)
-		op := trafficOperator{client: clientID, serial: "TEST-WP11-" + unique(), intent: newUUID(), flight: newUUID()}
+		op := trafficOperator{client: clientID, serial: "TEST-WP11-" + unique(), intent: newUUID(), flight: newUUID(), op: opID}
 		op.token = g.trafficToken(clientID)
 		g.ops[i] = op
 		g.putIntent(op)
@@ -902,4 +903,35 @@ func metric(t *testing.T, base, name string) float64 {
 		}
 	}
 	return sum
+}
+
+// A portal user of the operator acknowledges its operator's alert,
+// recorded as acked by operator_user:<account> on the database clock;
+// the other operator's alert is not found for it (brief WP-17; E-01).
+func TestIntegrationPortalAcknowledgesItsOperatorsAlert(t *testing.T) {
+	g := newTrafficRig(t)
+	a, b := g.ops[0], g.ops[1]
+	g.fly(a, func(float64) (core.LatLon, float64, float64) { return g.o, 0, 0 })
+	g.fly(b, func(float64) (core.LatLon, float64, float64) { return geodesy.Destination(g.o, 90, 30), 0, 0 })
+	within(t, 10*time.Second, func() bool {
+		return len(g.proximity(a.flight, "raised")) == 1 && len(g.proximity(b.flight, "raised")) == 1
+	})
+	idA, idB := g.proximity(a.flight, "raised")[0].b.AlertID, g.proximity(b.flight, "raised")[0].b.AlertID
+	within(t, 10*time.Second, func() bool {
+		return count(t, g.db, "SELECT count(*) FROM alerts WHERE id = ANY($1::uuid[])", []string{idA, idB}) == 2
+	})
+	actor := auth.ActorPortalUser + ":" + newUUID()
+	res, err := g.svc.AckForOperator(context.Background(), idB, b.op, actor)
+	if err != nil || res.AckedBy != actor {
+		t.Fatalf("portal ack: %+v %v", res, err)
+	}
+	if n := count(t, g.db, "SELECT count(*) FROM alerts WHERE id = $1 AND acked_by = $2 AND delivery ? $2", idB, actor); n != 1 {
+		t.Fatal("not recorded as the portal user's")
+	}
+	if _, err := g.svc.AckForOperator(context.Background(), idA, b.op, actor); !errors.Is(err, alerts.ErrNotFound) {
+		t.Fatalf("another operator's alert: %v", err)
+	}
+	if n := count(t, g.db, "SELECT count(*) FROM alerts WHERE id = $1 AND acked_at IS NULL", idA); n != 1 {
+		t.Fatal("the other operator's alert was acknowledged")
+	}
 }
