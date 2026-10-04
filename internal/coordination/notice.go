@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/rootxkit/uspace-core/core"
@@ -210,11 +211,18 @@ type point struct {
 	Lng float64 `json:"lng"`
 }
 
+// clip is s in at most 200 bytes of valid UTF-8, cut on a rune
+// boundary: what it returns is stored in a text column, which refuses a
+// split character.
 func clip(s string) string {
 	if len(s) > 200 {
-		return s[:200]
+		i := 200
+		for i > 0 && !utf8.RuneStart(s[i]) {
+			i--
+		}
+		s = s[:i]
 	}
-	return s
+	return strings.ToValidUTF8(s, "")
 }
 
 func reasonRemark(r string) string {

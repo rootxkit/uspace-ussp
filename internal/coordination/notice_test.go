@@ -46,7 +46,7 @@ func testDeviation(state, reason string) *Deviation {
 var sentAt = time.Date(2026, 10, 4, 12, 10, 4, 123456789, time.UTC)
 
 // annexV compiles the pinned coordination/annex_v/v1 offline.
-func annexV(t *testing.T) *jsonschema.Schema {
+func annexV(t testing.TB) *jsonschema.Schema {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("..", "..", "schemas", "coordination", "annex_v", "v1", "schema.json"))
 	if err != nil {
