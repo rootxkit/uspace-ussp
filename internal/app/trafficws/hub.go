@@ -466,7 +466,7 @@ func (h *Hub) Area(s *Sub) (traffic.Area, string, string) {
 	if ref != nil {
 		return traffic.Area{}, "", ref.detail
 	}
-	a := traffic.Area{}
+	a := traffic.Area{OwnIntent: s.IntentID}
 	for i := range b.Volumes {
 		box, _, _, err := f3548.Volume4DToZonesEnvelope(b.Volumes[i])
 		if err != nil {
