@@ -10,7 +10,11 @@
 -- messages_recorded, how many alert/v1 messages of the alert api
 -- recorded (the monitor republishes an active one every second). The
 -- indexes of the console's reads of alerts are 00026's (alerts is live:
--- built concurrently, outside a transaction).
+-- built concurrently, outside a transaction). alerts is live, so its
+-- three CHECKs are added NOT VALID: new and updated rows are checked at
+-- once and the ALTER scans nothing under its ACCESS EXCLUSIVE lock; the
+-- existing rows are validated by 00027, a separate step that holds only
+-- a SHARE UPDATE EXCLUSIVE lock.
 --
 -- emergency_cases and emergency_notes are the emergency workflow: a
 -- communication checklist with timestamps for one flight (nothing in it
@@ -31,9 +35,10 @@ ALTER TABLE alerts
     ADD COLUMN closed_at         timestamptz,
     ADD COLUMN closed_by         text,
     ADD COLUMN close_reason      text,
-    ADD COLUMN messages_recorded bigint NOT NULL DEFAULT 1 CHECK (messages_recorded >= 1),
-    ADD CONSTRAINT alerts_escalated_by_check CHECK (escalated_by IS NULL OR (escalated_at IS NOT NULL AND escalation_reason IS NOT NULL)),
-    ADD CONSTRAINT alerts_closed_check CHECK ((closed_at IS NULL) = (closed_by IS NULL) AND (closed_at IS NULL) = (close_reason IS NULL));
+    ADD COLUMN messages_recorded bigint NOT NULL DEFAULT 1,
+    ADD CONSTRAINT alerts_messages_recorded_check CHECK (messages_recorded >= 1) NOT VALID,
+    ADD CONSTRAINT alerts_escalated_by_check CHECK (escalated_by IS NULL OR (escalated_at IS NOT NULL AND escalation_reason IS NOT NULL)) NOT VALID,
+    ADD CONSTRAINT alerts_closed_check CHECK ((closed_at IS NULL) = (closed_by IS NULL) AND (closed_at IS NULL) = (close_reason IS NULL)) NOT VALID;
 
 CREATE TABLE emergency_cases (
     id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -83,6 +88,7 @@ DROP TABLE emergency_cases;
 ALTER TABLE alerts
     DROP CONSTRAINT alerts_closed_check,
     DROP CONSTRAINT alerts_escalated_by_check,
+    DROP CONSTRAINT alerts_messages_recorded_check,
     DROP COLUMN messages_recorded,
     DROP COLUMN close_reason,
     DROP COLUMN closed_by,

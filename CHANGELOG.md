@@ -33,8 +33,9 @@ additively within `/v1`.
   `monitor_status_missing_s`, `emergency_checklist_ids` and
   `emergency_contact_procedure_text`.
 - Migrations 00025 (the console's alert columns, emergency cases and
-  notes, staff MFA challenges) and 00026 (the console's alert indexes,
-  built concurrently).
+  notes, staff MFA challenges; the CHECKs on alerts added NOT VALID),
+  00026 (the console's alert indexes, built concurrently) and 00027
+  (validates the alerts CHECKs, a separate step).
 
 - WP-17, the operator portal (`web/`, on `@rootxkit/uspace-ui` 0.1.0):
   registration with the state the registry decided, sign-in through the
