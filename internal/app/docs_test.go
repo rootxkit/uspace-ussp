@@ -76,3 +76,40 @@ func TestPlanRecordsTheGapsOfThePinnedKit(t *testing.T) {
 		}
 	}
 }
+
+// CLAUDE.md's list of generated code names paths that exist, and its web
+// entry is where web/package.json's gen:api writes the API types: a
+// stale path there sends a contributor to edit, or look for, the wrong
+// file.
+func TestClaudeMDNamesTheGeneratedCode(t *testing.T) {
+	doc := repoFile(t, "CLAUDE.md")
+	i := strings.Index(doc, "- Generated code (")
+	if i < 0 {
+		t.Fatal("CLAUDE.md has no generated-code rule")
+	}
+	end := strings.Index(doc[i:], ")")
+	paths := regexp.MustCompile("`([^`]+)`").FindAllStringSubmatch(doc[i:i+end], -1)
+	if len(paths) < 3 {
+		t.Fatalf("read %d generated paths: %v", len(paths), paths)
+	}
+	var web string
+	for _, m := range paths {
+		p := strings.TrimSuffix(strings.TrimSuffix(m[1], "*"), "/")
+		if _, err := os.Stat(filepath.Join("..", "..", filepath.FromSlash(p))); err != nil {
+			t.Errorf("CLAUDE.md names generated code at %s: %v", m[1], err)
+		}
+		if strings.HasPrefix(p, "web/") {
+			web = p
+		}
+	}
+	var pkg struct {
+		Scripts map[string]string `json:"scripts"`
+	}
+	if err := json.Unmarshal([]byte(repoFile(t, "web/package.json")), &pkg); err != nil {
+		t.Fatal(err)
+	}
+	out := strings.Fields(pkg.Scripts["gen:api"])
+	if web == "" || len(out) == 0 || !strings.HasPrefix("web/"+out[len(out)-1], web) {
+		t.Errorf("CLAUDE.md names %q for the web types; gen:api writes %v", web, out)
+	}
+}

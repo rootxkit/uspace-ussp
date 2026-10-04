@@ -170,8 +170,9 @@ change; a different need is a PR against the owning repo first.
 - Dependencies: standard library first; each new module needs a one-line
   reason in the commit body and a row in `docs/DEPENDENCIES.md`.
 - Generated code (`internal/stdapi`, `internal/national/gen`,
-  `internal/store/*`, `web/src/api/types.ts`) is committed, never edited
-  by hand, and verified offline by `scripts/check-generated.sh` in CI.
+  `internal/store/*`, `web/src/api/generated/`) is committed, never
+  edited by hand, and verified offline in CI: the Go files by
+  `scripts/check-generated.sh`, the web types by `pnpm check:api`.
 - `web/` renders only: BFF routes carry the session cookie as a bearer
   and nothing else; no database, no NATS, no geometry library (ESLint
   rule); API types from `openapi-typescript`; `ka` and `en` catalogues

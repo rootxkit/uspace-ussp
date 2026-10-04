@@ -69,6 +69,9 @@ additively within `/v1`.
     kit the portal is built on (no drawing tool, no `console/status/v1`
     system extras, a release-URL pin), held to the pinned version by a
     test.
+  - `CLAUDE.md` names `web/src/api/generated/`, where `pnpm gen:api`
+    writes the API types, instead of `web/src/api/types.ts` (a test
+    holds the list to the files and to the script).
 - WP-16 review follow-ups:
   - a weather fetch that answers but delivers nothing in force (every
     report refused, no report for any station, or only reports held
