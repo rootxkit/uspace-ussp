@@ -338,10 +338,12 @@ func (c *Cache) Pull(ctx context.Context, d Dataset, h *Hint, reconcile bool) er
 			c.persistTouch(ctx, d, cur.Number)
 			c.clearPending(d, cur.Number)
 		}
+		c.project(ctx)
 		return nil
 	case http.StatusNotFound:
 		c.cfg.Evaluator.confirm(d, now, true)
 		c.clearPullErr(d)
+		c.project(ctx)
 		return nil
 	}
 	v, rf := ParseVersion(d, f.Body, f.ETag, f.Version)
@@ -399,6 +401,7 @@ func (c *Cache) accept(ctx context.Context, v, cur *Version, reconcile bool) err
 		} else {
 			c.cfg.Evaluator.confirm(v.Dataset, now, false)
 			c.persistTouch(ctx, v.Dataset, cur.Number)
+			c.project(ctx)
 		}
 		c.clearPullErr(v.Dataset)
 		return nil
@@ -539,6 +542,14 @@ func (c *Cache) clearPending(d Dataset, held int64) {
 	c.mu.Unlock()
 }
 
+// project writes the projection of the snapshot now. It runs on every
+// new version and on every confirmation (a 304, a 404, the version held
+// served again): the basis it carries (cis_version, cis_age_s, stale) is
+// what the followers of cis_current judge staleness by, aged on their
+// own clock from its at. Written only on a new version, a confirmation
+// that a dataset has no version left the warm start's "stale: never
+// loaded" in force for good, and a basis never rewritten while the CISP
+// confirms it would age past cis_stale_s on a follower.
 func (c *Cache) project(ctx context.Context) {
 	p := c.cfg.Evaluator.Project(c.cfg.Now())
 	err := c.cfg.Projector.ProjectCIS(ctx, p)

@@ -545,3 +545,90 @@ func TestCacheUnreachableCISP(t *testing.T) {
 		t.Fatal("not counted")
 	}
 }
+
+// The projection follows every confirmation, not only a new version:
+// the basis cis_current carries is what the monitor and traffic-ws
+// judge staleness by. On the demo deploy the api warm-started zones and
+// uspace_airspace 11 s old with restrictions unknown (stale: a dataset
+// never loaded), then learned restrictions has no version (404) and
+// confirmed the rest by 304 every minute, and the projection kept the
+// warm start's stale basis for good.
+func TestCacheProjectionFollowsConfirmations(t *testing.T) {
+	g := newCacheRig(t, "")
+	ctx := t.Context()
+	for _, d := range []Dataset{Zones, USpaceAirspace} {
+		g.store.stored = append(g.store.stored, StoredVersion{Version: mustVersion(t, d, 1, featureOf(d, "TZP001").json()), AgeS: 11})
+	}
+	g.cache.Warm(ctx)
+	p, n := g.proj.Last()
+	if p == nil || !p.Stale || p.CISAgeS != 11 || p.CISVersion != "zones:1,uspace_airspace:1" {
+		t.Fatalf("warm projection %+v", p)
+	}
+
+	// Restrictions answers 404: known to be empty, and projected so.
+	if err := g.cache.Pull(ctx, Restrictions, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	p, n2 := g.proj.Last()
+	if n2 != n+1 || p.Stale || p.CISVersion != "zones:1,uspace_airspace:1,restrictions:0" || p.CISAgeS != 11 {
+		t.Fatalf("after the 404 (%d projections): %+v", n2, p.Basis)
+	}
+
+	// Absence: the CISP is down, nothing is confirmed, the projection is
+	// not rewritten (its basis ages on the follower's clock).
+	g.fake.Down()
+	g.clk.advance(60 * time.Second)
+	for _, d := range ED318Datasets {
+		_ = g.cache.Pull(ctx, d, nil, true)
+	}
+	if p2, n3 := g.proj.Last(); n3 != n2 || p2 != p {
+		t.Fatalf("a failed pull projected: %d %+v", n3, p2)
+	}
+
+	// Presence: back up, every dataset confirmed (zones and
+	// uspace_airspace by 404 with a version held, restrictions by 404):
+	// projected at now, age 0, fresh.
+	g.fake.Up()
+	g.clk.advance(30 * time.Second)
+	for _, d := range ED318Datasets {
+		if err := g.cache.Pull(ctx, d, nil, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p, n4 := g.proj.Last()
+	if n4 != n2+3 || p.Stale || p.CISAgeS != 0 || !p.At.Equal(g.clk.Now()) {
+		t.Fatalf("after the confirmations (%d projections): %+v at %v", n4, p.Basis, p.At)
+	}
+
+	// The version held, served again whole (the warm start held no
+	// ETag), confirms too.
+	g.fake.Publish("zones", prohibited("TZP009").json())
+	g.clk.advance(45 * time.Second)
+	if err := g.cache.Pull(ctx, Zones, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	p, n5 := g.proj.Last()
+	if n5 != n4+1 || !p.At.Equal(g.clk.Now()) || p.CISAgeS != 45 || g.eval.Snapshot().Version(Zones).Number != 1 {
+		t.Fatalf("after the version held (%d projections): %+v at %v", n5, p.Basis, p.At)
+	}
+
+	// And so does a 304.
+	g2 := newCacheRig(t, "")
+	for _, d := range ED318Datasets {
+		g2.fake.Publish(string(d), featureOf(d, "TZP001").json())
+		if err := g2.cache.Pull(ctx, d, nil, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g2.clk.advance(400 * time.Second)
+	_, before := g2.proj.Last()
+	for _, d := range ED318Datasets {
+		if err := g2.cache.Pull(ctx, d, nil, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p, n6 := g2.proj.Last()
+	if g2.count(CounterNotModified) != 3 || n6 != before+3 || !p.At.Equal(g2.clk.Now()) || p.Stale || p.CISAgeS != 0 {
+		t.Fatalf("after the 304s (%d projections, %v): %+v at %v", n6, g2.cache.Counters().Snapshot(), p.Basis, p.At)
+	}
+}
