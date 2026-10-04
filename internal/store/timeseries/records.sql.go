@@ -12,6 +12,41 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const consoleLastSamples = `-- name: ConsoleLastSamples :many
+SELECT flight_id, max(captured_at)::timestamptz AS last_at
+FROM telemetry
+WHERE flight_id = ANY ($1::uuid[]) AND captured_at > now() - interval '1 day'
+GROUP BY flight_id
+`
+
+type ConsoleLastSamplesRow struct {
+	FlightID pgtype.UUID `json:"flight_id"`
+	LastAt   time.Time   `json:"last_at"`
+}
+
+// The newest capture time of each of the flights (the console's flights
+// page, WP-18), within the last day; a flight without a sample in it has
+// no row.
+func (q *Queries) ConsoleLastSamples(ctx context.Context, flightIds []pgtype.UUID) ([]ConsoleLastSamplesRow, error) {
+	rows, err := q.db.Query(ctx, consoleLastSamples, flightIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ConsoleLastSamplesRow
+	for rows.Next() {
+		var i ConsoleLastSamplesRow
+		if err := rows.Scan(&i.FlightID, &i.LastAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countTrafficProducts = `-- name: CountTrafficProducts :one
 SELECT count(*)::bigint
 FROM traffic_products

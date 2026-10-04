@@ -83,7 +83,10 @@ type Server struct {
 	// Weather answers GET /v1/weather (internal/weather.Service); nil
 	// answers 503 weather_unavailable with reason not_configured.
 	Weather WeatherAnswerer
-	Logger  *slog.Logger
+	// Admin serves the console's /v1/admin/* of WP-18; nil answers 503
+	// admin_unavailable.
+	Admin  Admin
+	Logger *slog.Logger
 }
 
 // RegistryValidator is the cached, audited F8 lookup
@@ -132,6 +135,7 @@ func AccessTable() map[string]httpx.Access {
 		"POST /oauth/token":                                 public, // the client authenticates in the request (RFC 6749 §2.3)
 		"GET /.well-known/jwks.json":                        public,
 		"POST /v1/accounts/login":                           public, // limited per address and per username
+		"POST /v1/accounts/login/mfa":                       public, // the challenge of the password step authenticates; limited per address and per username
 		"POST /v1/accounts/operators":                       public, // self-registration, limited per address
 		"POST /v1/cis/notifications":                        public, // no bearer: the compact JWS in the body is verified by internal/cis.Receiver (issuer allow-list, aud, iat, jti)
 		"GET /v1/registry/validate":                         {Scopes: []string{auth.ScopeIntents}},
@@ -148,6 +152,22 @@ func AccessTable() map[string]httpx.Access {
 		"POST /v1/admin/occurrences":                        consoleSupervisor,
 		"GET /v1/admin/status":                              consoleAny,
 		"POST /v1/admin/status":                             consoleAdmin,
+		"GET /v1/admin/flights":                             consoleAny,
+		"GET /v1/admin/alerts":                              consoleAny,
+		"GET /v1/admin/escalations":                         consoleAny,
+		"POST /v1/admin/alerts/{alert_id}/escalate":         consoleSupervisor,
+		"POST /v1/admin/alerts/{alert_id}/close":            consoleSupervisor,
+		"GET /v1/admin/dss":                                 consoleAny,
+		"GET /v1/admin/inputs":                              consoleAny,
+		"GET /v1/admin/policy":                              consoleAny,
+		"PUT /v1/admin/policy":                              consoleAdmin,
+		"GET /v1/admin/sources":                             consoleAny,
+		"POST /v1/admin/sources":                            consoleAdmin,
+		"GET /v1/admin/emergency":                           consoleAny,
+		"GET /v1/admin/emergency/{flight_id}":               consoleAny,
+		"POST /v1/admin/emergency/{flight_id}":              consoleSupervisor,
+		"GET /v1/admin/records/days":                        consoleAny,
+		"GET /v1/admin/events":                              consoleAny,
 		"GET /v1/records/flights/{flight_id}":               {Scopes: []string{ScopeRecords}},
 		"GET /v1/records/daily/{date}":                      {Scopes: []string{ScopeRecords}},
 		"POST /v1/accounts/logout":                          anySession,
@@ -383,6 +403,31 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	if res.Challenge != nil {
+		writeJSON(w, http.StatusAccepted, gen.MFAChallenge{MfaToken: res.Challenge.Token, ExpiresAt: res.Challenge.ExpiresAt})
+		return
+	}
+	s.session(w, res)
+}
+
+// LoginMFA is POST /v1/accounts/login/mfa: the second step of a staff
+// admin's sign-in.
+func (s *Server) LoginMFA(w http.ResponseWriter, r *http.Request) {
+	var in gen.MFAStep
+	if err := decode(r, &in); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	res, err := s.Accounts.LoginMFA(r.Context(), in.MfaToken, in.Code, httpx.RemoteIP(r))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.session(w, res)
+}
+
+// session sets the session cookies and answers the session.
+func (s *Server) session(w http.ResponseWriter, res accounts.SessionResult) {
 	auth.SetSessionCookies(w, res.Token, res.CSRF, res.ExpiresAt)
 	out := gen.Session{Token: res.Token, CsrfToken: res.CSRF, AccountId: res.AccountID, Realm: gen.Realm(res.Realm), Roles: res.Roles,
 		ExpiresAt: res.ExpiresAt, IdleExpiresAt: res.IdleExpiresAt}

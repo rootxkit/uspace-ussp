@@ -328,8 +328,8 @@ func TestTopologyShape(t *testing.T) {
 		}
 		if (b.TTL != 0) != (b.Bucket == BucketRegistryValidity || b.Bucket == BucketTelemetrySeen || b.Bucket == BucketISANotifications ||
 			b.Bucket == BucketConformanceState || b.Bucket == BucketProximityState || b.Bucket == BucketSessionsLive ||
-			b.Bucket == BucketRIDSubscriptions) {
-			t.Errorf("%s TTL %v: only registry_validity, telemetry_seen, rid_isa_notifications, conformance_state, proximity_state, sessions_live and rid_dp_subscriptions have one", b.Bucket, b.TTL)
+			b.Bucket == BucketRIDSubscriptions || b.Bucket == BucketMonitorStatus) {
+			t.Errorf("%s TTL %v: only registry_validity, telemetry_seen, rid_isa_notifications, conformance_state, proximity_state, sessions_live, rid_dp_subscriptions and monitor_status have one", b.Bucket, b.TTL)
 		}
 	}
 	// The streams and the bucket WP-11 owns are bounded in size too.

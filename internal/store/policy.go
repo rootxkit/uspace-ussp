@@ -33,8 +33,12 @@ func (s *Store) NewestPolicy(ctx context.Context) (policy.Record, error) {
 // InsertPolicy stores v as the next version (policy_version_seq, under
 // LockPolicy), writes its policy_put event, and calls beforeCommit with
 // the stored record, all in one transaction. An error from beforeCommit
-// rolls it all back. The version number taken is never reused.
-func (s *Store) InsertPolicy(ctx context.Context, actor, reason string, v policy.Values, beforeCommit func(context.Context, policy.Record) error) (policy.Record, error) {
+// rolls it all back. The version number taken is never reused. Unless
+// base is policy.AnyBase, the newest version is read under LockPolicy
+// and one other than base (0 for none) refuses the write with a
+// *policy.StaleBaseError: the compare and the insert are one critical
+// section, so of two writers on the same base only the first stores.
+func (s *Store) InsertPolicy(ctx context.Context, base int64, actor, reason string, v policy.Values, beforeCommit func(context.Context, policy.Record) error) (policy.Record, error) {
 	raw, err := json.Marshal(v)
 	if err != nil {
 		return policy.Record{}, fmt.Errorf("policy values: %w", err)
@@ -43,6 +47,20 @@ func (s *Store) InsertPolicy(ctx context.Context, actor, reason string, v policy
 	err = s.Tx(ctx, func(q *relational.Queries) error {
 		if err := Lock(ctx, q, LockPolicy); err != nil {
 			return err
+		}
+		if base != policy.AnyBase {
+			var newest int64
+			row, err := q.NewestPolicy(ctx)
+			switch {
+			case IsNoRows(err):
+			case err != nil:
+				return fmt.Errorf("newest policy: %w", err)
+			default:
+				newest = row.Version
+			}
+			if newest != base {
+				return &policy.StaleBaseError{Base: base, Current: newest}
+			}
 		}
 		version, err := q.NextPolicyVersion(ctx)
 		if err != nil {

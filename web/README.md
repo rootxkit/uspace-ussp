@@ -42,6 +42,29 @@ gh attestation verify rootxkit-uspace-ui-0.1.0.tgz --repo rootxkit/uspace-ui \
 | `/alerts?intent=` | the intent's alerts with repeats and escalation; acknowledgement | `WS /v1/alerts`, `POST /v1/alerts/{id}/ack` |
 | `/weather` | products for the planning box, or "not configured" / stale | `GET /v1/weather` |
 
+The USSP console (brief WP-18) is under `/console`, for staff sessions
+(realm `console`; `supervisor` acts, `support` reads, `admin` switches
+sources and stores policy versions; the API decides every request). Its
+BFF is its own handlers at `/_bff/console/login`, `/_bff/console/logout`
+and `/_bff/console/api/*` (`src/lib/bff/console.ts`, the allow-list
+`consoleAllowPaths`); a staff admin signs in in two steps (the password,
+then the authenticator's code; the challenge sealed under
+`USSP_WEB_BFF_SECRET`). Every page has the inputs strip: the bus, the
+monitor ("conformance and traffic alerts stopped since T") and every
+source with its state and time, read from `GET /v1/admin/inputs`.
+
+| Path | What | API |
+|---|---|---|
+| `/console/login` | the kit's `LoginForm` on `/_bff/console/login` (realm `console`) | `POST /v1/accounts/login`, `/login/mfa` |
+| `/console` | the live map by viewport (`console/subscribe/v1`), the tracks with state and age, degraded inputs, the escalations | `WS /v1/traffic`, `GET /v1/admin/escalations` |
+| `/console/flights` | active flights: intent and DSS state, conformance, source instance, last sample, emergency link | `GET /v1/admin/flights` |
+| `/console/alerts` | active or recent alerts: acknowledgement, messages recorded, escalation, close, occurrence report, audit | `/v1/admin/alerts*`, `/v1/admin/events` |
+| `/console/emergency`, `/console/emergency/{flight}` | the cases; open, notes with checklist steps, close, the contact reference and procedure, the audit | `/v1/admin/emergency*` |
+| `/console/dss` | `dss_state`, the DSS readiness, the outbox, its errors, the subscriptions | `GET /v1/admin/dss` |
+| `/console/inputs` | every input with its state, time and switch; the monitor's instances; api's dependencies; the switches stored | `GET /v1/admin/inputs`, `/v1/admin/sources` |
+| `/console/policy` | the version in force, the values pending GCAA, the change with its preview, the versions with their changes | `/v1/admin/policy` |
+| `/console/occurrences`, `/console/records` | reports not delivered with their deadline; flag an alert; the daily bundles and the days without one | `/v1/admin/occurrences`, `/v1/admin/records/days` |
+
 ## Rules
 
 - The BFF is `/_bff/login`, `/_bff/logout`, `/_bff/api/*` and nothing
@@ -76,6 +99,7 @@ gh attestation verify rootxkit-uspace-ui-0.1.0.tgz --repo rootxkit/uspace-ui \
 | `USSP_WEB_SESSION_SECURE` | `true` | `false` only for a plain-HTTP local run |
 | `USSP_WEB_TRUSTED_PROXY_HOPS` | (none) | reverse proxies in front of Next.js (1 behind the deployment's Caddy); required with a secure session. List the web container in the API's `USSP_TRUSTED_PROXIES` |
 | `USSP_WEB_BFF_TIMEOUT_MS` | `10000` (`config/portal.json`) | upstream timeout of every BFF call |
+| `USSP_WEB_BFF_SECRET` | (none) | at least 32 bytes from the secret store: seals a staff admin's MFA challenge between the console's two sign-in steps; without it an admin cannot sign in to the console |
 | `USSP_WEB_MAP_CENTER`, `USSP_WEB_MAP_ZOOM` | Tbilisi, 10 (`config/portal.json`, pending GCAA) | the maps' first view, `lng,lat` |
 | `USSP_WEB_BASEMAP_ORIGIN` | (none) | build time, local runs only: where `/basemap/*` is rewritten to |
 | `UI_BRAND_*` | the kit's | brand name, short name, logo, contact, accent |

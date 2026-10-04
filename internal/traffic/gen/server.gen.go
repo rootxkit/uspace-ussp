@@ -147,6 +147,9 @@ type Readiness struct {
 // ReadinessStatus not_ready while a required dependency is down or unknown; degraded while any dependency is not up.
 type ReadinessStatus string
 
+// AlertID defines model for AlertID.
+type AlertID = openapi_types.UUID
+
 // ClientID defines model for ClientID.
 type ClientID = string
 

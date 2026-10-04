@@ -31,7 +31,16 @@ func (m *memStore) NewestPolicy(context.Context) (Record, error) {
 	return m.rows[len(m.rows)-1], nil
 }
 
-func (m *memStore) InsertPolicy(ctx context.Context, actor, reason string, v Values, beforeCommit func(context.Context, Record) error) (Record, error) {
+func (m *memStore) InsertPolicy(ctx context.Context, base int64, actor, reason string, v Values, beforeCommit func(context.Context, Record) error) (Record, error) {
+	if base != AnyBase {
+		var newest int64
+		if len(m.rows) > 0 {
+			newest = m.rows[len(m.rows)-1].Version
+		}
+		if newest != base {
+			return Record{}, &StaleBaseError{Base: base, Current: newest}
+		}
+	}
 	m.next++ // a sequence: taken even when the transaction rolls back
 	r := Record{Version: m.next, CreatedAt: time.Unix(0, 0).UTC(), Actor: actor, Reason: reason, Values: v}
 	if err := beforeCommit(ctx, r); err != nil {
@@ -39,6 +48,33 @@ func (m *memStore) InsertPolicy(ctx context.Context, actor, reason string, v Val
 	}
 	m.rows = append(m.rows, r)
 	return r, nil
+}
+
+// PutOn stores a version made on the version in force and refuses one
+// made on another, writing and projecting nothing (the compare is the
+// store's, under its lock).
+func TestPutOnRefusesAStaleBase(t *testing.T) {
+	ctx := context.Background()
+	m, p := &memStore{}, &projector{}
+	s := New(m, p, nil)
+	r, err := s.PutOn(ctx, 0, "staff-1", "first", Defaults())
+	if err != nil || r.Version != 1 {
+		t.Fatalf("on the defaults: %+v %v", r, err)
+	}
+	_, err = s.PutOn(ctx, 0, "staff-2", "second on the same base", Defaults())
+	var stale *StaleBaseError
+	if !errors.As(err, &stale) || stale.Base != 0 || stale.Current != 1 {
+		t.Fatalf("a stale base: %v", err)
+	}
+	if len(m.rows) != 1 || len(p.seen) != 1 {
+		t.Fatalf("a refused change wrote %d rows, %d projections", len(m.rows), len(p.seen))
+	}
+	if r, err := s.PutOn(ctx, 1, "staff-2", "on the version in force", Defaults()); err != nil || r.Version != 2 {
+		t.Fatalf("on version 1: %+v %v", r, err)
+	}
+	if r, err := s.Put(ctx, "bootstrap", "any base", Defaults()); err != nil || r.Version != 3 {
+		t.Fatalf("Put: %+v %v", r, err)
+	}
 }
 
 type projector struct {
@@ -79,14 +115,14 @@ func TestValuesJSONNamesCarryUnits(t *testing.T) {
 		t.Fatalf("%d JSON fields for %d struct fields", len(m), reflect.TypeFor[Values]().NumField())
 	}
 	for k := range m {
-		// _priority, _count, _code, _severity, _ids and _enabled are
-		// dimensionless (an ordinal, a number of things, an enumeration
-		// code, a severity, a list of identifiers, a switch); every other
-		// name carries its unit.
+		// _priority, _count, _code, _severity, _ids, _enabled and _text
+		// are dimensionless (an ordinal, a number of things, an
+		// enumeration code, a severity, a list of identifiers, a switch,
+		// a sentence a person reads); every other name carries its unit.
 		if !strings.HasSuffix(k, "_m") && !strings.HasSuffix(k, "_s") && !strings.HasSuffix(k, "_days") &&
 			!strings.HasSuffix(k, "_priority") && !strings.HasSuffix(k, "_count") && !strings.HasSuffix(k, "_hz") &&
 			!strings.HasSuffix(k, "_code") && !strings.HasSuffix(k, "_ms") && !strings.HasSuffix(k, "_severity") &&
-			!strings.HasSuffix(k, "_ids") && !strings.HasSuffix(k, "_enabled") {
+			!strings.HasSuffix(k, "_ids") && !strings.HasSuffix(k, "_enabled") && !strings.HasSuffix(k, "_text") {
 			t.Errorf("%s has no unit", k)
 		}
 	}

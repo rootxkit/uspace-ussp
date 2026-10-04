@@ -9,6 +9,34 @@ additively within `/v1`.
 
 ### Added
 
+- WP-18, the USSP console (`web/` under `/console`, on `@rootxkit/uspace-ui`
+  0.1.0) and its API (`internal/admin`, `/v1/admin/*`): the live map by
+  viewport over traffic-ws with the staff session, the persistent
+  inputs strip (the bus, the monitor with "alerts stopped since T",
+  every source with its state and time), active flights with
+  conformance and the last sample, alerts with acknowledgement,
+  messages recorded, a supervisor's escalation and close (audited,
+  never a clear), the escalations, the DSS state, outbox and
+  subscriptions, every input with its switch (admin only, 503 when the
+  KV refuses) and api's readiness, the policy with its history, changes
+  and the values pending GCAA, the emergency workflow (open, notes with
+  checklist steps, close; every step audited), occurrence reports,
+  record days and the audit rows of a console entity; `ka` and `en`.
+  Browser tests of every console flow, with each fake down and with
+  NATS cut, and axe on every page.
+- `POST /v1/accounts/login/mfa`: a staff admin's sign-in without a code
+  answers `202` with a challenge for the second step (the kit's two-step
+  BFF sign-in); the console's BFF at `/_bff/console/*`
+  (`USSP_WEB_BFF_SECRET` seals the challenge).
+- The monitor writes its status line to the KV bucket `monitor_status`
+  (`USSP_MONITOR_STATUS_BUCKET_MAX_BYTES`); policy gains
+  `monitor_status_missing_s`, `emergency_checklist_ids` and
+  `emergency_contact_procedure_text`.
+- Migrations 00025 (the console's alert columns, emergency cases and
+  notes, staff MFA challenges; the CHECKs on alerts added NOT VALID),
+  00026 (the console's alert indexes, built concurrently) and 00027
+  (validates the alerts CHECKs, a separate step).
+
 - WP-17, the operator portal (`web/`, on `@rootxkit/uspace-ui` 0.1.0):
   registration with the state the registry decided, sign-in through the
   BFF (`/_bff/login`, `/_bff/logout`, `/_bff/api/*`; `uspace_session`,
@@ -58,7 +86,7 @@ additively within `/v1`.
   intent keeps its state and `change_reason`. Counted as
   `alerts_notices_lifted`.
 - A restriction gone from the CIS's current set no longer counts as
-  lifted (PLAN §15.2 Q30). The CISP takes an ended or cancelled
+  lifted (PLAN §15.2 Q31). The CISP takes an ended or cancelled
   restriction out of the set and records the end on its head, so the
   CIS cache now reads the ended and cancelled heads
   (`GET /v1/restrictions/heads`, once per restrictions version) for a

@@ -176,6 +176,11 @@ func (s *Service) acked(ctx context.Context, st Stored, by string, err error) (A
 	return AckResult{AlertID: st.AlertID, AckedAt: st.AckedAt.UTC(), AckedBy: by}, nil
 }
 
+// Republish sends a stored alert on alrt.v1 after the transaction that
+// changed it committed (the console's escalation, WP-18); a failure is
+// counted and logged, and the next fact carries it.
+func (s *Service) Republish(ctx context.Context, st Stored) { s.republish(ctx, st) }
+
 // republish sends the stored alert on alrt.v1.<kind>.<cell5>.<id>.
 func (s *Service) republish(ctx context.Context, st Stored) {
 	if st.Cell5 == "" {

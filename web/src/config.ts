@@ -75,7 +75,17 @@ export interface BffEnv {
   trustedProxyHops: number | null;
   timeoutMs: number;
   sessionMaxAgeS: number;
+  /**
+   * The secret that seals a staff admin's MFA challenge between the two
+   * sign-in steps (USSP_WEB_BFF_SECRET, at least 32 bytes, from the
+   * deployment's secret store; brief WP-18). Null: the console's
+   * second step is not offered and an admin cannot sign in.
+   */
+  mfaSecret: string | null;
 }
+
+/** The shortest USSP_WEB_BFF_SECRET the kit accepts. */
+export const MIN_BFF_SECRET_BYTES = 32;
 
 /**
  * The BFF's configuration, or the problem with the environment naming
@@ -114,5 +124,13 @@ export function bffEnv(env: Env = process.env): { cfg: BffEnv } | { problem: str
     }
     timeoutMs = n;
   }
-  return { cfg: { apiBase, secure, trustedProxyHops, timeoutMs, sessionMaxAgeS: portal.bff.session_max_age_s } };
+  let mfaSecret: string | null = null;
+  const rawSecret = env["USSP_WEB_BFF_SECRET"];
+  if (rawSecret !== undefined && rawSecret !== "") {
+    if (new TextEncoder().encode(rawSecret).length < MIN_BFF_SECRET_BYTES) {
+      return { problem: `USSP_WEB_BFF_SECRET: want at least ${MIN_BFF_SECRET_BYTES} bytes` };
+    }
+    mfaSecret = rawSecret;
+  }
+  return { cfg: { apiBase, secure, trustedProxyHops, timeoutMs, sessionMaxAgeS: portal.bff.session_max_age_s, mfaSecret } };
 }

@@ -6,6 +6,12 @@ export const LOGIN_PATH = "/v1/accounts/login";
 export const LOGOUT_PATH = "/v1/accounts/logout";
 /** The session realm of every portal sign-in (M20). */
 export const PORTAL_REALM = "portal";
+/** The session realm of every console sign-in (M20; brief WP-18). */
+export const CONSOLE_REALM = "console";
+/** The API's second sign-in step of a staff admin (WP-18). */
+export const MFA_PATH = "/v1/accounts/login/mfa";
+/** The console's BFF routes (its own handlers beside the portal's, under the kit's /_bff, where the sealed MFA cookie lives). */
+export const CONSOLE_BFF = { login: "/_bff/console/login", logout: "/_bff/console/logout", api: "/_bff/console/api" } as const;
 
 const ID = "[0-9a-fA-F-]{36}";
 const CLIENT = "[A-Za-z0-9._-]{1,128}";
@@ -34,6 +40,35 @@ export function allowPaths(apiBase: string): RegExp[] {
     `/v1/geo/intents/${ID}`,
     "/v1/weather",
     `/v1/alerts/${ID}/ack`,
+  ].map((p) => new RegExp(`^${prefix}${p}$`));
+}
+
+/**
+ * The upstream paths the console's pages call (brief WP-18), matched as
+ * allowPaths' are: api's console operations and nothing of the
+ * portal's. internal/national's TestBFFAllowListIsAPIRoutes holds this
+ * list to api's access table too.
+ */
+export function consoleAllowPaths(apiBase: string): RegExp[] {
+  const prefix = new URL(apiBase).pathname.replace(/\/$/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return [
+    "/v1/accounts/me",
+    "/v1/admin/flights",
+    "/v1/admin/alerts",
+    "/v1/admin/escalations",
+    `/v1/admin/alerts/${ID}/escalate`,
+    `/v1/admin/alerts/${ID}/close`,
+    "/v1/admin/dss",
+    "/v1/admin/inputs",
+    "/v1/admin/policy",
+    "/v1/admin/sources",
+    "/v1/admin/emergency",
+    `/v1/admin/emergency/${ID}`,
+    "/v1/admin/occurrences",
+    "/v1/admin/coordination",
+    "/v1/admin/status",
+    "/v1/admin/records/days",
+    "/v1/admin/events",
   ].map((p) => new RegExp(`^${prefix}${p}$`));
 }
 
