@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/rootxkit/uspace-core/core"
@@ -24,20 +25,35 @@ const DepGeoid = "geoid"
 // intentSweepInterval is how often intents past time_end are ended.
 const intentSweepInterval = time.Minute
 
-// loadGeoid reads USSP_GEOID_FILE; nil with the reason when it is unset
-// or does not load (intents are then refused with geoid_unavailable and
-// /readyz says why; the process still starts).
-func loadGeoid(rt *proc.Runtime) (geoid.Undulator, string) {
+// loadGeoid reads USSP_GEOID_FILE with core's geoid.LoadMapped (WP-19: a
+// read-only memory map on linux, shared in the page cache by every
+// process on the host; read into memory elsewhere) and says which in
+// mapped; nil with the reason when it is unset or does not load (intents
+// are then refused with geoid_unavailable and /readyz says why; the
+// process still starts).
+func loadGeoid(rt *proc.Runtime) (und geoid.Undulator, mapped bool, why string) {
 	path := rt.Config.GeoidFile
 	if path == "" {
-		return nil, "USSP_GEOID_FILE is not set: every intent is refused with geoid_unavailable (AMSL is never approximated)"
+		return nil, false, "USSP_GEOID_FILE is not set: every intent is refused with geoid_unavailable (AMSL is never approximated)"
 	}
-	g, err := geoid.Load(path)
+	g, err := geoid.LoadMapped(path)
 	if err != nil {
 		rt.Logger.Error("geoid grid not loaded", obs.Err(err))
-		return nil, "the geoid grid of USSP_GEOID_FILE does not load: every intent is refused with geoid_unavailable"
+		return nil, false, "the geoid grid of USSP_GEOID_FILE does not load: every intent is refused with geoid_unavailable"
 	}
-	return g, ""
+	mapped = g.Mapped()
+	return g, mapped, ""
+}
+
+// geoidProbe is the readiness of the geoid: down with why without one,
+// up with whether the grid is memory-mapped (Grid.Mapped) otherwise.
+func geoidProbe(und geoid.Undulator, mapped bool, why string) obs.Probe {
+	return func(context.Context) (obs.State, string) {
+		if und == nil {
+			return obs.StateDown, why
+		}
+		return obs.StateUp, fmt.Sprintf("mapped: %t", mapped)
+	}
 }
 
 // startIntents builds the intent service on the CIS cache, the registry
@@ -49,13 +65,8 @@ func loadGeoid(rt *proc.Runtime) (geoid.Undulator, string) {
 func startIntents(ctx context.Context, rt *proc.Runtime, pol *policy.Service, cisState *CIS, reg *registry.Cache, kv *bus.Projector, dss intent.DSS) *intent.Service {
 	counters := &core.Counters{}
 	proc.Publish(rt, "intent", counters)
-	g, why := loadGeoid(rt)
-	rt.Health.Register(DepGeoid, false, func(context.Context) (obs.State, string) {
-		if g == nil {
-			return obs.StateDown, why
-		}
-		return obs.StateUp, ""
-	})
+	g, mapped, why := loadGeoid(rt)
+	rt.Health.Register(DepGeoid, false, geoidProbe(g, mapped, why))
 	current := func() policy.Record {
 		if r, ok := pol.Current(); ok {
 			return r

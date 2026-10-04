@@ -96,18 +96,35 @@ func OwnIssuer(cfg config.Config) string {
 	return ""
 }
 
-// loadGeoid reads USSP_GEOID_FILE; nil with the reason when it is not
-// set or not readable.
-func loadGeoid(cfg config.Config) (u geoid.Undulator, desc, missing string) {
+// loadGeoid reads USSP_GEOID_FILE with core's geoid.LoadMapped (WP-19: a
+// read-only memory map on linux, shared in the page cache by every
+// process on the host; read into memory elsewhere); mapped says which.
+// nil with the reason when it is not set or not readable.
+func loadGeoid(cfg config.Config) (u geoid.Undulator, desc string, mapped bool, missing string) {
 	if cfg.GeoidFile == "" {
-		return nil, "", "missing: USSP_GEOID_FILE is not set; tracks have no AMSL altitude (alt_source none) and are not judged vertically (R-07)"
+		return nil, "", false, "missing: USSP_GEOID_FILE is not set; tracks have no AMSL altitude (alt_source none) and are not judged vertically (R-07)"
 	}
-	g, err := geoid.Load(cfg.GeoidFile)
+	g, err := geoid.LoadMapped(cfg.GeoidFile)
 	if err != nil {
-		return nil, "", "missing: USSP_GEOID_FILE does not load (" + err.Error() + "); tracks have no AMSL altitude (R-07)"
+		return nil, "", false, "missing: USSP_GEOID_FILE does not load (" + err.Error() + "); tracks have no AMSL altitude (R-07)"
 	}
-	desc = g.Description()
-	return g, desc, ""
+	desc, mapped = g.Description(), g.Mapped()
+	return g, desc, mapped, ""
+}
+
+// geoidProbe is the readiness of the geoid: down with missing without
+// one; up otherwise, with whether the grid is memory-mapped
+// (Grid.Mapped), or "configured by the caller" for Options.Geoid.
+func geoidProbe(und geoid.Undulator, byCaller, mapped bool, missing string) obs.Probe {
+	return func(context.Context) (obs.State, string) {
+		switch {
+		case und == nil:
+			return obs.StateDown, missing
+		case byCaller:
+			return obs.StateUp, "configured by the caller"
+		}
+		return obs.StateUp, fmt.Sprintf("mapped: %t", mapped)
+	}
 }
 
 // mirrorProbe is the readiness of a KV projection: up once read, unknown
@@ -174,20 +191,19 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	})
 
 	// The geoid (R-07, SC-22).
-	und, desc, missing := o.Geoid, "configured by the caller", ""
-	if und == nil {
-		und, desc, missing = loadGeoid(cfg)
+	und, desc, mapped, missing := o.Geoid, "configured by the caller", false, ""
+	byCaller := und != nil
+	if !byCaller {
+		und, desc, mapped, missing = loadGeoid(cfg)
 	}
-	rt.Health.Register(DepGeoid, false, func(context.Context) (obs.State, string) {
-		if und == nil {
-			return obs.StateDown, missing
-		}
-		return obs.StateUp, ""
-	})
-	if und == nil {
+	rt.Health.Register(DepGeoid, false, geoidProbe(und, byCaller, mapped, missing))
+	switch {
+	case und == nil:
 		logger.Warn("no geoid: tracks have no AMSL altitude and are not judged vertically (R-07)", slog.String("geoid", missing))
-	} else {
+	case byCaller:
 		logger.Info("geoid loaded", slog.String("geoid", desc))
+	default:
+		logger.Info("geoid loaded", slog.String("geoid", desc), slog.Bool("geoid_mapped", mapped))
 	}
 
 	// The bus side.

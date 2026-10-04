@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 
 	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/geoid"
@@ -61,9 +62,75 @@ func NewEnv(und geoid.Undulator, ground terrain.Ground) EnvFunc {
 	}
 }
 
+// mappedTerrain is the tile store of USSP_TERRAIN_DIR, its tiles read
+// with core's terrain.MappedDirOpener (WP-19: read-only memory maps on
+// linux, shared in the page cache by every process on the host; read
+// into memory elsewhere), and whether the last tile read is mapped.
+type mappedTerrain struct {
+	*terrain.Store
+	// last is the Mapped() of the last tile read: tileUnread before the
+	// first, then tileInMemory or tileMapped.
+	last atomic.Int32
+}
+
+// The values of mappedTerrain.last.
+const (
+	tileUnread int32 = iota
+	tileInMemory
+	tileMapped
+)
+
+// newMappedTerrain is the store over idx, reading tiles through open
+// (terrain.MappedDirOpener in loadTerrain) and noting whether each is
+// mapped.
+func newMappedTerrain(idx terrain.Index, open func(cell string) (*terrain.Tile, error)) *mappedTerrain {
+	m := &mappedTerrain{}
+	m.Store = terrain.NewStore(idx, terrain.StoreOptions{OpenTile: func(cell string) (*terrain.Tile, error) {
+		t, err := open(cell)
+		if err == nil && t != nil {
+			if t.Mapped() {
+				m.last.Store(tileMapped)
+			} else {
+				m.last.Store(tileInMemory)
+			}
+		}
+		return t, err
+	}})
+	return m
+}
+
+// Mapped reports whether the last tile read is a read-only memory map of
+// its file; known is false until a tile has been read.
+func (m *mappedTerrain) Mapped() (mapped, known bool) {
+	switch m.last.Load() {
+	case tileMapped:
+		return true, true
+	case tileInMemory:
+		return false, true
+	}
+	return false, false
+}
+
+// terrainProbe is the readiness of the terrain: degraded with why
+// without it, up with whether the last tile read is memory-mapped
+// otherwise ("no tile read yet" before the first).
+func terrainProbe(m *mappedTerrain, why string) obs.Probe {
+	return func(context.Context) (obs.State, string) {
+		if m == nil {
+			return obs.StateDegraded, why
+		}
+		mapped, known := m.Mapped()
+		if !known {
+			return obs.StateUp, "mapped: no tile read yet"
+		}
+		return obs.StateUp, fmt.Sprintf("mapped: %t", mapped)
+	}
+}
+
 // loadTerrain is the terrain of USSP_TERRAIN_DIR (its index.json and one
-// tile per cell); nil with why when there is none.
-func loadTerrain(dir string) (terrain.Ground, string) {
+// tile per cell, each mapped where the platform can); nil with why when
+// there is none.
+func loadTerrain(dir string) (*mappedTerrain, string) {
 	if dir == "" {
 		return nil, "USSP_TERRAIN_DIR is not set: AGL zone limits are not judged (a PROHIBITED or REQ_AUTHORIZATION zone warns with limit_not_judged, a CONDITIONAL one is not evaluated)"
 	}
@@ -75,7 +142,7 @@ func loadTerrain(dir string) (terrain.Ground, string) {
 	if err != nil {
 		return nil, "the terrain index of USSP_TERRAIN_DIR does not parse (" + err.Error() + "): AGL zone limits are not judged"
 	}
-	return terrain.NewStore(idx, terrain.StoreOptions{Open: terrain.DirOpener(dir, 0)}), ""
+	return newMappedTerrain(idx, terrain.MappedDirOpener(dir, 0)), ""
 }
 
 // errTooLarge is a file over its bound.
