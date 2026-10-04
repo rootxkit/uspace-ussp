@@ -222,8 +222,11 @@ func TestRequestRules(t *testing.T) {
 	if ns, err := none.List(ctx); err != nil || len(ns) != 0 {
 		t.Fatal("list without a certificate")
 	}
-	if state, _ := none.Probe()(ctx); state != obs.StateDegraded {
-		t.Error("probe without a certificate")
+	if state, detail := none.Probe()(ctx); state != obs.StateUp || !strings.Contains(detail, "USSP_CERTIFICATE_ID is not set") {
+		t.Errorf("probe without a certificate: %s %s", state, detail)
+	}
+	if state, detail := newService(newMem(), nil).Probe()(ctx); state != obs.StateDegraded || !strings.Contains(detail, "no start notice yet") {
+		t.Errorf("probe before the start: %s %s", state, detail)
 	}
 	st.errOf["notices"] = errors.New("db")
 	if _, _, err := s.Request(ctx, "a", KindStart); err == nil {

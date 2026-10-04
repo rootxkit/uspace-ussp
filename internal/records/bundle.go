@@ -310,20 +310,30 @@ func (d *Daily) Open(ctx context.Context, day time.Time) (Bundle, *os.File, erro
 	return b, f, nil
 }
 
-// Probe is the readiness of the daily bundles: degraded without a
-// records directory, and for every day of the last CatchUpDays that has
-// no bundle MissAfter its start ("records: day <date> missing", an
-// alarm on this side); unknown when the table cannot be read.
+// Probe is the readiness of the daily bundles: degraded for every day of
+// the last CatchUpDays that has no bundle MissAfter its start ("records:
+// day <date> missing", an alarm on this side); unknown when the table
+// cannot be read. Without a records directory no bundle is built: said
+// on every answer, and degraded as soon as a flight of those days is
+// left without one.
 func (d *Daily) Probe() obs.Probe {
 	return func(ctx context.Context) (obs.State, string) {
-		if d.Dir == "" {
-			return obs.StateDegraded, "USSP_RECORDS_DIR is not set: no daily record bundle is built"
-		}
 		now, err := d.Store.Now(ctx)
 		if err != nil {
 			return obs.StateUnknown, "the record bundles cannot be read: " + clip(err.Error())
 		}
 		last := Day(now.Add(-MissAfter))
+		if d.Dir == "" {
+			first := last.AddDate(0, 0, -(CatchUpDays - 1))
+			fs, err := d.Store.DayFlights(ctx, first, last.AddDate(0, 0, 1), time.Unix(0, 0).UTC(), "00000000-0000-0000-0000-000000000000", 1)
+			if err != nil {
+				return obs.StateUnknown, "the flights cannot be read: " + clip(err.Error())
+			}
+			if len(fs) > 0 {
+				return obs.StateDegraded, "USSP_RECORDS_DIR is not set: no daily record bundle is built, and flights since " + first.Format(time.DateOnly) + " have none"
+			}
+			return obs.StateUp, "USSP_RECORDS_DIR is not set: no daily record bundle is built (no flight to bundle yet)"
+		}
 		missing, err := d.Store.MissingDays(ctx, last.AddDate(0, 0, -(CatchUpDays-1)), last)
 		if err != nil {
 			return obs.StateUnknown, "the record bundles cannot be read: " + clip(err.Error())

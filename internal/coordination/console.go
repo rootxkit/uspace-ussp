@@ -22,9 +22,11 @@ const MaxListed = 500
 // Probe is the readiness of the coordination: up when no notice is
 // failed or escalated, none is being tried again and none has waited
 // longer than PendingLate; degraded otherwise, with the counts and the
-// age of the oldest pending notice; degraded too when unconfigured names
-// why no ANSP is called (the notices are queued and not sent; "" when
-// one is). A store that cannot be read is unknown, never up.
+// age of the oldest pending notice. unconfigured names why no ANSP is
+// called ("" when one is): said on every answer, and any notice waiting
+// then is degraded (it is queued and not sent); with nothing queued the
+// deployment simply has no ANSP to tell. A store that cannot be read is
+// unknown, never up.
 func Probe(st Store, unconfigured string) obs.Probe {
 	return func(ctx context.Context) (obs.State, string) {
 		s, err := st.Summarise(ctx)
@@ -32,9 +34,12 @@ func Probe(st Store, unconfigured string) obs.Probe {
 			return obs.StateUnknown, "the coordination notices cannot be read: " + clip(err.Error())
 		}
 		detail := fmt.Sprintf("%d pending (%d retrying, oldest %.0f s), %d escalated, %d failed", s.Pending, s.Retrying, s.OldestPendingAgeS, s.Escalated, s.Failed)
+		if unconfigured != "" {
+			detail = unconfigured + ": Annex V notices are queued and not sent; " + detail
+		}
 		switch {
-		case unconfigured != "":
-			return obs.StateDegraded, unconfigured + ": Annex V notices are queued and not sent; " + detail
+		case unconfigured != "" && s.Pending > 0:
+			return obs.StateDegraded, detail
 		case s.Escalated > 0 || s.Failed > 0 || s.Retrying > 0 || (s.Pending > 0 && s.OldestPendingAgeS > PendingLate.Seconds()):
 			return obs.StateDegraded, detail
 		}

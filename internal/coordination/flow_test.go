@@ -371,6 +371,10 @@ func TestNoANSPConfigured(t *testing.T) {
 	if state != obs.StateDegraded || !strings.Contains(detail, "USSP_ANSP_BASE_URL") {
 		t.Errorf("probe %s %s", state, detail)
 	}
+	// Nothing queued: up, and the missing ANSP still said (E-01 pair).
+	if state, detail := Probe(newMemStore(), "USSP_ANSP_BASE_URL is not set")(f.ctx); state != obs.StateUp || !strings.Contains(detail, "USSP_ANSP_BASE_URL") {
+		t.Errorf("idle probe %s %s", state, detail)
+	}
 	f.st.fail = errStore
 	if state, _ := Probe(f.st, "")(f.ctx); state != obs.StateUnknown {
 		t.Errorf("an unreadable store is %s, not unknown", state)

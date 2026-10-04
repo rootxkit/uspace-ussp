@@ -179,10 +179,22 @@ func TestDailyProbe(t *testing.T) {
 	if state, _ := d.Probe()(context.Background()); state != obs.StateUnknown {
 		t.Fatalf("no clock: %s", state)
 	}
+	// Without a directory: degraded while a flight of the window has no
+	// bundle, up (said) when there is none (E-01 pair).
+	m.errOf["now"] = nil
 	d.Dir = ""
 	if state, detail := d.Probe()(context.Background()); state != obs.StateDegraded || !strings.Contains(detail, "USSP_RECORDS_DIR") {
 		t.Fatalf("%s %s", state, detail)
 	}
+	m.now = day.AddDate(0, 1, 0)
+	if state, detail := d.Probe()(context.Background()); state != obs.StateUp || !strings.Contains(detail, "no flight to bundle") {
+		t.Fatalf("no flight: %s %s", state, detail)
+	}
+	m.errOf["day"] = errDown
+	if state, _ := d.Probe()(context.Background()); state != obs.StateUnknown {
+		t.Fatalf("flights unreadable: %s", state)
+	}
+	m.errOf["day"] = nil
 	if n, err := d.BuildDue(context.Background()); n != 0 || err != nil {
 		t.Fatal("built without a directory")
 	}

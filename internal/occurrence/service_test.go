@@ -507,6 +507,9 @@ func TestNoDeliverer(t *testing.T) {
 	if !strings.Contains(NotDelivering(), "POST /v1/occurrences") {
 		t.Error(NotDelivering())
 	}
+	if state, detail := Probe(newMem(), false)(context.Background()); state != obs.StateUp || !strings.Contains(detail, "spec gap") {
+		t.Errorf("no report, no deliverer: %s %s", state, detail)
+	}
 }
 
 // A supervisor's flag: queued under the supervisor's reference, then the

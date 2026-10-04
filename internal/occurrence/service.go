@@ -450,10 +450,10 @@ func (s *Service) DeliverDue(ctx context.Context) int {
 }
 
 // Probe is the readiness of the reports: up when every report is
-// delivered; degraded with the counts and the nearest deadline while one
-// is pending or failed, and with why when nothing can deliver; down when
-// one is past its deadline undelivered (a critical item); unknown when
-// the reports cannot be read.
+// delivered (or none was made); degraded with the counts and the nearest
+// deadline while one is pending or failed; down when one is past its
+// deadline undelivered (a critical item); unknown when the reports
+// cannot be read. Why nothing can deliver is said on every answer.
 func Probe(st Store, delivering bool) obs.Probe {
 	return func(ctx context.Context) (obs.State, string) {
 		s, err := st.Summarise(ctx)
@@ -470,7 +470,7 @@ func Probe(st Store, delivering bool) obs.Probe {
 		switch {
 		case s.Critical > 0:
 			return obs.StateDown, detail
-		case !delivering || s.Pending+s.Failed > 0:
+		case s.Pending+s.Failed > 0:
 			return obs.StateDegraded, detail
 		}
 		return obs.StateUp, detail

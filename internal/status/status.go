@@ -325,15 +325,16 @@ func (s *Service) SendDue(ctx context.Context) int {
 	return n
 }
 
-// Probe is the readiness of the notices: degraded without a certificate
-// id or an authority client, before a start is recorded, while a notice
-// is pending and when the last one failed; up when the last notice is
+// Probe is the readiness of the notices: up without a certificate id
+// (no certified operation to notify; said), degraded with one before a
+// start is recorded, without an authority client, while a notice is
+// pending and when the last one failed; up when the last notice is
 // recorded (operating, or ceased since); unknown when they cannot be
 // read.
 func (s *Service) Probe() obs.Probe {
 	return func(ctx context.Context) (obs.State, string) {
 		if s.CertificateID == "" {
-			return obs.StateDegraded, "USSP_CERTIFICATE_ID is not set: no operating-status notice can be sent (Art. 7(6))"
+			return obs.StateUp, "USSP_CERTIFICATE_ID is not set: no operating-status notice can be sent (Art. 7(6))"
 		}
 		ns, err := s.Store.Notices(ctx, s.CertificateID, MaxListed)
 		if err != nil {
