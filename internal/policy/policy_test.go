@@ -193,6 +193,42 @@ func TestRIDServiceProviderBounds(t *testing.T) {
 	}
 }
 
+// TestDSSBounds: a negative or non-finite subscription margin and an
+// exchange retention outside 1 to its maximum are refused, each naming
+// its field; the bounds themselves (a zero margin, one day, the
+// maximum) are accepted (E-01 pair).
+func TestDSSBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		set   func(*Values)
+		field string
+	}{
+		{"negative margin", func(v *Values) { v.PeerSubscriptionMarginM = -1 }, "peer_subscription_margin_m"},
+		{"infinite margin", func(v *Values) { v.PeerSubscriptionMarginM = math.Inf(1) }, "peer_subscription_margin_m"},
+		{"no retention", func(v *Values) { v.DSSExchangeRetentionDays = 0 }, "dss_exchange_retention_days"},
+		{"too long a retention", func(v *Values) { v.DSSExchangeRetentionDays = MaxDSSExchangeRetentionDays + 1 }, "dss_exchange_retention_days"},
+	} {
+		v := Defaults()
+		tc.set(&v)
+		if err := v.Validate(); err == nil || !strings.Contains(err.Error(), tc.field) {
+			t.Errorf("%s: accepted or not named: %v", tc.name, err)
+		}
+	}
+	v := Defaults()
+	if v.PeerSubscriptionMarginM != 2000 || v.DSSExchangeRetentionDays != 7 {
+		t.Errorf("DSS defaults %v %d", v.PeerSubscriptionMarginM, v.DSSExchangeRetentionDays)
+	}
+	for _, c := range []struct {
+		m float64
+		d int
+	}{{0, 1}, {0, MaxDSSExchangeRetentionDays}} {
+		v.PeerSubscriptionMarginM, v.DSSExchangeRetentionDays = c.m, c.d
+		if err := v.Validate(); err != nil {
+			t.Errorf("bounds %v %d refused: %v", c.m, c.d, err)
+		}
+	}
+}
+
 // E-01 pair, B-09: a failing projection refuses the write with the
 // 503-shaped error and leaves nothing; a succeeding one leaves one row
 // that Current and Load return.

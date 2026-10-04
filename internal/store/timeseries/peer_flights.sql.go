@@ -8,6 +8,8 @@ package timeseries
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const countPeerFlights = `-- name: CountPeerFlights :one
@@ -56,4 +58,48 @@ func (q *Queries) InsertPeerFlight(ctx context.Context, arg InsertPeerFlightPara
 		arg.Cell5,
 	)
 	return err
+}
+
+const latestFlightSample = `-- name: LatestFlightSample :one
+SELECT captured_at, ST_Y(geom)::double precision AS lat, ST_X(geom)::double precision AS lng,
+       alt_wgs84_m, speed_ms, track_deg, accuracy_h, accuracy_v
+FROM telemetry
+WHERE flight_id = $1::uuid AND captured_at > $2::timestamptz
+ORDER BY captured_at DESC
+LIMIT 1
+`
+
+type LatestFlightSampleParams struct {
+	FlightID pgtype.UUID `json:"flight_id"`
+	Since    time.Time   `json:"since"`
+}
+
+type LatestFlightSampleRow struct {
+	CapturedAt time.Time `json:"captured_at"`
+	Lat        float64   `json:"lat"`
+	Lng        float64   `json:"lng"`
+	AltWgs84M  *float64  `json:"alt_wgs84_m"`
+	SpeedMs    *float64  `json:"speed_ms"`
+	TrackDeg   *float64  `json:"track_deg"`
+	AccuracyH  *string   `json:"accuracy_h"`
+	AccuracyV  *string   `json:"accuracy_v"`
+}
+
+// The newest sample of a flight captured after since (GET
+// /uss/v1/operational_intents/{id}/telemetry, internal/dss): position,
+// WGS84 altitude, speed and track as the operator's telemetry gave them.
+func (q *Queries) LatestFlightSample(ctx context.Context, arg LatestFlightSampleParams) (LatestFlightSampleRow, error) {
+	row := q.db.QueryRow(ctx, latestFlightSample, arg.FlightID, arg.Since)
+	var i LatestFlightSampleRow
+	err := row.Scan(
+		&i.CapturedAt,
+		&i.Lat,
+		&i.Lng,
+		&i.AltWgs84M,
+		&i.SpeedMs,
+		&i.TrackDeg,
+		&i.AccuracyH,
+		&i.AccuracyV,
+	)
+	return i, err
 }

@@ -1,6 +1,12 @@
-// Package dsssync is the dss-sync process: the outbox towards the InterUSS DSS and peer notifications. Its routes and
-// workers arrive with their work packages; until then it serves its
-// health, readiness and metrics and reports its dependencies.
+// Package dsssync is the dss-sync process. As built (WP-9, WP-13) the
+// outbox towards the InterUSS DSS, the F3548 writer, the subscriptions,
+// the availability poll and the peer notifications run in api
+// (internal/dss, internal/app/api), the only writer of the relational
+// database (D5): the outbox, peer_intents and the intents' DSS columns
+// are relational rows, and a second writer would break that rule.
+// dss-sync serves its health, readiness and metrics and reports its
+// dependencies, so a deployment that scales the DSS work out later keeps
+// its process and image.
 package dsssync
 
 import (

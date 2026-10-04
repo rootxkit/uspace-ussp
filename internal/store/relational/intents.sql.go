@@ -619,7 +619,7 @@ SELECT id, operator_id, client_id, client_ref, request_hash, request, decision_b
        exempt_art_1_3, priority, time_start, time_end, filed_at, created_at, volumes_amsl, cell_set,
        update_required
   FROM operational_intents
- WHERE local_state IN ('accepted', 'activated', 'nonconforming', 'contingent')
+ WHERE local_state IN ('pending_dss', 'accepted', 'activated', 'nonconforming', 'contingent')
    AND NOT exempt_art_1_3
    AND time_start <= $1::timestamptz AND time_end >= $2::timestamptz
    AND id <> $3::uuid
@@ -658,8 +658,11 @@ type IntentOverlappingRow struct {
 	UpdateRequired []byte      `json:"update_required"`
 }
 
-// The active, non-exempt intents whose envelope is within dist_m of the
-// envelope given (a MULTIPOLYGON in WKT, WGS84) and whose window
+// The active, non-exempt intents, and those waiting for their DSS write
+// (pending_dss: they passed every local check and hold their place in
+// the first come, first served order until the DSS answers, WP-13),
+// whose envelope is within dist_m of the envelope given (a MULTIPOLYGON
+// in WKT, WGS84) and whose window
 // overlaps [from_at, to_at], without exclude_id: a prefilter, the
 // judgement is internal/intent/deconflict's.
 func (q *Queries) IntentOverlapping(ctx context.Context, arg IntentOverlappingParams) ([]IntentOverlappingRow, error) {

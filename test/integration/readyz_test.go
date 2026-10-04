@@ -165,8 +165,9 @@ func wantStates(t *testing.T, body *client.Readiness, want map[string]client.Dep
 			continue
 		}
 		// cis says what it is up with (its versions and age), registry
-		// its last success and the feed's cursor.
-		if state == client.DependencyStateUp && (d.AgeS == nil || *d.AgeS != 0 || (d.Detail != nil) != (name == "cis" || name == "registry")) {
+		// its last success and the feed's cursor, dss this USSP's
+		// availability in the DSS (WP-13).
+		if state == client.DependencyStateUp && (d.AgeS == nil || *d.AgeS != 0 || (d.Detail != nil) != (name == "cis" || name == "registry" || name == "dss")) {
 			t.Errorf("%s up with age %v detail %v", name, d.AgeS, d.Detail)
 		}
 		if state == client.DependencyStateDown && (d.Detail == nil || *d.Detail == "") {

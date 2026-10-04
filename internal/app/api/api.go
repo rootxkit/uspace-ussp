@@ -3,7 +3,7 @@
 // writer of the relational database. WP-2 brings its routes: the token
 // issuer, the JWKS and the accounts, every operation behind the
 // fail-closed access table of internal/national; WP-3 mounts the F3548
-// USS endpoints (internal/stdapi), 501 until WP-13; WP-4 runs the CIS
+// USS endpoints (internal/stdapi), served since WP-13; WP-4 runs the CIS
 // cache (internal/cis) and its receiver POST /v1/cis/notifications;
 // WP-5 the registry validity cache (internal/registry), its change feed
 // and GET /v1/registry/validate, and checks operator accounts with it;
@@ -15,7 +15,11 @@
 // /v1/alerts/{alert_id}/ack and the escalation of unacknowledged
 // critical alerts; WP-12 geo-awareness (internal/geo): GET /v1/geo*,
 // every installed CIS version on cis.v1 and the standing re-check of
-// the active intents (Art. 10(10)).
+// the active intents (Art. 10(10)); WP-13 F3548 strategic coordination
+// (internal/dss): every intent the DSS must hold written to it after its
+// commit and authorised only once it is, the peers' notifications and
+// details, the subscriptions, the availability, the 24 h purge and the
+// exchange log.
 package api
 
 import (
@@ -42,6 +46,7 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/config"
 	"github.com/rootxkit/uspace-ussp/internal/conformance"
 	confstore "github.com/rootxkit/uspace-ussp/internal/conformance/pgstore"
+	"github.com/rootxkit/uspace-ussp/internal/dss"
 	"github.com/rootxkit/uspace-ussp/internal/flights"
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/national"
@@ -197,9 +202,10 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 		IPLimiter:     httpx.NewRateLimiter(perMin(cfg.TokenRatePerMin), burst(cfg.TokenRatePerMin), 100_000, counters),
 		Counters:      counters, Logger: rt.Logger,
 	}
-	intents := startIntents(ctx, rt, pol, cisState, reg.Cache, kv)
+	coord := newStrategic(rt, tokens)
+	intents := startIntents(ctx, rt, pol, cisState, reg.Cache, kv, coord.gate)
 	alertSvc := startAlerts(ctx, rt, current)
-	geoState := startGeo(ctx, rt, cisState, intents)
+	geoState, rechecker := startGeo(ctx, rt, cisState, intents)
 	cisState.Start(ctx, rt)
 	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc,
 		CIS: cisState.Receiver, Registry: reg.Cache, Intents: intents, Alerts: alertSvc, Geo: geoState, Logger: rt.Logger,
@@ -208,18 +214,23 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	if err := national.Register(mux, srv, guard.Require); err != nil {
 		return fmt.Errorf("access table: %w", err)
 	}
-	// The F3548 USS endpoints (PLAN §6.2), 501 until WP-13, behind the
-	// standard's scopes.
-	std := &core.Counters{}
-	proc.Publish(rt, "stdapi", std)
-	if err := stdapi.MountF3548(mux, stdapi.NotImplementedF3548{}, stdapi.Options{Guard: guard.Require, Validate: auth.ValidateAccess, Counters: std}); err != nil {
-		return fmt.Errorf("F3548 access table: %w", err)
-	}
 	rt.Go(ctx, func(ctx context.Context) { svc.RunSweep(ctx, sweepInterval) })
 	// The flight facts of telemetry-ingest (WP-8, PLAN §3.2): recorded in
 	// the flights table with their F3411 ISA plan (WP-9), then
 	// acknowledged.
-	planner := startISA(ctx, rt, current, tokens)
+	planner, isaProbe := startISA(ctx, rt, current, tokens)
+	// F3548 strategic coordination (WP-13): the DSS writer, the
+	// subscriptions, the availability, the purge, and the USS endpoints
+	// (PLAN §6.2) behind the standard's scopes, every exchange of them
+	// recorded for GET /uss/v1/log_sets.
+	ussServer := coord.start(ctx, rt, current, intents, rechecker, cisState, isaProbe)
+	std := &core.Counters{}
+	proc.Publish(rt, "stdapi", std)
+	uss, err := ussHandler(ussServer, guard.Require, coord.exlog, std)
+	if err != nil {
+		return err
+	}
+	mux.Handle("/uss/v1/", uss)
 	flightCounters := &core.Counters{}
 	proc.Publish(rt, "flight_records", flightCounters)
 	rec := &flights.Recorder{
@@ -242,6 +253,18 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	}
 	rt.Go(ctx, crec.Run)
 	return nil
+}
+
+// ussHandler serves the F3548 USS endpoints behind the standard's
+// scopes, every exchange the guard admits recorded for GET
+// /uss/v1/log_sets: the log sits inside the guard, so a request without
+// a valid token is refused before anything of it is queued or stored.
+func ussHandler(s *dss.Server, guard httpx.Guard, exlog *dss.ExchangeLog, counters *core.Counters) (http.Handler, error) {
+	uss := http.NewServeMux()
+	if err := stdapi.MountF3548(uss, s, stdapi.Options{Guard: exlog.Behind(guard), Validate: auth.ValidateAccess, Counters: counters}); err != nil {
+		return nil, fmt.Errorf("F3548 access table: %w", err)
+	}
+	return uss, nil
 }
 
 // AlertsConsumer is api's durable consumer of the ALRT stream.

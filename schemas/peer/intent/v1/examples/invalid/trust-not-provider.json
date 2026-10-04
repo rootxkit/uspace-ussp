@@ -1,0 +1,24 @@
+{
+  "schema": "peer/intent/v1",
+  "msg_id": "01K6Q2A3B4C5D6E7F8G9H0J1K5",
+  "producer": "ussp/api",
+  "ts": "2026-10-03T12:41:00.000Z",
+  "rx_ts": "2026-10-03T12:41:00.000Z",
+  "captured_at": "2026-10-03T12:41:00.000Z",
+  "time_source": "system",
+  "backlog": false,
+  "body": {
+    "entity_id": "2f8a1c3e-5b7d-4e9f-8a1b-3c5d7e9f1a2b",
+    "manager": "sim-ussp-01",
+    "uss_base_url": "",
+    "trust": "authenticated",
+    "deleted": true,
+    "state": null,
+    "version": null,
+    "priority": null,
+    "time_start": null,
+    "time_end": null,
+    "received_at": "2026-10-03T12:40:59.900Z",
+    "operational_intent": null
+  }
+}

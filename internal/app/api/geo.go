@@ -26,7 +26,7 @@ const cisPublishTimeout = 5 * time.Second
 // traffic-ws tells its subscribers to refetch), and the standing
 // re-check of the active intents on every change and every sweep. It
 // returns the national handlers.
-func startGeo(ctx context.Context, rt *proc.Runtime, cisState *CIS, intents *intent.Service) *national.Geo {
+func startGeo(ctx context.Context, rt *proc.Runtime, cisState *CIS, intents *intent.Service) (*national.Geo, *geo.Rechecker) {
 	counters := &core.Counters{}
 	proc.Publish(rt, "geo", counters)
 	pub := bus.NewPublisher(rt.Bus, counters)
@@ -50,5 +50,5 @@ func startGeo(ctx context.Context, rt *proc.Runtime, cisState *CIS, intents *int
 	re := geo.NewRechecker(intents, cisState.Evaluator, counters, logger)
 	cisState.OnChange(re.Changed)
 	rt.Go(ctx, re.Run)
-	return &national.Geo{Service: &geo.Service{CIS: cisState.Evaluator, Counters: counters}, Intents: intents}
+	return &national.Geo{Service: &geo.Service{CIS: cisState.Evaluator, Counters: counters}, Intents: intents}, re
 }

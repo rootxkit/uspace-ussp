@@ -47,9 +47,10 @@ func (r isaRecorder) Record(ctx context.Context, b flights.Body) error {
 
 // startISA plans and writes the ISA of every flight when the DSS is
 // configured (USSP_DSS_BASE_URL, USSP_USS_BASE_URL and an outgoing token
-// client): the planner for the flight recorder and the worker, with
-// dss on /readyz. Otherwise no ISA is planned, and /readyz says so.
-func startISA(ctx context.Context, rt *proc.Runtime, current func() policy.Values, tokens *auth.Outgoing) *ridsp.Planner {
+// client): the planner for the flight recorder and the worker, and the
+// worker's part of dss on /readyz (merged with the F3548 part, WP-13).
+// Otherwise no ISA is planned, and /readyz says so.
+func startISA(ctx context.Context, rt *proc.Runtime, current func() policy.Values, tokens *auth.Outgoing) (*ridsp.Planner, obs.Probe) {
 	cfg := rt.Config
 	why := ""
 	switch {
@@ -61,11 +62,12 @@ func startISA(ctx context.Context, rt *proc.Runtime, current func() policy.Value
 		why = "no outgoing token client (USSP_TOKEN_ISSUERS, USSP_TOKEN_CLIENT_SECRET_FILE)"
 	}
 	if why != "" {
-		rt.Health.Register(DepDSS, false, func(context.Context) (obs.State, string) {
+		probe := func(context.Context) (obs.State, string) {
 			return obs.StateDown, why + ": no F3411 ISA is written, so Display Providers do not find our flights"
-		})
+		}
+		rt.Health.Register(DepDSS, false, probe)
 		rt.Logger.Warn("no F3411 ISA is written: " + why)
-		return nil
+		return nil, probe
 	}
 	counters := &core.Counters{}
 	proc.Publish(rt, "rid_isa", counters)
@@ -77,5 +79,5 @@ func startISA(ctx context.Context, rt *proc.Runtime, current func() policy.Value
 	}
 	rt.Health.Register(DepDSS, false, worker.Probe())
 	rt.Go(ctx, worker.Run)
-	return planner
+	return planner, worker.Probe()
 }

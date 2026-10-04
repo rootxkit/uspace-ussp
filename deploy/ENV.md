@@ -77,6 +77,7 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_CIS_NOTIFY_ISSUERS` | `api` |  |  |  | issuers of CIS change notifications (the CISP, the ANSP) as iss=jwks_url, comma-separated |
 | `USSP_USS_BASE_URL` | `api,rid-sp,dss-sync` |  |  |  | this USSP's published base URL (uss_base_url in the DSS) |
 | `USSP_DSS_BASE_URL` | `api,rid-sp,dss-sync` |  |  |  | InterUSS DSS base URL; its host is the outgoing aud |
+| `USSP_DSS_FOR_ALL` | `api` |  | `off` |  | on: every intent that needs an authorisation is deconflicted and written through the DSS, outside U-space airspace too; off: only intents inside U-space airspace (02 F5) |
 | `USSP_CISP_BASE_URL` | `api` |  |  |  | CISP base URL (F3 pull) |
 | `USSP_CIS_BBOX` | `api` |  |  |  | box of the CIS change subscription as min_lng,min_lat,max_lng,max_lat in WGS84 degrees; empty is everywhere |
 | `USSP_CIS_PUBLISHER_KEYS` | `api` |  |  |  | JWKS of the CIS publishers as authority=jwks_url,ansp=jwks_url: a dataset version is used only when its X-Publisher-Signature verifies with its publisher's key (the authority for zones, uspace_airspace and ussp_list, the ANSP for restrictions); otherwise it is held |

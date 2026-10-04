@@ -357,7 +357,7 @@ func (s *Service) Recheck(ctx context.Context, intentID string, cause Cause) (Re
 	if cisVersion == "" {
 		cisVersion = cause.CISVersion
 	}
-	err = s.Store.InTx(ctx, func(ctx context.Context, tx Tx) error {
+	err = s.inTx(ctx, func(ctx context.Context, tx Tx) error {
 		r, err := tx.Lock(ctx, intentID)
 		if err != nil {
 			return err

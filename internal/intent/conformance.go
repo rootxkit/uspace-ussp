@@ -52,7 +52,7 @@ func (s *Service) SetConformance(ctx context.Context, id, state, reason string) 
 		return false, refuse(http.StatusNotFound, "not_found", "no such intent")
 	}
 	changed := false
-	err := s.Store.InTx(ctx, func(ctx context.Context, tx Tx) error {
+	err := s.inTx(ctx, func(ctx context.Context, tx Tx) error {
 		r, err := tx.Lock(ctx, id)
 		if err != nil {
 			return err

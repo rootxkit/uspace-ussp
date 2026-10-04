@@ -18,6 +18,49 @@ additively within `/v1`.
 
 ### Added
 
+- WP-13: F3548 strategic coordination through the InterUSS DSS and with
+  the peer USSPs (`internal/dss`, running in api, D5). An intent that
+  needs an authorisation inside U-space airspace (anywhere with the new
+  `USSP_DSS_FOR_ALL=on`) is no longer authorised on the local checks: it
+  is `pending_dss` (`dss_write_pending`, `dss_unavailable`,
+  `uss_availability_down`, `dss_key_conflict`, `peer_intent_unavailable`
+  or `dss_refused`) until the DSS has taken it, and holds its place in
+  the first come, first served order meanwhile. Every version of an
+  intent the DSS must hold queues an `oir_put` outbox item in the
+  transaction that wrote it; the writer (per-intent advisory lock) reads
+  the operational intent and constraint references of the extents,
+  fetches the peers' details and the constraints from their managers
+  (stored in `peer_intents` and `constraints`, trust provider), judges
+  the intent again with WP-7's deconfliction and the CIS as it is now
+  (`intent.PeerCheck`: a peer first or a constraint rejects it, naming
+  `peer:<id>` or the constraint), PUTs it Accepted with the key of every
+  ovn seen and an implicit subscription, fetches what a 409 names and
+  writes once more, then authorises it (its number, the previous one
+  after a modification) and tells the subscribers through `peer_notify`
+  items within 5 s; a peer it displaces is told inline within 900 ms,
+  else `peer_notify_late`. Activation, nonconformance, contingency and
+  the end are mirrored (PUT with the state, DELETE at the ovn), the
+  state written only ever one of the four F3548 states. `POST
+  /v1/intents` and a modification make the write in the request path
+  (at most 5 s) and answer the decision as it then stands. The F3548 USS
+  endpoints replace WP-3's 501s: our details as the DSS holds them, the
+  telemetry of a Nonconforming or Contingent intent, peer notifications
+  (stored by version, published on the new core subject
+  `peer.intent.v1.<entity_id>` as the new schema `peer/intent/v1`, judged
+  against our intents: a peer with precedence withdraws or marks ours, a
+  conflict the DSS let through is audited `dss_conflict_reported` for the
+  authority), constraint notifications (stored, WP-12's re-check), reports,
+  the log sets of an exchange log (`dss_exchanges`) and 404 for our
+  constraints. One DSS subscription per U-space airspace of
+  `cis_current`, renewed at 80 % of 24 h; this USSP's availability read
+  every 60 s (`Down` stops new writes; `ctl.dss_state`); peer data purged
+  at 24 h unless a decision names it. `/readyz` `dss` merges the F3411
+  and F3548 parts (reachability, availability, outbox depth and age, the
+  DSS clock drift beyond 5 s). Relational migration 00017; policy values
+  `peer_subscription_margin_m` (2000) and `dss_exchange_retention_days`
+  (7); the F3548 client gains `getConstraintDetails` and
+  `getSubscription`; the fake DSS gains the F3548 side with ovn and key
+  semantics; `internal/testfakes/peeruss` is a fake peer USSP.
 - Every NATS stream's age and size bound and every bucket's size bound
   is configurable: `USSP_<STREAM>_STREAM_MAX_AGE_S` and
   `USSP_<STREAM>_STREAM_MAX_BYTES` for TRK, MAN, PEER, ALRT, IDENT,

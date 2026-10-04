@@ -103,6 +103,7 @@ type Config struct {
 	CISNotifyIssuers        []string `env:"USSP_CIS_NOTIFY_ISSUERS" by:"api" kind:"issuers" help:"issuers of CIS change notifications (the CISP, the ANSP) as iss=jwks_url, comma-separated"`
 	USSBaseURL              string   `env:"USSP_USS_BASE_URL" by:"api,rid-sp,dss-sync" kind:"url" help:"this USSP's published base URL (uss_base_url in the DSS)"`
 	DSSBaseURL              string   `env:"USSP_DSS_BASE_URL" by:"api,rid-sp,dss-sync" kind:"url" help:"InterUSS DSS base URL; its host is the outgoing aud"`
+	DSSForAll               string   `env:"USSP_DSS_FOR_ALL" default:"off" by:"api" enum:"on|off" help:"on: every intent that needs an authorisation is deconflicted and written through the DSS, outside U-space airspace too; off: only intents inside U-space airspace (02 F5)"`
 	CISPBaseURL             string   `env:"USSP_CISP_BASE_URL" by:"api" kind:"url" help:"CISP base URL (F3 pull)"`
 	CISBBox                 string   `env:"USSP_CIS_BBOX" by:"api" help:"box of the CIS change subscription as min_lng,min_lat,max_lng,max_lat in WGS84 degrees; empty is everywhere"`
 	CISPublisherKeys        []string `env:"USSP_CIS_PUBLISHER_KEYS" by:"api" kind:"issuers" help:"JWKS of the CIS publishers as authority=jwks_url,ansp=jwks_url: a dataset version is used only when its X-Publisher-Signature verifies with its publisher's key (the authority for zones, uspace_airspace and ussp_list, the ANSP for restrictions); otherwise it is held"`
