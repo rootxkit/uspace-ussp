@@ -18,6 +18,15 @@ additively within `/v1`.
 
 ### Added
 
+- WP-19: uspace-core v1.4.0. Every grid is loaded through core's
+  memory-mapped loaders, so the processes on one host share one copy in
+  the page cache: `USSP_GEOID_FILE` with `geoid.LoadMapped` in api,
+  monitor and telemetry-ingest, and the tiles of `USSP_TERRAIN_DIR`
+  with `terrain.MappedDirOpener` in monitor. `/readyz` says the result
+  of `Mapped()`: geoid up with `mapped: true` (linux and darwin) or
+  `mapped: false` (read into memory elsewhere), terrain up with the
+  same for the last tile read (`mapped: no tile read yet` before one).
+  A mapped file must be replaced by renaming, never rewritten in place.
 - WP-13: F3548 strategic coordination through the InterUSS DSS and with
   the peer USSPs (`internal/dss`, running in api, D5). An intent that
   needs an authorisation inside U-space airspace (anywhere with the new

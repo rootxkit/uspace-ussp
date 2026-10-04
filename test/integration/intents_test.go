@@ -13,6 +13,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -40,7 +41,8 @@ import (
 const geoidUndulationM = 20
 
 // geoidFile writes a constant geoid grid (GeographicLib PGM, N = 20 m
-// everywhere) and returns its path: the real core geoid.Load reads it.
+// everywhere) and returns its path: the real core geoid.LoadMapped reads
+// it in every process.
 func geoidFile(t *testing.T) string {
 	t.Helper()
 	var b bytes.Buffer
@@ -51,6 +53,16 @@ func geoidFile(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// geoidMappedDetail is the /readyz geoid detail of a process that loaded
+// the integration grid (WP-19): core's geoid.LoadMapped maps it on linux
+// and darwin and reads it into memory elsewhere.
+func geoidMappedDetail() string {
+	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+		return "mapped: true"
+	}
+	return "mapped: false"
 }
 
 // withGeoid adds the integration geoid grid as USSP_GEOID_FILE.
