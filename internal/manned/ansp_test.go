@@ -126,11 +126,13 @@ func TestANSPStreamCutIsUnavailableSinceTheLastFrameThenBack(t *testing.T) {
 	st := newStream(f, s, &gate{})
 	run(t, st.Run)
 	within(t, 5*time.Second, "live", func() bool { return st.State().State == sources.StateLive })
-	f.CutStream()
 	cut := time.Now()
+	f.CutStream()
 	within(t, 3*time.Second, "unavailable", func() bool { return st.State().State == sources.StateDown })
 	a := st.State()
-	if a.Since.After(cut) || cut.Sub(a.Since) > time.Second || !strings.Contains(a.Detail, "unavailable") {
+	// Since the last frame: one in flight when the stream was cut may
+	// still be read a moment after.
+	if a.Since.After(cut.Add(200*time.Millisecond)) || cut.Sub(a.Since) > time.Second || !strings.Contains(a.Detail, "unavailable") {
 		t.Fatalf("down %+v (cut at %v)", a, cut)
 	}
 	if state, d := st.Probe(context.Background()); state != obs.StateDown || !strings.Contains(d, "unavailable since") {
