@@ -15,6 +15,14 @@ additively within `/v1`.
   lab issuer lists `ussp-USSP-DEV-01`, so the lower-cased id could never
   be registered and every outgoing call (the CIS) had no token. Found at
   the first staging deploy: `POST /v1/oauth/clients` refused it.
+- A displaced peer is told inline, with the 900 ms deadline of PLAN §15
+  Q16, every time. The authorisation committed its notification to the
+  outbox due at once, and a tick of the notification loop before the
+  writer's inline lease took it, skipping the inline attempt (8 runs in
+  40 of `TestIntegrationDSSDisplacedPeerWithinOneSecond` locally). The
+  notification is now queued held from the loop for 900 ms; the inline
+  lease takes it at once, and the loop takes one the writer never
+  reaches when the hold runs out.
 
 ### Added
 

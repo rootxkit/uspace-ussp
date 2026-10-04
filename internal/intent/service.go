@@ -243,8 +243,8 @@ type Tx interface {
 	// SetHeld records what the DSS holds of the intent; nil clears it.
 	SetHeld(ctx context.Context, id string, h *DSSHeld) error
 	// Enqueue queues an outbox item, idempotent by kind, entity and
-	// version (store.Enqueue).
-	Enqueue(ctx context.Context, kind, entityID string, version int64, payload any) error
+	// version, due hold after the commit (store.EnqueueHeld).
+	Enqueue(ctx context.Context, kind, entityID string, version int64, payload any, hold time.Duration) error
 	// PreviousNumber is the newest authorisation number an earlier
 	// version of the intent carried; "" when none (Art. 6(6)).
 	PreviousNumber(ctx context.Context, id string) (string, error)

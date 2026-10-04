@@ -67,12 +67,16 @@ type DSSHeld struct {
 }
 
 // OutboxSpec is one outbox item a DSS transition queues in its
-// transaction (the subscribers' notifications of a write).
+// transaction (the subscribers' notifications of a write). Hold keeps
+// the item from the outbox workers for that long after the commit (a
+// displaced peer's notification, which the writer posts inline first);
+// 0 makes it due at once.
 type OutboxSpec struct {
 	Kind     string
 	EntityID string
 	Version  int64
 	Payload  any
+	Hold     time.Duration
 }
 
 // DSSWriter writes an intent to the DSS now (internal/dss Writer): the
@@ -557,7 +561,7 @@ func (s *Service) DSSAuthorise(ctx context.Context, id string, version int, held
 			return err
 		}
 		for _, n := range notes {
-			if err := tx.Enqueue(ctx, n.Kind, n.EntityID, n.Version, n.Payload); err != nil {
+			if err := tx.Enqueue(ctx, n.Kind, n.EntityID, n.Version, n.Payload, n.Hold); err != nil {
 				return err
 			}
 		}
@@ -613,7 +617,7 @@ func (s *Service) DSSRecord(ctx context.Context, id string, held *DSSHeld, notes
 			return err
 		}
 		for _, n := range notes {
-			if err := tx.Enqueue(ctx, n.Kind, n.EntityID, n.Version, n.Payload); err != nil {
+			if err := tx.Enqueue(ctx, n.Kind, n.EntityID, n.Version, n.Payload, n.Hold); err != nil {
 				return err
 			}
 		}

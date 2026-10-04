@@ -44,11 +44,19 @@ var ErrNotPending = errors.New("outbox item is not pending")
 // (kind, entityID, entityVersion): it returns false when that change is
 // already queued (or done).
 func Enqueue(ctx context.Context, q *relational.Queries, kind, entityID string, entityVersion int64, payload any) (bool, error) {
+	return EnqueueHeld(ctx, q, kind, entityID, entityVersion, payload, 0)
+}
+
+// EnqueueHeld is Enqueue with the item due hold after it is queued: no
+// worker's Claim takes it before then (a displaced peer's notification,
+// held for the writer's inline attempt). hold <= 0 is due at once.
+func EnqueueHeld(ctx context.Context, q *relational.Queries, kind, entityID string, entityVersion int64, payload any, hold time.Duration) (bool, error) {
 	b, err := json.Marshal(payload)
 	if err != nil {
 		return false, fmt.Errorf("outbox payload: %w", err)
 	}
-	_, err = q.EnqueueOutbox(ctx, relational.EnqueueOutboxParams{Kind: kind, EntityID: entityID, EntityVersion: entityVersion, Payload: b})
+	_, err = q.EnqueueOutbox(ctx, relational.EnqueueOutboxParams{Kind: kind, EntityID: entityID, EntityVersion: entityVersion, Payload: b,
+		HoldS: max(hold, 0).Seconds()})
 	if IsNoRows(err) {
 		return false, nil
 	}

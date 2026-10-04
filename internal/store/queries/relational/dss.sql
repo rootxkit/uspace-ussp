@@ -211,13 +211,15 @@ WHERE kind = sqlc.arg(kind) AND entity_id = sqlc.arg(entity_id) AND entity_versi
 -- Leases the one due item of a key (a displaced peer's notification
 -- posted inline), as ClaimOutboxKinds does: while it is in flight the
 -- notification loop does not take it, and an item the loop holds is not
--- taken here (no row).
+-- taken here (no row). An item queued with a hold and never claimed
+-- (attempts 0) is taken before it is due: the hold keeps the loop off
+-- it for this inline attempt, not this attempt off it.
 -- name: ClaimOutboxByKey :one
 UPDATE dss_outbox
 SET attempts = attempts + 1,
     next_at = now() + make_interval(secs => sqlc.arg(lease_s)::double precision)
 WHERE kind = sqlc.arg(kind) AND entity_id = sqlc.arg(entity_id) AND entity_version = sqlc.arg(entity_version)
-  AND done_at IS NULL AND next_at <= now()
+  AND done_at IS NULL AND (next_at <= now() OR attempts = 0)
 RETURNING id, kind, entity_id, entity_version, payload, attempts, next_at, created_at, done_at, last_error;
 
 -- name: OutboxOldestDue :one

@@ -718,9 +718,9 @@ func (t tx) SetHeld(ctx context.Context, id string, h *intent.DSSHeld) error {
 	return nil
 }
 
-// Enqueue queues an outbox item in the transaction.
-func (t tx) Enqueue(ctx context.Context, kind, entityID string, version int64, payload any) error {
-	_, err := store.Enqueue(ctx, t.q, kind, entityID, version, payload)
+// Enqueue queues an outbox item in the transaction, due hold after it.
+func (t tx) Enqueue(ctx context.Context, kind, entityID string, version int64, payload any, hold time.Duration) error {
+	_, err := store.EnqueueHeld(ctx, t.q, kind, entityID, version, payload, hold)
 	return err
 }
 

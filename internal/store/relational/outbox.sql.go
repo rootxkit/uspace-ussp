@@ -63,28 +63,32 @@ func (q *Queries) ClaimOutbox(ctx context.Context, arg ClaimOutboxParams) ([]Dss
 
 const enqueueOutbox = `-- name: EnqueueOutbox :one
 
-INSERT INTO dss_outbox (kind, entity_id, entity_version, payload)
-VALUES ($1, $2, $3, $4)
+INSERT INTO dss_outbox (kind, entity_id, entity_version, payload, next_at)
+VALUES ($1, $2, $3, $4,
+        now() + make_interval(secs => $5::double precision))
 ON CONFLICT (kind, entity_id, entity_version) DO NOTHING
 RETURNING id
 `
 
 type EnqueueOutboxParams struct {
-	Kind          string `json:"kind"`
-	EntityID      string `json:"entity_id"`
-	EntityVersion int64  `json:"entity_version"`
-	Payload       []byte `json:"payload"`
+	Kind          string  `json:"kind"`
+	EntityID      string  `json:"entity_id"`
+	EntityVersion int64   `json:"entity_version"`
+	Payload       []byte  `json:"payload"`
+	HoldS         float64 `json:"hold_s"`
 }
 
 // The DSS outbox (internal/store Outbox). Idempotent by (kind,
 // entity_id, entity_version): a second Enqueue of the same change
-// returns no row.
+// returns no row. An item is due hold_s after it is queued (0: at
+// once); until then no worker's Claim takes it.
 func (q *Queries) EnqueueOutbox(ctx context.Context, arg EnqueueOutboxParams) (int64, error) {
 	row := q.db.QueryRow(ctx, enqueueOutbox,
 		arg.Kind,
 		arg.EntityID,
 		arg.EntityVersion,
 		arg.Payload,
+		arg.HoldS,
 	)
 	var id int64
 	err := row.Scan(&id)
