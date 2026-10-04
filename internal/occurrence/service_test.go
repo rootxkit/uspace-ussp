@@ -49,6 +49,8 @@ type memStore struct {
 	emerg   []FlightRef
 	reports []*memReport
 	errOf   map[string]error
+	// heldPages are the page sizes Held was asked for.
+	heldPages []int
 }
 
 func newMem() *memStore {
@@ -241,18 +243,24 @@ func (m *memStore) Summarise(context.Context) (Summary, error) {
 	return s, nil
 }
 
-func (m *memStore) Held(context.Context) ([]string, error) {
+func (m *memStore) Held(_ context.Context, after string, n int) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.heldPages = append(m.heldPages, n)
 	if err := m.errOf["held"]; err != nil {
 		return nil, err
 	}
 	var out []string
 	for _, r := range m.reports {
-		out = append(out, r.FlightIDs...)
+		for _, id := range r.FlightIDs {
+			if id > after {
+				out = append(out, id)
+			}
+		}
 	}
 	slices.Sort(out)
-	return slices.Compact(out), nil
+	out = slices.Compact(out)
+	return out[:min(n, len(out))], nil
 }
 
 func (m *memStore) report(kind, ref string) *memReport {
@@ -566,6 +574,85 @@ func TestHolds(t *testing.T) {
 	st.errOf["held"] = errors.New("db")
 	if err := s.ProjectHolds(context.Background()); err == nil {
 		t.Fatal("unreadable holds")
+	}
+}
+
+// The projection reads the held flights in pages of HoldsBatch and
+// writes every one, past the bound of one page (E-10).
+func TestProjectHoldsPagesPastTheBatch(t *testing.T) {
+	st := newMem()
+	total := 2*HoldsBatch + 1
+	for i := range total {
+		id := fmt.Sprintf("%08x-0000-4000-8000-000000000000", i)
+		st.reports = append(st.reports, &memReport{Report: Report{SourceKind: "flight", SourceRef: id, FlightIDs: []string{id}}, id: id, state: "pending"})
+	}
+	s, holds := newService(st, nil)
+	if err := s.ProjectHolds(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(holds.held) != total {
+		t.Fatalf("%d of %d flights held", len(holds.held), total)
+	}
+	if want := []int{HoldsBatch, HoldsBatch, HoldsBatch}; !slices.Equal(st.heldPages, want) {
+		t.Fatalf("pages %v, want %v", st.heldPages, want)
+	}
+}
+
+// gatedHolds blocks every projection write (reason "occurrence") until
+// release is closed, and takes a report's own hold at once.
+type gatedHolds struct {
+	memHolds
+	blocked chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (h *gatedHolds) Hold(ctx context.Context, id string, reasons []string, since time.Time) error {
+	if slices.Equal(reasons, []string{"occurrence"}) {
+		h.once.Do(func() { close(h.blocked) })
+		<-h.release
+	}
+	return h.memHolds.Hold(ctx, id, reasons, since)
+}
+
+// A supervisor's flag is not held up by a projection of every held
+// flight that is stuck on the KV: the flag's report is queued and its
+// flight held while the projection still waits.
+func TestFlagDoesNotWaitForTheProjection(t *testing.T) {
+	st := newMem()
+	st.events = []AlertEvent{proximity("a1", "", 10.0, 2.0)}
+	h := &gatedHolds{blocked: make(chan struct{}), release: make(chan struct{})}
+	s := &Service{Store: st, Holds: h, SystemID: "USSP-DEV", Counters: &core.Counters{}}
+	if err := s.Detect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	projected := make(chan error, 1)
+	go func() { projected <- s.ProjectHolds(context.Background()) }()
+	<-h.blocked
+	st.alerts["a2"] = AlertEvent{AlertID: "a2", Kind: "lost_link", RaisedAt: t0, Detail: []byte(`{}`), SourceRef: "a2", Flight: flight(flightB)}
+	flagged := make(chan error, 1)
+	go func() {
+		_, _, err := s.Flag(context.Background(), "staff-7", "a2", "", "")
+		flagged <- err
+	}()
+	select {
+	case err := <-flagged:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		close(h.release)
+		t.Fatal("the flag waited for the projection")
+	}
+	h.mu.Lock()
+	got := h.held[flightB]
+	h.mu.Unlock()
+	if !slices.Equal(got, []string{KindLostLinkInUSpace}) {
+		t.Fatalf("the flag's flight is not held: %v", got)
+	}
+	close(h.release)
+	if err := <-projected; err != nil {
+		t.Fatal(err)
 	}
 }
 

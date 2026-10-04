@@ -209,3 +209,55 @@ func TestIntegrationOccurrences(t *testing.T) {
 		t.Errorf("unknown alert: %v", err)
 	}
 }
+
+// The held flights read in pages: the pages, each within its bound, are
+// the whole held set in id order, past the size of one page (E-10).
+func TestIntegrationOccurrenceHeldPages(t *testing.T) {
+	ctx := context.Background()
+	for range 3 {
+		f := seedFlight(t, "activated", nil, time.Now().Add(-10*time.Minute))
+		seedProximity(t, f, "pair-"+unique(), 20.0, 5.0, time.Now().Add(-time.Minute))
+	}
+	st := occstore.Store{S: appStore(t)}
+	svc := &occurrence.Service{Store: st, Policy: policy.Defaults, SystemID: "USSP-DEV",
+		Counters: &core.Counters{}, Logger: quiet()}
+	if err := svc.Detect(ctx); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := appPool(t).Query(ctx, "SELECT DISTINCT f::text FROM occurrence_reports, unnest(flight_ids) AS f ORDER BY 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		want = append(want, id)
+	}
+	rows.Close()
+	if len(want) < 3 {
+		t.Fatalf("only %d held flights seeded", len(want))
+	}
+	const page = 2
+	var got []string
+	after := ""
+	for {
+		ids, err := st.Held(ctx, after, page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(ids) > page {
+			t.Fatalf("a page of %d, asked for %d", len(ids), page)
+		}
+		got = append(got, ids...)
+		if len(ids) < page {
+			break
+		}
+		after = ids[len(ids)-1]
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("paged %v\nwant %v", got, want)
+	}
+}

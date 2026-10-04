@@ -102,6 +102,8 @@ type Store interface {
 
 	Open(ctx context.Context, n int) ([]Item, bool, error)
 	Summarise(ctx context.Context) (Summary, error)
-	// Held are the flights some report names (the record_holds set).
-	Held(ctx context.Context) ([]string, error)
+	// Held is one page of the flights some report names (the
+	// record_holds set): up to n ids greater than after ("" for the
+	// first page), in ascending order.
+	Held(ctx context.Context, after string, n int) ([]string, error)
 }

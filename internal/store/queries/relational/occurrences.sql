@@ -132,5 +132,11 @@ FROM occurrence_reports
 WHERE state <> 'delivered';
 
 -- name: OccurrenceHeld :many
-SELECT DISTINCT unnest(flight_ids)::text AS flight_id
-FROM occurrence_reports;
+-- One page of the held flights in id order, after the last id of the
+-- previous page (the nil UUID for the first): the projection reads them
+-- in bounded batches, never the whole set at once.
+SELECT DISTINCT f.flight_id::text AS flight_id
+FROM occurrence_reports r, unnest(r.flight_ids) AS f(flight_id)
+WHERE f.flight_id > sqlc.arg(after)::uuid
+ORDER BY 1
+LIMIT sqlc.arg(n);

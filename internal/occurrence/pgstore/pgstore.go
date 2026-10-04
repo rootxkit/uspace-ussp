@@ -272,8 +272,15 @@ func (p Store) Summarise(ctx context.Context) (occurrence.Summary, error) {
 }
 
 // Held implements occurrence.Store.
-func (p Store) Held(ctx context.Context) ([]string, error) {
-	ids, err := p.S.Queries().OccurrenceHeld(ctx)
+func (p Store) Held(ctx context.Context, after string, n int) ([]string, error) {
+	if after == "" {
+		after = "00000000-0000-0000-0000-000000000000"
+	}
+	a, err := store.UUID("after", after)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := p.S.Queries().OccurrenceHeld(ctx, relational.OccurrenceHeldParams{After: a, N: int32(min(max(n, 1), occurrence.HoldsBatch))})
 	if err != nil {
 		return nil, fmt.Errorf("held flights: %w", err)
 	}
