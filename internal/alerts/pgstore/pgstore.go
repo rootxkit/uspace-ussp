@@ -209,3 +209,26 @@ func (p Store) OpenNotices(ctx context.Context, maxRows int) ([]alerts.Stored, e
 	}
 	return out, nil
 }
+
+// OpenNoticesAfter implements alerts.FactStore.
+func (p Store) OpenNoticesAfter(ctx context.Context, after alerts.NoticeCursor, maxRows int) ([]alerts.Stored, error) {
+	from := after.AlertID
+	if from == "" {
+		from = "00000000-0000-0000-0000-000000000000" // the nil UUID: before every id
+	}
+	id, err := store.UUID("alert_id", from)
+	if err != nil {
+		return nil, err
+	}
+	rs, err := p.S.Queries().OpenIntentNoticesAfter(ctx, relational.OpenIntentNoticesAfterParams{
+		AfterRaisedAt: after.RaisedAt, AfterID: id, MaxRows: int32(min(maxRows, 10_000)),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("open notices: %w", err)
+	}
+	out := make([]alerts.Stored, 0, len(rs))
+	for i := range rs {
+		out = append(out, row(rs[i]).stored())
+	}
+	return out, nil
+}

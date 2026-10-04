@@ -70,6 +70,10 @@ additively within `/v1`.
   `alerts_notices_kept_restriction_gone`. The policy value
   `restriction_gone_clear_enabled` (default false, pending GCAA) would
   clear such an alert (`clearing_detail.cause` `restriction_gone`).
+- The lifted-notice pass reads every open `restriction_activated`
+  alert, 500 a page by (`raised_at`, id), where it read the oldest 500
+  only: a lifted restriction's alert past them never cleared. The pages
+  past the first are counted (`alerts_notices_lift_pages`).
 - WP-17 review follow-ups:
   - a portal session's use whose portal user cannot be read keeps the
     earlier `sessions_live` projection (operator and idle end) instead

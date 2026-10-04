@@ -50,6 +50,17 @@ type FactStore interface {
 	// OpenNotices are the open restriction_activated alerts whose intent
 	// is not over, oldest first, at most maxRows (WP-12).
 	OpenNotices(ctx context.Context, maxRows int) ([]Stored, error)
+	// OpenNoticesAfter are the open notices of OpenNotices raised after
+	// the cursor, ordered by (raised_at, alert id), at most maxRows: a
+	// page (WP-12).
+	OpenNoticesAfter(ctx context.Context, after NoticeCursor, maxRows int) ([]Stored, error)
+}
+
+// NoticeCursor is where a page of open notices ends: the raised_at and
+// the alert id of its last row (the zero cursor is before the first).
+type NoticeCursor struct {
+	RaisedAt time.Time
+	AlertID  string
 }
 
 // Publisher is the bus (bus.Publisher).
@@ -257,6 +268,9 @@ const (
 	// their restriction is gone without an end, because the policy says
 	// so (restriction_gone_clear_enabled).
 	CounterNoticesGoneCleared = "alerts_notices_gone_cleared"
+	// CounterNoticeLiftPages counts the pages past the first that a
+	// lifted pass read: more open notices than MaxNoticeRepublish.
+	CounterNoticeLiftPages = "alerts_notices_lift_pages"
 )
 
 // noticeRestriction is the restriction of a notice caused by one ("" for
@@ -317,45 +331,66 @@ func (s *Service) clears(l cis.Lift) bool {
 // otherwise. The intent keeps its state and its change_reason: a
 // withdrawn authorisation stays withdrawn (the operator files anew), only
 // the alert that the restriction is in force ends. A stale CIS clears
-// nothing. The clear is published on alrt.v1 and recorded from there;
-// one that is not recorded yet is published again by the next pass.
+// nothing. Every open notice is judged, MaxNoticeRepublish a page (the
+// pages past the first are counted). The clear is published on alrt.v1
+// and recorded from there; one that is not recorded yet is published
+// again by the next pass.
 func (s *Service) ClearLiftedNotices(ctx context.Context) (int, error) {
 	if s.Restrictions == nil {
 		return 0, nil
 	}
-	rows, err := s.Store.OpenNotices(ctx, MaxNoticeRepublish)
-	if err != nil {
-		return 0, err
-	}
 	now := s.now().UTC()
-	reason := "resolved"
 	n := 0
-	for i := range rows {
-		st := rows[i]
-		id, l := s.liftOf(ctx, st)
-		if !s.clears(l) {
-			if gone(l) {
-				s.counters().Inc(CounterNoticesKeptGone)
-				s.logger().LogAttrs(ctx, slog.LevelWarn, "restriction gone from the CIS without an end: its alert stays raised",
-					slog.String("alert_id", st.AlertID), slog.String("restriction_id", id))
-			}
-			continue
-		}
-		cause := "restriction_lifted"
-		if gone(l) {
-			cause = "restriction_gone"
-			s.counters().Inc(CounterNoticesGoneCleared)
-		}
-		detail, err := json.Marshal(map[string]string{"cause": cause, "restriction_id": id})
+	var after NoticeCursor
+	for {
+		rows, err := s.Store.OpenNoticesAfter(ctx, after, MaxNoticeRepublish)
 		if err != nil {
 			return n, err
 		}
-		st.State, st.ClearReason, st.UpdatedAt, st.ClearingDetail = StateCleared, &reason, now, detail
-		s.counters().Inc(CounterNoticesLifted)
-		s.republish(ctx, st)
-		n++
+		for i := range rows {
+			cleared, err := s.clearLifted(ctx, rows[i], now)
+			if err != nil {
+				return n, err
+			}
+			if cleared {
+				n++
+			}
+		}
+		if len(rows) < MaxNoticeRepublish {
+			return n, nil
+		}
+		last := rows[len(rows)-1]
+		after = NoticeCursor{RaisedAt: last.RaisedAt, AlertID: last.AlertID}
+		s.counters().Inc(CounterNoticeLiftPages)
 	}
-	return n, nil
+}
+
+// clearLifted clears one open notice when its restriction is lifted
+// (ClearLiftedNotices) and says whether it did.
+func (s *Service) clearLifted(ctx context.Context, st Stored, now time.Time) (bool, error) {
+	id, l := s.liftOf(ctx, st)
+	if !s.clears(l) {
+		if gone(l) {
+			s.counters().Inc(CounterNoticesKeptGone)
+			s.logger().LogAttrs(ctx, slog.LevelWarn, "restriction gone from the CIS without an end: its alert stays raised",
+				slog.String("alert_id", st.AlertID), slog.String("restriction_id", id))
+		}
+		return false, nil
+	}
+	cause := "restriction_lifted"
+	if gone(l) {
+		cause = "restriction_gone"
+		s.counters().Inc(CounterNoticesGoneCleared)
+	}
+	detail, err := json.Marshal(map[string]string{"cause": cause, "restriction_id": id})
+	if err != nil {
+		return false, err
+	}
+	reason := "resolved"
+	st.State, st.ClearReason, st.UpdatedAt, st.ClearingDetail = StateCleared, &reason, now, detail
+	s.counters().Inc(CounterNoticesLifted)
+	s.republish(ctx, st)
+	return true, nil
 }
 
 // Notice republishing (WP-12).

@@ -84,6 +84,7 @@ type memStore struct {
 	deliveries map[string]time.Time
 	fail       error
 	acked      map[string]time.Time
+	pages      int
 }
 
 func newMem() *memStore {
@@ -179,6 +180,27 @@ func (m *memStore) OpenNotices(ctx context.Context, maxRows int) ([]Stored, erro
 		out = out[:maxRows]
 	}
 	return out, err
+}
+
+// OpenNoticesAfter are the open notices after the cursor, by
+// (raised_at, alert id), at most maxRows. It counts the pages read.
+func (m *memStore) OpenNoticesAfter(ctx context.Context, after NoticeCursor, maxRows int) ([]Stored, error) {
+	all, err := m.EndedNotices(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	key := func(at time.Time, id string) string { return at.UTC().Format(time.RFC3339Nano) + " " + id }
+	slices.SortFunc(all, func(a, b Stored) int { return strings.Compare(key(a.RaisedAt, a.AlertID), key(b.RaisedAt, b.AlertID)) })
+	var out []Stored
+	for i := range all {
+		if (after == NoticeCursor{} || key(all[i].RaisedAt, all[i].AlertID) > key(after.RaisedAt, after.AlertID)) && len(out) < maxRows {
+			out = append(out, all[i])
+		}
+	}
+	m.mu.Lock()
+	m.pages++
+	m.mu.Unlock()
+	return out, nil
 }
 
 func (m *memStore) EndedNotices(context.Context, int) ([]Stored, error) {
@@ -856,5 +878,39 @@ func TestGoneRestrictionKeepsTheAlertRaised(t *testing.T) {
 	}
 	if svc.counters().Get(CounterNoticesGoneCleared) != 2 {
 		t.Fatalf("gone cleared %d", svc.counters().Get(CounterNoticesGoneCleared))
+	}
+}
+
+// The lifted pass judges every open notice, a page of
+// MaxNoticeRepublish at a time: one lifted notice beyond the first page
+// is cleared too (E-10: the bound exceeded), and the extra page is
+// counted; with one page, none is (E-01).
+func TestClearLiftedNoticesPagesThroughEveryNotice(t *testing.T) {
+	st := newMem()
+	for i := range MaxNoticeRepublish {
+		r := noticeOf(fmt.Sprintf("6d6f0f7e-8d7c-4c1a-9e2b-%012d", i), "restriction", "DARLIVE")
+		st.rows[r.AlertID] = r
+	}
+	late := noticeOf("7d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7eb1", "restriction", "DARENDD")
+	late.RaisedAt = t0.Add(time.Second)
+	st.rows[late.AlertID] = late
+	bus := &pub{}
+	svc := &Service{Store: st, Bus: bus, Restrictions: &lifter{lifts: map[string]cis.Lift{"DARENDD": cis.LiftEnded}},
+		Now: func() time.Time { return t0.Add(time.Minute) }}
+	n, err := svc.ClearLiftedNotices(t.Context())
+	if err != nil || n != 1 {
+		t.Fatalf("cleared %d %v", n, err)
+	}
+	if ms := published(t, bus); len(ms) != 1 || ms[0].AlertID != late.AlertID || ms[0].State != StateCleared {
+		t.Fatalf("published %+v", ms)
+	}
+	if st.pages != 2 || svc.counters().Get(CounterNoticeLiftPages) != 1 {
+		t.Fatalf("pages %d, counted %d", st.pages, svc.counters().Get(CounterNoticeLiftPages))
+	}
+	delete(st.rows, late.AlertID)
+	delete(st.rows, fmt.Sprintf("6d6f0f7e-8d7c-4c1a-9e2b-%012d", 0))
+	st.pages = 0
+	if n, err := svc.ClearLiftedNotices(t.Context()); err != nil || n != 0 || st.pages != 1 || svc.counters().Get(CounterNoticeLiftPages) != 1 {
+		t.Fatalf("one page: %d %v %d", n, err, st.pages)
 	}
 }
