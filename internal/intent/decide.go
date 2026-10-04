@@ -17,7 +17,6 @@ import (
 
 	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/cis"
-	"github.com/rootxkit/uspace-ussp/internal/cis/cispclient"
 	"github.com/rootxkit/uspace-ussp/internal/intent/deconflict"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
 	"github.com/rootxkit/uspace-ussp/internal/registry"
@@ -653,7 +652,15 @@ func (d *Decider) zone(a *Assessment, c cis.ZoneCandidate, v *Volume, ov *Overla
 		if t == core.ZoneNoRestriction {
 			return
 		}
-		if r := e.Restriction; r != nil && (r.State == cispclient.CisRestrictionStateEnded || r.State == cispclient.CisRestrictionStateCancelled) {
+		if e.Planned() {
+			// Planned, not in force (02 F2): told, never refused. Its
+			// activation is a new version, and the standing re-check
+			// withdraws or marks this intent then (Art. 10(10)).
+			a.condition(Condition{Code: CondRestrictionPlanned, Ref: e.Identifier,
+				Detail: "the volume overlaps a restriction the ANSP has planned and not activated; if it is activated, the authorisation is withdrawn"})
+			return
+		}
+		if !e.InForce() {
 			return
 		}
 		add(KindRestriction, ReasonRestrictionActive, EffectRejects, "the volume overlaps a restriction of the ANSP in space, altitude and time")

@@ -72,19 +72,22 @@ func TestZoneSourceRebuildsOnANewBasis(t *testing.T) {
 	}
 }
 
-// What the set holds: restrictions ended or cancelled are left out, a
+// What the set holds: restrictions planned (not in force, spec 02 F2),
+// ended or cancelled are left out and an active one is held, a
 // feature listed under two cells once, a feature that does not build is
 // named (never silent), an open-ended daylight schedule is held as
 // applying always and said so, and the bound is said (E-10).
 func TestBuildZoneSetContents(t *testing.T) {
 	at := time.Date(2026, 10, 3, 8, 0, 0, 0, time.UTC)
-	ended, cancelled, planned := amslZone("TRS001", "PROHIBITED"), amslZone("TRS002", "PROHIBITED"), amslZone("TRS003", "PROHIBITED")
-	vals := projection("v", at, map[string][]feat{"restrictions": {ended, cancelled, planned}})
+	ended, cancelled, planned, active := amslZone("TRS001", "PROHIBITED"), amslZone("TRS002", "PROHIBITED"), amslZone("TRS003", "PROHIBITED"), amslZone("TRS004", "PROHIBITED")
+	vals := projection("v", at, map[string][]feat{"restrictions": {ended, cancelled, planned, active}})
 	ce := vals["c5test"].Cell
-	ce.Zones[0].RestrictionState, ce.Zones[1].RestrictionState, ce.Zones[2].RestrictionState = "ended", "cancelled", "planned"
+	for i, st := range []string{"ended", "cancelled", "planned", "active"} {
+		ce.Zones[i].RestrictionState = st
+	}
 	// The same feature under a second cell, and one that does not build.
 	twin := *ce
-	twin.Zones = []cis.ApplicableZone{ce.Zones[2], {Identifier: "BAD", Type: "PROHIBITED", Dataset: "zones", Version: "zones:1",
+	twin.Zones = []cis.ApplicableZone{ce.Zones[3], {Identifier: "BAD", Type: "PROHIBITED", Dataset: "zones", Version: "zones:1",
 		Feature: []byte(`{"type":"Feature"}`)}}
 	vals["c5twin"] = telemetry.CISValue{Cell: &twin}
 	dl := amslZone("TZD001", "PROHIBITED")
@@ -100,13 +103,13 @@ func TestBuildZoneSetContents(t *testing.T) {
 	for _, z := range s.Zones {
 		ids[s.Meta[z].Identifier] = s.Meta[z]
 	}
-	if len(ids) != 2 || ids["TRS003"].RestrictionState != "planned" || !ids["TZD001"].AlwaysApplies {
+	if len(ids) != 2 || ids["TRS004"].RestrictionState != "active" || !ids["TZD001"].AlwaysApplies {
 		t.Fatalf("held %+v", ids)
 	}
 	if len(s.Unbuildable) != 1 || s.Unbuildable[0] != "zones/BAD" || counters.Get(CounterZoneUnbuildable) != 1 || counters.Get(CounterZoneAlwaysApplies) != 1 {
 		t.Fatalf("unbuildable %v %v", s.Unbuildable, counters.Snapshot())
 	}
-	if !s.Has("TRS003") || s.Has("TRS001") || (*ZoneSet)(nil).Has("x") {
+	if !s.Has("TRS004") || s.Has("TRS003") || s.Has("TRS001") || s.Has("TRS002") || (*ZoneSet)(nil).Has("x") {
 		t.Fatal("Has")
 	}
 	old := zoneBound
