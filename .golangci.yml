@@ -139,8 +139,9 @@ linters:
     rules:
       - path: _test\.go
         linters: [gosec, errcheck, forbidigo, unparam, prealloc]
-      # cmd/*/main.go is the one place that exits the process.
-      - path: ^cmd/[^/]+/main\.go$
+      # cmd/*/main.go is the one place that exits the process (and the
+      # main of the browser tests' stack, test/e2e/stack, a test command).
+      - path: ^(cmd/[^/]+|test/e2e/stack)/main\.go$
         text: "os\\.Exit"
         linters: [forbidigo]
       # Generated code: exempt from style linters, never from vet.
