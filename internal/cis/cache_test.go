@@ -586,9 +586,11 @@ func TestCacheProjectionFollowsConfirmations(t *testing.T) {
 	}
 
 	// Presence: back up, every dataset confirmed (zones and
-	// uspace_airspace by 404 with a version held, restrictions by 404):
-	// projected at now, age 0, fresh.
+	// uspace_airspace by the version held served again, restrictions by
+	// 404 with nothing held): projected at now, age 0, fresh.
 	g.fake.Up()
+	g.fake.Publish("zones", prohibited("TZP009").json())
+	g.fake.Publish("uspace_airspace", featureOf(USpaceAirspace, "TUA001").json())
 	g.clk.advance(30 * time.Second)
 	for _, d := range ED318Datasets {
 		if err := g.cache.Pull(ctx, d, nil, true); err != nil {
@@ -601,8 +603,7 @@ func TestCacheProjectionFollowsConfirmations(t *testing.T) {
 	}
 
 	// The version held, served again whole (the warm start held no
-	// ETag), confirms too.
-	g.fake.Publish("zones", prohibited("TZP009").json())
+	// ETag), confirms again.
 	g.clk.advance(45 * time.Second)
 	if err := g.cache.Pull(ctx, Zones, nil, true); err != nil {
 		t.Fatal(err)
@@ -630,5 +631,138 @@ func TestCacheProjectionFollowsConfirmations(t *testing.T) {
 	p, n6 := g2.proj.Last()
 	if g2.count(CounterNotModified) != 3 || n6 != before+3 || !p.At.Equal(g2.clk.Now()) || p.Stale || p.CISAgeS != 0 {
 		t.Fatalf("after the 304s (%d projections, %v): %+v at %v", n6, g2.cache.Counters().Snapshot(), p.Basis, p.At)
+	}
+}
+
+// A 404 for a dataset of which a version is held is not a confirmation:
+// the CISP says it has no version of what we hold. The version is kept
+// (a 404 never empties the cache) and ages as with the CISP down, until
+// it is stale; the 404 is counted, logged and shown on /readyz, and a
+// later confirmation clears it.
+func TestCacheHeldDatasetAnswering404AgesAndSaysSo(t *testing.T) {
+	g := newCacheRig(t, "")
+	ctx := t.Context()
+	for _, d := range ED318Datasets {
+		g.store.stored = append(g.store.stored, StoredVersion{Version: mustVersion(t, d, 1, featureOf(d, "TZP001").json())})
+	}
+	g.cache.Warm(ctx)
+	_, n := g.proj.Last()
+	for range 7 {
+		g.clk.advance(60 * time.Second)
+		for _, d := range ED318Datasets {
+			if err := g.cache.Pull(ctx, d, nil, true); !errors.Is(err, ErrHeldNotFound) {
+				t.Fatalf("%s: %v", d, err)
+			}
+		}
+	}
+	v, age, stale := g.eval.Age()
+	if v != "zones:1,uspace_airspace:1,restrictions:1" || age != 420 || !stale {
+		t.Fatalf("after seven 404s: %q %v %v", v, age, stale)
+	}
+	if g.count(CounterHeldNotFound) != 21 {
+		t.Fatalf("held 404s counted %d", g.count(CounterHeldNotFound))
+	}
+	if p, n2 := g.proj.Last(); n2 != n || p.CISAgeS != 0 {
+		t.Fatalf("a 404 projected: %d %+v", n2, p.Basis)
+	}
+	st, detail := g.cache.Probe(ctx)
+	if st != obs.StateDegraded || !strings.Contains(detail, "zones answered 404 (no version) while version 1 is held") ||
+		!strings.Contains(detail, "age 420 s > 300 s") {
+		t.Fatalf("probe: %s %q", st, detail)
+	}
+	// The CISP serves zones again: confirmed, its 404 no longer said.
+	g.fake.Publish("zones", prohibited("TZP001").json())
+	if err := g.cache.Pull(ctx, Zones, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, detail := g.cache.Probe(ctx); strings.Contains(detail, "zones answered 404") ||
+		!strings.Contains(detail, "uspace_airspace answered 404") {
+		t.Fatalf("probe after zones is served: %q", detail)
+	}
+}
+
+// The twin: a 404 with nothing held is the CISP saying the dataset has
+// no version, a confirmation of that: ":0", empty, fresh, nothing said.
+func TestCacheNothingHeldAnswering404IsNoVersion(t *testing.T) {
+	g := newCacheRig(t, "")
+	ctx := t.Context()
+	for _, d := range ED318Datasets {
+		if err := g.cache.Pull(ctx, d, nil, true); err != nil {
+			t.Fatalf("%s: %v", d, err)
+		}
+	}
+	v, age, stale := g.eval.Age()
+	if v != "zones:0,uspace_airspace:0,restrictions:0" || age != 0 || stale || g.count(CounterHeldNotFound) != 0 {
+		t.Fatalf("no version: %q %v %v %v", v, age, stale, g.cache.Counters().Snapshot())
+	}
+	for _, a := range g.eval.Ages() {
+		if a.Dataset.ED318() && (a.Loaded || !a.Empty) {
+			t.Fatalf("%s: %+v", a.Dataset, a)
+		}
+	}
+	if _, detail := g.cache.Probe(ctx); strings.Contains(detail, "answered 404") {
+		t.Fatalf("probe: %q", detail)
+	}
+}
+
+// A confirmation rewrites the basis alone, not every cell; a new
+// version, or the first confirmation after a projection failed, writes
+// the whole projection.
+func TestCacheConfirmationRewritesTheBasisOnly(t *testing.T) {
+	g := newCacheRig(t, "")
+	ctx := t.Context()
+	kv := newFakeKV()
+	g.cache.cfg.Projector = &BusProjector{KV: kv}
+	for _, d := range ED318Datasets {
+		g.fake.Publish(string(d), featureOf(d, "TZP001").json())
+		if err := g.cache.Pull(ctx, d, nil, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	readBasis := func() BasisValue {
+		var b BasisValue
+		if err := json.Unmarshal(kv.vals[BucketCISCurrent+"/"+KeyBasis], &b); err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	cells := readBasis().Cells
+	kv.ops = nil
+	g.clk.advance(40 * time.Second)
+	if err := g.cache.Pull(ctx, Zones, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	if g.count(CounterNotModified) != 1 || len(kv.ops) != 1 || kv.ops[0] != "put basis" {
+		t.Fatalf("a 304 wrote %v", kv.ops)
+	}
+	if b := readBasis(); !b.At.Equal(g.clk.Now()) || b.Cells != cells || b.CISAgeS != 40 || b.Stale {
+		t.Fatalf("basis after the 304: %+v", b)
+	}
+	// Presence: a new version writes its cells.
+	kv.ops = nil
+	g.fake.Publish("zones", prohibited("TZP001").json(), prohibited("TZP002").json())
+	if err := g.cache.Pull(ctx, Zones, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	if len(kv.ops) < 2 || kv.ops[len(kv.ops)-1] != "put basis" {
+		t.Fatalf("a new version wrote %v", kv.ops)
+	}
+	// A failed write: the next confirmation writes everything again.
+	kv.failAll = errors.New("down")
+	if err := g.cache.Pull(ctx, Zones, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	if g.count(CounterProjectionFailed) != 1 {
+		t.Fatalf("failed write not counted: %v", g.cache.Counters().Snapshot())
+	}
+	kv.failAll, kv.ops = nil, nil
+	if err := g.cache.Pull(ctx, Zones, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	if len(kv.ops) < 2 || kv.ops[len(kv.ops)-1] != "put basis" {
+		t.Fatalf("the confirmation after a failure wrote %v", kv.ops)
+	}
+	if _, detail := g.cache.Probe(ctx); strings.Contains(detail, "projection") {
+		t.Fatalf("probe: %q", detail)
 	}
 }
