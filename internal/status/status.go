@@ -80,12 +80,18 @@ type Queued struct {
 // ErrStartExists is a second start of one certificate.
 var ErrStartExists = errors.New("a start notice is stored for this certificate")
 
+// ErrFollowed is a notice asked after one that another notice, not
+// failed, already follows: a concurrent request stored its change first.
+var ErrFollowed = errors.New("another notice was stored after the one this follows")
+
 // Store is operating_status_notices.
 type Store interface {
 	// Notices are up to n notices of the certificate, newest first.
 	Notices(ctx context.Context, certificateID string, n int) ([]Notice, error)
-	// Insert stores a notice (ErrStartExists for a second start).
-	Insert(ctx context.Context, kind, certificateID, reference, requestedBy string) (Notice, error)
+	// Insert stores a notice that follows the notice of id follows (""
+	// for none): ErrStartExists for a second start, ErrFollowed when a
+	// notice that has not failed follows it already.
+	Insert(ctx context.Context, kind, certificateID, reference, requestedBy, follows string) (Notice, error)
 	Claim(ctx context.Context, n int, lease time.Duration) ([]Queued, error)
 	Delivered(ctx context.Context, id, authorityRef string) error
 	Retry(ctx context.Context, id, cause string, backoff time.Duration) error
@@ -183,7 +189,10 @@ func lastStanding(ns []Notice) *Notice {
 // certificate (a second request answers the stored one), a cease after a
 // start or a restart, a restart after a cease; asking again for the
 // state the last notice already gives answers that notice (created
-// false). It is sent after the commit.
+// false). A cease or restart records the notice it follows, and only one
+// notice that has not failed may follow each: a request that loses that
+// race to a concurrent one reads the notices again and answers by them.
+// It is sent after the commit.
 func (s *Service) Request(ctx context.Context, staffID, kind string) (Notice, bool, error) {
 	if s.CertificateID == "" {
 		return Notice{}, false, &RequestError{"USSP_CERTIFICATE_ID is not set: no operating-status notice can name the certificate"}
@@ -191,6 +200,15 @@ func (s *Service) Request(ctx context.Context, staffID, kind string) (Notice, bo
 	if AuthorityState(kind) == "" {
 		return Notice{}, false, &RequestError{"unknown kind " + kind + " (start, cease or restart)"}
 	}
+	n, created, err := s.request(ctx, staffID, kind)
+	if errors.Is(err, ErrFollowed) {
+		n, created, err = s.request(ctx, staffID, kind)
+	}
+	return n, created, err
+}
+
+// request is one decision of Request on the notices as read now.
+func (s *Service) request(ctx context.Context, staffID, kind string) (Notice, bool, error) {
 	ns, err := s.Store.Notices(ctx, s.CertificateID, MaxListed)
 	if err != nil {
 		return Notice{}, false, err
@@ -210,11 +228,15 @@ func (s *Service) Request(ctx context.Context, staffID, kind string) (Notice, bo
 	case kind == KindRestart && (last == nil || last.Kind != KindCease):
 		return Notice{}, false, &RequestError{"a restart follows a cease"}
 	}
+	follows := ""
+	if kind != KindStart {
+		follows = last.ID
+	}
 	ref, err := newReference(s.SystemID, kind)
 	if err != nil {
 		return Notice{}, false, err
 	}
-	n, err := s.Store.Insert(ctx, kind, s.CertificateID, ref, staffID)
+	n, err := s.Store.Insert(ctx, kind, s.CertificateID, ref, staffID, follows)
 	if errors.Is(err, ErrStartExists) {
 		ns, err := s.Store.Notices(ctx, s.CertificateID, MaxListed)
 		if err != nil {

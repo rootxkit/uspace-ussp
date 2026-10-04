@@ -141,6 +141,16 @@ func SQLState(err error) string {
 	return ""
 }
 
+// ConstraintName is the constraint or unique index a PostgreSQL error
+// names ("" for another error).
+func ConstraintName(err error) string {
+	var pe *pgconn.PgError
+	if errors.As(err, &pe) {
+		return pe.ConstraintName
+	}
+	return ""
+}
+
 // StateInsufficientPrivilege is the SQLSTATE of a refused grant (42501).
 const StateInsufficientPrivilege = "42501"
 

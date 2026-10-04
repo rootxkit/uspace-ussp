@@ -6,7 +6,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -140,5 +142,54 @@ func TestIntegrationStatusBackfillFailsUndelivered(t *testing.T) {
 	}
 	if n := count(t, owner, "SELECT count(*) FROM operating_status_notices WHERE id = $1::uuid AND state = 'pending'", pending); n != 0 {
 		t.Error("the undelivered notice is still pending")
+	}
+}
+
+// Concurrent requests for the same change against the real database:
+// eight consoles ask for a cease at once after the start, then for a
+// restart; one of each is stored, every request answers it, and the
+// notices stay start, cease, restart (00023's unique index).
+func TestIntegrationStatusConcurrentRequests(t *testing.T) {
+	ensureSchemas(t)
+	ctx := context.Background()
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		t.Fatal(err)
+	}
+	cert := hex.EncodeToString(b[:])
+	svc := &status.Service{Store: statusstore.Store{S: appStore(t)}, CertificateID: cert, SystemID: "USSP-DEV",
+		Counters: &core.Counters{}, Logger: quiet()}
+	if _, _, err := svc.Request(ctx, "staff-0", status.KindStart); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{status.KindCease, status.KindRestart} {
+		const consoles = 8
+		refs := make([]string, consoles)
+		errs := make([]error, consoles)
+		var wg sync.WaitGroup
+		gate := make(chan struct{})
+		for i := range consoles {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-gate
+				n, _, err := svc.Request(ctx, fmt.Sprintf("staff-%d", i), kind)
+				refs[i], errs[i] = n.Reference, err
+			}()
+		}
+		close(gate)
+		wg.Wait()
+		for i := range consoles {
+			if errs[i] != nil || refs[i] != refs[0] {
+				t.Fatalf("%s: console %d answered %q %v, console 0 %q", kind, i, refs[i], errs[i], refs[0])
+			}
+		}
+		if n := count(t, appPool(t), "SELECT count(*) FROM operating_status_notices WHERE certificate_id = $1 AND kind = $2", cert, kind); n != 1 {
+			t.Fatalf("%d %s notices stored", n, kind)
+		}
+	}
+	ns, err := svc.List(ctx)
+	if err != nil || len(ns) != 3 || ns[0].Kind != status.KindRestart || ns[1].Kind != status.KindCease || ns[2].Kind != status.KindStart {
+		t.Fatalf("the notices: %+v %v", ns, err)
 	}
 }

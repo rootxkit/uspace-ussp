@@ -1,5 +1,5 @@
 // Package pgstore is internal/status's Store on the relational database:
-// operating_status_notices (migrations 00005, 00021) through the sqlc
+// operating_status_notices (migrations 00005, 00021, 00023) through the sqlc
 // queries of internal/store/queries/relational/status.sql. Every stored
 // notice and every outcome writes its events row in the same
 // transaction. Its tests are the integration tests (test/integration).
@@ -57,14 +57,34 @@ func (p Store) Notices(ctx context.Context, certificateID string, n int) ([]stat
 	return out, nil
 }
 
+// The unique indexes Insert tells apart (00021, 00023).
+const (
+	indexOneStart     = "operating_status_notices_one_start_idx"
+	indexOneSuccessor = "operating_status_notices_one_successor_idx"
+)
+
 // Insert implements status.Store: the notice and its events row commit
-// together; a second start is status.ErrStartExists.
-func (p Store) Insert(ctx context.Context, kind, certificateID, reference, requestedBy string) (status.Notice, error) {
+// together; a second start is status.ErrStartExists, a second notice
+// after the same one status.ErrFollowed.
+func (p Store) Insert(ctx context.Context, kind, certificateID, reference, requestedBy, follows string) (status.Notice, error) {
+	params := relational.StatusInsertParams{Kind: kind, CertificateID: certificateID, Reference: reference, RequestedBy: requestedBy}
+	if follows != "" {
+		f, err := store.UUID("follows", follows)
+		if err != nil {
+			return status.Notice{}, err
+		}
+		params.Follows = f
+	}
 	var out status.Notice
 	err := p.S.Tx(ctx, func(q *relational.Queries) error {
-		r, err := q.StatusInsert(ctx, relational.StatusInsertParams{Kind: kind, CertificateID: certificateID, Reference: reference, RequestedBy: requestedBy})
+		r, err := q.StatusInsert(ctx, params)
 		if store.SQLState(err) == store.StateUniqueViolation {
-			return status.ErrStartExists
+			switch store.ConstraintName(err) {
+			case indexOneStart:
+				return status.ErrStartExists
+			case indexOneSuccessor:
+				return status.ErrFollowed
+			}
 		}
 		if err != nil {
 			return fmt.Errorf("status notice: %w", err)
