@@ -44,6 +44,34 @@ additively within `/v1`.
 
 ### Fixed
 
+- WP-17 review follow-ups:
+  - a portal session's use whose portal user cannot be read keeps the
+    earlier `sessions_live` projection (operator and idle end) instead
+    of projecting it without its operator, and counts
+    `session_operator_unread`.
+  - api rewrites, once at start, the `intent_active` entries projected
+    before `intent/state/v1` carried `operator_id` and `client_id`, so a
+    portal session can follow an intent filed before the WP-17 deploy
+    without waiting for its next version: under the projection's row
+    lock, only for a projected version, 500 entries a pass, nothing
+    published, idempotent (`intent_owners_backfilled`,
+    `intent_owners_backfill_left`).
+  - the portal's BFF no longer lets `/v1/traffic/snapshot` through: it
+    proxies to api, and the snapshot is traffic-ws's (a test holds the
+    allow-list to api's routes).
+  - an alert whose flight api has not recorded yet is recorded at once
+    under the intent it names (its flight filled in by a later
+    delivery, on a cleared row too), so the operator's first
+    acknowledgement, portal or machine client, answers instead of 404
+    until the recorder's next redelivery; the browser test acknowledges
+    with one click instead of retrying for up to 60 s.
+  - `docs/PLAN.md` §15.1 Q28 records the gaps of `uspace-ui` 0.1.0, the
+    kit the portal is built on (no drawing tool, no `console/status/v1`
+    system extras, a release-URL pin), held to the pinned version by a
+    test.
+  - `CLAUDE.md` names `web/src/api/generated/`, where `pnpm gen:api`
+    writes the API types, instead of `web/src/api/types.ts` (a test
+    holds the list to the files and to the script).
 - WP-16 review follow-ups:
   - a weather fetch that answers but delivers nothing in force (every
     report refused, no report for any station, or only reports held

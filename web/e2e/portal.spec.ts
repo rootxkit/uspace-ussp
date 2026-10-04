@@ -148,14 +148,11 @@ test("S-M1 and S-M3: register, client, intent, decision, geo, traffic, alert ack
   await page.goto(`/alerts?intent=${intentId}`);
   const alert = page.getByTestId("stream-alerts").locator('[data-testid="alert-row"][data-kind="proximity"]').first();
   await expect(alert).toBeVisible();
-  // An alert acknowledged before api has recorded its flight and intent
-  // is refused (404 alert_not_found, shown on the page) and acknowledged
-  // when asked again: the test asks until the record answers, bounded.
-  await expect(async () => {
-    const button = alert.getByRole("button", { name: "Acknowledge" });
-    if (await button.isVisible()) await button.click();
-    await expect(alert.getByTestId("acked")).toBeVisible({ timeout: 3_000 });
-  }).toPass({ timeout: 60_000 });
+  // api records the alert under its intent as soon as it is raised, even
+  // before its flight is recorded, so the first acknowledgement answers:
+  // one click, no retry.
+  await alert.getByRole("button", { name: "Acknowledge" }).click();
+  await expect(alert.getByTestId("acked")).toBeVisible();
   await expect(alert).toHaveAttribute("data-acked", "true");
   await shot(page, "alerts-en");
 

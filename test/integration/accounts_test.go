@@ -630,6 +630,51 @@ func TestIntegrationSessionsLiveFollowsTheRows(t *testing.T) {
 	}
 }
 
+// A portal session's use keeps its operator in sessions_live, where
+// traffic-ws reads which intents the session may follow (brief WP-17):
+// a use moves the idle end and keeps operator_id (E-01 twin); a use
+// whose portal user cannot be read projects nothing and counts it, so
+// the earlier projection, operator and idle end, stays rather than one
+// without the operator.
+func TestIntegrationSessionsLiveKeepsThePortalOperator(t *testing.T) {
+	c := newClock()
+	s := newStack(t, c, &logBuffer{})
+	opID, token, _ := s.operator(accounts.RegistryValid)
+	sc := sessionOf(t, token)
+	first, found, _ := s.sessions.Get(sc.JTI)
+	if !found || first.OperatorID != opID {
+		t.Fatalf("sign-in projected %+v, want operator %s", first, opID)
+	}
+
+	c.Add(2 * time.Minute)
+	if r := s.call("GET", "/v1/accounts/me", nil, bearer(token)); r.status != 200 {
+		t.Fatalf("me: %d %s", r.status, r.raw)
+	}
+	used, _, _ := s.sessions.Get(sc.JTI)
+	if used.OperatorID != opID || !used.IdleUntil.After(first.IdleUntil) {
+		t.Fatalf("a use projected %+v after %+v", used, first)
+	}
+
+	// The portal user cannot be read (its row is gone): the session row
+	// is still live, the use is admitted, and sessions_live keeps the
+	// earlier projection.
+	if _, err := relOwner(t).Exec(context.Background(), "DELETE FROM portal_users WHERE id = $1", sc.Subject); err != nil {
+		t.Fatal(err)
+	}
+	c.Add(2 * time.Minute)
+	s.call("GET", "/v1/accounts/me", nil, bearer(token))
+	kept, found, _ := s.sessions.Get(sc.JTI)
+	if !found || kept != used {
+		t.Fatalf("an unread operator projected %+v, want the earlier %+v", kept, used)
+	}
+	if n := s.counters.Get(accounts.CounterSessionOperatorUnread); n != 1 {
+		t.Fatalf("%s = %d, want 1", accounts.CounterSessionOperatorUnread, n)
+	}
+	if n := s.counters.Get(accounts.CounterSessionProjectionFailed); n != 0 {
+		t.Fatalf("%s = %d, want 0", accounts.CounterSessionProjectionFailed, n)
+	}
+}
+
 // RegistryScope (audit S6) is the client's operator's registration
 // number, on its compare key, and the serials live-bound to that client:
 // another client of the same operator has the number and none of the
