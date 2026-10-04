@@ -825,6 +825,69 @@ func (e SerialBindingRequestClassLabel) Valid() bool {
 	}
 }
 
+// Defines values for StatusNoticeKind.
+const (
+	StatusNoticeKindCease   StatusNoticeKind = "cease"
+	StatusNoticeKindRestart StatusNoticeKind = "restart"
+	StatusNoticeKindStart   StatusNoticeKind = "start"
+)
+
+// Valid indicates whether the value is a known member of the StatusNoticeKind enum.
+func (e StatusNoticeKind) Valid() bool {
+	switch e {
+	case StatusNoticeKindCease:
+		return true
+	case StatusNoticeKindRestart:
+		return true
+	case StatusNoticeKindStart:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for StatusNoticeState.
+const (
+	StatusNoticeStateDelivered StatusNoticeState = "delivered"
+	StatusNoticeStateFailed    StatusNoticeState = "failed"
+	StatusNoticeStatePending   StatusNoticeState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the StatusNoticeState enum.
+func (e StatusNoticeState) Valid() bool {
+	switch e {
+	case StatusNoticeStateDelivered:
+		return true
+	case StatusNoticeStateFailed:
+		return true
+	case StatusNoticeStatePending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for StatusRequestKind.
+const (
+	StatusRequestKindCease   StatusRequestKind = "cease"
+	StatusRequestKindRestart StatusRequestKind = "restart"
+	StatusRequestKindStart   StatusRequestKind = "start"
+)
+
+// Valid indicates whether the value is a known member of the StatusRequestKind enum.
+func (e StatusRequestKind) Valid() bool {
+	switch e {
+	case StatusRequestKindCease:
+		return true
+	case StatusRequestKindRestart:
+		return true
+	case StatusRequestKindStart:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TelemetryFrameAccuracyH.
 const (
 	HA005NM    TelemetryFrameAccuracyH = "HA005NM"
@@ -1971,6 +2034,51 @@ type Session struct {
 	Token string `json:"token"`
 }
 
+// StatusNotice defines model for StatusNotice.
+type StatusNotice struct {
+	// At The time the notice states, on the database clock.
+	At       time.Time `json:"at"`
+	Attempts int       `json:"attempts"`
+
+	// AuthorityRef The authority's notice id.
+	AuthorityRef  *string          `json:"authority_ref"`
+	CertificateId string           `json:"certificate_id"`
+	CreatedAt     time.Time        `json:"created_at"`
+	FailedAt      *time.Time       `json:"failed_at"`
+	Kind          StatusNoticeKind `json:"kind"`
+	LastError     *string          `json:"last_error"`
+	NextAt        *time.Time       `json:"next_at,omitempty"`
+
+	// Reference This USSP's reference of the notice, sent with it.
+	Reference string `json:"reference"`
+
+	// RequestedBy The staff account that asked for it.
+	RequestedBy string            `json:"requested_by"`
+	State       StatusNoticeState `json:"state"`
+	SubmittedAt *time.Time        `json:"submitted_at"`
+}
+
+// StatusNoticeKind defines model for StatusNotice.Kind.
+type StatusNoticeKind string
+
+// StatusNoticeState defines model for StatusNotice.State.
+type StatusNoticeState string
+
+// StatusNotices defines model for StatusNotices.
+type StatusNotices struct {
+	// CertificateId USSP_CERTIFICATE_ID (null when unset).
+	CertificateId *string        `json:"certificate_id"`
+	Notices       []StatusNotice `json:"notices"`
+}
+
+// StatusRequest defines model for StatusRequest.
+type StatusRequest struct {
+	Kind StatusRequestKind `json:"kind"`
+}
+
+// StatusRequestKind defines model for StatusRequest.Kind.
+type StatusRequestKind string
+
 // TelemetryBatch defines model for TelemetryBatch.
 type TelemetryBatch struct {
 	Frames []TelemetryFrame `json:"frames"`
@@ -2175,6 +2283,9 @@ type BindSerialJSONRequestBody = SerialBindingRequest
 
 // FlagOccurrenceJSONRequestBody defines body for FlagOccurrence for application/json ContentType.
 type FlagOccurrenceJSONRequestBody = OccurrenceFlag
+
+// RequestStatusNoticeJSONRequestBody defines body for RequestStatusNotice for application/json ContentType.
+type RequestStatusNoticeJSONRequestBody = StatusRequest
 
 // CreateIntentJSONRequestBody defines body for CreateIntent for application/json ContentType.
 type CreateIntentJSONRequestBody = IntentRequest
@@ -2721,6 +2832,53 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /v1/admin/occurrences (the `FlagOccurrence` operationId).
 	FlagOccurrence(ctx context.Context, body FlagOccurrenceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListStatusNotices This USSP's operating-status notices
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// Reg. (EU) 2021/664 Art. 7(6), spec 02 F7). The notices to the
+	// authority for the configured certificate (USSP_CERTIFICATE_ID),
+	// newest first, each with its state: pending (with its tries, last
+	// error and next try), delivered (with the authority's notice id)
+	// or failed. An empty list means no notice was asked for; one that
+	// cannot be read is 503.
+	//
+	// Corresponds with GET /v1/admin/status (the `ListStatusNotices` operationId).
+	ListStatusNotices(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RequestStatusNoticeWithBody Confirm the start of operations, or cease or restart them
+	//
+	// Console session of an admin (served by api). Stores the notice
+	// and sends it to the authority's POST /v1/certificates/{id}/status
+	// after its commit, retried while the authority is unreachable.
+	// start is stored once per certificate: asking again answers the
+	// stored notice (200), and a restart of the process sends nothing
+	// again. cease follows a start or a restart, restart a cease (400
+	// otherwise); asking again for the state the last notice gives
+	// answers it (200). A new notice is 201. 400 without
+	// USSP_CERTIFICATE_ID.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/admin/status (the `RequestStatusNotice` operationId).
+	RequestStatusNoticeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RequestStatusNotice Confirm the start of operations, or cease or restart them
+	//
+	// Console session of an admin (served by api). Stores the notice
+	// and sends it to the authority's POST /v1/certificates/{id}/status
+	// after its commit, retried while the authority is unreachable.
+	// start is stored once per certificate: asking again answers the
+	// stored notice (200), and a restart of the process sends nothing
+	// again. cease follows a start or a restart, restart a cease (400
+	// otherwise); asking again for the state the last notice gives
+	// answers it (200). A new notice is 201. 400 without
+	// USSP_CERTIFICATE_ID.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/admin/status (the `RequestStatusNotice` operationId).
+	RequestStatusNotice(ctx context.Context, body RequestStatusNoticeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// OpenAlertStream Stream the alerts of one intent (WebSocket)
 	//
@@ -3629,6 +3787,83 @@ func (c *Client) FlagOccurrenceWithBody(ctx context.Context, contentType string,
 // Corresponds with POST /v1/admin/occurrences (the `FlagOccurrence` operationId).
 func (c *Client) FlagOccurrence(ctx context.Context, body FlagOccurrenceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewFlagOccurrenceRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListStatusNotices This USSP's operating-status notices
+//
+// Console session of a supervisor, support or admin (served by api;
+// Reg. (EU) 2021/664 Art. 7(6), spec 02 F7). The notices to the
+// authority for the configured certificate (USSP_CERTIFICATE_ID),
+// newest first, each with its state: pending (with its tries, last
+// error and next try), delivered (with the authority's notice id)
+// or failed. An empty list means no notice was asked for; one that
+// cannot be read is 503.
+//
+// Corresponds with GET /v1/admin/status (the `ListStatusNotices` operationId).
+func (c *Client) ListStatusNotices(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListStatusNoticesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RequestStatusNoticeWithBody Confirm the start of operations, or cease or restart them
+//
+// Console session of an admin (served by api). Stores the notice
+// and sends it to the authority's POST /v1/certificates/{id}/status
+// after its commit, retried while the authority is unreachable.
+// start is stored once per certificate: asking again answers the
+// stored notice (200), and a restart of the process sends nothing
+// again. cease follows a start or a restart, restart a cease (400
+// otherwise); asking again for the state the last notice gives
+// answers it (200). A new notice is 201. 400 without
+// USSP_CERTIFICATE_ID.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/admin/status (the `RequestStatusNotice` operationId).
+func (c *Client) RequestStatusNoticeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRequestStatusNoticeRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RequestStatusNotice Confirm the start of operations, or cease or restart them
+//
+// Console session of an admin (served by api). Stores the notice
+// and sends it to the authority's POST /v1/certificates/{id}/status
+// after its commit, retried while the authority is unreachable.
+// start is stored once per certificate: asking again answers the
+// stored notice (200), and a restart of the process sends nothing
+// again. cease follows a start or a restart, restart a cease (400
+// otherwise); asking again for the state the last notice gives
+// answers it (200). A new notice is 201. 400 without
+// USSP_CERTIFICATE_ID.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/admin/status (the `RequestStatusNotice` operationId).
+func (c *Client) RequestStatusNotice(ctx context.Context, body RequestStatusNoticeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRequestStatusNoticeRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -4787,6 +5022,73 @@ func NewFlagOccurrenceRequestWithBody(server string, contentType string, body io
 	}
 
 	operationPath := fmt.Sprintf("/v1/admin/occurrences")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListStatusNoticesRequest constructs an http.Request for the ListStatusNotices method
+func NewListStatusNoticesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/status")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRequestStatusNoticeRequest calls the generic RequestStatusNotice builder with application/json body
+func NewRequestStatusNoticeRequest(server string, body RequestStatusNoticeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRequestStatusNoticeRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewRequestStatusNoticeRequestWithBody constructs an http.Request for the RequestStatusNotice method, with any body, and a specified content type
+func NewRequestStatusNoticeRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/status")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -5998,6 +6300,55 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /v1/admin/occurrences (the `FlagOccurrence` operationId).
 	FlagOccurrenceWithResponse(ctx context.Context, body FlagOccurrenceJSONRequestBody, reqEditors ...RequestEditorFn) (*FlagOccurrenceResponse, error)
+
+	// ListStatusNoticesWithResponse This USSP's operating-status notices
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// Reg. (EU) 2021/664 Art. 7(6), spec 02 F7). The notices to the
+	// authority for the configured certificate (USSP_CERTIFICATE_ID),
+	// newest first, each with its state: pending (with its tries, last
+	// error and next try), delivered (with the authority's notice id)
+	// or failed. An empty list means no notice was asked for; one that
+	// cannot be read is 503.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/admin/status (the `ListStatusNotices` operationId).
+	ListStatusNoticesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListStatusNoticesResponse, error)
+
+	// RequestStatusNoticeWithBodyWithResponse Confirm the start of operations, or cease or restart them
+	//
+	// Console session of an admin (served by api). Stores the notice
+	// and sends it to the authority's POST /v1/certificates/{id}/status
+	// after its commit, retried while the authority is unreachable.
+	// start is stored once per certificate: asking again answers the
+	// stored notice (200), and a restart of the process sends nothing
+	// again. cease follows a start or a restart, restart a cease (400
+	// otherwise); asking again for the state the last notice gives
+	// answers it (200). A new notice is 201. 400 without
+	// USSP_CERTIFICATE_ID.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/admin/status (the `RequestStatusNotice` operationId).
+	RequestStatusNoticeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RequestStatusNoticeResponse, error)
+
+	// RequestStatusNoticeWithResponse Confirm the start of operations, or cease or restart them
+	//
+	// Console session of an admin (served by api). Stores the notice
+	// and sends it to the authority's POST /v1/certificates/{id}/status
+	// after its commit, retried while the authority is unreachable.
+	// start is stored once per certificate: asking again answers the
+	// stored notice (200), and a restart of the process sends nothing
+	// again. cease follows a start or a restart, restart a cease (400
+	// otherwise); asking again for the state the last notice gives
+	// answers it (200). A new notice is 201. 400 without
+	// USSP_CERTIFICATE_ID.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/admin/status (the `RequestStatusNotice` operationId).
+	RequestStatusNoticeWithResponse(ctx context.Context, body RequestStatusNoticeJSONRequestBody, reqEditors ...RequestEditorFn) (*RequestStatusNoticeResponse, error)
 
 	// OpenAlertStreamWithResponse Stream the alerts of one intent (WebSocket)
 	//
@@ -7575,6 +7926,158 @@ func (r FlagOccurrenceResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r FlagOccurrenceResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListStatusNoticesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *StatusNotices
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListStatusNoticesResponse) GetJSON200() *StatusNotices {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ListStatusNoticesResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ListStatusNoticesResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ListStatusNoticesResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListStatusNoticesResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListStatusNoticesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListStatusNoticesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListStatusNoticesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListStatusNoticesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RequestStatusNoticeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *StatusNotice
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *StatusNotice
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RequestStatusNoticeResponse) GetJSON200() *StatusNotice {
+	return r.JSON200
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r RequestStatusNoticeResponse) GetJSON201() *StatusNotice {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r RequestStatusNoticeResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r RequestStatusNoticeResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r RequestStatusNoticeResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r RequestStatusNoticeResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r RequestStatusNoticeResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RequestStatusNoticeResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RequestStatusNoticeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RequestStatusNoticeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RequestStatusNoticeResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -9395,6 +9898,73 @@ func (c *ClientWithResponses) FlagOccurrenceWithResponse(ctx context.Context, bo
 	return ParseFlagOccurrenceResponse(rsp)
 }
 
+// ListStatusNoticesWithResponse This USSP's operating-status notices
+//
+// Console session of a supervisor, support or admin (served by api;
+// Reg. (EU) 2021/664 Art. 7(6), spec 02 F7). The notices to the
+// authority for the configured certificate (USSP_CERTIFICATE_ID),
+// newest first, each with its state: pending (with its tries, last
+// error and next try), delivered (with the authority's notice id)
+// or failed. An empty list means no notice was asked for; one that
+// cannot be read is 503.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/admin/status (the `ListStatusNotices` operationId).
+func (c *ClientWithResponses) ListStatusNoticesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListStatusNoticesResponse, error) {
+	rsp, err := c.ListStatusNotices(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListStatusNoticesResponse(rsp)
+}
+
+// RequestStatusNoticeWithBodyWithResponse Confirm the start of operations, or cease or restart them
+//
+// Console session of an admin (served by api). Stores the notice
+// and sends it to the authority's POST /v1/certificates/{id}/status
+// after its commit, retried while the authority is unreachable.
+// start is stored once per certificate: asking again answers the
+// stored notice (200), and a restart of the process sends nothing
+// again. cease follows a start or a restart, restart a cease (400
+// otherwise); asking again for the state the last notice gives
+// answers it (200). A new notice is 201. 400 without
+// USSP_CERTIFICATE_ID.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/admin/status (the `RequestStatusNotice` operationId).
+func (c *ClientWithResponses) RequestStatusNoticeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RequestStatusNoticeResponse, error) {
+	rsp, err := c.RequestStatusNoticeWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRequestStatusNoticeResponse(rsp)
+}
+
+// RequestStatusNoticeWithResponse Confirm the start of operations, or cease or restart them
+//
+// Console session of an admin (served by api). Stores the notice
+// and sends it to the authority's POST /v1/certificates/{id}/status
+// after its commit, retried while the authority is unreachable.
+// start is stored once per certificate: asking again answers the
+// stored notice (200), and a restart of the process sends nothing
+// again. cease follows a start or a restart, restart a cease (400
+// otherwise); asking again for the state the last notice gives
+// answers it (200). A new notice is 201. 400 without
+// USSP_CERTIFICATE_ID.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/admin/status (the `RequestStatusNotice` operationId).
+func (c *ClientWithResponses) RequestStatusNoticeWithResponse(ctx context.Context, body RequestStatusNoticeJSONRequestBody, reqEditors ...RequestEditorFn) (*RequestStatusNoticeResponse, error) {
+	rsp, err := c.RequestStatusNotice(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRequestStatusNoticeResponse(rsp)
+}
+
 // OpenAlertStreamWithResponse Stream the alerts of one intent (WebSocket)
 //
 // A WebSocket upgrade (served by traffic-ws; Art. 13, spec 02 F5)
@@ -10863,6 +11433,128 @@ func ParseFlagOccurrenceResponse(rsp *http.Response) (*FlagOccurrenceResponse, e
 			return nil, err
 		}
 		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListStatusNoticesResponse parses an HTTP response from a ListStatusNoticesWithResponse call
+func ParseListStatusNoticesResponse(rsp *http.Response) (*ListStatusNoticesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListStatusNoticesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest StatusNotices
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRequestStatusNoticeResponse parses an HTTP response from a RequestStatusNoticeWithResponse call
+func ParseRequestStatusNoticeResponse(rsp *http.Response) (*RequestStatusNoticeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RequestStatusNoticeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest StatusNotice
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest StatusNotice
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Problem

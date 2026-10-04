@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -110,6 +111,7 @@ type Config struct {
 	CISPublisherKeys        []string `env:"USSP_CIS_PUBLISHER_KEYS" by:"api" kind:"issuers" help:"JWKS of the CIS publishers as authority=jwks_url,ansp=jwks_url: a dataset version is used only when its X-Publisher-Signature verifies with its publisher's key (the authority for zones, uspace_airspace and ussp_list, the ANSP for restrictions); otherwise it is held"`
 	CISPublisherSigMaxAgeS  int      `env:"USSP_CIS_PUBLISHER_SIG_MAX_AGE_S" default:"31622400" by:"api" min:"300" max:"315360000" unit:"s" help:"how old the iat of a publisher signature may be when this USSP first reads its version; the CISP forwards the signature made at publication, so it is as old as the version (default 366 days)"`
 	CISReconcileS           int      `env:"USSP_CIS_RECONCILE_S" default:"60" by:"api" min:"5" max:"60" unit:"s" help:"period of the conditional pull of every CIS dataset that bounds what a missed change notification costs (spec 02 F3: at most 60 s)"`
+	CertificateID           string   `env:"USSP_CERTIFICATE_ID" by:"api" help:"the id of this USSP's certificate at the authority (32 hex characters), named by the Art. 7(6) operating-status notices; unset, no notice can be sent and /readyz says so"`
 	AuthorityBaseURL        string   `env:"USSP_AUTHORITY_BASE_URL" by:"api" kind:"url" help:"authority base URL (F8 registry, occurrences, status)"`
 	ANSPBaseURL             string   `env:"USSP_ANSP_BASE_URL" by:"api" kind:"url" help:"ANSP base URL (Annex V coordination notices)"`
 	ANSPStreamURL           string   `env:"USSP_ANSP_STREAM_URL" by:"monitor" kind:"url" help:"ANSP manned-traffic stream (F4)"`
@@ -226,6 +228,9 @@ func (c Config) validate() error {
 		// CLAUDE.md rule 10: two trees, two databases, never one.
 		errs = append(errs, &core.FieldError{Field: "USSP_TS_URL", Reason: "must name a different database from USSP_PG_URL"})
 	}
+	if c.CertificateID != "" && !certificateIDRe.MatchString(c.CertificateID) {
+		errs = append(errs, core.Fieldf("USSP_CERTIFICATE_ID", "must be the 32 hexadecimal characters of the authority's certificate id"))
+	}
 	addrs := map[string]string{}
 	for _, p := range Processes {
 		a := c.Addr(p)
@@ -236,6 +241,9 @@ func (c Config) validate() error {
 	}
 	return errors.Join(errs...)
 }
+
+// certificateIDRe is the authority's CertificateID (its OpenAPI).
+var certificateIDRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 func addrVar(process string) string {
 	return "USSP_" + strings.ToUpper(strings.ReplaceAll(process, "-", "_")) + "_ADDR"

@@ -962,6 +962,82 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
 
+  /v1/admin/status:
+    get:
+      operationId: listStatusNotices
+      tags: [admin]
+      summary: This USSP's operating-status notices
+      description: |
+        Console session of a supervisor, support or admin (served by api;
+        Reg. (EU) 2021/664 Art. 7(6), spec 02 F7). The notices to the
+        authority for the configured certificate (USSP_CERTIFICATE_ID),
+        newest first, each with its state: pending (with its tries, last
+        error and next try), delivered (with the authority's notice id)
+        or failed. An empty list means no notice was asked for; one that
+        cannot be read is 503.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The notices.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusNotices"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: requestStatusNotice
+      tags: [admin]
+      summary: Confirm the start of operations, or cease or restart them
+      description: |
+        Console session of an admin (served by api). Stores the notice
+        and sends it to the authority's POST /v1/certificates/{id}/status
+        after its commit, retried while the authority is unreachable.
+        start is stored once per certificate: asking again answers the
+        stored notice (200), and a restart of the process sends nothing
+        again. cease follows a start or a restart, restart a cease (400
+        otherwise); asking again for the state the last notice gives
+        answers it (200). A new notice is 201. 400 without
+        USSP_CERTIFICATE_ID.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusRequest"
+      responses:
+        "200":
+          description: The notice already stored for this request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusNotice"
+        "201":
+          description: The notice as stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusNotice"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
   /oauth/token:
     post:
       operationId: requestToken
@@ -1778,6 +1854,47 @@ components:
         authority_ref: {type: [string, "null"]}
         failed_at: {type: [string, "null"], format: date-time}
         next_at: {type: [string, "null"], format: date-time}
+    StatusRequest:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [start, cease, restart]
+    StatusNotices:
+      type: object
+      required: [notices, certificate_id]
+      properties:
+        certificate_id:
+          type: [string, "null"]
+          description: USSP_CERTIFICATE_ID (null when unset).
+        notices:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/StatusNotice"
+    StatusNotice:
+      type: object
+      required: [kind, at, certificate_id, reference, requested_by, state, attempts, last_error, submitted_at, authority_ref, failed_at, created_at]
+      properties:
+        kind:
+          type: string
+          enum: [start, cease, restart]
+        at: {type: string, format: date-time, description: "The time the notice states, on the database clock."}
+        certificate_id: {type: string}
+        reference: {type: string, description: "This USSP's reference of the notice, sent with it."}
+        requested_by: {type: string, description: "The staff account that asked for it."}
+        state:
+          type: string
+          enum: [pending, delivered, failed]
+        attempts: {type: integer, minimum: 0}
+        next_at: {type: [string, "null"], format: date-time}
+        last_error: {type: [string, "null"]}
+        submitted_at: {type: [string, "null"], format: date-time}
+        authority_ref: {type: [string, "null"], description: "The authority's notice id."}
+        failed_at: {type: [string, "null"], format: date-time}
+        created_at: {type: string, format: date-time}
     Problem:
       type: object
       description: |

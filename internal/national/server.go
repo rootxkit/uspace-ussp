@@ -73,7 +73,11 @@ type Server struct {
 	// Occurrences serves /v1/admin/occurrences; nil answers 503
 	// occurrences_unavailable.
 	Occurrences *Occurrences
-	Logger      *slog.Logger
+	// Status serves /v1/admin/status (CertificateID is
+	// USSP_CERTIFICATE_ID); nil answers 503 status_unavailable.
+	Status        StatusNotices
+	CertificateID string
+	Logger        *slog.Logger
 }
 
 // RegistryValidator is the cached, audited F8 lookup
@@ -97,6 +101,10 @@ var anySession = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.Realm
 var consoleStaff = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmConsole, Roles: []string{auth.RoleSupervisor, auth.RoleSupport}}}}
 
 var consoleSupervisor = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmConsole, Roles: []string{auth.RoleSupervisor}}}}
+
+var consoleAny = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmConsole, Roles: []string{auth.RoleSupervisor, auth.RoleSupport, auth.RoleAdmin}}}}
+
+var consoleAdmin = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmConsole, Roles: []string{auth.RoleAdmin}}}}
 
 // AccessTable is the access entry of every operation of
 // api/openapi.yaml this process serves, by ServeMux pattern. The
@@ -123,6 +131,8 @@ func AccessTable() map[string]httpx.Access {
 		"GET /v1/admin/coordination":                        consoleStaff,
 		"GET /v1/admin/occurrences":                         consoleStaff,
 		"POST /v1/admin/occurrences":                        consoleSupervisor,
+		"GET /v1/admin/status":                              consoleAny,
+		"POST /v1/admin/status":                             consoleAdmin,
 		"GET /v1/records/flights/{flight_id}":               {Scopes: []string{ScopeRecords}},
 		"GET /v1/records/daily/{date}":                      {Scopes: []string{ScopeRecords}},
 		"POST /v1/accounts/logout":                          anySession,

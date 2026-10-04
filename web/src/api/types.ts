@@ -613,6 +613,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * This USSP's operating-status notices
+         * @description Console session of a supervisor, support or admin (served by api;
+         *     Reg. (EU) 2021/664 Art. 7(6), spec 02 F7). The notices to the
+         *     authority for the configured certificate (USSP_CERTIFICATE_ID),
+         *     newest first, each with its state: pending (with its tries, last
+         *     error and next try), delivered (with the authority's notice id)
+         *     or failed. An empty list means no notice was asked for; one that
+         *     cannot be read is 503.
+         */
+        get: operations["listStatusNotices"];
+        put?: never;
+        /**
+         * Confirm the start of operations, or cease or restart them
+         * @description Console session of an admin (served by api). Stores the notice
+         *     and sends it to the authority's POST /v1/certificates/{id}/status
+         *     after its commit, retried while the authority is unreachable.
+         *     start is stored once per certificate: asking again answers the
+         *     stored notice (200), and a restart of the process sends nothing
+         *     again. cease follows a start or a restart, restart a cease (400
+         *     otherwise); asking again for the state the last notice gives
+         *     answers it (200). A new notice is 201. 400 without
+         *     USSP_CERTIFICATE_ID.
+         */
+        post: operations["requestStatusNotice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/oauth/token": {
         parameters: {
             query?: never;
@@ -1188,6 +1226,43 @@ export interface components {
             failed_at?: string | null;
             /** Format: date-time */
             next_at?: string | null;
+        };
+        StatusRequest: {
+            /** @enum {string} */
+            kind: "start" | "cease" | "restart";
+        };
+        StatusNotices: {
+            /** @description USSP_CERTIFICATE_ID (null when unset). */
+            certificate_id: string | null;
+            notices: components["schemas"]["StatusNotice"][];
+        };
+        StatusNotice: {
+            /** @enum {string} */
+            kind: "start" | "cease" | "restart";
+            /**
+             * Format: date-time
+             * @description The time the notice states, on the database clock.
+             */
+            at: string;
+            certificate_id: string;
+            /** @description This USSP's reference of the notice, sent with it. */
+            reference: string;
+            /** @description The staff account that asked for it. */
+            requested_by: string;
+            /** @enum {string} */
+            state: "pending" | "delivered" | "failed";
+            attempts: number;
+            /** Format: date-time */
+            next_at?: string | null;
+            last_error: string | null;
+            /** Format: date-time */
+            submitted_at: string | null;
+            /** @description The authority's notice id. */
+            authority_ref: string | null;
+            /** Format: date-time */
+            failed_at: string | null;
+            /** Format: date-time */
+            created_at: string;
         };
         /**
          * @description The ecosystem-wide error body (RFC 9457), the shape of
@@ -2474,6 +2549,68 @@ export interface operations {
             401: components["responses"]["Problem"];
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listStatusNotices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The notices. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusNotices"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    requestStatusNotice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StatusRequest"];
+            };
+        };
+        responses: {
+            /** @description The notice already stored for this request. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusNotice"];
+                };
+            };
+            /** @description The notice as stored. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusNotice"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
             503: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
         };

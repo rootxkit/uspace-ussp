@@ -320,11 +320,20 @@ type OccurrenceReport struct {
 }
 
 type OperatingStatusNotice struct {
-	ID           pgtype.UUID `json:"id"`
-	Kind         string      `json:"kind"`
-	At           time.Time   `json:"at"`
-	SubmittedAt  *time.Time  `json:"submitted_at"`
-	AuthorityRef *string     `json:"authority_ref"`
+	ID            pgtype.UUID `json:"id"`
+	Kind          string      `json:"kind"`
+	At            time.Time   `json:"at"`
+	SubmittedAt   *time.Time  `json:"submitted_at"`
+	AuthorityRef  *string     `json:"authority_ref"`
+	CertificateID string      `json:"certificate_id"`
+	Reference     string      `json:"reference"`
+	RequestedBy   string      `json:"requested_by"`
+	State         string      `json:"state"`
+	Attempts      int32       `json:"attempts"`
+	NextAt        time.Time   `json:"next_at"`
+	LastError     *string     `json:"last_error"`
+	FailedAt      *time.Time  `json:"failed_at"`
+	CreatedAt     time.Time   `json:"created_at"`
 }
 
 type OperationalIntent struct {

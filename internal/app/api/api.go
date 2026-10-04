@@ -22,8 +22,9 @@
 // exchange log; WP-15 the Annex V coordination with the ANSP
 // (internal/coordination) and GET /v1/admin/coordination, and the
 // service records (internal/records): /v1/records, the daily bundles and
-// the gap records of telemetry-ingest; and the occurrence reports
-// (internal/occurrence) with /v1/admin/occurrences.
+// the gap records of telemetry-ingest; the occurrence reports
+// (internal/occurrence) with /v1/admin/occurrences; and the Art. 7(6)
+// operating-status notices (internal/status) with /v1/admin/status.
 package api
 
 import (
@@ -216,10 +217,15 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	}
 	recordsAPI := startRecords(ctx, rt, pol)
 	occurrences := startOccurrences(ctx, rt, current, kv)
+	statusSvc, err := startStatus(ctx, rt, tokens)
+	if err != nil {
+		return err
+	}
 	cisState.Start(ctx, rt)
 	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc,
 		CIS: cisState.Receiver, Registry: reg.Cache, Intents: intents, Alerts: alertSvc, Geo: geoState, Coordination: notices, Records: recordsAPI, Logger: rt.Logger,
-		Occurrences:     &national.Occurrences{Service: occurrences, List: occurrences.Store, Delivery: deliveryOf(occurrences)},
+		Occurrences: &national.Occurrences{Service: occurrences, List: occurrences.Store, Delivery: deliveryOf(occurrences)},
+		Status:      statusSvc, CertificateID: cfg.CertificateID,
 		RegistryScope:   svc,
 		RegistryLimiter: httpx.NewRateLimiter(perMin(cfg.RegistryRatePerMin), burst(cfg.RegistryRatePerMin), 100_000, counters)}
 	if err := national.Register(mux, srv, guard.Require); err != nil {

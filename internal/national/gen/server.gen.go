@@ -823,6 +823,69 @@ func (e SerialBindingRequestClassLabel) Valid() bool {
 	}
 }
 
+// Defines values for StatusNoticeKind.
+const (
+	StatusNoticeKindCease   StatusNoticeKind = "cease"
+	StatusNoticeKindRestart StatusNoticeKind = "restart"
+	StatusNoticeKindStart   StatusNoticeKind = "start"
+)
+
+// Valid indicates whether the value is a known member of the StatusNoticeKind enum.
+func (e StatusNoticeKind) Valid() bool {
+	switch e {
+	case StatusNoticeKindCease:
+		return true
+	case StatusNoticeKindRestart:
+		return true
+	case StatusNoticeKindStart:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for StatusNoticeState.
+const (
+	StatusNoticeStateDelivered StatusNoticeState = "delivered"
+	StatusNoticeStateFailed    StatusNoticeState = "failed"
+	StatusNoticeStatePending   StatusNoticeState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the StatusNoticeState enum.
+func (e StatusNoticeState) Valid() bool {
+	switch e {
+	case StatusNoticeStateDelivered:
+		return true
+	case StatusNoticeStateFailed:
+		return true
+	case StatusNoticeStatePending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for StatusRequestKind.
+const (
+	StatusRequestKindCease   StatusRequestKind = "cease"
+	StatusRequestKindRestart StatusRequestKind = "restart"
+	StatusRequestKindStart   StatusRequestKind = "start"
+)
+
+// Valid indicates whether the value is a known member of the StatusRequestKind enum.
+func (e StatusRequestKind) Valid() bool {
+	switch e {
+	case StatusRequestKindCease:
+		return true
+	case StatusRequestKindRestart:
+		return true
+	case StatusRequestKindStart:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TelemetryFrameAccuracyH.
 const (
 	HA005NM    TelemetryFrameAccuracyH = "HA005NM"
@@ -1969,6 +2032,51 @@ type Session struct {
 	Token string `json:"token"`
 }
 
+// StatusNotice defines model for StatusNotice.
+type StatusNotice struct {
+	// At The time the notice states, on the database clock.
+	At       time.Time `json:"at"`
+	Attempts int       `json:"attempts"`
+
+	// AuthorityRef The authority's notice id.
+	AuthorityRef  *string          `json:"authority_ref"`
+	CertificateId string           `json:"certificate_id"`
+	CreatedAt     time.Time        `json:"created_at"`
+	FailedAt      *time.Time       `json:"failed_at"`
+	Kind          StatusNoticeKind `json:"kind"`
+	LastError     *string          `json:"last_error"`
+	NextAt        *time.Time       `json:"next_at,omitempty"`
+
+	// Reference This USSP's reference of the notice, sent with it.
+	Reference string `json:"reference"`
+
+	// RequestedBy The staff account that asked for it.
+	RequestedBy string            `json:"requested_by"`
+	State       StatusNoticeState `json:"state"`
+	SubmittedAt *time.Time        `json:"submitted_at"`
+}
+
+// StatusNoticeKind defines model for StatusNotice.Kind.
+type StatusNoticeKind string
+
+// StatusNoticeState defines model for StatusNotice.State.
+type StatusNoticeState string
+
+// StatusNotices defines model for StatusNotices.
+type StatusNotices struct {
+	// CertificateId USSP_CERTIFICATE_ID (null when unset).
+	CertificateId *string        `json:"certificate_id"`
+	Notices       []StatusNotice `json:"notices"`
+}
+
+// StatusRequest defines model for StatusRequest.
+type StatusRequest struct {
+	Kind StatusRequestKind `json:"kind"`
+}
+
+// StatusRequestKind defines model for StatusRequest.Kind.
+type StatusRequestKind string
+
 // TelemetryBatch defines model for TelemetryBatch.
 type TelemetryBatch struct {
 	Frames []TelemetryFrame `json:"frames"`
@@ -2153,6 +2261,9 @@ type BindSerialJSONRequestBody = SerialBindingRequest
 
 // FlagOccurrenceJSONRequestBody defines body for FlagOccurrence for application/json ContentType.
 type FlagOccurrenceJSONRequestBody = OccurrenceFlag
+
+// RequestStatusNoticeJSONRequestBody defines body for RequestStatusNotice for application/json ContentType.
+type RequestStatusNoticeJSONRequestBody = StatusRequest
 
 // CreateIntentJSONRequestBody defines body for CreateIntent for application/json ContentType.
 type CreateIntentJSONRequestBody = IntentRequest
@@ -2347,6 +2458,12 @@ type ServerInterface interface {
 	// FlagOccurrence Report an alert as an occurrence
 	// (POST /v1/admin/occurrences)
 	FlagOccurrence(w http.ResponseWriter, r *http.Request)
+	// ListStatusNotices This USSP's operating-status notices
+	// (GET /v1/admin/status)
+	ListStatusNotices(w http.ResponseWriter, r *http.Request)
+	// RequestStatusNotice Confirm the start of operations, or cease or restart them
+	// (POST /v1/admin/status)
+	RequestStatusNotice(w http.ResponseWriter, r *http.Request)
 	// AckAlert Acknowledge an alert
 	// (POST /v1/alerts/{alert_id}/ack)
 	AckAlert(w http.ResponseWriter, r *http.Request, alertId AlertID)
@@ -2728,6 +2845,34 @@ func (siw *ServerInterfaceWrapper) FlagOccurrence(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.FlagOccurrence(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListStatusNotices operation middleware
+func (siw *ServerInterfaceWrapper) ListStatusNotices(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListStatusNotices(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RequestStatusNotice operation middleware
+func (siw *ServerInterfaceWrapper) RequestStatusNotice(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RequestStatusNotice(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3247,6 +3392,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/records/daily/{date}", wrapper.GetDailyRecords)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/occurrences", wrapper.ListOccurrences)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/occurrences", wrapper.FlagOccurrence)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/status", wrapper.ListStatusNotices)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/status", wrapper.RequestStatusNotice)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/oauth/token", wrapper.RequestToken)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/jwks.json", wrapper.GetJWKS)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/login", wrapper.Login)
