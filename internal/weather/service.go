@@ -2,6 +2,7 @@ package weather
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -224,9 +225,17 @@ func (s *Service) Run(ctx context.Context) {
 	}
 }
 
+// ErrNothingDelivered is a fetch that answered but delivered nothing in
+// force: every report refused, no report for any station, or only
+// reports already held whose validity has ended. It is recorded as a
+// failure, so the source is failing and its products stale.
+var ErrNothingDelivered = errors.New("the weather source delivered nothing in force")
+
 // Poll fetches the policy's stations once, stores what parsed, records
 // the outcome and prunes the products past retention. A failed fetch
-// stores nothing and is recorded with its time.
+// stores nothing and is recorded with its time; so is a fetch that
+// stored nothing new and delivered nothing in force on the database
+// clock (ErrNothingDelivered).
 func (s *Service) Poll(ctx context.Context) error {
 	rec := s.policy()
 	pol := rec.Values
@@ -237,17 +246,7 @@ func (s *Service) Poll(ctx context.Context) error {
 	if err != nil {
 		s.count("fetch_failed")
 		s.logger().LogAttrs(ctx, slog.LevelWarn, "weather fetch failed", slog.String("source", s.Source.Name()), obs.Err(err))
-		failure := err.Error()
-		if failure == "" {
-			failure = "the fetch failed"
-		}
-		if len(failure) > MaxFailureBytes {
-			failure = strings.ToValidUTF8(failure[:MaxFailureBytes], "")
-		}
-		if rerr := s.Store.RecordFetch(ctx, s.Source.Name(), failure); rerr != nil {
-			s.count("status_not_recorded")
-			obs.Error(ctx, s.logger(), "weather fetch failure not recorded", rerr)
-		}
+		s.recordFailure(ctx, err.Error())
 		return err
 	}
 	if b.Refused > 0 {
@@ -266,6 +265,21 @@ func (s *Service) Poll(ctx context.Context) error {
 		_ = s.Store.RecordFetch(ctx, s.Source.Name(), "the products could not be stored")
 		return err
 	}
+	now, err := s.Store.Now(ctx)
+	if err != nil {
+		s.count("store_failed")
+		obs.Error(ctx, s.logger(), "weather fetch not judged: the database clock could not be read", err)
+		_ = s.Store.RecordFetch(ctx, s.Source.Name(), "the database clock could not be read")
+		return err
+	}
+	if n == 0 && !slices.ContainsFunc(ps, func(p NewProduct) bool { return !now.Before(p.ValidFrom) && !now.After(p.ValidTo) }) {
+		s.count("nothing_delivered")
+		s.logger().LogAttrs(ctx, slog.LevelWarn, "weather source delivered nothing in force", slog.String("source", s.Source.Name()),
+			slog.Int("reports", len(ps)), slog.Int("refused", b.Refused))
+		s.recordFailure(ctx, fmt.Sprintf("the source answered but delivered nothing in force (%d reports parsed, none new or in force; %d refused)", len(ps), b.Refused))
+		s.prune(ctx, now, rec.Values)
+		return ErrNothingDelivered
+	}
 	if err := s.Store.RecordFetch(ctx, s.Source.Name(), ""); err != nil {
 		s.count("status_not_recorded")
 		obs.Error(ctx, s.logger(), "weather fetch not recorded", err)
@@ -273,15 +287,33 @@ func (s *Service) Poll(ctx context.Context) error {
 	}
 	s.add("product_stored", n)
 	s.count("fetched")
-	if now, err := s.Store.Now(ctx); err == nil {
-		before := now.Add(-time.Duration(rec.Values.RecordRetentionDays) * 24 * time.Hour)
-		if k, err := s.Store.Prune(ctx, before, PruneBatch); err != nil {
-			obs.Error(ctx, s.logger(), "weather products not pruned", err)
-		} else {
-			s.add("product_pruned", int(k))
-		}
-	}
+	s.prune(ctx, now, rec.Values)
 	return nil
+}
+
+// recordFailure records a failed fetch with its text, bounded by
+// MaxFailureBytes.
+func (s *Service) recordFailure(ctx context.Context, failure string) {
+	if failure == "" {
+		failure = "the fetch failed"
+	}
+	if len(failure) > MaxFailureBytes {
+		failure = strings.ToValidUTF8(failure[:MaxFailureBytes], "")
+	}
+	if rerr := s.Store.RecordFetch(ctx, s.Source.Name(), failure); rerr != nil {
+		s.count("status_not_recorded")
+		obs.Error(ctx, s.logger(), "weather fetch failure not recorded", rerr)
+	}
+}
+
+// prune deletes the products past record_retention_days at now.
+func (s *Service) prune(ctx context.Context, now time.Time, pol policy.Values) {
+	before := now.Add(-time.Duration(pol.RecordRetentionDays) * 24 * time.Hour)
+	if k, err := s.Store.Prune(ctx, before, PruneBatch); err != nil {
+		obs.Error(ctx, s.logger(), "weather products not pruned", err)
+	} else {
+		s.add("product_pruned", int(k))
+	}
 }
 
 // productOf is the product of one report: a METAR or SPECI in force

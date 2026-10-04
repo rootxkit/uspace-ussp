@@ -396,7 +396,8 @@ func TestPollPrunesPastRetention(t *testing.T) {
 	}
 	r.f.Set(nil, nil)
 	r.st.advance(time.Duration(r.pol.Values.RecordRetentionDays)*24*time.Hour + 30*time.Hour)
-	if err := r.svc.Poll(ctx); err != nil {
+	// A poll that delivers nothing is a failure and still prunes.
+	if err := r.svc.Poll(ctx); !errors.Is(err, ErrNothingDelivered) {
 		t.Fatal(err)
 	}
 	if n := r.c.Get("weather_product_pruned"); n != 2 || len(r.st.products) != 0 {
@@ -476,5 +477,55 @@ func TestWeatherAnswerForTheNationalAPI(t *testing.T) {
 	r := newRig(t, "31013KT 9999 Q1026")
 	if a, err := r.svc.WeatherAnswer(context.Background(), tbilisi, time.Time{}); err != nil || !a.(Answer).Stale {
 		t.Fatal(a, err)
+	}
+}
+
+// A fetch that answers but delivers nothing in force, every report
+// refused or no report for any station (204), is a failed delivery:
+// the source is failing, its products stale and /readyz degraded. Its
+// twin: a report already held and still in force is a delivery (E-01).
+func TestPollNothingDeliveredIsAFailure(t *testing.T) {
+	ctx := context.Background()
+	for name, set := range map[string]func(f *fake.Fake){
+		"all refused": func(f *fake.Fake) {
+			f.Set([]fake.METAR{fake.NewMETAR("UGTB", obsAt, 41.669, 44.955, "31013KT 9999 GARBLE Q1026")}, nil)
+		},
+		"no report": func(f *fake.Fake) { f.Set(nil, nil) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t, "31013KT 9999 Q1026")
+			set(r.f)
+			if err := r.svc.Poll(ctx); !errors.Is(err, ErrNothingDelivered) {
+				t.Fatalf("Poll: %v", err)
+			}
+			a, err := r.svc.Answer(ctx, tbilisi, time.Time{})
+			if err != nil || !a.Stale || a.Source.State != StateFailing || a.Source.LastFailureAt == nil ||
+				!a.Source.LastFailureAt.Equal(r.st.now) || !strings.Contains(*a.Source.Failure, "nothing in force") {
+				t.Fatalf("%+v %v", a, err)
+			}
+			if st, d := r.svc.Probe()(ctx); st != obs.StateDegraded || !strings.Contains(d, "failed since") {
+				t.Fatal(st, d)
+			}
+			if r.c.Get("weather_nothing_delivered") != 1 || r.c.Get("weather_fetched") != 0 {
+				t.Fatal(r.c.Snapshot())
+			}
+		})
+	}
+
+	r := newRig(t, "31013KT 9999 Q1026")
+	for range 2 {
+		if err := r.svc.Poll(ctx); err != nil {
+			t.Fatal(err)
+		}
+		r.st.advance(time.Minute)
+	}
+	if a, _ := r.svc.Answer(ctx, tbilisi, time.Time{}); a.Stale || a.Source.State != StateUp || r.c.Get("weather_fetched") != 2 {
+		t.Fatalf("a report held and in force: %+v %v", a, r.c.Snapshot())
+	}
+	// The same reports once neither is in force any more: the station
+	// is stuck, nothing was delivered.
+	r.st.advance(26 * time.Hour)
+	if err := r.svc.Poll(ctx); !errors.Is(err, ErrNothingDelivered) {
+		t.Fatalf("a stuck station: %v", err)
 	}
 }
