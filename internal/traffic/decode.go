@@ -7,6 +7,7 @@ import (
 
 	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/geoid"
+	"github.com/rootxkit/uspace-core/rid"
 
 	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/cell"
@@ -278,12 +279,15 @@ func DecodeManned(data []byte) (*MannedTrack, error) {
 func (p MannedPosition) latLon() core.LatLon { return core.LatLon{LatDeg: p.Lat, LonDeg: p.Lng} }
 
 // MannedInputOf maps a decoded manned track onto an Input. Its AMSL
-// altitude is the geometric (WGS84) altitude through the geoid when both
-// are known (alt_source geodetic); otherwise the pressure altitude is not
-// AMSL and the aircraft is judged on the horizontal alone (alt_source
-// pressure, R-09), or none. A live manned aircraft flies; a stale or
-// switched-off one is not a new sample at all (the caller does not feed
-// it to the monitor).
+// altitude is uspace-core's rid.SelectAltitude of the geometric (WGS84)
+// altitude through the geoid and the pressure altitude (R-07, R-08): the
+// geometric one through the geoid when both are known (alt_source
+// geodetic); without a geometric altitude the pressure altitude as
+// broadcast, which is not AMSL, so the aircraft is judged on the
+// horizontal alone (alt_source pressure, R-09); a geometric altitude
+// without a geoid is none (pressure never stands in for a missing
+// geoid). A live manned aircraft flies; a stale or switched-off one is
+// not a new sample at all (the caller does not feed it to the monitor).
 func MannedInputOf(m *MannedTrack, g geoid.Undulator) Input {
 	b := &m.Body
 	p := b.Position.latLon()
@@ -293,15 +297,14 @@ func MannedInputOf(m *MannedTrack, g geoid.Undulator) Input {
 		Position: p, AltSource: core.AltNone, SpeedMS: b.GSMS, TrackDeg: b.TrackDeg, VSpeedMS: b.VRateMS,
 		Emergency: b.Emergency, Flying: &flying, Times: m.Times(), State: b.State, Callsign: b.Callsign,
 	}
+	ai := rid.AltInput{AltHAEM: b.AltWGS84M, AltPressureM: b.AltPressureM}
 	if b.AltWGS84M != nil && g != nil {
 		if n, err := g.UndulationM(p); err == nil && core.IsFinite(n) {
-			amsl := *b.AltWGS84M - n
-			in.AltAMSLM, in.AltSource = &amsl, core.AltGeodetic
+			ai.UndulationM = &n
 		}
 	}
-	if in.AltAMSLM == nil && b.AltPressureM != nil {
-		in.AltSource = core.AltPressure
-	}
+	alt := rid.SelectAltitude(ai, rid.DefaultAltPolicy())
+	in.AltAMSLM, in.AltSource = alt.AltAMSLM, alt.Source
 	if c5, _, err := cell.Key(p); err == nil {
 		in.Cell5 = c5
 	}

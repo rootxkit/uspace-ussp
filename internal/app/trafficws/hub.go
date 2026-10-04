@@ -11,10 +11,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/f3548"
 	"github.com/rootxkit/uspace-core/geodesy"
+	"github.com/rootxkit/uspace-core/geoid"
 	"github.com/rootxkit/uspace-core/serial"
 	coresources "github.com/rootxkit/uspace-core/sources"
 
@@ -77,11 +79,13 @@ type Publisher interface {
 	Publish(ctx context.Context, subject string, m bus.Enveloped) error
 }
 
-// srcStatus is the last source/status/v1 of one source.
+// srcStatus is the last source/status/v1 of one source: its state,
+// since when (the producer's time) and what it says, received at.
 type srcStatus struct {
-	source, instance, state string
-	body                    json.RawMessage
-	at                      time.Time
+	source, instance, state, detail string
+	since                           time.Time
+	body                            json.RawMessage
+	at                              time.Time
 }
 
 // Hub is traffic-ws's picture of the inputs: the tracks, the alerts, the
@@ -100,9 +104,12 @@ type Hub struct {
 	// PolicyLoaded reports whether the policy was read.
 	PolicyLoaded func() bool
 	Pub          Publisher
-	Counters     *core.Counters
-	Logger       *slog.Logger
-	Now          func() time.Time
+	// Geoid is the geoid grid (USSP_GEOID_FILE): a manned track's
+	// geometric altitude is shown as AMSL through it; nil without one.
+	Geoid    geoid.Undulator
+	Counters *core.Counters
+	Logger   *slog.Logger
+	Now      func() time.Time
 
 	mu          sync.Mutex
 	start       time.Time
@@ -186,7 +193,7 @@ func (h *Hub) TakeManned(data []byte) {
 		h.mannedSeen = h.now()
 		h.mu.Unlock()
 	}
-	h.Picture.Put(traffic.MannedInputOf(m, nil), data)
+	h.Picture.Put(traffic.MannedInputOf(m, h.Geoid), data)
 }
 
 // TakeAlert takes one alrt.v1 message (alert/v1; a delivery record is
@@ -238,9 +245,11 @@ func (h *Hub) TakeSourceStatus(data []byte) {
 	var m struct {
 		Schema string `json:"schema"`
 		Body   struct {
-			Source         string  `json:"source"`
-			SourceInstance *string `json:"source_instance"`
-			State          string  `json:"state"`
+			Source         string    `json:"source"`
+			SourceInstance *string   `json:"source_instance"`
+			State          string    `json:"state"`
+			Since          time.Time `json:"since"`
+			Detail         string    `json:"detail"`
 		} `json:"body"`
 	}
 	if len(data) > bus.TrackMsgBytes || json.Unmarshal(data, &m) != nil || m.Schema != telemetry.SchemaSourceStatus || m.Body.Source == "" {
@@ -266,10 +275,47 @@ func (h *Hub) TakeSourceStatus(data []byte) {
 		h.counters().Inc(CounterSourcesOverBound)
 		return
 	}
-	h.srcs[key] = srcStatus{source: m.Body.Source, instance: inst, state: m.Body.State, body: raw.Body, at: now}
+	h.srcs[key] = srcStatus{source: m.Body.Source, instance: inst, state: m.Body.State, detail: clipDetail(m.Body.Detail),
+		since: m.Body.Since, body: raw.Body, at: now}
 	if m.Body.Source == traffic.SourceANSPFeed && m.Body.State == "live" {
 		h.mannedSeen = now
 	}
+}
+
+// clipDetail bounds a source's detail as a degraded reason quotes it
+// (the product's reason is at most 512 bytes).
+func clipDetail(s string) string {
+	if !utf8.ValidString(s) {
+		s = strings.ToValidUTF8(s, "")
+	}
+	if len(s) > 300 {
+		s = s[:300]
+		for len(s) > 0 && !utf8.ValidString(s) {
+			s = s[:len(s)-1]
+		}
+	}
+	return s
+}
+
+// srcFreshLocked is the status of source/instance received within
+// MannedMissingAfter; false when there is none that recent (h.mu held).
+func (h *Hub) srcFreshLocked(source, instance string, now time.Time) (srcStatus, bool) {
+	st, ok := h.srcs[source+"/"+instance]
+	if !ok || now.Sub(st.at) > MannedMissingAfter {
+		return srcStatus{}, false
+	}
+	return st, true
+}
+
+// PeerUnavailable implements traffic.PeerState: the peer whose base URL
+// is instance says, through its network_rid status, that it does not
+// answer.
+func (h *Hub) PeerUnavailable(instance string) bool {
+	now := h.now()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	st, ok := h.srcFreshLocked(traffic.SourceNetworkRID, instance, now)
+	return ok && st.state == "down"
 }
 
 // Sources are the source statuses a subscriber sees: the manned and
@@ -442,10 +488,22 @@ func (h *Hub) Degraded(now time.Time) map[string]traffic.Degraded {
 	}
 	h.mu.Lock()
 	manned, start, feed, feedSince, feedReason := h.mannedSeen, h.start, h.alertFeed, h.alertSince, h.alertReason
+	ansp, anspOK := h.srcFreshLocked(traffic.SourceANSPFeed, "", now)
+	econ, econOK := h.freshestLocked(traffic.SourceAdsbRx, now)
+	peers, peersOK := h.srcFreshLocked(traffic.SourceNetworkRID, "", now)
+	peersDown, peersDownSince := h.downLocked(traffic.SourceNetworkRID, now)
 	h.mu.Unlock()
 	switch {
 	case !h.Enabled(traffic.SourceANSPFeed, ""):
 		out["manned"] = traffic.Degraded{Input: "manned", Since: stamp(manned), Reason: "the ANSP feed is switched off: manned traffic is not shown"}
+	case anspOK && ansp.state == "down":
+		out["manned"] = traffic.Degraded{Input: "manned", Since: stamp(ansp.since), Reason: reasonOf("manned traffic unavailable since "+ts(ansp.since), ansp.detail)}
+	case anspOK && ansp.state == "stale":
+		out["manned"] = traffic.Degraded{Input: "manned", Since: stamp(ansp.since),
+			Reason: reasonOf("manned: stale since "+ts(ansp.since)+" (the ANSP's time)", ansp.detail)}
+	case anspOK && ansp.state == "disabled":
+		out["manned"] = traffic.Degraded{Input: "manned", Since: stamp(ansp.since), Reason: reasonOf("the ANSP feed is switched off since "+ts(ansp.since), ansp.detail)}
+	case anspOK && ansp.state == "live":
 	case manned.IsZero():
 		out["manned"] = traffic.Degraded{Input: "manned", Since: stamp(start),
 			Reason: "manned traffic unavailable: no ANSP feed track or status received since traffic-ws started"}
@@ -453,10 +511,34 @@ func (h *Hub) Degraded(now time.Time) map[string]traffic.Degraded {
 		out["manned"] = traffic.Degraded{Input: "manned", Since: stamp(manned),
 			Reason: fmt.Sprintf("manned traffic unavailable: the ANSP feed sent nothing for %.0f s", now.Sub(manned).Seconds())}
 	}
-	// No process publishes the DSS state before WP-13, and no peer
-	// traffic is polled before WP-14: unknown, said so.
-	out["dss"] = traffic.Degraded{Input: "dss", Since: nil,
-		Reason: "the DSS state and peer traffic are not known to traffic-ws (dss-sync WP-13, peers WP-14): other USSPs' flights are not shown"}
+	// e-conspicuity: a required input outside ATC service (02 F4); no
+	// receiver is shown as such, never as an empty sky.
+	switch {
+	case !h.Enabled(traffic.SourceAdsbRx, ""):
+		out["econspicuity"] = traffic.Degraded{Input: "econspicuity", Since: nil, Reason: "the e-conspicuity receiver is switched off: broadcast traffic is not shown"}
+	case !econOK:
+		out["econspicuity"] = traffic.Degraded{Input: "econspicuity", Since: stamp(start),
+			Reason: "no e-conspicuity receiver status received: no receiver is configured (USSP_ADSB_SOURCE) or the monitor is not running"}
+	case econ.state == "down":
+		out["econspicuity"] = traffic.Degraded{Input: "econspicuity", Since: stamp(econ.since),
+			Reason: reasonOf("e-conspicuity unavailable since "+ts(econ.since), econ.detail)}
+	case econ.state == "stale" || econ.state == "disabled":
+		out["econspicuity"] = traffic.Degraded{Input: "econspicuity", Since: stamp(econ.since),
+			Reason: reasonOf("e-conspicuity "+econ.state+" since "+ts(econ.since), econ.detail)}
+	}
+	// Peer traffic through F3411 (internal/peers).
+	switch {
+	case !h.Enabled(traffic.SourceNetworkRID, ""):
+		out["peers"] = traffic.Degraded{Input: "peers", Since: nil, Reason: "network_rid is switched off: other USSPs' flights are not shown"}
+	case !peersOK:
+		out["peers"] = traffic.Degraded{Input: "peers", Since: stamp(start),
+			Reason: "peer traffic unavailable: no network_rid status received (the Display Provider is not running): other USSPs' flights are not shown"}
+	case peers.state != "live":
+		out["peers"] = traffic.Degraded{Input: "peers", Since: stamp(peers.since), Reason: reasonOf("peer traffic "+peers.state+" since "+ts(peers.since), peers.detail)}
+	case peersDown > 0:
+		out["peers"] = traffic.Degraded{Input: "peers", Since: stamp(peersDownSince),
+			Reason: fmt.Sprintf("%d peer USSPs do not answer since %s: their flights are shown peer_unavailable, then age out", peersDown, ts(peersDownSince))}
+	}
 	if h.CIS != nil {
 		basis, ok := h.CIS()
 		switch {
@@ -483,6 +565,52 @@ func (h *Hub) Degraded(now time.Time) map[string]traffic.Degraded {
 		out["policy"] = traffic.Degraded{Input: "policy", Since: nil, Reason: "the policy is not read: its defaults apply"}
 	}
 	return out
+}
+
+// ts is t as a degraded reason writes it.
+func ts(t time.Time) string { return t.UTC().Format(time.RFC3339) }
+
+// reasonOf is a degraded reason: what, and the source's own detail.
+func reasonOf(what, detail string) string {
+	if detail == "" {
+		return what
+	}
+	return clipDetail(what + ": " + detail)
+}
+
+// freshestLocked is the most recently received fresh status of any
+// instance of source (h.mu held).
+func (h *Hub) freshestLocked(source string, now time.Time) (srcStatus, bool) {
+	var best srcStatus
+	found := false
+	for k := range h.srcs {
+		st := h.srcs[k]
+		if st.source != source || now.Sub(st.at) > MannedMissingAfter {
+			continue
+		}
+		if !found || st.at.After(best.at) {
+			best, found = st, true
+		}
+	}
+	return best, found
+}
+
+// downLocked counts the fresh instance statuses of source that are down
+// and the earliest since (h.mu held).
+func (h *Hub) downLocked(source string, now time.Time) (int, time.Time) {
+	n := 0
+	var since time.Time
+	for k := range h.srcs {
+		st := h.srcs[k]
+		if st.source != source || st.instance == "" || st.state != "down" || now.Sub(st.at) > MannedMissingAfter {
+			continue
+		}
+		n++
+		if since.IsZero() || st.since.Before(since) {
+			since = st.since
+		}
+	}
+	return n, since
 }
 
 // monitored selects the alerts the monitor republishes every second: a
