@@ -33,6 +33,14 @@ additively within `/v1`.
     overflowing `Retry-After`, a problem detail cut inside a UTF-8
     character, and a circle radius in a unit other than metres that the
     Annex V schema refuses.
+- A displaced peer is told inline, with the 900 ms deadline of PLAN §15
+  Q16, every time. The authorisation committed its notification to the
+  outbox due at once, and a tick of the notification loop before the
+  writer's inline lease took it, skipping the inline attempt (8 runs in
+  40 of `TestIntegrationDSSDisplacedPeerWithinOneSecond` locally). The
+  notification is now queued held from the loop for 900 ms; the inline
+  lease takes it at once, and the loop takes one the writer never
+  reaches when the hold runs out.
 
 ### Added
 
