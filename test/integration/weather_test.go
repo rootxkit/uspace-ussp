@@ -125,10 +125,17 @@ func TestIntegrationWeatherFreshStaleAndAcrossARestart(t *testing.T) {
 		t.Fatal("a failed fetch reported success")
 	}
 	restarted := w.service(w.svc.Source)
+	// The failure time is the database clock's: it is compared with that
+	// clock, never with this process's.
+	dbNow, err := w.svc.Store.Now(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for name, svc := range map[string]*weather.Service{"running": w.svc, "restarted": restarted} {
 		a, err := svc.Answer(ctx, w.box(), time.Time{})
 		if err != nil || !a.Stale || a.Source.State != weather.StateFailing || a.Source.LastFailureAt == nil ||
-			time.Since(*a.Source.LastFailureAt) > time.Minute || !strings.Contains(*a.Source.Failure, "503") || len(a.Products) != 2 || !a.Products[0].Stale {
+			a.Source.LastFailureAt.After(dbNow) || dbNow.Sub(*a.Source.LastFailureAt) > time.Minute ||
+			!strings.Contains(*a.Source.Failure, "503") || len(a.Products) != 2 || !a.Products[0].Stale {
 			t.Fatalf("%s, the source down: %+v %v", name, a, err)
 		}
 	}
