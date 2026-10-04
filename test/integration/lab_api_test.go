@@ -32,18 +32,20 @@ import (
 // The CISP and the authority's registry are the fakes of the other
 // api-process tests (the lab has neither yet).
 //
-// The lab issuer knows this USSP as LAB_CLIENT_ID (ussp-USSP-DEV-01); the
-// api asks for its tokens as auth.ClientIDFor(USSP_SYSTEM_ID)
-// (ussp-ussp-dev-01, M24). A broker in front of the lab issuer takes the
-// api's client and asks the lab issuer as LAB_CLIENT_ID for every DSS and
-// peer audience, so the tokens the DSS sees carry the lab's sub while the
-// configured id differs: the manager the DSS records is not the one the
-// configuration derives. Every other audience (the fakes) gets the fakes'
-// bearer, as in the other api-process tests.
+// The api runs with the lab's USSP code (LAB_SYSTEM_ID, the lab's
+// USSP_SYSTEM_ID) and asks for its tokens as auth.ClientIDFor of it
+// (M24); the lab issuer knows this USSP as LAB_CLIENT_ID. Both come from
+// the lab's configuration, so the test follows the lab when it renames
+// its client. A broker in front of the lab issuer takes the api's client
+// and asks the lab issuer as LAB_CLIENT_ID for every DSS and peer
+// audience, so the tokens the DSS sees carry the lab's sub whether or not
+// it is the id the configuration derives (labIdentity). Every other
+// audience (the fakes) gets the fakes' bearer, as in the other
+// api-process tests.
 //
 // Environment: the lab_test.go variables LAB_DSS_URL, LAB_TOKEN_URL,
 // LAB_ISSUER, LAB_JWKS, LAB_CLIENT_ID, LAB_CLIENT_SECRET, LAB_SELF_HOST,
-// LAB_LISTEN, LAB_SIM_INTENT.
+// LAB_LISTEN, LAB_SIM_INTENT, and LAB_SYSTEM_ID.
 func TestLabAPIProcess(t *testing.T) {
 	dssURL, tokenURL := labEnv(t, "LAB_DSS_URL"), labEnv(t, "LAB_TOKEN_URL")
 	issuer, jwks := labEnv(t, "LAB_ISSUER"), labEnv(t, "LAB_JWKS")
@@ -55,10 +57,9 @@ func TestLabAPIProcess(t *testing.T) {
 	cleanDSSOutbox(t)
 	t.Cleanup(func() { cleanDSSOutbox(t) })
 
-	derived := auth.ClientIDFor("USSP-DEV")
-	if derived == clientID {
-		t.Fatalf("the configured id %s is the lab's sub: the run would not tell them apart", derived)
-	}
+	systemID := labEnv(t, "LAB_SYSTEM_ID")
+	derived, bridged := labIdentity(systemID, clientID)
+	t.Logf("lab api: USSP code %s, configured client id %s, lab sub %s (broker translates: %v)", systemID, derived, clientID, bridged)
 	lab, err := auth.NewOutgoing(auth.OutgoingConfig{TokenURL: tokenURL, ClientID: clientID, ClientSecret: secret})
 	if err != nil {
 		t.Fatal(err)
@@ -112,6 +113,7 @@ func TestLabAPIProcess(t *testing.T) {
 		"USSP_AUDIENCES":       testHost + "," + testAlias + "," + self,
 		"USSP_TOKEN_ISSUERS":   a.url + "=" + broker.URL + "/.well-known/jwks.json," + issuer + "=" + jwks,
 		"USSP_CIS_RECONCILE_S": "5",
+		"USSP_SYSTEM_ID":       systemID,
 	}
 	cis := withCIS(t, vars)
 	reg := withRegistry(t, vars)
@@ -246,4 +248,15 @@ func TestLabAPIProcess(t *testing.T) {
 	if forwarded.Load() == 0 || refusedClient.Load() != 0 {
 		t.Fatal("the api's tokens did not come through the broker")
 	}
+}
+
+// labIdentity is how a lab run knows the api process: derived is the
+// client id the api derives from the lab's USSP code (auth.ClientIDFor,
+// as cmd/api does) and bridged reports whether the broker's lab sub
+// differs from it. Both cases are runs: a lab whose client is the derived
+// id needs no translation, one that differs is bridged, and either way
+// the DSS must record the lab's sub.
+func labIdentity(systemID, labClientID string) (derived string, bridged bool) {
+	derived = auth.ClientIDFor(systemID)
+	return derived, derived != labClientID
 }
