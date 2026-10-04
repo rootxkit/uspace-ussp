@@ -211,6 +211,11 @@ type point struct {
 	Lng float64 `json:"lng"`
 }
 
+// valid is whether p is a WGS84 position (the schema's bounds).
+func (p point) valid() bool {
+	return p.Lat >= -90 && p.Lat <= 90 && p.Lng >= -180 && p.Lng <= 180
+}
+
 // clip is s in at most 200 bytes of valid UTF-8, cut on a rune
 // boundary: what it returns is stored in a text column, which refuses a
 // split character.
@@ -243,8 +248,9 @@ func joinRemarks(parts ...string) string {
 }
 
 // checkVolumes holds the volumes to the schema's bounds: 1 to MaxVolumes,
-// exactly one outline each, 3 to MaxVertices vertices on a polygon, W84
-// metres on both limits when given and a positive radius on a circle.
+// exactly one outline each, 3 to MaxVertices vertices on a polygon, every
+// vertex and centre a WGS84 position, a positive radius in metres on a
+// circle, W84 metres on both limits and RFC3339 on both times when given.
 func checkVolumes[V any](vs []V) error {
 	if len(vs) == 0 || len(vs) > MaxVolumes {
 		return &BuildError{fmt.Sprintf("%d volumes, want 1 to %d", len(vs), MaxVolumes)}
@@ -253,25 +259,30 @@ func checkVolumes[V any](vs []V) error {
 	if err != nil {
 		return &BuildError{"the volumes do not encode"}
 	}
+	type limit struct {
+		Reference string `json:"reference"`
+		Units     string `json:"units"`
+	}
+	type timeOf struct {
+		Format string `json:"format"`
+	}
 	var check []struct {
 		Volume struct {
 			OutlinePolygon *struct {
-				Vertices []json.RawMessage `json:"vertices"`
+				Vertices []point `json:"vertices"`
 			} `json:"outline_polygon"`
 			OutlineCircle *struct {
+				Center point `json:"center"`
 				Radius struct {
 					Value float64 `json:"value"`
+					Units string  `json:"units"`
 				} `json:"radius"`
 			} `json:"outline_circle"`
-			AltitudeLower *struct {
-				Reference string `json:"reference"`
-				Units     string `json:"units"`
-			} `json:"altitude_lower"`
-			AltitudeUpper *struct {
-				Reference string `json:"reference"`
-				Units     string `json:"units"`
-			} `json:"altitude_upper"`
+			AltitudeLower *limit `json:"altitude_lower"`
+			AltitudeUpper *limit `json:"altitude_upper"`
 		} `json:"volume"`
+		TimeStart *timeOf `json:"time_start"`
+		TimeEnd   *timeOf `json:"time_end"`
 	}
 	if err := json.Unmarshal(raw, &check); err != nil {
 		return &BuildError{"the volumes do not read back"}
@@ -285,13 +296,26 @@ func checkVolumes[V any](vs []V) error {
 			return &BuildError{fmt.Sprintf("volumes[%d] has %d vertices, want 3 to %d", i, len(p.Vertices), MaxVertices)}
 		case c != nil && !(c.Radius.Value > 0):
 			return &BuildError{fmt.Sprintf("volumes[%d] has a radius that is not positive", i)}
+		case c != nil && c.Radius.Units != "M":
+			return &BuildError{fmt.Sprintf("volumes[%d] has a radius that is not in metres", i)}
+		case c != nil && !c.Center.valid():
+			return &BuildError{fmt.Sprintf("volumes[%d] has a centre that is not a WGS84 position", i)}
 		}
-		for _, l := range []*struct {
-			Reference string `json:"reference"`
-			Units     string `json:"units"`
-		}{v.Volume.AltitudeLower, v.Volume.AltitudeUpper} {
+		if p != nil {
+			for k, pt := range p.Vertices {
+				if !pt.valid() {
+					return &BuildError{fmt.Sprintf("volumes[%d] vertex %d is not a WGS84 position", i, k)}
+				}
+			}
+		}
+		for _, l := range []*limit{v.Volume.AltitudeLower, v.Volume.AltitudeUpper} {
 			if l != nil && (l.Reference != "W84" || l.Units != "M") {
 				return &BuildError{fmt.Sprintf("volumes[%d] has a limit that is not W84 metres", i)}
+			}
+		}
+		for _, t := range []*timeOf{v.TimeStart, v.TimeEnd} {
+			if t != nil && t.Format != "RFC3339" {
+				return &BuildError{fmt.Sprintf("volumes[%d] has a time that is not RFC3339", i)}
 			}
 		}
 	}
