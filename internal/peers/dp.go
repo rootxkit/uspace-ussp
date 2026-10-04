@@ -1175,16 +1175,19 @@ func (d *DP) Details(ctx context.Context, base, id string, view geodesy.BBox) (j
 	if DiagonalM(view) > MaxDetailsDiagonalM {
 		return nil, ErrDetailsViewTooLarge
 	}
+	// The peer's instance is its normalised base, as the pollers and the
+	// switches key it.
+	base = normBase(base)
 	if !d.decision(&base).Enabled {
 		return nil, errors.New("network_rid is switched off for this peer")
 	}
-	c, err := d.peerClient(normBase(base))
+	c, err := d.peerClient(base)
 	if err != nil {
 		return nil, err
 	}
 	cctx, cancel := context.WithTimeout(ctx, f3411.NetDpDetailsResponse99thPercentileSeconds*time.Second)
 	defer cancel()
-	res, err := c.GetFlightDetails(cctx, id, d.bearer(normBase(base)))
+	res, err := c.GetFlightDetails(cctx, id, d.bearer(base))
 	if err != nil {
 		return nil, err
 	}

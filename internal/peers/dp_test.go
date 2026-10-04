@@ -579,9 +579,17 @@ func TestDPDetails(t *testing.T) {
 	if _, err := g.dp.Details(context.Background(), g.peer.URL(), "unknown", small); err == nil {
 		t.Fatal("a 404 answered")
 	}
+	// The base as a peer may write it (a trailing slash) is the peer's
+	// instance: served while it is on, refused while it is off.
+	if raw, err := g.dp.Details(context.Background(), g.peer.URL()+"/", peerFlight, small); err != nil || !strings.Contains(string(raw), peerFlight) {
+		t.Fatalf("details through %q: %s %v", g.peer.URL()+"/", raw, err)
+	}
 	g.gate.set(SourceNetworkRID+"/"+g.peer.URL(), true)
 	if _, err := g.dp.Details(context.Background(), g.peer.URL(), peerFlight, small); err == nil {
 		t.Fatal("details of a switched-off peer")
+	}
+	if _, err := g.dp.Details(context.Background(), " "+g.peer.URL()+"/", peerFlight, small); err == nil {
+		t.Fatal("details of a switched-off peer through its base with a trailing slash")
 	}
 }
 

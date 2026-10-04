@@ -32,6 +32,8 @@ additively within `/v1`.
   - a manned aircraft's altitude is selected with the policy row's
     `AltPolicy` (the monitor's CPA path and traffic-ws), as every other
     source's is, not uspace-core's defaults;
+  - a peer flight's details are asked under the peer's normalised base
+    URL, so a base written with a trailing slash meets the peer's switch;
 - This USSP's client id at the authority keeps the case of its code
   (`ussp-ABC1-01`, not `ussp-abc1-01`). The authority's token service
   registers only `ussp-<code>-<nn>` with an upper-case code (M8), and the
