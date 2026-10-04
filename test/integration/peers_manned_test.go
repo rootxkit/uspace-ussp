@@ -585,19 +585,24 @@ func (g *inputsRig) putIntentWithRegistration(t *testing.T, op trafficOperator, 
 // own flights returned by a peer's Service Provider (its RID flight id)
 // and heard back by the ANSP (its callsign is the intent's UA
 // registration), each beside its own trk.v1 track: no proximity alert,
-// and neither echo published. The twin: a different aircraft at the
-// same place from each input raises one.
+// and neither echo published. The twins: an aircraft with the same
+// callsign 1.5 km from the flight is published (the mark alone never
+// hides an aircraft), and a different aircraft at the same place from
+// each input raises one.
 func TestIntegrationEchoOfAnOwnFlightNeverPairsWithItself(t *testing.T) {
 	g := newInputsRig(t)
 	a := g.ops[0]
 	reg := "4L-" + unique()[len(unique())-5:]
 	g.putIntentWithRegistration(t, a, reg)
-	echoICAO, otherICAO := icaoOf(t), icaoOf(t)
+	echoICAO, otherICAO, farICAO := icaoOf(t), icaoOf(t), icaoOf(t)
 	man := listen(t, g.trafficRig, "man.v1.>")
 	peerMsgs := listen(t, g.trafficRig, "peer.v1.>")
 	g.restartMonitor(t, nil)
 	within(t, 10*time.Second, func() bool { return len(g.dss.Subscriptions()) > 0 })
 	g.fly(a, func(float64) (core.LatLon, float64, float64) { return g.o, 0, 0 })
+	// The echo guard places our flight by its trk.v1 track: the echoes
+	// start once the monitor has taken its samples.
+	within(t, 10*time.Second, func() bool { return metric(t, g.monitor, "traffic_samples") > 0 })
 	// The echoes: the peer serves our flight under its id, the ANSP hears
 	// our aircraft with the registration as its callsign.
 	g.peer.SetFlight(peersp.Flight{ID: a.flight, Position: g.o, AltHAEM: 600 + geoidUndulationM})
@@ -628,6 +633,16 @@ func TestIntegrationEchoOfAnOwnFlightNeverPairsWithItself(t *testing.T) {
 	if v := metric(t, g.monitor, "manned_echo_own_flight"); v == 0 {
 		t.Fatal("manned echoes not counted")
 	}
+	// The same callsign away from the flight is another aircraft.
+	g.ansp.SetAircraft(ansp.Aircraft{ICAO24: farICAO, Callsign: &reg, Position: geodesy.Destination(g.o, 90, 1500)})
+	within(t, 10*time.Second, func() bool {
+		for _, raw := range man() {
+			if strings.Contains(string(raw), farICAO) {
+				return true
+			}
+		}
+		return false
+	})
 	// The twins: another aircraft at the same place from each input.
 	other := "OTHER" + unique()[len(unique())-2:]
 	g.ansp.SetAircraft(ansp.Aircraft{ICAO24: otherICAO, Callsign: &other, Position: g.o})

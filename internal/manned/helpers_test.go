@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rootxkit/uspace-core/core"
 	coresources "github.com/rootxkit/uspace-core/sources"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
@@ -128,7 +129,7 @@ func (g *gate) Query(t string, inst *string) coresources.Decision {
 // own is an echo guard that knows one registration.
 type own struct{ reg, flight string }
 
-func (o own) EchoOf(_ string, callsign, registration *string) (string, bool) {
+func (o own) EchoOf(_ string, callsign, registration *string, _ core.LatLon) (string, bool) {
 	for _, s := range []*string{registration, callsign} {
 		if s != nil && NormRegistration(*s) == NormRegistration(o.reg) {
 			return o.flight, true

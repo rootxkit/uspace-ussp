@@ -32,8 +32,9 @@
 // consumers' (internal/traffic over uspace-core). Before a record is
 // published the echo guard (Own) recognises one of this USSP's own
 // flights heard back, whose callsign or registration is the UA
-// registration of an active own flight, and leaves it out, counted, so
-// it is never judged as a second aircraft beside its own track (PLAN §15
-// Q23). Nothing here has a send path towards an aircraft (CLAUDE.md
+// registration of an active own flight and which is where that flight's
+// own track places it, and leaves it out, counted, so it is never
+// judged as a second aircraft beside its own track (PLAN §15 Q23); the
+// same mark elsewhere is another aircraft and is published. Nothing here has a send path towards an aircraft (CLAUDE.md
 // rule 1).
 package manned

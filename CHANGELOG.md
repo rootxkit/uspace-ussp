@@ -9,6 +9,14 @@ additively within `/v1`.
 
 ### Fixed
 
+- WP-14 review follow-ups:
+  - the echo guard of the manned inputs no longer hides an aircraft on
+    its mark alone: a record whose callsign or registration is an active
+    own flight's UA registration is its echo only within
+    `echo_colocation_m` of the flight's live `trk.v1` position, received
+    at most `echo_colocation_s` ago (uspace-core `identify.JudgeFleet`;
+    defaults 300 m and 5 s from spec 04 §3.2, pending GCAA); a manned
+    aircraft with the same mark elsewhere is shown;
 - This USSP's client id at the authority keeps the case of its code
   (`ussp-ABC1-01`, not `ussp-abc1-01`). The authority's token service
   registers only `ussp-<code>-<nn>` with an upper-case code (M8), and the

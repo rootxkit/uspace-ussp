@@ -236,7 +236,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	}
 	// The manned and peer inputs (brief WP-14), behind the echo guard of
 	// this USSP's own flights (PLAN §15 Q23).
-	owned := &ownFlights{intents: intents}
+	owned := &ownFlights{intents: intents, policy: func() policy.Values { return current().Values }}
 	cpa.onOwn = owned.Seen
 	if err := startInputs(ctx, rt, inputs{current: current, gate: src, own: owned, und: und, cis: cisM}); err != nil {
 		return err

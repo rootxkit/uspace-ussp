@@ -246,6 +246,10 @@ func TestPeerAndMannedBounds(t *testing.T) {
 		{"no peer window", func(v *Values) { v.PeerUnavailableS = 0 }, "peer_unavailable_s"},
 		{"no flight cap", func(v *Values) { v.PeerFlightsMax = 0 }, "peer_flights_max_count"},
 		{"too large a flight cap", func(v *Values) { v.PeerFlightsMax = MaxPeerFlightsMax + 1 }, "peer_flights_max_count"},
+		{"no echo distance", func(v *Values) { v.EchoColocationM = 0 }, "echo_colocation_m"},
+		{"NaN echo distance", func(v *Values) { v.EchoColocationM = math.NaN() }, "echo_colocation_m"},
+		{"no echo window", func(v *Values) { v.EchoColocationS = -1 }, "echo_colocation_s"},
+		{"infinite echo window", func(v *Values) { v.EchoColocationS = math.Inf(1) }, "echo_colocation_s"},
 	} {
 		v := Defaults()
 		tc.set(&v)
@@ -256,6 +260,10 @@ func TestPeerAndMannedBounds(t *testing.T) {
 	v := Defaults()
 	if v.MannedMarginM != 5000 || v.MannedUnavailableS != 10 || v.PeerUnavailableS != 60 || v.PeerFlightsMax != 1000 {
 		t.Errorf("peer and manned defaults %v %v %v %d", v.MannedMarginM, v.MannedUnavailableS, v.PeerUnavailableS, v.PeerFlightsMax)
+	}
+	// Spec 04 §3.2's serial_conflict figures, pending GCAA.
+	if v.EchoColocationM != 300 || v.EchoColocationS != 5 {
+		t.Errorf("echo co-location defaults %v m %v s", v.EchoColocationM, v.EchoColocationS)
 	}
 	for _, n := range []int{1, MaxPeerFlightsMax} {
 		v.MannedMarginM, v.PeerFlightsMax = 0, n

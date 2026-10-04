@@ -40,9 +40,9 @@ type cpaPath struct {
 	und      geoid.Undulator
 	counters *core.Counters
 	logger   *slog.Logger
-	// onOwn is told of every one of this USSP's flights on trk.v1 (the
-	// echo guard of the peer and manned inputs, PLAN §15 Q23).
-	onOwn func(flightID string)
+	// onOwn is told of every sample of this USSP's flights on trk.v1
+	// (the echo guard of the peer and manned inputs, PLAN §15 Q23).
+	onOwn func(in traffic.Input)
 }
 
 // offerTrack reads one trk.v1 or peer.v1 message and offers it.
@@ -54,7 +54,7 @@ func (c *cpaPath) offerTrack(ns string, data []byte) {
 	}
 	in := traffic.TrackInputOf(ns, tr)
 	if ns == traffic.NSTrack && in.Own() && c.onOwn != nil {
-		c.onOwn(in.FlightID)
+		c.onOwn(in)
 	}
 	c.eng.Offer(in)
 }

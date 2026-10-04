@@ -14,6 +14,7 @@ import (
 	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/geodesy"
 	"github.com/rootxkit/uspace-core/geoid"
+	"github.com/rootxkit/uspace-core/identify"
 
 	"github.com/rootxkit/uspace-ussp/internal/app/proc"
 	"github.com/rootxkit/uspace-ussp/internal/bus"
@@ -24,6 +25,7 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/peers"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
 	"github.com/rootxkit/uspace-ussp/internal/telemetry"
+	"github.com/rootxkit/uspace-ussp/internal/traffic"
 )
 
 // Readiness dependencies of the manned and peer inputs (brief WP-14).
@@ -49,15 +51,29 @@ const (
 // ownFlights is the echo guard's view of this USSP's own flights (PLAN
 // §15 Q23): the flights of the active intents (intent_active) with
 // their declared UA registration, and the flights seen on trk.v1 in the
-// last minute. It implements manned.Own and peers.Own.
+// last minute with their last sample. It implements manned.Own and
+// peers.Own.
 type ownFlights struct {
 	intents interface {
 		Snapshot() (map[string]intentBody, float64, bool)
 	}
-	now func() time.Time
+	// policy gives the co-location bounds (echo_colocation_m and
+	// echo_colocation_s); the defaults without it.
+	policy func() policy.Values
+	now    func() time.Time
 
 	mu   sync.Mutex
-	seen map[string]time.Time
+	seen map[string]ownSeen
+}
+
+// ownSeen is one own flight as trk.v1 last showed it: when the monitor
+// took it (the 60 s window of OwnFlight) and where the sample placed
+// the flight with its ingest times, which the co-location of EchoOf
+// judges.
+type ownSeen struct {
+	at    time.Time
+	pos   core.LatLon
+	times core.Times
 }
 
 func (o *ownFlights) clock() time.Time {
@@ -67,17 +83,24 @@ func (o *ownFlights) clock() time.Time {
 	return time.Now()
 }
 
-// Seen records one of this USSP's flights on trk.v1.
-func (o *ownFlights) Seen(flightID string) {
+func (o *ownFlights) values() policy.Values {
+	if o.policy == nil {
+		return policy.Defaults()
+	}
+	return o.policy()
+}
+
+// Seen records one sample of one of this USSP's flights on trk.v1.
+func (o *ownFlights) Seen(in traffic.Input) {
 	now := o.clock()
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.seen == nil {
-		o.seen = map[string]time.Time{}
+		o.seen = map[string]ownSeen{}
 	}
-	if _, ok := o.seen[flightID]; !ok && len(o.seen) >= maxOwnSeen {
-		for id, at := range o.seen {
-			if now.Sub(at) > ownSeenFor {
+	if _, ok := o.seen[in.FlightID]; !ok && len(o.seen) >= maxOwnSeen {
+		for id, s := range o.seen {
+			if now.Sub(s.at) > ownSeenFor {
 				delete(o.seen, id)
 			}
 		}
@@ -85,7 +108,7 @@ func (o *ownFlights) Seen(flightID string) {
 			return
 		}
 	}
-	o.seen[flightID] = now
+	o.seen[in.FlightID] = ownSeen{at: now, pos: in.Position, times: in.Times}
 }
 
 // active are the intents that have a flight now.
@@ -108,9 +131,9 @@ func (o *ownFlights) active() []intentBody {
 func (o *ownFlights) OwnFlight(id string) bool {
 	now := o.clock()
 	o.mu.Lock()
-	at, ok := o.seen[id]
+	s, ok := o.seen[id]
 	o.mu.Unlock()
-	if ok && now.Sub(at) <= ownSeenFor {
+	if ok && now.Sub(s.at) <= ownSeenFor {
 		return true
 	}
 	act := o.active()
@@ -124,9 +147,19 @@ func (o *ownFlights) OwnFlight(id string) bool {
 
 // EchoOf implements manned.Own: the flight of an active intent whose
 // declared UA registration (Annex IV item 10) is the record's
-// registration or callsign. No intent declares a 24-bit address, so a
-// record that carries neither is no echo (PLAN §15 Q25).
-func (o *ownFlights) EchoOf(_ string, callsign, registration *string) (string, bool) {
+// registration or callsign, and whose live trk.v1 track places it
+// within echo_colocation_m of the record (PLAN §15 Q23, Q25). The
+// co-location is uspace-core's spoofing guard (identify.JudgeFleet, the
+// serial_conflict rule of spec 04 §3.2): the flight's last sample is
+// live when received at most echo_colocation_s ago, captured at most
+// that long before its receipt, and not backlog; within the distance
+// the record is withheld as the echo. The mark alone never hides an
+// aircraft: a record with the mark but away from the flight, with the
+// flight's track quiet or not seen here, or with a guard that cannot
+// judge, is no echo and is shown as a second aircraft (a false alert,
+// never a missed one). No intent declares a 24-bit address, so a record
+// that carries neither mark is no echo.
+func (o *ownFlights) EchoOf(_ string, callsign, registration *string, at core.LatLon) (string, bool) {
 	var keys []string
 	for _, s := range []*string{registration, callsign} {
 		if s != nil {
@@ -139,12 +172,25 @@ func (o *ownFlights) EchoOf(_ string, callsign, registration *string) (string, b
 		return "", false
 	}
 	act := o.active()
+	pol := o.values()
+	now := o.clock()
 	for i := range act {
 		b := &act[i]
-		if b.UARegistration == nil {
+		if b.UARegistration == nil || !slices.Contains(keys, manned.NormRegistration(*b.UARegistration)) {
 			continue
 		}
-		if slices.Contains(keys, manned.NormRegistration(*b.UARegistration)) {
+		o.mu.Lock()
+		s, ok := o.seen[*b.FlightID]
+		o.mu.Unlock()
+		if !ok {
+			continue
+		}
+		pos := s.pos
+		row := identify.AuthRow{HeardAtS: s.times.RxTS.Sub(now).Seconds(), Pos: &pos, Backlog: s.times.Backlog,
+			BehindS: s.times.RxTS.Sub(s.times.CapturedAt).Seconds()}
+		r := identify.JudgeFleet(identify.FleetInput{SerialIsOurs: true, Rows: []identify.AuthRow{row}, Broadcast: at,
+			LiveForS: pol.EchoColocationS, SpoofDistanceM: pol.EchoColocationM})
+		if r.Verdict == identify.VerdictWithhold && r.Problem == nil && r.ApartM != nil {
 			return *b.FlightID, true
 		}
 	}
