@@ -212,7 +212,9 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	zoneCounters := &core.Counters{}
 	proc.Publish(rt, "zones", zoneCounters)
 	cisM := &bus.Mirror[telemetry.CISValue]{JS: js, Bucket: bus.BucketCISCurrent, Decode: telemetry.DecodeCIS, Counters: followCounters, Logger: logger}
-	zoneSrc := &geo.ZoneSource{M: cisM, Counters: zoneCounters}
+	zoneSrc := &geo.ZoneSource{M: cisM, Counters: zoneCounters, StaleS: func() float64 { return current().Values.CISStaleS }}
+	// The basis is aged from its receipt on this host's clock.
+	cisM.OnChange = zoneSrc.Observe
 	rt.Health.Register(DepCISCurrent, false, zoneProbe(zoneSrc))
 
 	// The engine and its feed.
@@ -286,7 +288,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 					_, age, loaded := intents.Snapshot()
 					logger.LogAttrs(ctx, slog.LevelInfo, "conformance status", StatusAttrs(eng.Summary(), age, loaded, current().Version)...)
 					logger.LogAttrs(ctx, slog.LevelInfo, "cpa status", CPAStatusAttrs(cpa.eng.Summary())...)
-					logger.LogAttrs(ctx, slog.LevelInfo, "zone status", ZoneStatusAttrs(zoneSrc.Current(), ground != nil, und != nil)...)
+					logger.LogAttrs(ctx, slog.LevelInfo, "zone status", ZoneStatusAttrs(zoneSrc.Current(), zoneSrc.Freshness(), ground != nil, und != nil)...)
 				}
 			}
 		},
