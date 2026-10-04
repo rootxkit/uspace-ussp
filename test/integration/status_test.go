@@ -6,12 +6,15 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/rootxkit/uspace-core/core"
 
 	"github.com/rootxkit/uspace-ussp/internal/status"
 	statusstore "github.com/rootxkit/uspace-ussp/internal/status/pgstore"
+	"github.com/rootxkit/uspace-ussp/internal/store"
 	"github.com/rootxkit/uspace-ussp/internal/testfakes/authority"
 )
 
@@ -90,5 +93,52 @@ func TestIntegrationStatusNotices(t *testing.T) {
 	}
 	if state, detail := restarted.Probe()(ctx); state != "up" {
 		t.Errorf("readyz %s %s", state, detail)
+	}
+}
+
+// A notice stored before 00021 has no certificate id; the backfill
+// gives it a made-up one, so one never delivered is failed with the
+// reason and never claimed, while one delivered stays delivered (E-01).
+func TestIntegrationStatusBackfillFailsUndelivered(t *testing.T) {
+	ensureSchemas(t)
+	ctx := context.Background()
+	owner := relOwner(t)
+	if _, err := owner.MigrateDown(ctx, store.TreeRelational, 20); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := relOwner(t).Migrate(context.Background(), store.TreeRelational); err != nil {
+			t.Errorf("restore the schema: %v", err)
+		}
+	})
+	var pending, delivered string
+	if err := owner.QueryRow(ctx, "INSERT INTO operating_status_notices (kind, at) VALUES ('cease', now()) RETURNING id::text").Scan(&pending); err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.QueryRow(ctx, `INSERT INTO operating_status_notices (kind, at, submitted_at, authority_ref)
+		VALUES ('start', now(), now(), 'AUTH-1') RETURNING id::text`).Scan(&delivered); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = relOwner(t).Exec(context.Background(), "DELETE FROM operating_status_notices WHERE id = ANY($1::uuid[])", []string{pending, delivered})
+	})
+	if _, err := owner.Migrate(ctx, store.TreeRelational); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	var failedAt *time.Time
+	var lastError *string
+	if err := owner.QueryRow(ctx, "SELECT state, failed_at, last_error FROM operating_status_notices WHERE id = $1::uuid", pending).
+		Scan(&state, &failedAt, &lastError); err != nil {
+		t.Fatal(err)
+	}
+	if state != "failed" || failedAt == nil || lastError == nil || !strings.Contains(*lastError, "certificate id") {
+		t.Errorf("an undelivered notice of before 00021: %s %v %v", state, failedAt, lastError)
+	}
+	if err := owner.QueryRow(ctx, "SELECT state FROM operating_status_notices WHERE id = $1::uuid", delivered).Scan(&state); err != nil || state != "delivered" {
+		t.Errorf("a delivered notice of before 00021: %s %v", state, err)
+	}
+	if n := count(t, owner, "SELECT count(*) FROM operating_status_notices WHERE id = $1::uuid AND state = 'pending'", pending); n != 0 {
+		t.Error("the undelivered notice is still pending")
 	}
 }
