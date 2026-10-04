@@ -74,7 +74,20 @@ func TestPictureAgesAndBounds(t *testing.T) {
 	if len(own) != 1 || !own[0].Track.Own {
 		t.Fatalf("own %+v", own)
 	}
-	if n := pic.Sweep(t0.Add(time.Second)); n != 2 || pic.Len() != 0 {
+	// The flight that flies the subscriber's intent is its own wherever it
+	// is, before intent_active names the flight; another intent's is not.
+	far := sample("f", geodesy.Destination(origin, 90, 20_000), t0)
+	far.IntentID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	pic.MaxTracks = 3
+	pic.Put(far, nil)
+	byIntent := pic.Tracks(Area{OwnIntent: far.IntentID}, t0, v, nil)
+	if len(byIntent) != 1 || byIntent[0].Track.TrackID != "f" || !byIntent[0].Track.Own {
+		t.Fatalf("own by intent %+v", byIntent)
+	}
+	if other := pic.Tracks(Area{OwnIntent: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}, t0, v, nil); len(other) != 0 {
+		t.Fatalf("another intent's flight is own: %+v", other)
+	}
+	if n := pic.Sweep(t0.Add(time.Second)); n != 3 || pic.Len() != 0 {
 		t.Fatalf("swept %d", n)
 	}
 }

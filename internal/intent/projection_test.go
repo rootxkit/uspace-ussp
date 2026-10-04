@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -173,5 +174,21 @@ func TestBusProjectorPublishesTheNoticeOfItsVersion(t *testing.T) {
 	r.UpdateRequired = json.RawMessage(`{"by_intent_id":"x"}`)
 	if NoticeOf(r) != nil {
 		t.Fatal("a flag read as a notice")
+	}
+}
+
+// The state names the intent's operator and client (brief WP-17), and a
+// record without them projects without them (omitted, optional in v1).
+func TestStateCarriesTheOperatorAndClient(t *testing.T) {
+	r := &Record{ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", OperatorID: "op-1", ClientID: "client-1", Version: 1}
+	if b := StateOf(r); b.OperatorID != "op-1" || b.ClientID != "client-1" {
+		t.Fatalf("%+v", b)
+	}
+	raw, err := json.Marshal(StateOf(&Record{ID: r.ID, Version: 1}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "operator_id") || strings.Contains(string(raw), "client_id") {
+		t.Fatalf("empty owner projected: %s", raw)
 	}
 }

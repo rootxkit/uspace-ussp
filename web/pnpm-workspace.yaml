@@ -1,3 +1,12 @@
+# pnpm settings (pnpm 11 reads them here, not from .npmrc; M34).
+engineStrict: true
+saveExact: true
+# Peers are this app's own and listed in package.json (react, next,
+# maplibre-gl, react-hook-form, zod, the eslint plugins of the kit's
+# config): nothing is installed that package.json does not name.
+autoInstallPeers: false
+# No install script runs: sharp (next's optional image optimiser) and
+# unrs-resolver are not needed; the kit is a built release tarball.
 allowBuilds:
   sharp: false
   unrs-resolver: false

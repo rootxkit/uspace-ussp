@@ -1187,9 +1187,39 @@ type AlertAck struct {
 	// AckedAt When it was first acknowledged, on the database clock.
 	AckedAt time.Time `json:"acked_at"`
 
-	// AckedBy The client that first acknowledged it.
+	// AckedBy The client that first acknowledged it, or operator_user:<account id> for a portal user.
 	AckedBy string             `json:"acked_by"`
 	AlertId openapi_types.UUID `json:"alert_id"`
+}
+
+// BoundSerial defines model for BoundSerial.
+type BoundSerial struct {
+	BoundAt time.Time `json:"bound_at"`
+	Serial  string    `json:"serial"`
+}
+
+// ClientInfo defines model for ClientInfo.
+type ClientInfo struct {
+	ClientId  string    `json:"client_id"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// PreviousValidUntil Set by a rotation; the previous secret works until then.
+	PreviousValidUntil *time.Time      `json:"previous_valid_until,omitempty"`
+	RotatedAt          *time.Time      `json:"rotated_at,omitempty"`
+	Scopes             []OperatorScope `json:"scopes"`
+	Serials            []BoundSerial   `json:"serials"`
+
+	// SerialsTruncated True when the client has more live bindings than the list holds.
+	SerialsTruncated bool   `json:"serials_truncated"`
+	Status           string `json:"status"`
+}
+
+// ClientList defines model for ClientList.
+type ClientList struct {
+	Clients []ClientInfo `json:"clients"`
+
+	// Truncated True when the operator has more clients than the list holds.
+	Truncated bool `json:"truncated"`
 }
 
 // ClientRequest defines model for ClientRequest.
@@ -2959,6 +2989,17 @@ type ClientInterface interface {
 	// Corresponds with PATCH /v1/accounts/operators/{operator_id} (the `UpdateOperator` operationId).
 	UpdateOperator(ctx context.Context, operatorId OperatorID, body UpdateOperatorJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListClients The operator's machine clients and their bound serials
+	//
+	// Every client of the caller's operator (a portal session of any
+	// role of that operator), oldest first, at most 200, each with its
+	// scopes, status, creation and rotation times and its live serial
+	// bindings (at most 200 per client). Never a secret or its hash.
+	// Another operator's id is 403.
+	//
+	// Corresponds with GET /v1/accounts/operators/{operator_id}/clients (the `ListClients` operationId).
+	ListClients(ctx context.Context, operatorId OperatorID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CreateClientWithBody Create a machine client of the operator
 	//
 	// A client-credentials client with operator scopes, for an `active`
@@ -3145,15 +3186,20 @@ type ClientInterface interface {
 	//
 	// A WebSocket upgrade (served by traffic-ws; Art. 13, spec 02 F5)
 	// for an operator machine client with a bearer token granting
-	// ussp.traffic; intent_id must be an intent whose aircraft is bound
-	// to the client. Server to client, in the common envelope:
+	// ussp.traffic, intent_id an intent whose aircraft is bound to the
+	// client; or for an operator portal user (a session of realm portal,
+	// any role; brief WP-17) on a same-origin upgrade with the
+	// uspace_session cookie from an Origin on USSP_WS_ALLOWED_ORIGINS,
+	// intent_id an intent of the session's operator. Server to client,
+	// in the common envelope:
 	// console/status/v1 on connect and every 2 s, every alert/v1 of the
 	// intent's flight as it comes (conformance and proximity alerts,
 	// raised, updated and cleared, with the peer's track id and trust),
 	// the active ones on connect, and every unacknowledged critical
 	// alert repeated every escalation_repeat_s (10 s) until it is
 	// acknowledged (POST /v1/alerts/{alert_id}/ack) or cleared. The
-	// first send of each alert to the client is recorded (delivery).
+	// first send of each alert to the client is recorded (delivery; for
+	// a portal session under operator_user:<account id>).
 	//
 	// Corresponds with GET /v1/alerts (the `OpenAlertStream` operationId).
 	OpenAlertStream(ctx context.Context, params *OpenAlertStreamParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3166,7 +3212,10 @@ type ClientInterface interface {
 	// acknowledged alert is republished to traffic-ws, which stops
 	// repeating it, and a critical alert acknowledged within
 	// escalation_after_s (30 s) is not escalated. An alert of another
-	// operator's flight is 404, never 403. No body.
+	// operator's flight is 404, never 403. No body. A portal session of
+	// an operator_admin or a remote_pilot acknowledges its operator's
+	// alerts, recorded as acked_by operator_user:<account id> (a viewer
+	// is 403; brief WP-17).
 	//
 	// Corresponds with POST /v1/alerts/{alert_id}/ack (the `AckAlert` operationId).
 	AckAlert(ctx context.Context, alertId AlertID, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3239,6 +3288,7 @@ type ClientInterface interface {
 	// cis_stale_s): a stale cache still answers and says so. A list cut
 	// at 2000 features says truncated. The geo change push of the
 	// traffic stream (geo/changed/v1) tells a subscriber to refetch.
+	// A portal session (any role) reads it as an operator client does.
 	//
 	// Corresponds with GET /v1/geo (the `GetGeo` operationId).
 	GetGeo(ctx context.Context, params *GetGeoParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3250,20 +3300,21 @@ type ClientInterface interface {
 	// applies at some time of its window (its applicability says how:
 	// always, during from/to, or scheduled on daily windows from/to). The
 	// operator's own intent only: another operator's is 404, never 403.
+	// A portal session (any role) reads its operator's intents.
 	//
 	// Corresponds with GET /v1/geo/intents/{intent_id} (the `GetGeoForIntent` operationId).
 	GetGeoForIntent(ctx context.Context, intentId IntentID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListIntents The operator's intents, newest first
 	//
-	// At most 500; from and to keep the intents whose window overlaps them; state filters.
+	// At most 500; from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
 	//
 	// Corresponds with GET /v1/intents (the `ListIntents` operationId).
 	ListIntents(ctx context.Context, params *ListIntentsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateIntentWithBody File an operational intent and get the authorisation decision
 	//
-	// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+	// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable). With a portal session (realm portal, brief WP-17) the intent is filed for the session's operator by an operator_admin or a remote_pilot, under the operator's client the UAS serial is bound to (403 serial_not_bound when none is), and the audit row names the portal user; a viewer is 403.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -3272,7 +3323,7 @@ type ClientInterface interface {
 
 	// CreateIntent File an operational intent and get the authorisation decision
 	//
-	// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+	// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable). With a portal session (realm portal, brief WP-17) the intent is filed for the session's operator by an operator_admin or a remote_pilot, under the operator's client the UAS serial is bound to (403 serial_not_bound when none is), and the audit row names the portal user; a viewer is 403.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -3281,14 +3332,14 @@ type ClientInterface interface {
 
 	// GetIntent One of the operator's intents: its decision and state
 	//
-	// Another operator's intent is 404, never 403.
+	// Another operator's intent is 404, never 403. A portal session (any role) reads its operator's.
 	//
 	// Corresponds with GET /v1/intents/{intent_id} (the `GetIntent` operationId).
 	GetIntent(ctx context.Context, intentId IntentID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ChangeIntentWithBody Activate, modify or end an intent
 	//
-	// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409.
+	// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409. A portal session of an operator_admin or a remote_pilot changes its operator's intents (a viewer is 403), as the client the intent was filed under; the audit row names the portal user.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -3297,7 +3348,7 @@ type ClientInterface interface {
 
 	// ChangeIntent Activate, modify or end an intent
 	//
-	// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409.
+	// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409. A portal session of an operator_admin or a remote_pilot changes its operator's intents (a viewer is 403), as the client the intent was filed under; the audit row names the portal user.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -3445,7 +3496,11 @@ type ClientInterface interface {
 	// A WebSocket upgrade (served by traffic-ws; Art. 11, spec 02 F5).
 	// An operator machine client with a bearer token granting
 	// ussp.traffic (issued by this USSP) subscribes with intent_id, an
-	// intent whose aircraft is bound to the client; a console user
+	// intent whose aircraft is bound to the client; an operator portal
+	// user (a session of realm portal, any role; brief WP-17) subscribes
+	// with intent_id, an intent of the session's operator, on a
+	// same-origin upgrade with the uspace_session cookie from an Origin
+	// on USSP_WS_ALLOWED_ORIGINS; a console user
 	// with a staff session (realm console) subscribes with bbox, or
 	// with console/subscribe/v1 frames, on a same-origin upgrade with
 	// the uspace_session cookie from an Origin on
@@ -3480,7 +3535,8 @@ type ClientInterface interface {
 	//
 	// One traffic/product/v1 message (schemas/traffic/product/v1) for
 	// intent_id (an operator token granting ussp.traffic, the intent's
-	// aircraft bound to the client) or bbox (a staff session), as the
+	// aircraft bound to the client, or a portal session of the intent's
+	// operator) or bbox (a staff session), as the
 	// stream would send it now: the bootstrap of a client. Another
 	// operator's intent is 404, never 403. 503 names the input that is
 	// missing when the product cannot be assembled.
@@ -3514,6 +3570,7 @@ type ClientInterface interface {
 	// weather_stale_s answers its last products with stale true and,
 	// while failing, the failure and its time. The station list, the
 	// area radius and the thresholds are policy values pending GCAA.
+	// A portal session (any role) reads it as an operator client does.
 	//
 	// Corresponds with GET /v1/weather (the `GetWeather` operationId).
 	GetWeather(ctx context.Context, params *GetWeatherParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3853,6 +3910,27 @@ func (c *Client) UpdateOperator(ctx context.Context, operatorId OperatorID, body
 	return c.Client.Do(req)
 }
 
+// ListClients The operator's machine clients and their bound serials
+//
+// Every client of the caller's operator (a portal session of any
+// role of that operator), oldest first, at most 200, each with its
+// scopes, status, creation and rotation times and its live serial
+// bindings (at most 200 per client). Never a secret or its hash.
+// Another operator's id is 403.
+//
+// Corresponds with GET /v1/accounts/operators/{operator_id}/clients (the `ListClients` operationId).
+func (c *Client) ListClients(ctx context.Context, operatorId OperatorID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListClientsRequest(c.Server, operatorId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // CreateClientWithBody Create a machine client of the operator
 //
 // A client-credentials client with operator scopes, for an `active`
@@ -4169,15 +4247,20 @@ func (c *Client) RequestStatusNotice(ctx context.Context, body RequestStatusNoti
 //
 // A WebSocket upgrade (served by traffic-ws; Art. 13, spec 02 F5)
 // for an operator machine client with a bearer token granting
-// ussp.traffic; intent_id must be an intent whose aircraft is bound
-// to the client. Server to client, in the common envelope:
+// ussp.traffic, intent_id an intent whose aircraft is bound to the
+// client; or for an operator portal user (a session of realm portal,
+// any role; brief WP-17) on a same-origin upgrade with the
+// uspace_session cookie from an Origin on USSP_WS_ALLOWED_ORIGINS,
+// intent_id an intent of the session's operator. Server to client,
+// in the common envelope:
 // console/status/v1 on connect and every 2 s, every alert/v1 of the
 // intent's flight as it comes (conformance and proximity alerts,
 // raised, updated and cleared, with the peer's track id and trust),
 // the active ones on connect, and every unacknowledged critical
 // alert repeated every escalation_repeat_s (10 s) until it is
 // acknowledged (POST /v1/alerts/{alert_id}/ack) or cleared. The
-// first send of each alert to the client is recorded (delivery).
+// first send of each alert to the client is recorded (delivery; for
+// a portal session under operator_user:<account id>).
 //
 // Corresponds with GET /v1/alerts (the `OpenAlertStream` operationId).
 func (c *Client) OpenAlertStream(ctx context.Context, params *OpenAlertStreamParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4200,7 +4283,10 @@ func (c *Client) OpenAlertStream(ctx context.Context, params *OpenAlertStreamPar
 // acknowledged alert is republished to traffic-ws, which stops
 // repeating it, and a critical alert acknowledged within
 // escalation_after_s (30 s) is not escalated. An alert of another
-// operator's flight is 404, never 403. No body.
+// operator's flight is 404, never 403. No body. A portal session of
+// an operator_admin or a remote_pilot acknowledges its operator's
+// alerts, recorded as acked_by operator_user:<account id> (a viewer
+// is 403; brief WP-17).
 //
 // Corresponds with POST /v1/alerts/{alert_id}/ack (the `AckAlert` operationId).
 func (c *Client) AckAlert(ctx context.Context, alertId AlertID, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4303,6 +4389,7 @@ func (c *Client) ReceiveCISNotificationWithBody(ctx context.Context, contentType
 // cis_stale_s): a stale cache still answers and says so. A list cut
 // at 2000 features says truncated. The geo change push of the
 // traffic stream (geo/changed/v1) tells a subscriber to refetch.
+// A portal session (any role) reads it as an operator client does.
 //
 // Corresponds with GET /v1/geo (the `GetGeo` operationId).
 func (c *Client) GetGeo(ctx context.Context, params *GetGeoParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4324,6 +4411,7 @@ func (c *Client) GetGeo(ctx context.Context, params *GetGeoParams, reqEditors ..
 // applies at some time of its window (its applicability says how:
 // always, during from/to, or scheduled on daily windows from/to). The
 // operator's own intent only: another operator's is 404, never 403.
+// A portal session (any role) reads its operator's intents.
 //
 // Corresponds with GET /v1/geo/intents/{intent_id} (the `GetGeoForIntent` operationId).
 func (c *Client) GetGeoForIntent(ctx context.Context, intentId IntentID, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4340,7 +4428,7 @@ func (c *Client) GetGeoForIntent(ctx context.Context, intentId IntentID, reqEdit
 
 // ListIntents The operator's intents, newest first
 //
-// At most 500; from and to keep the intents whose window overlaps them; state filters.
+// At most 500; from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
 //
 // Corresponds with GET /v1/intents (the `ListIntents` operationId).
 func (c *Client) ListIntents(ctx context.Context, params *ListIntentsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4357,7 +4445,7 @@ func (c *Client) ListIntents(ctx context.Context, params *ListIntentsParams, req
 
 // CreateIntentWithBody File an operational intent and get the authorisation decision
 //
-// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable). With a portal session (realm portal, brief WP-17) the intent is filed for the session's operator by an operator_admin or a remote_pilot, under the operator's client the UAS serial is bound to (403 serial_not_bound when none is), and the audit row names the portal user; a viewer is 403.
 //
 // Takes any type of body and a specified content type.
 //
@@ -4376,7 +4464,7 @@ func (c *Client) CreateIntentWithBody(ctx context.Context, contentType string, b
 
 // CreateIntent File an operational intent and get the authorisation decision
 //
-// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable). With a portal session (realm portal, brief WP-17) the intent is filed for the session's operator by an operator_admin or a remote_pilot, under the operator's client the UAS serial is bound to (403 serial_not_bound when none is), and the audit row names the portal user; a viewer is 403.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -4395,7 +4483,7 @@ func (c *Client) CreateIntent(ctx context.Context, body CreateIntentJSONRequestB
 
 // GetIntent One of the operator's intents: its decision and state
 //
-// Another operator's intent is 404, never 403.
+// Another operator's intent is 404, never 403. A portal session (any role) reads its operator's.
 //
 // Corresponds with GET /v1/intents/{intent_id} (the `GetIntent` operationId).
 func (c *Client) GetIntent(ctx context.Context, intentId IntentID, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4412,7 +4500,7 @@ func (c *Client) GetIntent(ctx context.Context, intentId IntentID, reqEditors ..
 
 // ChangeIntentWithBody Activate, modify or end an intent
 //
-// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409.
+// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409. A portal session of an operator_admin or a remote_pilot changes its operator's intents (a viewer is 403), as the client the intent was filed under; the audit row names the portal user.
 //
 // Takes any type of body and a specified content type.
 //
@@ -4431,7 +4519,7 @@ func (c *Client) ChangeIntentWithBody(ctx context.Context, intentId IntentID, co
 
 // ChangeIntent Activate, modify or end an intent
 //
-// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409.
+// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409. A portal session of an operator_admin or a remote_pilot changes its operator's intents (a viewer is 403), as the client the intent was filed under; the audit row names the portal user.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -4649,7 +4737,11 @@ func (c *Client) PostTelemetryBatch(ctx context.Context, body PostTelemetryBatch
 // A WebSocket upgrade (served by traffic-ws; Art. 11, spec 02 F5).
 // An operator machine client with a bearer token granting
 // ussp.traffic (issued by this USSP) subscribes with intent_id, an
-// intent whose aircraft is bound to the client; a console user
+// intent whose aircraft is bound to the client; an operator portal
+// user (a session of realm portal, any role; brief WP-17) subscribes
+// with intent_id, an intent of the session's operator, on a
+// same-origin upgrade with the uspace_session cookie from an Origin
+// on USSP_WS_ALLOWED_ORIGINS; a console user
 // with a staff session (realm console) subscribes with bbox, or
 // with console/subscribe/v1 frames, on a same-origin upgrade with
 // the uspace_session cookie from an Origin on
@@ -4694,7 +4786,8 @@ func (c *Client) OpenTrafficStream(ctx context.Context, params *OpenTrafficStrea
 //
 // One traffic/product/v1 message (schemas/traffic/product/v1) for
 // intent_id (an operator token granting ussp.traffic, the intent's
-// aircraft bound to the client) or bbox (a staff session), as the
+// aircraft bound to the client, or a portal session of the intent's
+// operator) or bbox (a staff session), as the
 // stream would send it now: the bootstrap of a client. Another
 // operator's intent is 404, never 403. 503 names the input that is
 // missing when the product cannot be assembled.
@@ -4738,6 +4831,7 @@ func (c *Client) GetTrafficSnapshot(ctx context.Context, params *GetTrafficSnaps
 // weather_stale_s answers its last products with stale true and,
 // while failing, the failure and its time. The station list, the
 // area radius and the thresholds are policy values pending GCAA.
+// A portal session (any role) reads it as an operator client does.
 //
 // Corresponds with GET /v1/weather (the `GetWeather` operationId).
 func (c *Client) GetWeather(ctx context.Context, params *GetWeatherParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -5084,6 +5178,40 @@ func NewUpdateOperatorRequestWithBody(server string, operatorId OperatorID, cont
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListClientsRequest constructs an http.Request for the ListClients method
+func NewListClientsRequest(server string, operatorId OperatorID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "operator_id", operatorId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/accounts/operators/%s/clients", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -6551,6 +6679,19 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PATCH /v1/accounts/operators/{operator_id} (the `UpdateOperator` operationId).
 	UpdateOperatorWithResponse(ctx context.Context, operatorId OperatorID, body UpdateOperatorJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateOperatorResponse, error)
 
+	// ListClientsWithResponse The operator's machine clients and their bound serials
+	//
+	// Every client of the caller's operator (a portal session of any
+	// role of that operator), oldest first, at most 200, each with its
+	// scopes, status, creation and rotation times and its live serial
+	// bindings (at most 200 per client). Never a secret or its hash.
+	// Another operator's id is 403.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/accounts/operators/{operator_id}/clients (the `ListClients` operationId).
+	ListClientsWithResponse(ctx context.Context, operatorId OperatorID, reqEditors ...RequestEditorFn) (*ListClientsResponse, error)
+
 	// CreateClientWithBodyWithResponse Create a machine client of the operator
 	//
 	// A client-credentials client with operator scopes, for an `active`
@@ -6747,15 +6888,20 @@ type ClientWithResponsesInterface interface {
 	//
 	// A WebSocket upgrade (served by traffic-ws; Art. 13, spec 02 F5)
 	// for an operator machine client with a bearer token granting
-	// ussp.traffic; intent_id must be an intent whose aircraft is bound
-	// to the client. Server to client, in the common envelope:
+	// ussp.traffic, intent_id an intent whose aircraft is bound to the
+	// client; or for an operator portal user (a session of realm portal,
+	// any role; brief WP-17) on a same-origin upgrade with the
+	// uspace_session cookie from an Origin on USSP_WS_ALLOWED_ORIGINS,
+	// intent_id an intent of the session's operator. Server to client,
+	// in the common envelope:
 	// console/status/v1 on connect and every 2 s, every alert/v1 of the
 	// intent's flight as it comes (conformance and proximity alerts,
 	// raised, updated and cleared, with the peer's track id and trust),
 	// the active ones on connect, and every unacknowledged critical
 	// alert repeated every escalation_repeat_s (10 s) until it is
 	// acknowledged (POST /v1/alerts/{alert_id}/ack) or cleared. The
-	// first send of each alert to the client is recorded (delivery).
+	// first send of each alert to the client is recorded (delivery; for
+	// a portal session under operator_user:<account id>).
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -6770,7 +6916,10 @@ type ClientWithResponsesInterface interface {
 	// acknowledged alert is republished to traffic-ws, which stops
 	// repeating it, and a critical alert acknowledged within
 	// escalation_after_s (30 s) is not escalated. An alert of another
-	// operator's flight is 404, never 403. No body.
+	// operator's flight is 404, never 403. No body. A portal session of
+	// an operator_admin or a remote_pilot acknowledges its operator's
+	// alerts, recorded as acked_by operator_user:<account id> (a viewer
+	// is 403; brief WP-17).
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -6847,6 +6996,7 @@ type ClientWithResponsesInterface interface {
 	// cis_stale_s): a stale cache still answers and says so. A list cut
 	// at 2000 features says truncated. The geo change push of the
 	// traffic stream (geo/changed/v1) tells a subscriber to refetch.
+	// A portal session (any role) reads it as an operator client does.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -6860,6 +7010,7 @@ type ClientWithResponsesInterface interface {
 	// applies at some time of its window (its applicability says how:
 	// always, during from/to, or scheduled on daily windows from/to). The
 	// operator's own intent only: another operator's is 404, never 403.
+	// A portal session (any role) reads its operator's intents.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -6868,7 +7019,7 @@ type ClientWithResponsesInterface interface {
 
 	// ListIntentsWithResponse The operator's intents, newest first
 	//
-	// At most 500; from and to keep the intents whose window overlaps them; state filters.
+	// At most 500; from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -6877,7 +7028,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateIntentWithBodyWithResponse File an operational intent and get the authorisation decision
 	//
-	// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+	// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable). With a portal session (realm portal, brief WP-17) the intent is filed for the session's operator by an operator_admin or a remote_pilot, under the operator's client the UAS serial is bound to (403 serial_not_bound when none is), and the audit row names the portal user; a viewer is 403.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -6886,7 +7037,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateIntentWithResponse File an operational intent and get the authorisation decision
 	//
-	// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+	// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable). With a portal session (realm portal, brief WP-17) the intent is filed for the session's operator by an operator_admin or a remote_pilot, under the operator's client the UAS serial is bound to (403 serial_not_bound when none is), and the audit row names the portal user; a viewer is 403.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -6895,7 +7046,7 @@ type ClientWithResponsesInterface interface {
 
 	// GetIntentWithResponse One of the operator's intents: its decision and state
 	//
-	// Another operator's intent is 404, never 403.
+	// Another operator's intent is 404, never 403. A portal session (any role) reads its operator's.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -6904,7 +7055,7 @@ type ClientWithResponsesInterface interface {
 
 	// ChangeIntentWithBodyWithResponse Activate, modify or end an intent
 	//
-	// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409.
+	// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409. A portal session of an operator_admin or a remote_pilot changes its operator's intents (a viewer is 403), as the client the intent was filed under; the audit row names the portal user.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -6913,7 +7064,7 @@ type ClientWithResponsesInterface interface {
 
 	// ChangeIntentWithResponse Activate, modify or end an intent
 	//
-	// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409.
+	// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409. A portal session of an operator_admin or a remote_pilot changes its operator's intents (a viewer is 403), as the client the intent was filed under; the audit row names the portal user.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -7069,7 +7220,11 @@ type ClientWithResponsesInterface interface {
 	// A WebSocket upgrade (served by traffic-ws; Art. 11, spec 02 F5).
 	// An operator machine client with a bearer token granting
 	// ussp.traffic (issued by this USSP) subscribes with intent_id, an
-	// intent whose aircraft is bound to the client; a console user
+	// intent whose aircraft is bound to the client; an operator portal
+	// user (a session of realm portal, any role; brief WP-17) subscribes
+	// with intent_id, an intent of the session's operator, on a
+	// same-origin upgrade with the uspace_session cookie from an Origin
+	// on USSP_WS_ALLOWED_ORIGINS; a console user
 	// with a staff session (realm console) subscribes with bbox, or
 	// with console/subscribe/v1 frames, on a same-origin upgrade with
 	// the uspace_session cookie from an Origin on
@@ -7106,7 +7261,8 @@ type ClientWithResponsesInterface interface {
 	//
 	// One traffic/product/v1 message (schemas/traffic/product/v1) for
 	// intent_id (an operator token granting ussp.traffic, the intent's
-	// aircraft bound to the client) or bbox (a staff session), as the
+	// aircraft bound to the client, or a portal session of the intent's
+	// operator) or bbox (a staff session), as the
 	// stream would send it now: the bootstrap of a client. Another
 	// operator's intent is 404, never 403. 503 names the input that is
 	// missing when the product cannot be assembled.
@@ -7142,6 +7298,7 @@ type ClientWithResponsesInterface interface {
 	// weather_stale_s answers its last products with stale true and,
 	// while failing, the failure and its time. The station list, the
 	// area radius and the thresholds are policy values pending GCAA.
+	// A portal session (any role) reads it as an operator client does.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -7805,6 +7962,75 @@ func (r UpdateOperatorResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r UpdateOperatorResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// ListClientsResponse200Headers the declared response headers of an HTTP 200 response for ListClients
+type ListClientsResponse200Headers struct {
+	CacheControl *string
+}
+
+type ListClientsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ClientList
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *ListClientsResponse200Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListClientsResponse) GetJSON200() *ClientList {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ListClientsResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ListClientsResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListClientsResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListClientsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListClientsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListClientsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListClientsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -10196,6 +10422,25 @@ func (c *ClientWithResponses) UpdateOperatorWithResponse(ctx context.Context, op
 	return ParseUpdateOperatorResponse(rsp)
 }
 
+// ListClientsWithResponse The operator's machine clients and their bound serials
+//
+// Every client of the caller's operator (a portal session of any
+// role of that operator), oldest first, at most 200, each with its
+// scopes, status, creation and rotation times and its live serial
+// bindings (at most 200 per client). Never a secret or its hash.
+// Another operator's id is 403.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/accounts/operators/{operator_id}/clients (the `ListClients` operationId).
+func (c *ClientWithResponses) ListClientsWithResponse(ctx context.Context, operatorId OperatorID, reqEditors ...RequestEditorFn) (*ListClientsResponse, error) {
+	rsp, err := c.ListClients(ctx, operatorId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListClientsResponse(rsp)
+}
+
 // CreateClientWithBodyWithResponse Create a machine client of the operator
 //
 // A client-credentials client with operator scopes, for an `active`
@@ -10470,15 +10715,20 @@ func (c *ClientWithResponses) RequestStatusNoticeWithResponse(ctx context.Contex
 //
 // A WebSocket upgrade (served by traffic-ws; Art. 13, spec 02 F5)
 // for an operator machine client with a bearer token granting
-// ussp.traffic; intent_id must be an intent whose aircraft is bound
-// to the client. Server to client, in the common envelope:
+// ussp.traffic, intent_id an intent whose aircraft is bound to the
+// client; or for an operator portal user (a session of realm portal,
+// any role; brief WP-17) on a same-origin upgrade with the
+// uspace_session cookie from an Origin on USSP_WS_ALLOWED_ORIGINS,
+// intent_id an intent of the session's operator. Server to client,
+// in the common envelope:
 // console/status/v1 on connect and every 2 s, every alert/v1 of the
 // intent's flight as it comes (conformance and proximity alerts,
 // raised, updated and cleared, with the peer's track id and trust),
 // the active ones on connect, and every unacknowledged critical
 // alert repeated every escalation_repeat_s (10 s) until it is
 // acknowledged (POST /v1/alerts/{alert_id}/ack) or cleared. The
-// first send of each alert to the client is recorded (delivery).
+// first send of each alert to the client is recorded (delivery; for
+// a portal session under operator_user:<account id>).
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -10499,7 +10749,10 @@ func (c *ClientWithResponses) OpenAlertStreamWithResponse(ctx context.Context, p
 // acknowledged alert is republished to traffic-ws, which stops
 // repeating it, and a critical alert acknowledged within
 // escalation_after_s (30 s) is not escalated. An alert of another
-// operator's flight is 404, never 403. No body.
+// operator's flight is 404, never 403. No body. A portal session of
+// an operator_admin or a remote_pilot acknowledges its operator's
+// alerts, recorded as acked_by operator_user:<account id> (a viewer
+// is 403; brief WP-17).
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -10594,6 +10847,7 @@ func (c *ClientWithResponses) ReceiveCISNotificationWithBodyWithResponse(ctx con
 // cis_stale_s): a stale cache still answers and says so. A list cut
 // at 2000 features says truncated. The geo change push of the
 // traffic stream (geo/changed/v1) tells a subscriber to refetch.
+// A portal session (any role) reads it as an operator client does.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -10613,6 +10867,7 @@ func (c *ClientWithResponses) GetGeoWithResponse(ctx context.Context, params *Ge
 // applies at some time of its window (its applicability says how:
 // always, during from/to, or scheduled on daily windows from/to). The
 // operator's own intent only: another operator's is 404, never 403.
+// A portal session (any role) reads its operator's intents.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -10627,7 +10882,7 @@ func (c *ClientWithResponses) GetGeoForIntentWithResponse(ctx context.Context, i
 
 // ListIntentsWithResponse The operator's intents, newest first
 //
-// At most 500; from and to keep the intents whose window overlaps them; state filters.
+// At most 500; from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -10642,7 +10897,7 @@ func (c *ClientWithResponses) ListIntentsWithResponse(ctx context.Context, param
 
 // CreateIntentWithBodyWithResponse File an operational intent and get the authorisation decision
 //
-// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable). With a portal session (realm portal, brief WP-17) the intent is filed for the session's operator by an operator_admin or a remote_pilot, under the operator's client the UAS serial is bound to (403 serial_not_bound when none is), and the audit row names the portal user; a viewer is 403.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -10657,7 +10912,7 @@ func (c *ClientWithResponses) CreateIntentWithBodyWithResponse(ctx context.Conte
 
 // CreateIntentWithResponse File an operational intent and get the authorisation decision
 //
-// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable).
+// Decides an intent/request/v1 (2021/664 Art. 6(4), 10) in the order of brief WP-7: the registry (F8, purpose authorisation), the CIS cache (stale or known outdated refuses; U-space airspace and its Art. 3(4) constraints; zones and ANSP restrictions, Art. 10(7)), strategic deconfliction against the authorised intents of this USSP and the peers' intents (priority, then first come first served, Art. 10(8), (9)), then the DSS, the deviation thresholds and the authorisation number (Art. 10(11)). A missing, stale or untrusted input refuses or holds; it never authorises. An open A1 flight with a C0 or privately built UA below 250 g is accepted voluntarily without a number (Art. 1(3)). A refusal is a decision (201) whose conflicts[] name the Annex IV item, zone, airspace, restriction, intent or registry key; a request that does not carry the items is 400 annex_iv_invalid. Idempotent on (client, client_ref): the same body answers the decision as it stands (200), another body 409. The UAS serial must be bound to the client and operator_reg must be the client's operator (403). 503 names the dependency that is missing (geoid_unavailable, database_unavailable, projection_unavailable). With a portal session (realm portal, brief WP-17) the intent is filed for the session's operator by an operator_admin or a remote_pilot, under the operator's client the UAS serial is bound to (403 serial_not_bound when none is), and the audit row names the portal user; a viewer is 403.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -10672,7 +10927,7 @@ func (c *ClientWithResponses) CreateIntentWithResponse(ctx context.Context, body
 
 // GetIntentWithResponse One of the operator's intents: its decision and state
 //
-// Another operator's intent is 404, never 403.
+// Another operator's intent is 404, never 403. A portal session (any role) reads its operator's.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -10687,7 +10942,7 @@ func (c *ClientWithResponses) GetIntentWithResponse(ctx context.Context, intentI
 
 // ChangeIntentWithBodyWithResponse Activate, modify or end an intent
 //
-// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409.
+// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409. A portal session of an operator_admin or a remote_pilot changes its operator's intents (a viewer is 403), as the client the intent was filed under; the audit row names the portal user.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -10702,7 +10957,7 @@ func (c *ClientWithResponses) ChangeIntentWithBodyWithResponse(ctx context.Conte
 
 // ChangeIntentWithResponse Activate, modify or end an intent
 //
-// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409.
+// activate: an accepted intent from time_start - policy.activation_lead_s to time_end, on the database clock, confirmed in the response (Art. 10(5)); modify: an accepted intent's new volumes decided as a new version that keeps the id and, when still authorised, the authorisation number (Art. 6(6)); a modification that is not authorised leaves the intent in its new decision's state without a number; end: any open intent. A transition the state does not allow is 409. A portal session of an operator_admin or a remote_pilot changes its operator's intents (a viewer is 403), as the client the intent was filed under; the audit row names the portal user.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -10900,7 +11155,11 @@ func (c *ClientWithResponses) PostTelemetryBatchWithResponse(ctx context.Context
 // A WebSocket upgrade (served by traffic-ws; Art. 11, spec 02 F5).
 // An operator machine client with a bearer token granting
 // ussp.traffic (issued by this USSP) subscribes with intent_id, an
-// intent whose aircraft is bound to the client; a console user
+// intent whose aircraft is bound to the client; an operator portal
+// user (a session of realm portal, any role; brief WP-17) subscribes
+// with intent_id, an intent of the session's operator, on a
+// same-origin upgrade with the uspace_session cookie from an Origin
+// on USSP_WS_ALLOWED_ORIGINS; a console user
 // with a staff session (realm console) subscribes with bbox, or
 // with console/subscribe/v1 frames, on a same-origin upgrade with
 // the uspace_session cookie from an Origin on
@@ -10943,7 +11202,8 @@ func (c *ClientWithResponses) OpenTrafficStreamWithResponse(ctx context.Context,
 //
 // One traffic/product/v1 message (schemas/traffic/product/v1) for
 // intent_id (an operator token granting ussp.traffic, the intent's
-// aircraft bound to the client) or bbox (a staff session), as the
+// aircraft bound to the client, or a portal session of the intent's
+// operator) or bbox (a staff session), as the
 // stream would send it now: the bootstrap of a client. Another
 // operator's intent is 404, never 403. 503 names the input that is
 // missing when the product cannot be assembled.
@@ -10985,6 +11245,7 @@ func (c *ClientWithResponses) GetTrafficSnapshotWithResponse(ctx context.Context
 // weather_stale_s answers its last products with stale true and,
 // while failing, the failure and its time. The station list, the
 // area radius and the thresholds are policy values pending GCAA.
+// A portal session (any role) reads it as an operator client does.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -11531,6 +11792,66 @@ func ParseUpdateOperatorResponse(rsp *http.Response) (*UpdateOperatorResponse, e
 		}
 		response.ApplicationproblemJSONDefault = &dest
 
+	}
+
+	return response, nil
+}
+
+// ParseListClientsResponse parses an HTTP response from a ListClientsWithResponse call
+func ParseListClientsResponse(rsp *http.Response) (*ListClientsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListClientsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ClientList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers ListClientsResponse200Headers
+		if values := rsp.Header.Values("Cache-Control"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Cache-Control", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.CacheControl = &value
+		}
+		response.Headers200 = &headers
 	}
 
 	return response, nil

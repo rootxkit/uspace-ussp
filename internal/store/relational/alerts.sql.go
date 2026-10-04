@@ -88,6 +88,82 @@ func (q *Queries) AckAlert(ctx context.Context, arg AckAlertParams) (AckAlertRow
 	return i, err
 }
 
+const ackAlertForOperator = `-- name: AckAlertForOperator :one
+UPDATE alerts a
+SET acked_at = COALESCE(a.acked_at, now()),
+    acked_by = COALESCE(a.acked_by, $1::text),
+    delivery = jsonb_set(a.delivery, ARRAY[$1::text],
+                         COALESCE(a.delivery -> $1::text, '{}'::jsonb)
+                         || jsonb_build_object('acked_at', to_jsonb(COALESCE(a.acked_at, now()))))
+WHERE a.id = $2::uuid
+  AND $3::uuid = (
+      SELECT owner.operator_id FROM oauth_clients owner
+      WHERE owner.client_id = COALESCE(
+          (SELECT f.client_id FROM flights f WHERE f.id = a.flight_id),
+          (SELECT oi.client_id FROM operational_intents oi WHERE oi.id = a.intent_id)))
+RETURNING a.id, a.kind, a.flight_id, a.intent_id, a.authorisation_number, a.severity, a.state, a.raised_at, a.updated_at,
+          a.cleared_at, a.clear_reason, a.detail, a.captured_at, a.policy_version, a.acked_at, a.acked_by, a.escalated_at, a.cell5
+`
+
+type AckAlertForOperatorParams struct {
+	Actor      string      `json:"actor"`
+	ID         pgtype.UUID `json:"id"`
+	OperatorID pgtype.UUID `json:"operator_id"`
+}
+
+type AckAlertForOperatorRow struct {
+	ID                  pgtype.UUID `json:"id"`
+	Kind                string      `json:"kind"`
+	FlightID            pgtype.UUID `json:"flight_id"`
+	IntentID            pgtype.UUID `json:"intent_id"`
+	AuthorisationNumber *string     `json:"authorisation_number"`
+	Severity            string      `json:"severity"`
+	State               string      `json:"state"`
+	RaisedAt            time.Time   `json:"raised_at"`
+	UpdatedAt           time.Time   `json:"updated_at"`
+	ClearedAt           *time.Time  `json:"cleared_at"`
+	ClearReason         *string     `json:"clear_reason"`
+	Detail              []byte      `json:"detail"`
+	CapturedAt          *time.Time  `json:"captured_at"`
+	PolicyVersion       int64       `json:"policy_version"`
+	AckedAt             *time.Time  `json:"acked_at"`
+	AckedBy             *string     `json:"acked_by"`
+	EscalatedAt         *time.Time  `json:"escalated_at"`
+	Cell5               *string     `json:"cell5"`
+}
+
+// The acknowledgement by a portal user of the operator (brief WP-17;
+// actor = operator_user:<account id>) of an alert of one of the
+// operator's flights, or of its intents (an alert without a flight, or
+// one whose flight api has not recorded yet: the alert names the intent
+// the flight flies), on the database clock; a repeat keeps the first. No
+// row: not this operator's alert, or no such alert.
+func (q *Queries) AckAlertForOperator(ctx context.Context, arg AckAlertForOperatorParams) (AckAlertForOperatorRow, error) {
+	row := q.db.QueryRow(ctx, ackAlertForOperator, arg.Actor, arg.ID, arg.OperatorID)
+	var i AckAlertForOperatorRow
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.FlightID,
+		&i.IntentID,
+		&i.AuthorisationNumber,
+		&i.Severity,
+		&i.State,
+		&i.RaisedAt,
+		&i.UpdatedAt,
+		&i.ClearedAt,
+		&i.ClearReason,
+		&i.Detail,
+		&i.CapturedAt,
+		&i.PolicyVersion,
+		&i.AckedAt,
+		&i.AckedBy,
+		&i.EscalatedAt,
+		&i.Cell5,
+	)
+	return i, err
+}
+
 const escalateAlerts = `-- name: EscalateAlerts :many
 UPDATE alerts a
 SET escalated_at = now()

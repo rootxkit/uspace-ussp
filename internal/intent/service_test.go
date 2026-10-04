@@ -723,3 +723,42 @@ func TestSetConformance(t *testing.T) {
 		t.Fatal("malformed id accepted")
 	}
 }
+
+// The portal's lookups (brief WP-17): the client an intent of the
+// operator was filed under, and the operator's list; another operator's
+// intent and a malformed id are 404; a bad filter is refused; the serial
+// of a body is read and a malformed body is the decoder's problem.
+func TestPortalLookups(t *testing.T) {
+	s, st, _ := newService(newRig())
+	d, _, err := submit(t, s, baseRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	own := st.owners[testClient].OperatorID
+	if c, err := s.ClientOf(t.Context(), own, d.IntentID); err != nil || c != testClient {
+		t.Fatalf("own: %q %v", c, err)
+	}
+	for _, c := range []struct{ op, id string }{{"00000000-0000-4000-8000-000000000002", d.IntentID}, {own, "not-a-uuid"},
+		{own, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}} {
+		if _, err := s.ClientOf(t.Context(), c.op, c.id); err == nil {
+			t.Fatalf("%v found", c)
+		} else if code, _ := statusOf(t, err); code != 404 {
+			t.Fatalf("%v: %d", c, code)
+		}
+	}
+	if list, err := s.ListOperator(t.Context(), own, ListFilter{}); err != nil || len(list) != 1 {
+		t.Fatalf("operator list %v %v", list, err)
+	}
+	if list, err := s.ListOperator(t.Context(), "00000000-0000-4000-8000-000000000002", ListFilter{}); err != nil || len(list) != 0 {
+		t.Fatalf("other operator's list %v %v", list, err)
+	}
+	if _, err := s.ListOperator(t.Context(), own, ListFilter{State: "flying"}); err == nil {
+		t.Fatal("an unknown state filter")
+	}
+	if sn, err := SerialOf(encode(t, baseRequest())); err != nil || sn == "" {
+		t.Fatalf("serial %q %v", sn, err)
+	}
+	if _, err := SerialOf([]byte(`{"nope":1}`)); err == nil {
+		t.Fatal("a malformed body has a serial")
+	}
+}

@@ -7,6 +7,41 @@ additively within `/v1`.
 
 ## [Unreleased]
 
+### Added
+
+- WP-17, the operator portal (`web/`, on `@rootxkit/uspace-ui` 0.1.0):
+  registration with the state the registry decided, sign-in through the
+  BFF (`/_bff/login`, `/_bff/logout`, `/_bff/api/*`; `uspace_session`,
+  `uspace_csrf`), machine clients (secret shown once, rotation, serial
+  bindings), operational intents (the ten Annex IV items, the outline
+  clicked on the map or typed, sent as F3548 `Volume4D` with W84
+  altitudes) and their decision (number, thresholds, conflicts with the
+  item named, conditions, AMSL derivation, versions; activate, modify,
+  end), geo-awareness with versions, validity and staleness, the live
+  traffic product with the kit's symbology, degraded inputs and
+  proximity alerts, the alert stream with acknowledgement, weather;
+  `ka` (default) and `en`, the kit's CSP and fonts, no request off the
+  origin. Browser tests of every flow against the new e2e stack
+  (`test/e2e/stack`) in CI, with traces.
+- Portal sessions on the API (`api/openapi.yaml`): the intents, geo,
+  weather and acknowledgement operations take a session of realm
+  `portal` (any role reads; `operator_admin` and `remote_pilot` write,
+  a viewer is `403 portal_read_only`); an intent is filed under the
+  operator's client its serial is bound to (`403 serial_not_bound`) and
+  its audit row names the portal user; an acknowledgement is recorded as
+  `operator_user:<account id>`. `GET /v1/accounts/operators/{id}/clients`
+  lists the operator's clients and bindings (bounded at 200, never a
+  secret).
+- traffic-ws admits a portal session for one intent of its operator
+  (`sessions_live` now carries the session's `operator_id`;
+  `intent/state/v1` the optional `operator_id` and `client_id`).
+
+### Fixed
+
+- traffic-ws marks the flight that flies the subscribed intent `own` and
+  keeps it in the product wherever it is: `intent_active` never carries
+  the flight's id, so no product had an own flight.
+
 ### Fixed
 
 - WP-16 review follow-ups:

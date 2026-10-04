@@ -117,3 +117,17 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_TRAFFIC_INPUT_BBOX` | `monitor` |  |  |  | box of the manned and peer inputs as min_lng,min_lat,max_lng,max_lat in WGS84 degrees: the ANSP stream's bbox and the peer Display Provider's area; empty is every U-space airspace of cis_current, padded |
 | `USSP_WS_ALLOWED_ORIGINS` | `telemetry-ingest,traffic-ws` |  |  |  | Origin allow-list of browser WebSocket upgrades (M22), comma-separated |
 | `USSP_READINESS_CHECK_TIMEOUT_MS` | `all` |  | `2000` | ms | bound on one dependency check of /readyz |
+
+## web (the portal's image)
+
+The Next.js server of `web/` reads its own variables at request time;
+they are documented with their defaults in `web/README.md`
+(Configuration): `USSP_WEB_API_URL`, `USSP_WEB_SESSION_SECURE`,
+`USSP_WEB_TRUSTED_PROXY_HOPS` (required with a secure session),
+`USSP_WEB_BFF_TIMEOUT_MS`, `USSP_WEB_MAP_CENTER`, `USSP_WEB_MAP_ZOOM`
+and the kit's `UI_BRAND_*`. List the web container in the API's
+`USSP_TRUSTED_PROXIES`, so the sign-in limits key on the client the BFF
+names. The browser reaches traffic-ws's `WS /v1/traffic` and
+`WS /v1/alerts` on the same origin, so its origin belongs in
+`USSP_WS_ALLOWED_ORIGINS`, and traffic-ws lists this USSP's own issuer
+(with api's JWKS) in `USSP_TOKEN_ISSUERS` to verify portal sessions.

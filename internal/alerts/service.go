@@ -32,6 +32,11 @@ type FactStore interface {
 	// alert is one of the client's operator's flights' (ErrNotFound
 	// otherwise); a repeat keeps the first.
 	Ack(ctx context.Context, alertID, clientID string) (Stored, error)
+	// AckForOperator records the acknowledgement of alertID by a portal
+	// user (actor operator_user:<account id>, brief WP-17) of
+	// operatorID, when the alert is one of that operator's flights'
+	// (ErrNotFound otherwise); a repeat keeps the first.
+	AckForOperator(ctx context.Context, alertID, operatorID, actor string) (Stored, error)
 	// Escalate marks every critical alert open and unacknowledged
 	// afterS after its raise as escalated, at most maxRows, and returns
 	// them.
@@ -116,6 +121,22 @@ func (s *Service) Ack(ctx context.Context, alertID, clientID string) (AckResult,
 		return AckResult{}, ErrNotFound
 	}
 	st, err := s.Store.Ack(ctx, alertID, clientID)
+	return s.acked(ctx, st, clientID, err)
+}
+
+// AckForOperator is Ack by a portal user of operatorID (brief WP-17),
+// recorded as acked by actor (operator_user:<account id>).
+func (s *Service) AckForOperator(ctx context.Context, alertID, operatorID, actor string) (AckResult, error) {
+	if !uuidRe.MatchString(alertID) {
+		s.counters().Inc(CounterAckNotFound)
+		return AckResult{}, ErrNotFound
+	}
+	st, err := s.Store.AckForOperator(ctx, alertID, operatorID, actor)
+	return s.acked(ctx, st, actor, err)
+}
+
+// acked counts and republishes a recorded acknowledgement.
+func (s *Service) acked(ctx context.Context, st Stored, by string, err error) (AckResult, error) {
 	if errors.Is(err, ErrNotFound) {
 		s.counters().Inc(CounterAckNotFound)
 		return AckResult{}, err
@@ -125,7 +146,6 @@ func (s *Service) Ack(ctx context.Context, alertID, clientID string) (AckResult,
 	}
 	s.counters().Inc(CounterAcked)
 	s.republish(ctx, st)
-	by := clientID
 	if st.AckedBy != nil {
 		by = *st.AckedBy
 	}

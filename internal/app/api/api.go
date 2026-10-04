@@ -229,7 +229,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 		return err
 	}
 	cisState.Start(ctx, rt)
-	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc,
+	srv := &national.Server{Health: proc.HealthHandlers{Health: rt.Health}, Token: token, Issuer: issuer, Accounts: svc, Portal: svc,
 		CIS: cisState.Receiver, Registry: reg.Cache, Intents: intents, Alerts: alertSvc, Geo: geoState, Coordination: coordinationList{Store: notices}, Records: recordsAPI, Logger: rt.Logger,
 		Occurrences: occurrencesAPI(occurrences),
 		Status:      statusNotices{Service: statusSvc}, CertificateID: cfg.CertificateID, Weather: wx,

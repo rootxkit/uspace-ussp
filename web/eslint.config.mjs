@@ -1,10 +1,11 @@
-import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTs from "eslint-config-next/typescript";
+// The kit's ESLint config, as every web/ extends it (uspace-ui
+// docs/CONSUMING.md §4): no geometry or geodesy import, no database or
+// bus client, no business logic in a route handler (app/%5Fbff/** imports
+// only the kit's BFF helpers, next/* and lib/bff/*), no hand-written type
+// in src/api/generated/. This repo adds its own list (CLAUDE.md, spec 06
+// T12: a Next.js file importing geometry fails lint) on top.
+import kit from "@rootxkit/uspace-ui/eslint";
 
-// web/ renders only (CLAUDE.md engineering rules): no geometry library
-// (a second judgement in TypeScript is a review failure, rule 3), no
-// database or NATS client, and no hand-written API type.
 const forbiddenImports = {
   paths: [
     { name: "turf", message: "web/ renders only: geometry is judged in uspace-core, never in the browser." },
@@ -22,37 +23,14 @@ const forbiddenImports = {
   ],
 };
 
-const eslintConfig = defineConfig([
-  ...nextVitals,
-  ...nextTs,
+export default [
+  {
+    ignores: [".next/**", "node_modules/**", "next-env.d.ts", "playwright-report/**", "test-results/**"],
+  },
+  ...kit,
   {
     rules: {
       "no-restricted-imports": ["error", forbiddenImports],
     },
   },
-  {
-    // src/api/ holds only the generated types.ts; a hand-written type
-    // there would drift from api/openapi.yaml.
-    files: ["src/api/**/*.ts", "src/api/**/*.tsx"],
-    ignores: ["src/api/types.ts"],
-    rules: {
-      "no-restricted-syntax": [
-        "error",
-        { selector: "TSTypeAliasDeclaration", message: "API types are generated from api/openapi.yaml (pnpm gen:api), never written by hand." },
-        { selector: "TSInterfaceDeclaration", message: "API types are generated from api/openapi.yaml (pnpm gen:api), never written by hand." },
-        { selector: "TSEnumDeclaration", message: "API types are generated from api/openapi.yaml (pnpm gen:api), never written by hand." },
-      ],
-    },
-  },
-  globalIgnores([
-    ".next/**",
-    "out/**",
-    "build/**",
-    "next-env.d.ts",
-    "playwright-report/**",
-    "test-results/**",
-    "src/api/types.ts",
-  ]),
-]);
-
-export default eslintConfig;
+];

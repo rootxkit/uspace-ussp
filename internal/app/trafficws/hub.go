@@ -346,11 +346,22 @@ func (h *Hub) Sources(s *Sub) []json.RawMessage {
 // Sub is one subscription: an operator's intent or a staff bbox.
 type Sub struct {
 	ClientID string
-	Staff    bool
-	IntentID string
-	BBox     *[4]float64
+	// Recipient is who the deliveries are recorded for when it is not the
+	// client: operator_user:<account id> for a portal session (WP-17).
+	Recipient string
+	Staff     bool
+	IntentID  string
+	BBox      *[4]float64
 	// Layers are the console/subscribe/v1 layers (nil: all).
 	Layers map[string]bool
+}
+
+// recipient is the delivery key of the subscription.
+func (sub *Sub) recipient() string {
+	if sub.Recipient != "" {
+		return sub.Recipient
+	}
+	return sub.ClientID
 }
 
 // ParseBBox reads west,south,east,north in WGS84 degrees.
@@ -423,6 +434,23 @@ func (h *Hub) Owns(clientID, intentID string) (intent.StateBody, *RefusalError) 
 	return b, nil
 }
 
+// OwnedBy is the active intent of operatorID with the client it was
+// filed under, for a portal session (brief WP-17); another operator's,
+// or one projected without its operator and client, is 404.
+func (h *Hub) OwnedBy(operatorID, intentID string) (intent.StateBody, *RefusalError) {
+	if h.Intents == nil || !bus.ValidKey(intentID) {
+		return intent.StateBody{}, &RefusalError{404, "intent_not_found", "no intent of this operator has this id"}
+	}
+	b, found, _, loaded := h.Intents.Get(intentID)
+	if !loaded {
+		return intent.StateBody{}, &RefusalError{503, "intent_active_unavailable", "the active intents are not read yet; retry"}
+	}
+	if !found || b.ClientID == "" || !strings.EqualFold(b.OperatorID, operatorID) {
+		return intent.StateBody{}, &RefusalError{404, "intent_not_found", "no active intent of this operator has this id"}
+	}
+	return b, nil
+}
+
 // Area is what a subscription covers now: an intent's volumes padded by
 // traffic_radius_m (and its flight wherever it is), or the staff bbox;
 // reason says why it covers nothing.
@@ -438,7 +466,7 @@ func (h *Hub) Area(s *Sub) (traffic.Area, string, string) {
 	if ref != nil {
 		return traffic.Area{}, "", ref.detail
 	}
-	a := traffic.Area{}
+	a := traffic.Area{OwnIntent: s.IntentID}
 	for i := range b.Volumes {
 		box, _, _, err := f3548.Volume4DToZonesEnvelope(b.Volumes[i])
 		if err != nil {

@@ -148,6 +148,16 @@ func (p *Picture) Len() int {
 type Area struct {
 	Boxes    []geodesy.BBox
 	OwnTrack string // the monitor id of the subscriber's own flight, "" for none
+	// OwnIntent is the subscriber's intent: a track of this USSP that
+	// flies it (its samples name it and telemetry-ingest bound the flight
+	// to it) is the subscriber's own, wherever it is, also before
+	// intent_active carries the flight's id. "" for none.
+	OwnIntent string
+}
+
+// own reports whether the held track is the subscriber's own flight.
+func (a Area) own(id string, in *Input) bool {
+	return (a.OwnTrack != "" && id == a.OwnTrack) || (a.OwnIntent != "" && in.IntentID == a.OwnIntent)
 }
 
 // Contains reports whether p is in the area.
@@ -187,7 +197,7 @@ func (p *Picture) Tracks(a Area, now time.Time, v policy.Values, gate SourceGate
 	p.mu.RLock()
 	picks := make([]pick, 0, 64)
 	for id, h := range p.tracks {
-		if id == a.OwnTrack || a.Contains(h.in.Position) {
+		if a.own(id, &h.in) || a.Contains(h.in.Position) {
 			picks = append(picks, pick{id, h})
 		}
 	}
@@ -212,7 +222,7 @@ func (p *Picture) Tracks(a Area, now time.Time, v policy.Values, gate SourceGate
 		default:
 			t.State = StateLive
 		}
-		t.Own = pk.id == a.OwnTrack
+		t.Own = a.own(pk.id, in)
 		out = append(out, Selected{ID: pk.id, Raw: pk.h.raw, Manned: strings.HasPrefix(pk.id, NSManned+":"), Track: t})
 	}
 	slices.SortFunc(out, func(x, y Selected) int { return strings.Compare(x.ID, y.ID) })

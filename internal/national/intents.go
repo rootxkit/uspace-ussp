@@ -20,6 +20,39 @@ type Intents interface {
 	Get(ctx context.Context, clientID, id string) (intent.Decision, error)
 	List(ctx context.Context, clientID string, f intent.ListFilter) ([]intent.Decision, error)
 	Change(ctx context.Context, clientID, id string, raw []byte) (intent.Decision, error)
+	// ClientOf and ListOperator serve a portal session (brief WP-17).
+	ClientOf(ctx context.Context, operatorID, id string) (string, error)
+	ListOperator(ctx context.Context, operatorID string, f intent.ListFilter) ([]intent.Decision, error)
+}
+
+// actingClient is the client a request acts as: an operator token's
+// own, or for a portal session the client the intent (id) was filed
+// under, or, for a new intent (raw), the one its UAS serial is bound to.
+// A viewer is refused when write. It writes the problem and returns
+// false when the request may not go on.
+func (s *Server) actingClient(w http.ResponseWriter, r *http.Request, id string, raw []byte, write bool) (string, *http.Request, bool) {
+	if !portalSession(r) {
+		return principal(r).Claims.Subject, r, true
+	}
+	m, ok := s.member(w, r, write)
+	if !ok {
+		return "", r, false
+	}
+	var client string
+	var err error
+	if raw != nil {
+		var sn string
+		if sn, err = intent.SerialOf(raw); err == nil {
+			client, err = s.Portal.BoundClient(r.Context(), m.OperatorID, sn)
+		}
+	} else {
+		client, err = s.Intents.ClientOf(r.Context(), m.OperatorID, id)
+	}
+	if err != nil {
+		s.failIntent(w, r, err)
+		return "", r, false
+	}
+	return client, r.WithContext(intent.WithPortalUser(r.Context(), m.Actor())), true
 }
 
 // readIntentBody reads a JSON body of at most intent.MaxRequestBytes.
@@ -68,7 +101,11 @@ func (s *Server) CreateIntent(w http.ResponseWriter, r *http.Request) {
 		s.failIntent(w, r, err)
 		return
 	}
-	d, created, err := s.Intents.Submit(r.Context(), principal(r).Claims.Subject, raw)
+	client, r, ok := s.actingClient(w, r, "", raw, true)
+	if !ok {
+		return
+	}
+	d, created, err := s.Intents.Submit(r.Context(), client, raw)
 	if err != nil {
 		s.failIntent(w, r, err)
 		return
@@ -93,7 +130,17 @@ func (s *Server) ListIntents(w http.ResponseWriter, r *http.Request, params gen.
 	if params.Limit != nil {
 		f.Limit = *params.Limit
 	}
-	ds, err := s.Intents.List(r.Context(), principal(r).Claims.Subject, f)
+	var ds []intent.Decision
+	var err error
+	if portalSession(r) {
+		m, ok := s.member(w, r, false)
+		if !ok {
+			return
+		}
+		ds, err = s.Intents.ListOperator(r.Context(), m.OperatorID, f)
+	} else {
+		ds, err = s.Intents.List(r.Context(), principal(r).Claims.Subject, f)
+	}
 	if err != nil {
 		s.failIntent(w, r, err)
 		return
@@ -109,7 +156,11 @@ func (s *Server) GetIntent(w http.ResponseWriter, r *http.Request, intentID gen.
 	if s.intentsUnavailable(w, r) {
 		return
 	}
-	d, err := s.Intents.Get(r.Context(), principal(r).Claims.Subject, intentID.String())
+	client, r, ok := s.actingClient(w, r, intentID.String(), nil, false)
+	if !ok {
+		return
+	}
+	d, err := s.Intents.Get(r.Context(), client, intentID.String())
 	if err != nil {
 		s.failIntent(w, r, err)
 		return
@@ -127,7 +178,11 @@ func (s *Server) ChangeIntent(w http.ResponseWriter, r *http.Request, intentID g
 		s.failIntent(w, r, err)
 		return
 	}
-	d, err := s.Intents.Change(r.Context(), principal(r).Claims.Subject, intentID.String(), raw)
+	client, r, ok := s.actingClient(w, r, intentID.String(), nil, true)
+	if !ok {
+		return
+	}
+	d, err := s.Intents.Change(r.Context(), client, intentID.String(), raw)
 	if err != nil {
 		s.failIntent(w, r, err)
 		return
