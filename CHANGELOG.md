@@ -56,6 +56,9 @@ additively within `/v1`.
     lock, only for a projected version, 500 entries a pass, nothing
     published, idempotent (`intent_owners_backfilled`,
     `intent_owners_backfill_left`).
+  - the portal's BFF no longer lets `/v1/traffic/snapshot` through: it
+    proxies to api, and the snapshot is traffic-ws's (a test holds the
+    allow-list to api's routes).
 - WP-16 review follow-ups:
   - a weather fetch that answers but delivers nothing in force (every
     report refused, no report for any station, or only reports held

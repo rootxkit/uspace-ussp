@@ -13,7 +13,10 @@ const CLIENT = "[A-Za-z0-9._-]{1,128}";
 /**
  * The upstream paths the portal's pages call, matched against the whole
  * upstream path (which starts with apiBase's own path). Anything else is
- * a 404 at the BFF, whatever the API would answer.
+ * a 404 at the BFF, whatever the API would answer. Only api's routes:
+ * traffic-ws's (the streams, the snapshot) are not behind the BFF, and
+ * internal/national's TestBFFAllowListIsAPIRoutes holds this list to
+ * api's access table.
  */
 export function allowPaths(apiBase: string): RegExp[] {
   const prefix = new URL(apiBase).pathname.replace(/\/$/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -31,7 +34,6 @@ export function allowPaths(apiBase: string): RegExp[] {
     `/v1/geo/intents/${ID}`,
     "/v1/weather",
     `/v1/alerts/${ID}/ack`,
-    "/v1/traffic/snapshot",
   ].map((p) => new RegExp(`^${prefix}${p}$`));
 }
 
