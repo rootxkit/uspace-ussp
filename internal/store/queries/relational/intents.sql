@@ -101,7 +101,7 @@ INSERT INTO operational_intents (
     privately_built, mtom_kg, identification_technology, connectivity_methods, endurance_s, loss_of_c2_procedure,
     operator_reg, ua_registration, contingency, emergency_contact_ref, authorisation_ref, client_ref,
     in_uspace_airspace, uspace_airspace_ids, exempt_art_1_3, decision, authorisation_number, deviation_thresholds,
-    alternative, conflicts, conditions, cis_version_checked, registry_checked_at, policy_version,
+    alternative, conflicts, conditions, cis_version_checked, registry_checked_at, weather_checked_ref, policy_version,
     version, request, request_hash, decision_body, filed_at, cell_set, created_at, updated_at)
 VALUES (
     sqlc.arg(id), sqlc.arg(operator_id), sqlc.arg(client_id), sqlc.arg(uas_serial), sqlc.narg(pilot_ref),
@@ -114,7 +114,7 @@ VALUES (
     sqlc.arg(client_ref), sqlc.arg(in_uspace_airspace), sqlc.arg(uspace_airspace_ids), sqlc.arg(exempt_art_1_3),
     sqlc.arg(decision), sqlc.narg(authorisation_number), sqlc.narg(deviation_thresholds), sqlc.narg(alternative),
     sqlc.arg(conflicts), sqlc.arg(conditions), sqlc.narg(cis_version_checked), sqlc.narg(registry_checked_at),
-    sqlc.arg(policy_version), sqlc.arg(version), sqlc.arg(request), sqlc.arg(request_hash), sqlc.arg(decision_body),
+    sqlc.narg(weather_checked_ref), sqlc.arg(policy_version), sqlc.arg(version), sqlc.arg(request), sqlc.arg(request_hash), sqlc.arg(decision_body),
     sqlc.arg(filed_at), sqlc.arg(cell_set), sqlc.arg(created_at), sqlc.arg(created_at));
 
 -- name: IntentUpdate :execrows
@@ -129,7 +129,8 @@ UPDATE operational_intents SET
     decision = sqlc.arg(decision), authorisation_number = sqlc.narg(authorisation_number),
     deviation_thresholds = sqlc.narg(deviation_thresholds), conflicts = sqlc.arg(conflicts),
     conditions = sqlc.arg(conditions), cis_version_checked = sqlc.narg(cis_version_checked),
-    registry_checked_at = sqlc.narg(registry_checked_at), policy_version = sqlc.arg(policy_version),
+    registry_checked_at = sqlc.narg(registry_checked_at), weather_checked_ref = sqlc.narg(weather_checked_ref),
+    policy_version = sqlc.arg(policy_version),
     version = sqlc.arg(version), request = sqlc.arg(request), decision_body = sqlc.arg(decision_body),
     filed_at = sqlc.arg(filed_at), cell_set = sqlc.arg(cell_set), updated_at = sqlc.arg(updated_at)
  WHERE id = sqlc.arg(id) AND version = sqlc.arg(version) - 1;

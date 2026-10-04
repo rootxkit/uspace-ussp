@@ -14,9 +14,10 @@ const indexRuleFrom = 20
 
 // notLiveUntil names the tables nothing wrote before a migration that
 // indexes them in its transaction, and the last such migration: 00005
-// created occurrence_reports and operating_status_notices and nothing
-// wrote them before 00020 and 00021 (each file's header says so).
-var notLiveUntil = map[string]int{"occurrence_reports": 20, "operating_status_notices": 21}
+// created occurrence_reports, operating_status_notices and
+// weather_products and nothing wrote them before 00020, 00021 and 00024
+// (each file's header says so).
+var notLiveUntil = map[string]int{"occurrence_reports": 20, "operating_status_notices": 21, "weather_products": 24}
 
 var createIndex = regexp.MustCompile(`(?i)\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?[a-z0-9_]+\s+ON\s+(?:ONLY\s+)?"?([a-z_][a-z0-9_]*)"?`)
 

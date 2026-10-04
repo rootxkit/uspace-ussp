@@ -1056,6 +1056,132 @@ func (e TokenResponseTokenType) Valid() bool {
 	}
 }
 
+// Defines values for WeatherFieldsCeiling.
+const (
+	Layer              WeatherFieldsCeiling = "layer"
+	None               WeatherFieldsCeiling = "none"
+	NotReported        WeatherFieldsCeiling = "not_reported"
+	VerticalVisibility WeatherFieldsCeiling = "vertical_visibility"
+)
+
+// Valid indicates whether the value is a known member of the WeatherFieldsCeiling enum.
+func (e WeatherFieldsCeiling) Valid() bool {
+	switch e {
+	case Layer:
+		return true
+	case None:
+		return true
+	case NotReported:
+		return true
+	case VerticalVisibility:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WeatherFieldsConvective.
+const (
+	CB  WeatherFieldsConvective = "CB"
+	TCU WeatherFieldsConvective = "TCU"
+	TS  WeatherFieldsConvective = "TS"
+)
+
+// Valid indicates whether the value is a known member of the WeatherFieldsConvective enum.
+func (e WeatherFieldsConvective) Valid() bool {
+	switch e {
+	case CB:
+		return true
+	case TCU:
+		return true
+	case TS:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WeatherFieldsPrecipitation.
+const (
+	DZ WeatherFieldsPrecipitation = "DZ"
+	GR WeatherFieldsPrecipitation = "GR"
+	GS WeatherFieldsPrecipitation = "GS"
+	IC WeatherFieldsPrecipitation = "IC"
+	PL WeatherFieldsPrecipitation = "PL"
+	RA WeatherFieldsPrecipitation = "RA"
+	SG WeatherFieldsPrecipitation = "SG"
+	SN WeatherFieldsPrecipitation = "SN"
+	UP WeatherFieldsPrecipitation = "UP"
+)
+
+// Valid indicates whether the value is a known member of the WeatherFieldsPrecipitation enum.
+func (e WeatherFieldsPrecipitation) Valid() bool {
+	switch e {
+	case DZ:
+		return true
+	case GR:
+		return true
+	case GS:
+		return true
+	case IC:
+		return true
+	case PL:
+		return true
+	case RA:
+		return true
+	case SG:
+		return true
+	case SN:
+		return true
+	case UP:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WeatherProductKind.
+const (
+	Metar WeatherProductKind = "metar"
+	Speci WeatherProductKind = "speci"
+	Taf   WeatherProductKind = "taf"
+)
+
+// Valid indicates whether the value is a known member of the WeatherProductKind enum.
+func (e WeatherProductKind) Valid() bool {
+	switch e {
+	case Metar:
+		return true
+	case Speci:
+		return true
+	case Taf:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WeatherSourceState.
+const (
+	WeatherSourceStateFailing      WeatherSourceState = "failing"
+	WeatherSourceStateNeverFetched WeatherSourceState = "never_fetched"
+	WeatherSourceStateUp           WeatherSourceState = "up"
+)
+
+// Valid indicates whether the value is a known member of the WeatherSourceState enum.
+func (e WeatherSourceState) Valid() bool {
+	switch e {
+	case WeatherSourceStateFailing:
+		return true
+	case WeatherSourceStateNeverFetched:
+		return true
+	case WeatherSourceStateUp:
+		return true
+	default:
+		return false
+	}
+}
+
 // AlertAck An alert's acknowledgement as recorded.
 type AlertAck struct {
 	// AckedAt When it was first acknowledged, on the database clock.
@@ -1611,7 +1737,7 @@ type IntentDecision struct {
 		UpperW84M   float32 `json:"upper_w84_m"`
 	} `json:"volumes_amsl"`
 
-	// WeatherCheckedRef Art. 10(3); null until weather (WP-16).
+	// WeatherCheckedRef Art. 10(3) (WP-16): the ids of the weather products in force over the volumes and their window that the decision consulted, comma-separated, newest first (at most 16); null when none was, with the condition weather_unavailable. Weather never rejects: weather_stale and weather_advisory are conditions.
 	WeatherCheckedRef *string `json:"weather_checked_ref"`
 }
 
@@ -2201,6 +2327,132 @@ type TokenResponse struct {
 // TokenResponseTokenType defines model for TokenResponse.TokenType.
 type TokenResponseTokenType string
 
+// WeatherAnswer GET /v1/weather's answer (internal/weather.Answer).
+type WeatherAnswer struct {
+	At            time.Time        `json:"at"`
+	PolicyVersion int              `json:"policy_version"`
+	Products      []WeatherProduct `json:"products"`
+	Source        WeatherSource    `json:"source"`
+
+	// Stale The source is failing, has never delivered, or has not delivered within the policy's weather_stale_s.
+	Stale bool `json:"stale"`
+}
+
+// WeatherArea defines model for WeatherArea.
+type WeatherArea struct {
+	LatDeg  float32 `json:"lat_deg"`
+	LonDeg  float32 `json:"lon_deg"`
+	RadiusM float32 `json:"radius_m"`
+	Station string  `json:"station"`
+}
+
+// WeatherChange defines model for WeatherChange.
+type WeatherChange struct {
+	// Fields The Art. 12(2) minimum content; null is not reported (in a change group, not changed).
+	Fields WeatherFields `json:"fields"`
+
+	// Kind FM, BECMG, TEMPO, PROB30, PROB40, PROB30 TEMPO or PROB40 TEMPO.
+	Kind      string     `json:"kind"`
+	ValidFrom time.Time  `json:"valid_from"`
+	ValidTo   *time.Time `json:"valid_to"`
+}
+
+// WeatherFields The Art. 12(2) minimum content; null is not reported (in a change group, not changed).
+type WeatherFields struct {
+	Cavok bool `json:"cavok"`
+
+	// Ceiling What the cloud groups say of the lowest broken or overcast layer; not_reported is never read as none.
+	Ceiling WeatherFieldsCeiling `json:"ceiling"`
+
+	// CloudBaseFtAgl In feet above the aerodrome, reported in hundreds of feet (Art. 12(2)(b)).
+	CloudBaseFtAgl *int                         `json:"cloud_base_ft_agl"`
+	Convective     []WeatherFieldsConvective    `json:"convective"`
+	DewPointC      *int                         `json:"dew_point_c"`
+	GustMs         *float32                     `json:"gust_ms"`
+	Precipitation  []WeatherFieldsPrecipitation `json:"precipitation"`
+	QnhHpa         *float32                     `json:"qnh_hpa"`
+	TempC          *int                         `json:"temp_c"`
+
+	// VisibilityAtLeast visibility_m is a lower bound (9999, P6SM, CAVOK).
+	VisibilityAtLeast bool     `json:"visibility_at_least"`
+	VisibilityM       *float32 `json:"visibility_m"`
+	Weather           []string `json:"weather"`
+
+	// WindDirDeg Degrees true the wind comes from.
+	WindDirDeg     *int     `json:"wind_dir_deg"`
+	WindSpeedMs    *float32 `json:"wind_speed_ms"`
+	WindVarFromDeg *int     `json:"wind_var_from_deg"`
+	WindVarToDeg   *int     `json:"wind_var_to_deg"`
+	WindVariable   bool     `json:"wind_variable"`
+}
+
+// WeatherFieldsCeiling What the cloud groups say of the lowest broken or overcast layer; not_reported is never read as none.
+type WeatherFieldsCeiling string
+
+// WeatherFieldsConvective defines model for WeatherFields.Convective.
+type WeatherFieldsConvective string
+
+// WeatherFieldsPrecipitation defines model for WeatherFields.Precipitation.
+type WeatherFieldsPrecipitation string
+
+// WeatherProduct defines model for WeatherProduct.
+type WeatherProduct struct {
+	// AgeS Seconds since observed_at on the database clock.
+	AgeS      float32         `json:"age_s"`
+	Area      WeatherArea     `json:"area"`
+	Changes   []WeatherChange `json:"changes"`
+	FetchedAt time.Time       `json:"fetched_at"`
+
+	// Fields The Art. 12(2) minimum content; null is not reported (in a change group, not changed).
+	Fields WeatherFields      `json:"fields"`
+	Id     openapi_types.UUID `json:"id"`
+
+	// InForce valid_from <= at <= valid_to.
+	InForce bool               `json:"in_force"`
+	Kind    WeatherProductKind `json:"kind"`
+
+	// ObservedAt The observation of a METAR or SPECI
+	ObservedAt time.Time `json:"observed_at"`
+
+	// QnhArea The station whose area the QNH is for.
+	QnhArea string `json:"qnh_area"`
+
+	// Raw The report as received.
+	Raw    string `json:"raw"`
+	Source string `json:"source"`
+
+	// Stale The answer's stale.
+	Stale     bool      `json:"stale"`
+	Station   string    `json:"station"`
+	ValidFrom time.Time `json:"valid_from"`
+
+	// ValidTo A TAF's validity end; a METAR or SPECI is in force for the policy's weather_observation_valid_s.
+	ValidTo time.Time `json:"valid_to"`
+}
+
+// WeatherProductKind defines model for WeatherProduct.Kind.
+type WeatherProductKind string
+
+// WeatherSource defines model for WeatherSource.
+type WeatherSource struct {
+	// AgeS Seconds since the last successful fetch.
+	AgeS *float32 `json:"age_s"`
+
+	// Failure Set while failing.
+	Failure *string `json:"failure"`
+
+	// LastFailureAt Set while failing.
+	LastFailureAt *time.Time `json:"last_failure_at"`
+	LastSuccessAt *time.Time `json:"last_success_at"`
+
+	// Name adapter:host of USSP_WEATHER_SOURCE.
+	Name  string             `json:"name"`
+	State WeatherSourceState `json:"state"`
+}
+
+// WeatherSourceState defines model for WeatherSource.State.
+type WeatherSourceState string
+
 // AlertID defines model for AlertID.
 type AlertID = openapi_types.UUID
 
@@ -2261,6 +2513,15 @@ type OpenTrafficStreamParams struct {
 type GetTrafficSnapshotParams struct {
 	IntentId *openapi_types.UUID `form:"intent_id,omitempty" json:"intent_id,omitempty"`
 	Bbox     *string             `form:"bbox,omitempty" json:"bbox,omitempty"`
+}
+
+// GetWeatherParams defines parameters for GetWeather.
+type GetWeatherParams struct {
+	// Bbox west,south,east,north in WGS84 degrees; at most 5 degrees a side.
+	Bbox string `form:"bbox" json:"bbox"`
+
+	// At The instant (RFC 3339); now (the database clock) when absent.
+	At *time.Time `form:"at,omitempty" json:"at,omitempty"`
 }
 
 // RequestTokenFormdataRequestBody defines body for RequestToken for application/x-www-form-urlencoded ContentType.
@@ -3226,6 +3487,36 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /v1/traffic/snapshot (the `GetTrafficSnapshot` operationId).
 	GetTrafficSnapshot(ctx context.Context, params *GetTrafficSnapshotParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWeather Weather information for a box at an instant
+	//
+	// The optional weather information service (2021/664 Art. 12; brief
+	// WP-16): the METAR, SPECI and TAF of the stations the policy lists
+	// (weather_station_ids), fetched from the configured source
+	// (USSP_WEATHER_SOURCE) every weather_refresh_s and stored, answered
+	// from the store, never from the source in the request path. Each
+	// product carries the Art. 12(2) minimum content with the unit in
+	// every name: wind direction (degrees true), speed and gust in m/s;
+	// the lowest broken or overcast layer in feet above the aerodrome
+	// (reported in hundreds of feet); visibility in metres; temperature
+	// and dew point in degrees Celsius; the convective (TS, CB, TCU) and
+	// precipitation indicators; the observation or issue time and the
+	// validity; the QNH with its area (the station). A product's area is
+	// the circle of weather_area_radius_m around its station.
+	//
+	// The answer is the newest product of each station and kind whose
+	// area meets the box and that was issued at or before at, newest
+	// first, with age_s and in_force. Nothing is hidden (E-02): no source
+	// configured is 503 weather_unavailable with errors[] field
+	// weather_source, reason not_configured (no_stations when the policy
+	// lists none, database when the store cannot be read); a source that
+	// is failing, has never delivered, or has not delivered within
+	// weather_stale_s answers its last products with stale true and,
+	// while failing, the failure and its time. The station list, the
+	// area radius and the thresholds are policy values pending GCAA.
+	//
+	// Corresponds with GET /v1/weather (the `GetWeather` operationId).
+	GetWeather(ctx context.Context, params *GetWeatherParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // GetJWKS The issuer's public keys
@@ -4411,6 +4702,46 @@ func (c *Client) OpenTrafficStream(ctx context.Context, params *OpenTrafficStrea
 // Corresponds with GET /v1/traffic/snapshot (the `GetTrafficSnapshot` operationId).
 func (c *Client) GetTrafficSnapshot(ctx context.Context, params *GetTrafficSnapshotParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetTrafficSnapshotRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetWeather Weather information for a box at an instant
+//
+// The optional weather information service (2021/664 Art. 12; brief
+// WP-16): the METAR, SPECI and TAF of the stations the policy lists
+// (weather_station_ids), fetched from the configured source
+// (USSP_WEATHER_SOURCE) every weather_refresh_s and stored, answered
+// from the store, never from the source in the request path. Each
+// product carries the Art. 12(2) minimum content with the unit in
+// every name: wind direction (degrees true), speed and gust in m/s;
+// the lowest broken or overcast layer in feet above the aerodrome
+// (reported in hundreds of feet); visibility in metres; temperature
+// and dew point in degrees Celsius; the convective (TS, CB, TCU) and
+// precipitation indicators; the observation or issue time and the
+// validity; the QNH with its area (the station). A product's area is
+// the circle of weather_area_radius_m around its station.
+//
+// The answer is the newest product of each station and kind whose
+// area meets the box and that was issued at or before at, newest
+// first, with age_s and in_force. Nothing is hidden (E-02): no source
+// configured is 503 weather_unavailable with errors[] field
+// weather_source, reason not_configured (no_stations when the policy
+// lists none, database when the store cannot be read); a source that
+// is failing, has never delivered, or has not delivered within
+// weather_stale_s answers its last products with stale true and,
+// while failing, the failure and its time. The station list, the
+// area radius and the thresholds are policy values pending GCAA.
+//
+// Corresponds with GET /v1/weather (the `GetWeather` operationId).
+func (c *Client) GetWeather(ctx context.Context, params *GetWeatherParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWeatherRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -5908,6 +6239,68 @@ func NewGetTrafficSnapshotRequest(server string, params *GetTrafficSnapshotParam
 	return req, nil
 }
 
+// NewGetWeatherRequest constructs an http.Request for the GetWeather method
+func NewGetWeatherRequest(server string, params *GetWeatherParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/weather")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "bbox", params.Bbox, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.At != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "at", *params.At, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -6722,6 +7115,38 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /v1/traffic/snapshot (the `GetTrafficSnapshot` operationId).
 	GetTrafficSnapshotWithResponse(ctx context.Context, params *GetTrafficSnapshotParams, reqEditors ...RequestEditorFn) (*GetTrafficSnapshotResponse, error)
+
+	// GetWeatherWithResponse Weather information for a box at an instant
+	//
+	// The optional weather information service (2021/664 Art. 12; brief
+	// WP-16): the METAR, SPECI and TAF of the stations the policy lists
+	// (weather_station_ids), fetched from the configured source
+	// (USSP_WEATHER_SOURCE) every weather_refresh_s and stored, answered
+	// from the store, never from the source in the request path. Each
+	// product carries the Art. 12(2) minimum content with the unit in
+	// every name: wind direction (degrees true), speed and gust in m/s;
+	// the lowest broken or overcast layer in feet above the aerodrome
+	// (reported in hundreds of feet); visibility in metres; temperature
+	// and dew point in degrees Celsius; the convective (TS, CB, TCU) and
+	// precipitation indicators; the observation or issue time and the
+	// validity; the QNH with its area (the station). A product's area is
+	// the circle of weather_area_radius_m around its station.
+	//
+	// The answer is the newest product of each station and kind whose
+	// area meets the box and that was issued at or before at, newest
+	// first, with age_s and in_force. Nothing is hidden (E-02): no source
+	// configured is 503 weather_unavailable with errors[] field
+	// weather_source, reason not_configured (no_stations when the policy
+	// lists none, database when the store cannot be read); a source that
+	// is failing, has never delivered, or has not delivered within
+	// weather_stale_s answers its last products with stale true and,
+	// while failing, the failure and its time. The station list, the
+	// area radius and the thresholds are policy values pending GCAA.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/weather (the `GetWeather` operationId).
+	GetWeatherWithResponse(ctx context.Context, params *GetWeatherParams, reqEditors ...RequestEditorFn) (*GetWeatherResponse, error)
 }
 
 // GetJWKSResponse200Headers the declared response headers of an HTTP 200 response for GetJWKS
@@ -9405,6 +9830,82 @@ func (r GetTrafficSnapshotResponse) ContentType() string {
 	return ""
 }
 
+type GetWeatherResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WeatherAnswer
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWeatherResponse) GetJSON200() *WeatherAnswer {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r GetWeatherResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r GetWeatherResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r GetWeatherResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r GetWeatherResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetWeatherResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWeatherResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWeatherResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWeatherResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWeatherResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetJWKSWithResponse The issuer's public keys
 //
 // The RS256 keys of this USSP's issuer (`use: sig`, `kid` = the RFC
@@ -10456,6 +10957,44 @@ func (c *ClientWithResponses) GetTrafficSnapshotWithResponse(ctx context.Context
 		return nil, err
 	}
 	return ParseGetTrafficSnapshotResponse(rsp)
+}
+
+// GetWeatherWithResponse Weather information for a box at an instant
+//
+// The optional weather information service (2021/664 Art. 12; brief
+// WP-16): the METAR, SPECI and TAF of the stations the policy lists
+// (weather_station_ids), fetched from the configured source
+// (USSP_WEATHER_SOURCE) every weather_refresh_s and stored, answered
+// from the store, never from the source in the request path. Each
+// product carries the Art. 12(2) minimum content with the unit in
+// every name: wind direction (degrees true), speed and gust in m/s;
+// the lowest broken or overcast layer in feet above the aerodrome
+// (reported in hundreds of feet); visibility in metres; temperature
+// and dew point in degrees Celsius; the convective (TS, CB, TCU) and
+// precipitation indicators; the observation or issue time and the
+// validity; the QNH with its area (the station). A product's area is
+// the circle of weather_area_radius_m around its station.
+//
+// The answer is the newest product of each station and kind whose
+// area meets the box and that was issued at or before at, newest
+// first, with age_s and in_force. Nothing is hidden (E-02): no source
+// configured is 503 weather_unavailable with errors[] field
+// weather_source, reason not_configured (no_stations when the policy
+// lists none, database when the store cannot be read); a source that
+// is failing, has never delivered, or has not delivered within
+// weather_stale_s answers its last products with stale true and,
+// while failing, the failure and its time. The station list, the
+// area radius and the thresholds are policy values pending GCAA.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/weather (the `GetWeather` operationId).
+func (c *ClientWithResponses) GetWeatherWithResponse(ctx context.Context, params *GetWeatherParams, reqEditors ...RequestEditorFn) (*GetWeatherResponse, error) {
+	rsp, err := c.GetWeather(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWeatherResponse(rsp)
 }
 
 // ParseGetJWKSResponse parses an HTTP response from a GetJWKSWithResponse call
@@ -12654,6 +13193,67 @@ func ParseGetTrafficSnapshotResponse(rsp *http.Response) (*GetTrafficSnapshotRes
 			return nil, err
 		}
 		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWeatherResponse parses an HTTP response from a GetWeatherWithResponse call
+func ParseGetWeatherResponse(rsp *http.Response) (*GetWeatherResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWeatherResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WeatherAnswer
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Problem

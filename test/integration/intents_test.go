@@ -140,6 +140,9 @@ type intentRig struct {
 	stack    *stack
 	counters *core.Counters
 	pol      atomic.Pointer[policy.Record]
+	// wx is the weather service its decisions consult (WP-16): a TAF in
+	// force over the rig's origin.
+	wx *weatherRig
 }
 
 func newIntentRig(t *testing.T) *intentRig {
@@ -172,10 +175,14 @@ func newIntentRig(t *testing.T) *intentRig {
 		t.Fatal(err)
 	}
 	g.kv = bus.NewProjector(conn, nil)
+	g.wx = newWeatherRig(t, g.o, "31013KT 9999 FEW030 17/05 Q1026")
+	if err := g.wx.svc.Poll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	g.svc = &intent.Service{
 		Store: intentstore.Store{S: appStore(t)},
 		Decider: &intent.Decider{CIS: g.cis.eval, Integrity: g.cis.cache, Registry: g.reg, DSS: g.dss,
-			SystemID: "USSP-DEV", Counters: g.counters},
+			Weather: weatherAdapter{g.wx.svc}, SystemID: "USSP-DEV", Counters: g.counters},
 		Geoid: grid, Policy: func() policy.Record { return *g.pol.Load() }, Counters: g.counters, Logger: quiet(),
 		Projector: intent.BusProjector{KV: g.kv, Pub: bus.NewPublisher(conn, g.counters)},
 	}

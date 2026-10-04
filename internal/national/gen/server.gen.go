@@ -1054,6 +1054,132 @@ func (e TokenResponseTokenType) Valid() bool {
 	}
 }
 
+// Defines values for WeatherFieldsCeiling.
+const (
+	Layer              WeatherFieldsCeiling = "layer"
+	None               WeatherFieldsCeiling = "none"
+	NotReported        WeatherFieldsCeiling = "not_reported"
+	VerticalVisibility WeatherFieldsCeiling = "vertical_visibility"
+)
+
+// Valid indicates whether the value is a known member of the WeatherFieldsCeiling enum.
+func (e WeatherFieldsCeiling) Valid() bool {
+	switch e {
+	case Layer:
+		return true
+	case None:
+		return true
+	case NotReported:
+		return true
+	case VerticalVisibility:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WeatherFieldsConvective.
+const (
+	CB  WeatherFieldsConvective = "CB"
+	TCU WeatherFieldsConvective = "TCU"
+	TS  WeatherFieldsConvective = "TS"
+)
+
+// Valid indicates whether the value is a known member of the WeatherFieldsConvective enum.
+func (e WeatherFieldsConvective) Valid() bool {
+	switch e {
+	case CB:
+		return true
+	case TCU:
+		return true
+	case TS:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WeatherFieldsPrecipitation.
+const (
+	DZ WeatherFieldsPrecipitation = "DZ"
+	GR WeatherFieldsPrecipitation = "GR"
+	GS WeatherFieldsPrecipitation = "GS"
+	IC WeatherFieldsPrecipitation = "IC"
+	PL WeatherFieldsPrecipitation = "PL"
+	RA WeatherFieldsPrecipitation = "RA"
+	SG WeatherFieldsPrecipitation = "SG"
+	SN WeatherFieldsPrecipitation = "SN"
+	UP WeatherFieldsPrecipitation = "UP"
+)
+
+// Valid indicates whether the value is a known member of the WeatherFieldsPrecipitation enum.
+func (e WeatherFieldsPrecipitation) Valid() bool {
+	switch e {
+	case DZ:
+		return true
+	case GR:
+		return true
+	case GS:
+		return true
+	case IC:
+		return true
+	case PL:
+		return true
+	case RA:
+		return true
+	case SG:
+		return true
+	case SN:
+		return true
+	case UP:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WeatherProductKind.
+const (
+	Metar WeatherProductKind = "metar"
+	Speci WeatherProductKind = "speci"
+	Taf   WeatherProductKind = "taf"
+)
+
+// Valid indicates whether the value is a known member of the WeatherProductKind enum.
+func (e WeatherProductKind) Valid() bool {
+	switch e {
+	case Metar:
+		return true
+	case Speci:
+		return true
+	case Taf:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WeatherSourceState.
+const (
+	WeatherSourceStateFailing      WeatherSourceState = "failing"
+	WeatherSourceStateNeverFetched WeatherSourceState = "never_fetched"
+	WeatherSourceStateUp           WeatherSourceState = "up"
+)
+
+// Valid indicates whether the value is a known member of the WeatherSourceState enum.
+func (e WeatherSourceState) Valid() bool {
+	switch e {
+	case WeatherSourceStateFailing:
+		return true
+	case WeatherSourceStateNeverFetched:
+		return true
+	case WeatherSourceStateUp:
+		return true
+	default:
+		return false
+	}
+}
+
 // AlertAck An alert's acknowledgement as recorded.
 type AlertAck struct {
 	// AckedAt When it was first acknowledged, on the database clock.
@@ -1609,7 +1735,7 @@ type IntentDecision struct {
 		UpperW84M   float32 `json:"upper_w84_m"`
 	} `json:"volumes_amsl"`
 
-	// WeatherCheckedRef Art. 10(3); null until weather (WP-16).
+	// WeatherCheckedRef Art. 10(3) (WP-16): the ids of the weather products in force over the volumes and their window that the decision consulted, comma-separated, newest first (at most 16); null when none was, with the condition weather_unavailable. Weather never rejects: weather_stale and weather_advisory are conditions.
 	WeatherCheckedRef *string `json:"weather_checked_ref"`
 }
 
@@ -2199,6 +2325,132 @@ type TokenResponse struct {
 // TokenResponseTokenType defines model for TokenResponse.TokenType.
 type TokenResponseTokenType string
 
+// WeatherAnswer GET /v1/weather's answer (internal/weather.Answer).
+type WeatherAnswer struct {
+	At            time.Time        `json:"at"`
+	PolicyVersion int              `json:"policy_version"`
+	Products      []WeatherProduct `json:"products"`
+	Source        WeatherSource    `json:"source"`
+
+	// Stale The source is failing, has never delivered, or has not delivered within the policy's weather_stale_s.
+	Stale bool `json:"stale"`
+}
+
+// WeatherArea defines model for WeatherArea.
+type WeatherArea struct {
+	LatDeg  float32 `json:"lat_deg"`
+	LonDeg  float32 `json:"lon_deg"`
+	RadiusM float32 `json:"radius_m"`
+	Station string  `json:"station"`
+}
+
+// WeatherChange defines model for WeatherChange.
+type WeatherChange struct {
+	// Fields The Art. 12(2) minimum content; null is not reported (in a change group, not changed).
+	Fields WeatherFields `json:"fields"`
+
+	// Kind FM, BECMG, TEMPO, PROB30, PROB40, PROB30 TEMPO or PROB40 TEMPO.
+	Kind      string     `json:"kind"`
+	ValidFrom time.Time  `json:"valid_from"`
+	ValidTo   *time.Time `json:"valid_to"`
+}
+
+// WeatherFields The Art. 12(2) minimum content; null is not reported (in a change group, not changed).
+type WeatherFields struct {
+	Cavok bool `json:"cavok"`
+
+	// Ceiling What the cloud groups say of the lowest broken or overcast layer; not_reported is never read as none.
+	Ceiling WeatherFieldsCeiling `json:"ceiling"`
+
+	// CloudBaseFtAgl In feet above the aerodrome, reported in hundreds of feet (Art. 12(2)(b)).
+	CloudBaseFtAgl *int                         `json:"cloud_base_ft_agl"`
+	Convective     []WeatherFieldsConvective    `json:"convective"`
+	DewPointC      *int                         `json:"dew_point_c"`
+	GustMs         *float32                     `json:"gust_ms"`
+	Precipitation  []WeatherFieldsPrecipitation `json:"precipitation"`
+	QnhHpa         *float32                     `json:"qnh_hpa"`
+	TempC          *int                         `json:"temp_c"`
+
+	// VisibilityAtLeast visibility_m is a lower bound (9999, P6SM, CAVOK).
+	VisibilityAtLeast bool     `json:"visibility_at_least"`
+	VisibilityM       *float32 `json:"visibility_m"`
+	Weather           []string `json:"weather"`
+
+	// WindDirDeg Degrees true the wind comes from.
+	WindDirDeg     *int     `json:"wind_dir_deg"`
+	WindSpeedMs    *float32 `json:"wind_speed_ms"`
+	WindVarFromDeg *int     `json:"wind_var_from_deg"`
+	WindVarToDeg   *int     `json:"wind_var_to_deg"`
+	WindVariable   bool     `json:"wind_variable"`
+}
+
+// WeatherFieldsCeiling What the cloud groups say of the lowest broken or overcast layer; not_reported is never read as none.
+type WeatherFieldsCeiling string
+
+// WeatherFieldsConvective defines model for WeatherFields.Convective.
+type WeatherFieldsConvective string
+
+// WeatherFieldsPrecipitation defines model for WeatherFields.Precipitation.
+type WeatherFieldsPrecipitation string
+
+// WeatherProduct defines model for WeatherProduct.
+type WeatherProduct struct {
+	// AgeS Seconds since observed_at on the database clock.
+	AgeS      float32         `json:"age_s"`
+	Area      WeatherArea     `json:"area"`
+	Changes   []WeatherChange `json:"changes"`
+	FetchedAt time.Time       `json:"fetched_at"`
+
+	// Fields The Art. 12(2) minimum content; null is not reported (in a change group, not changed).
+	Fields WeatherFields      `json:"fields"`
+	Id     openapi_types.UUID `json:"id"`
+
+	// InForce valid_from <= at <= valid_to.
+	InForce bool               `json:"in_force"`
+	Kind    WeatherProductKind `json:"kind"`
+
+	// ObservedAt The observation of a METAR or SPECI
+	ObservedAt time.Time `json:"observed_at"`
+
+	// QnhArea The station whose area the QNH is for.
+	QnhArea string `json:"qnh_area"`
+
+	// Raw The report as received.
+	Raw    string `json:"raw"`
+	Source string `json:"source"`
+
+	// Stale The answer's stale.
+	Stale     bool      `json:"stale"`
+	Station   string    `json:"station"`
+	ValidFrom time.Time `json:"valid_from"`
+
+	// ValidTo A TAF's validity end; a METAR or SPECI is in force for the policy's weather_observation_valid_s.
+	ValidTo time.Time `json:"valid_to"`
+}
+
+// WeatherProductKind defines model for WeatherProduct.Kind.
+type WeatherProductKind string
+
+// WeatherSource defines model for WeatherSource.
+type WeatherSource struct {
+	// AgeS Seconds since the last successful fetch.
+	AgeS *float32 `json:"age_s"`
+
+	// Failure Set while failing.
+	Failure *string `json:"failure"`
+
+	// LastFailureAt Set while failing.
+	LastFailureAt *time.Time `json:"last_failure_at"`
+	LastSuccessAt *time.Time `json:"last_success_at"`
+
+	// Name adapter:host of USSP_WEATHER_SOURCE.
+	Name  string             `json:"name"`
+	State WeatherSourceState `json:"state"`
+}
+
+// WeatherSourceState defines model for WeatherSource.State.
+type WeatherSourceState string
+
 // AlertID defines model for AlertID.
 type AlertID = openapi_types.UUID
 
@@ -2239,6 +2491,15 @@ type ValidateRegistryParams struct {
 	Operator *string         `form:"operator,omitempty" json:"operator,omitempty"`
 	Serial   *string         `form:"serial,omitempty" json:"serial,omitempty"`
 	Pilot    *string         `form:"pilot,omitempty" json:"pilot,omitempty"`
+}
+
+// GetWeatherParams defines parameters for GetWeather.
+type GetWeatherParams struct {
+	// Bbox west,south,east,north in WGS84 degrees; at most 5 degrees a side.
+	Bbox string `form:"bbox" json:"bbox"`
+
+	// At The instant (RFC 3339); now (the database clock) when absent.
+	At *time.Time `form:"at,omitempty" json:"at,omitempty"`
 }
 
 // RequestTokenFormdataRequestBody defines body for RequestToken for application/x-www-form-urlencoded ContentType.
@@ -2497,6 +2758,9 @@ type ServerInterface interface {
 	// ValidateRegistry Validity of an operator, a UAS and a remote pilot (F8, cached)
 	// (GET /v1/registry/validate)
 	ValidateRegistry(w http.ResponseWriter, r *http.Request, params ValidateRegistryParams)
+	// GetWeather Weather information for a box at an instant
+	// (GET /v1/weather)
+	GetWeather(w http.ResponseWriter, r *http.Request, params GetWeatherParams)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -3256,6 +3520,52 @@ func (siw *ServerInterfaceWrapper) ValidateRegistry(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// GetWeather operation middleware
+func (siw *ServerInterfaceWrapper) GetWeather(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetWeatherParams
+
+	// ------------- Required query parameter "bbox" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "bbox", r.URL.Query(), &params.Bbox, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "bbox"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "bbox", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "at" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "at", r.URL.Query(), &params.At, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "at"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "at", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetWeather(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -3386,6 +3696,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/intents/{intent_id}", wrapper.ChangeIntent)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/geo", wrapper.GetGeo)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/geo/intents/{intent_id}", wrapper.GetGeoForIntent)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/weather", wrapper.GetWeather)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/alerts/{alert_id}/ack", wrapper.AckAlert)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/coordination", wrapper.ListCoordinationNotices)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/records/flights/{flight_id}", wrapper.GetFlightRecord)

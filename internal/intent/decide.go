@@ -58,6 +58,29 @@ type DSS interface {
 	Available(ctx context.Context) (bool, string)
 }
 
+// Weather is what a decision consults of the weather service (Art.
+// 10(3); internal/weather through the api process). It is never a
+// judgement: what it says is recorded and becomes conditions the
+// operator reads, never a conflict (brief WP-16).
+type Weather interface {
+	Check(ctx context.Context, boxes []geodesy.BBox, from, to time.Time) WeatherCheck
+}
+
+// WeatherCheck is what one consultation found: Ref is
+// weather_checked_ref (the products consulted, nil when none),
+// Unavailable why none was, Stale why those may not be the newest, and
+// Advisories the products whose wind reaches the policy's advisory.
+type WeatherCheck struct {
+	Ref         *string
+	Unavailable string
+	Stale       string
+	Advisories  []string
+}
+
+// MaxWeatherAdvisories bounds the weather_advisory conditions of one
+// decision.
+const MaxWeatherAdvisories = 16
+
 // Decider runs the decision of brief WP-7 in its order: scope, registry,
 // airspace, zones and restrictions (Assess, outside the intents lock),
 // then deconfliction and the decision itself (Finish, inside it).
@@ -69,6 +92,9 @@ type Decider struct {
 	Registry  Registry
 	Terrain   Terrain
 	DSS       DSS
+	// Weather is consulted on every decision (WP-16); nil records the
+	// condition weather_unavailable.
+	Weather Weather
 	// SystemID is the USSP code of the authorisation number (M8).
 	SystemID string
 	Counters *core.Counters
@@ -138,6 +164,9 @@ func (d *Decider) Assess(ctx context.Context, n *Normalised, pol policy.Record, 
 	// nor on a CIS picture it cannot trust (CLAUDE.md rule 4; the brief
 	// skips them, see the PR).
 	d.cis(a)
+	// Art. 10(3): the weather where applicable, consulted and recorded,
+	// never a judgement (WP-16).
+	d.weather(ctx, a)
 	if n.Exempt {
 		// Step 1: out of the regulation's scope; deconfliction, the DSS
 		// and the number do not apply and nothing is authorised.
@@ -151,6 +180,42 @@ func (d *Decider) Assess(ctx context.Context, n *Normalised, pol policy.Record, 
 		}
 	}
 	return a
+}
+
+// weather consults the products in force over the volumes and their
+// window and records their ids in weather_checked_ref; none, a stale
+// source and each advisory are conditions, never conflicts.
+func (d *Decider) weather(ctx context.Context, a *Assessment) {
+	if d.Weather == nil {
+		d.count(CondWeatherUnavailable)
+		a.condition(Condition{Code: CondWeatherUnavailable, Detail: "no weather service is configured on this process"})
+		return
+	}
+	boxes := make([]geodesy.BBox, len(a.n.Volumes))
+	for i := range a.n.Volumes {
+		boxes[i] = a.n.Volumes[i].BBox
+	}
+	c := d.Weather.Check(ctx, boxes, a.n.TimeStart, a.n.TimeEnd)
+	a.d.WeatherCheckedRef = c.Ref
+	if c.Ref == nil {
+		detail := c.Unavailable
+		if detail == "" {
+			detail = "no weather product was consulted"
+		}
+		d.count(CondWeatherUnavailable)
+		a.condition(Condition{Code: CondWeatherUnavailable, Detail: detail})
+	}
+	if c.Stale != "" {
+		d.count(CondWeatherStale)
+		a.condition(Condition{Code: CondWeatherStale, Detail: c.Stale})
+	}
+	for i, adv := range c.Advisories {
+		if i == MaxWeatherAdvisories {
+			break
+		}
+		d.count(CondWeatherAdvisory)
+		a.condition(Condition{Code: CondWeatherAdvisory, Detail: adv})
+	}
 }
 
 func (d *Decider) registry(ctx context.Context, a *Assessment) {

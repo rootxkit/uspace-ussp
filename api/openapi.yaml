@@ -21,7 +21,8 @@ info:
     optional authority flight push (served by rid-sp). WP-11: traffic
     information and the alert stream (served by traffic-ws), the alert
     acknowledgement (api). WP-15: the console's list of Annex V notices
-    to the ANSP; the service records for the authority.
+    to the ANSP; the service records for the authority. WP-16: the
+    optional weather information.
   license:
     name: Apache-2.0
 servers:
@@ -431,6 +432,66 @@ paths:
         '403':
           $ref: '#/components/responses/Problem'
         '404':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/weather:
+    get:
+      operationId: getWeather
+      tags: [weather]
+      summary: Weather information for a box at an instant
+      description: |
+        The optional weather information service (2021/664 Art. 12; brief
+        WP-16): the METAR, SPECI and TAF of the stations the policy lists
+        (weather_station_ids), fetched from the configured source
+        (USSP_WEATHER_SOURCE) every weather_refresh_s and stored, answered
+        from the store, never from the source in the request path. Each
+        product carries the Art. 12(2) minimum content with the unit in
+        every name: wind direction (degrees true), speed and gust in m/s;
+        the lowest broken or overcast layer in feet above the aerodrome
+        (reported in hundreds of feet); visibility in metres; temperature
+        and dew point in degrees Celsius; the convective (TS, CB, TCU) and
+        precipitation indicators; the observation or issue time and the
+        validity; the QNH with its area (the station). A product's area is
+        the circle of weather_area_radius_m around its station.
+
+        The answer is the newest product of each station and kind whose
+        area meets the box and that was issued at or before at, newest
+        first, with age_s and in_force. Nothing is hidden (E-02): no source
+        configured is 503 weather_unavailable with errors[] field
+        weather_source, reason not_configured (no_stations when the policy
+        lists none, database when the store cannot be read); a source that
+        is failing, has never delivered, or has not delivered within
+        weather_stale_s answers its last products with stale true and,
+        while failing, the failure and its time. The station list, the
+        area radius and the thresholds are policy values pending GCAA.
+      security:
+      - operatorToken: []
+      parameters:
+      - name: bbox
+        in: query
+        required: true
+        description: west,south,east,north in WGS84 degrees; at most 5 degrees a side.
+        schema: {type: string, maxLength: 128}
+      - name: at
+        in: query
+        required: false
+        description: The instant (RFC 3339); now (the database clock) when absent.
+        schema: {type: string, format: date-time}
+      responses:
+        '200':
+          description: The products, with the source's state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeatherAnswer'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
           $ref: '#/components/responses/Problem'
         '503':
           $ref: '#/components/responses/Problem'
@@ -2640,6 +2701,116 @@ components:
           type: array
           items: {$ref: '#/components/schemas/GeoRestriction'}
         truncated: {type: boolean}
+    WeatherAnswer:
+      type: object
+      additionalProperties: false
+      description: GET /v1/weather's answer (internal/weather.Answer).
+      required: [at, stale, source, policy_version, products]
+      properties:
+        at: {type: string, format: date-time}
+        stale:
+          type: boolean
+          description: The source is failing, has never delivered, or has not delivered within the policy's weather_stale_s.
+        source: {$ref: '#/components/schemas/WeatherSource'}
+        policy_version: {type: integer, minimum: 0}
+        products:
+          type: array
+          maxItems: 192
+          items: {$ref: '#/components/schemas/WeatherProduct'}
+    WeatherSource:
+      type: object
+      additionalProperties: false
+      required: [name, state, last_success_at, age_s, last_failure_at, failure]
+      properties:
+        name: {type: string, description: 'adapter:host of USSP_WEATHER_SOURCE.'}
+        state: {type: string, enum: [up, failing, never_fetched]}
+        last_success_at: {type: [string, 'null'], format: date-time}
+        age_s: {type: [number, 'null'], minimum: 0, description: Seconds since the last successful fetch.}
+        last_failure_at: {type: [string, 'null'], format: date-time, description: Set while failing.}
+        failure: {type: [string, 'null'], maxLength: 512, description: Set while failing.}
+    WeatherProduct:
+      type: object
+      additionalProperties: false
+      required: [id, station, kind, source, observed_at, valid_from, valid_to, fetched_at, age_s, in_force, stale, area, qnh_area,
+        fields, changes, raw]
+      properties:
+        id: {type: string, format: uuid}
+        station: {type: string, pattern: '^[A-Z][A-Z0-9]{3}$'}
+        kind: {type: string, enum: [metar, speci, taf]}
+        source: {type: string}
+        observed_at: {type: string, format: date-time, description: The observation of a METAR or SPECI, the issue of a TAF.}
+        valid_from: {type: string, format: date-time}
+        valid_to:
+          type: string
+          format: date-time
+          description: A TAF's validity end; a METAR or SPECI is in force for the policy's weather_observation_valid_s.
+        fetched_at: {type: string, format: date-time}
+        age_s: {type: number, minimum: 0, description: Seconds since observed_at on the database clock.}
+        in_force: {type: boolean, description: valid_from <= at <= valid_to.}
+        stale: {type: boolean, description: The answer's stale.}
+        area: {$ref: '#/components/schemas/WeatherArea'}
+        qnh_area: {type: string, description: The station whose area the QNH is for.}
+        fields: {$ref: '#/components/schemas/WeatherFields'}
+        changes:
+          type: array
+          maxItems: 32
+          items: {$ref: '#/components/schemas/WeatherChange'}
+        raw: {type: string, maxLength: 2048, description: The report as received.}
+    WeatherArea:
+      type: object
+      additionalProperties: false
+      required: [station, lat_deg, lon_deg, radius_m]
+      properties:
+        station: {type: string}
+        lat_deg: {type: number, minimum: -90, maximum: 90}
+        lon_deg: {type: number, minimum: -180, maximum: 180}
+        radius_m: {type: number, exclusiveMinimum: 0}
+    WeatherChange:
+      type: object
+      additionalProperties: false
+      required: [kind, valid_from, valid_to, fields]
+      properties:
+        kind: {type: string, description: 'FM, BECMG, TEMPO, PROB30, PROB40, PROB30 TEMPO or PROB40 TEMPO.'}
+        valid_from: {type: string, format: date-time}
+        valid_to: {type: [string, 'null'], format: date-time}
+        fields: {$ref: '#/components/schemas/WeatherFields'}
+    WeatherFields:
+      type: object
+      additionalProperties: false
+      description: The Art. 12(2) minimum content; null is not reported (in a change group, not changed).
+      required: [wind_dir_deg, wind_variable, wind_var_from_deg, wind_var_to_deg, wind_speed_ms, gust_ms, visibility_m,
+        visibility_at_least, ceiling, cloud_base_ft_agl, cavok, temp_c, dew_point_c, qnh_hpa, weather, convective, precipitation]
+      properties:
+        wind_dir_deg: {type: [integer, 'null'], minimum: 0, maximum: 359, description: Degrees true the wind comes from.}
+        wind_variable: {type: boolean}
+        wind_var_from_deg: {type: [integer, 'null'], minimum: 0, maximum: 360}
+        wind_var_to_deg: {type: [integer, 'null'], minimum: 0, maximum: 360}
+        wind_speed_ms: {type: [number, 'null'], minimum: 0}
+        gust_ms: {type: [number, 'null'], minimum: 0}
+        visibility_m: {type: [number, 'null'], minimum: 0}
+        visibility_at_least: {type: boolean, description: 'visibility_m is a lower bound (9999, P6SM, CAVOK).'}
+        ceiling:
+          type: string
+          enum: [layer, vertical_visibility, none, not_reported]
+          description: What the cloud groups say of the lowest broken or overcast layer; not_reported is never read as none.
+        cloud_base_ft_agl:
+          type: [integer, 'null']
+          minimum: 0
+          description: In feet above the aerodrome, reported in hundreds of feet (Art. 12(2)(b)).
+        cavok: {type: boolean}
+        temp_c: {type: [integer, 'null']}
+        dew_point_c: {type: [integer, 'null']}
+        qnh_hpa: {type: [number, 'null'], exclusiveMinimum: 0}
+        weather:
+          type: array
+          maxItems: 32
+          items: {type: string}
+        convective:
+          type: array
+          items: {type: string, enum: [TS, CB, TCU]}
+        precipitation:
+          type: array
+          items: {type: string, enum: [DZ, RA, SN, SG, IC, PL, GR, GS, UP]}
     IntentDecision:
       description: intent/decision/v1 (schemas/intent/decision/v1/schema.json, the source of truth).
       type: object
@@ -2816,7 +2987,10 @@ components:
           type: integer
           minimum: 0
         weather_checked_ref:
-          description: Art. 10(3); null until weather (WP-16).
+          description: 'Art. 10(3) (WP-16): the ids of the weather products in force over the volumes and their
+            window that the decision consulted, comma-separated, newest first (at most 16); null when none was,
+            with the condition weather_unavailable. Weather never rejects: weather_stale and weather_advisory are
+            conditions.'
           type:
           - string
           - 'null'

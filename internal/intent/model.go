@@ -214,6 +214,16 @@ const (
 	// declared, but nothing this USSP can check verifies it, so it is
 	// judged at priority 0.
 	CondSpecialUnverified = "special_operation_unverified"
+	// CondWeatherUnavailable: no weather product was consulted (no
+	// source, none in force over the volumes and window, or the products
+	// could not be read); weather_checked_ref is null (WP-16).
+	CondWeatherUnavailable = "weather_unavailable"
+	// CondWeatherStale: the products consulted may not be the newest (the
+	// source is failing or has not delivered within weather_stale_s).
+	CondWeatherStale = "weather_stale"
+	// CondWeatherAdvisory: a product consulted reports a wind or gust at
+	// or above the policy's weather_advisory_wind_ms. Never a rejection.
+	CondWeatherAdvisory = "weather_advisory"
 )
 
 // Overlap is how a volume meets a zone, an airspace or another intent:

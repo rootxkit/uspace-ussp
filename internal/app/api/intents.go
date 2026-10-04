@@ -62,7 +62,7 @@ func geoidProbe(und geoid.Undulator, mapped bool, why string) obs.Probe {
 // pending_dss until the DSS writer has written it), projects through kv
 // and the bus, registers the geoid's readiness and starts the time_end
 // sweep.
-func startIntents(ctx context.Context, rt *proc.Runtime, pol *policy.Service, cisState *CIS, reg *registry.Cache, kv *bus.Projector, dss intent.DSS) *intent.Service {
+func startIntents(ctx context.Context, rt *proc.Runtime, pol *policy.Service, cisState *CIS, reg *registry.Cache, kv *bus.Projector, dss intent.DSS, wx intent.Weather) *intent.Service {
 	counters := &core.Counters{}
 	proc.Publish(rt, "intent", counters)
 	g, mapped, why := loadGeoid(rt)
@@ -74,7 +74,7 @@ func startIntents(ctx context.Context, rt *proc.Runtime, pol *policy.Service, ci
 		return policy.Record{Values: policy.Defaults()}
 	}
 	d := &intent.Decider{
-		CIS: cisState.Evaluator, Integrity: cisState.Cache, Registry: reg, DSS: dss,
+		CIS: cisState.Evaluator, Integrity: cisState.Cache, Registry: reg, DSS: dss, Weather: wx,
 		SystemID: rt.Config.SystemID, Counters: counters,
 	}
 	pub := bus.NewPublisher(rt.Bus, counters)

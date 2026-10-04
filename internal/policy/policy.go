@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"time"
 
 	"github.com/rootxkit/uspace-core/alerting"
@@ -266,7 +267,42 @@ type Values struct {
 	// record is shown as a second aircraft.
 	EchoColocationM float64 `json:"echo_colocation_m"`
 	EchoColocationS float64 `json:"echo_colocation_s"`
+
+	// Weather information (WP-16, Art. 12, an optional service).
+	// WeatherStationIDs are the location indicators whose METAR, SPECI and
+	// TAF the configured source (USSP_WEATHER_SOURCE) is asked for; a
+	// product's area, which is also its QNH's area, is the circle of
+	// WeatherAreaRadiusM around the station's position as the source gives
+	// it. WeatherRefreshS is the poll period. WeatherStaleS is how old the
+	// last successful fetch may be before every product is stale.
+	// WeatherObservationValidS is how long a METAR or SPECI is in force
+	// after its observation (a newer report of the station supersedes it
+	// sooner). WeatherAdvisoryWindMS is the wind, mean or gust, at or above
+	// which a decision carries the condition weather_advisory; 0 turns the
+	// advisory off. Weather never rejects an intent (brief WP-16): the
+	// thresholds an operator applies are the operator's.
+	WeatherStationIDs        []string `json:"weather_station_ids"`
+	WeatherAreaRadiusM       float64  `json:"weather_area_radius_m"`
+	WeatherRefreshS          float64  `json:"weather_refresh_s"`
+	WeatherStaleS            float64  `json:"weather_stale_s"`
+	WeatherObservationValidS float64  `json:"weather_observation_valid_s"`
+	WeatherAdvisoryWindMS    float64  `json:"weather_advisory_wind_ms"`
 }
+
+// MaxWeatherStationIDs bounds WeatherStationIDs (one fetch asks for all of
+// them).
+const MaxWeatherStationIDs = 64
+
+// Bounds of the weather poll and area.
+const (
+	MinWeatherRefreshS    = 60
+	MaxWeatherRefreshS    = 86_400
+	MaxWeatherAreaRadiusM = 100_000
+)
+
+// weatherStation is a location indicator: four capitals or digits, the
+// first a capital (ICAO Doc 7910 and the source's own identifiers).
+var weatherStation = regexp.MustCompile(`^[A-Z][A-Z0-9]{3}$`)
 
 // MaxPeerFlightsMax bounds PeerFlightsMax.
 const MaxPeerFlightsMax = 100_000
@@ -366,6 +402,13 @@ const TelemetryRetentionFloorDays = 30
 // flights per answer (no figure in the plan). The echo guard's
 // co-location is spec 04 §3.2's serial_conflict figures, pending GCAA:
 // within 300 m (spoof_distance_m) of a track received at most 5 s ago.
+//
+// The weather defaults (WP-16) are pending GCAA (Art. 12 names no
+// station, area or figure): the three international aerodromes' METAR
+// and TAF (UGTB, UGKO, UGSB) over 20 km around each, polled every 600 s
+// (the brief), stale after 1800 s (three missed polls), a METAR in force
+// for 3600 s (the routine hourly report), and an advisory at a wind or
+// gust of 10 m/s.
 func Defaults() Values {
 	c := cpa.DefaultPolicy
 	alt := rid.DefaultAltPolicy()
@@ -452,6 +495,14 @@ func Defaults() Values {
 		// Pending GCAA (spec 04 §3.2 defaults).
 		EchoColocationM: 300,
 		EchoColocationS: 5,
+
+		// Pending GCAA (WP-16).
+		WeatherStationIDs:        []string{"UGTB", "UGKO", "UGSB"},
+		WeatherAreaRadiusM:       20_000,
+		WeatherRefreshS:          600,
+		WeatherStaleS:            1800,
+		WeatherObservationValidS: 3600,
+		WeatherAdvisoryWindMS:    10,
 	}
 }
 
@@ -618,10 +669,49 @@ func (v Values) Validate() error {
 	if v.PeerFlightsMax < 1 || v.PeerFlightsMax > MaxPeerFlightsMax {
 		errs = append(errs, core.Fieldf("peer_flights_max_count", "must be from 1 to %d, got %d", MaxPeerFlightsMax, v.PeerFlightsMax))
 	}
+	errs = append(errs, v.validateWeather()...)
 	if v.ClientSecretOverlapS < 0 || v.ClientSecretOverlapS > MaxClientSecretOverlapS {
 		errs = append(errs, core.Fieldf("client_secret_overlap_s", "must be from 0 to %d, got %d", MaxClientSecretOverlapS, v.ClientSecretOverlapS))
 	}
 	return errors.Join(errs...)
+}
+
+// validateWeather refuses a weather setting the poll cannot use: at
+// most MaxWeatherStationIDs distinct location indicators, a radius above 0
+// and at most MaxWeatherAreaRadiusM, a period from MinWeatherRefreshS to
+// MaxWeatherRefreshS, a staleness bound of at least one period, an
+// observation in force for longer than 0 and an advisory wind of at
+// least 0 (0: off).
+func (v Values) validateWeather() []error {
+	var errs []error
+	if len(v.WeatherStationIDs) > MaxWeatherStationIDs {
+		errs = append(errs, core.Fieldf("weather_station_ids", "at most %d stations, got %d", MaxWeatherStationIDs, len(v.WeatherStationIDs)))
+	}
+	seen := make(map[string]bool, len(v.WeatherStationIDs))
+	for i, s := range v.WeatherStationIDs {
+		if !weatherStation.MatchString(s) {
+			errs = append(errs, core.Fieldf(fmt.Sprintf("weather_station_ids[%d]", i), "not a location indicator (four capitals or digits, the first a capital)"))
+		} else if seen[s] {
+			errs = append(errs, core.Fieldf(fmt.Sprintf("weather_station_ids[%d]", i), "%s is listed twice", s))
+		}
+		seen[s] = true
+	}
+	if !finite(v.WeatherAreaRadiusM) || v.WeatherAreaRadiusM <= 0 || v.WeatherAreaRadiusM > MaxWeatherAreaRadiusM {
+		errs = append(errs, core.Fieldf("weather_area_radius_m", "must be above 0 and at most %d, got %v", MaxWeatherAreaRadiusM, v.WeatherAreaRadiusM))
+	}
+	if !finite(v.WeatherRefreshS) || v.WeatherRefreshS < MinWeatherRefreshS || v.WeatherRefreshS > MaxWeatherRefreshS {
+		errs = append(errs, core.Fieldf("weather_refresh_s", "must be from %d to %d, got %v", MinWeatherRefreshS, MaxWeatherRefreshS, v.WeatherRefreshS))
+	}
+	if !finite(v.WeatherStaleS) || v.WeatherStaleS < v.WeatherRefreshS {
+		errs = append(errs, core.Fieldf("weather_stale_s", "must be at least weather_refresh_s (%v), got %v", v.WeatherRefreshS, v.WeatherStaleS))
+	}
+	if !finite(v.WeatherObservationValidS) || v.WeatherObservationValidS <= 0 {
+		errs = append(errs, core.Fieldf("weather_observation_valid_s", "must be a finite number greater than 0, got %v", v.WeatherObservationValidS))
+	}
+	if !finite(v.WeatherAdvisoryWindMS) || v.WeatherAdvisoryWindMS < 0 {
+		errs = append(errs, core.Fieldf("weather_advisory_wind_ms", "must be a finite number of at least 0, got %v", v.WeatherAdvisoryWindMS))
+	}
+	return errs
 }
 
 func finite(f float64) bool { return !math.IsNaN(f) && !math.IsInf(f, 0) }
