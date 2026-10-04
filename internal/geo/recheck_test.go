@@ -75,6 +75,12 @@ func (f *fakeIntents) RecheckAll(_ context.Context, boxes []geodesy.BBox, _, _ *
 	return f.result, f.err
 }
 
+func (f *fakeIntents) setErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.err = err
+}
+
 func (f *fakeIntents) all() []call {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -150,8 +156,9 @@ func TestRecheckerRunSweepsAndRetries(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	// Constraint (WP-13's call) re-checks as a restriction.
-	fi.err = nil
+	// Constraint (WP-13's call) re-checks as a restriction. Run is still
+	// sweeping, so the fake's error is changed under its lock.
+	fi.setErr(nil)
 	rs := re.Constraint(ctx, "CON-1", []geodesy.BBox{{MinLat: 41, MinLon: 44, MaxLat: 42, MaxLon: 45}}, nil, nil)
 	if rs != nil {
 		t.Fatalf("results %v", rs)

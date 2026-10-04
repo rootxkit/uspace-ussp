@@ -7,6 +7,15 @@ additively within `/v1`.
 
 ## [Unreleased]
 
+### Fixed
+
+- This USSP's client id at the authority keeps the case of its code
+  (`ussp-ABC1-01`, not `ussp-abc1-01`). The authority's token service
+  registers only `ussp-<code>-<nn>` with an upper-case code (M8), and the
+  lab issuer lists `ussp-USSP-DEV-01`, so the lower-cased id could never
+  be registered and every outgoing call (the CIS) had no token. Found at
+  the first staging deploy: `POST /v1/oauth/clients` refused it.
+
 ### Added
 
 - WP-13: F3548 strategic coordination through the InterUSS DSS and with
@@ -52,7 +61,17 @@ additively within `/v1`.
   (7); the F3548 client gains `getConstraintDetails` and
   `getSubscription`; the fake DSS gains the F3548 side with ovn and key
   semantics; `internal/testfakes/peeruss` is a fake peer USSP.
-
+- Every NATS stream's age and size bound and every bucket's size bound
+  is configurable: `USSP_<STREAM>_STREAM_MAX_AGE_S` and
+  `USSP_<STREAM>_STREAM_MAX_BYTES` for TRK, MAN, PEER, ALRT, IDENT,
+  INTENT, CIS, TRAFFIC, INGEST and FLIGHT (CONF already was), and
+  `USSP_<BUCKET>_BUCKET_MAX_BYTES` for every bucket, each defaulting to
+  the bound it had. A deployment with a smaller JetStream file store than
+  the defaults' 12.6 GiB lowers them to fit; every process creates a
+  missing stream or bucket with the configured bounds, not the defaults.
+  Bucket TTLs stay fixed. `TestTopologyFitsTheFileStore` (now in
+  `internal/app/proc`) checks the bounds the environment configures
+  against `USSP_TEST_NATS_MAX_FILE_STORE`, or the compose store.
 - WP-12: geo-awareness, zone alerts and the standing re-check. api
   serves `GET /v1/geo?bbox=&at=` and `GET /v1/geo/intents/{id}` (scope
   `ussp.geo`) from its CIS cache: U-space airspaces with their Art. 3(4)

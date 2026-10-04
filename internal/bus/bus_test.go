@@ -4,11 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
-	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -512,61 +508,13 @@ func TestConfStreamCapped(t *testing.T) {
 	if DefaultConfMaxAge != 48*time.Hour || DefaultConfMaxBytes != 4<<30 {
 		t.Fatalf("defaults %v %d", DefaultConfMaxAge, DefaultConfMaxBytes)
 	}
-	conf, _ = TopologyWith(TopologyOptions{ConfMaxAge: 6 * time.Hour, ConfMaxBytes: 1 << 30}).Stream(StreamCONF)
+	conf, _ = TopologyWith(TopologyOptions{Streams: map[string]StreamBounds{StreamCONF: {MaxAge: 6 * time.Hour, MaxBytes: 1 << 30}}}).Stream(StreamCONF)
 	if conf.MaxAge != 6*time.Hour || conf.MaxBytes != 1<<30 {
 		t.Fatalf("CONF configured %v %d", conf.MaxAge, conf.MaxBytes)
 	}
 	conf, _ = TopologyWith(TopologyOptions{}).Stream(StreamCONF)
 	if conf.MaxAge != DefaultConfMaxAge || conf.MaxBytes != DefaultConfMaxBytes {
 		t.Fatalf("CONF zero options %v %d", conf.MaxAge, conf.MaxBytes)
-	}
-}
-
-// composeFileStore is max_file_store of deploy/compose/nats.conf, the
-// JetStream file store the shipped deployment grants the account.
-func composeFileStore(t *testing.T) int64 {
-	t.Helper()
-	b, err := os.ReadFile(filepath.Join("..", "..", "deploy", "compose", "nats.conf"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := regexp.MustCompile(`(?m)^\s*max_file_store:\s*(\d+)(GB|MB)\s*$`).FindStringSubmatch(string(b))
-	if m == nil {
-		t.Fatal("deploy/compose/nats.conf has no max_file_store in GB or MB")
-	}
-	n, _ := strconv.ParseInt(m[1], 10, 64)
-	if m[2] == "GB" {
-		return n << 30
-	}
-	return n << 20
-}
-
-// Every stream and bucket is bounded in size (audit B1), and the sum of
-// the bounds fits the account's file store: a stream that may grow
-// until the store is full makes JetStream refuse every publish in the
-// account, ALRT, FLIGHT, INTENT and CONF included, while the hot path's
-// core publish of trk still looks sent. The hot-path captures discard
-// their oldest messages when full; INGEST refuses new ones.
-func TestTopologyFitsTheFileStore(t *testing.T) {
-	top := DefaultTopology()
-	for _, s := range top.Streams {
-		if s.MaxBytes <= 0 {
-			t.Errorf("stream %s: max_bytes %d, unbounded", s.Name, s.MaxBytes)
-		}
-	}
-	for _, b := range top.Buckets {
-		if b.MaxBytes <= 0 {
-			t.Errorf("bucket %s: max_bytes %d, unbounded", b.Bucket, b.MaxBytes)
-		}
-	}
-	for _, n := range []string{StreamTRK, StreamMAN, StreamPEER} {
-		if s, _ := top.Stream(n); s.Discard != jetstream.DiscardOld {
-			t.Errorf("%s discards %v, want old", n, s.Discard)
-		}
-	}
-	store := composeFileStore(t)
-	if sum := top.MaxBytes(); sum <= 0 || sum > store {
-		t.Fatalf("the streams and buckets may hold %d bytes, the compose file store is %d", sum, store)
 	}
 }
 
@@ -582,5 +530,59 @@ func TestBucketDriftMaxBytes(t *testing.T) {
 	have.MaxBytes = -1
 	if d := bucketDrift(have, want); !slices.Equal(d, []string{"max_bytes"}) {
 		t.Fatalf("unbounded bucket: %v", d)
+	}
+}
+
+// Every stream's age and size and every bucket's size are configurable
+// (a deploy whose file store is smaller than the defaults' sum): each
+// option reaches its stream or bucket and nothing else, and an option
+// left zero keeps the default.
+func TestTopologyWithEveryBound(t *testing.T) {
+	def := DefaultTopology()
+	o := TopologyOptions{Streams: map[string]StreamBounds{}, BucketMaxBytes: map[string]int64{}}
+	for i, s := range def.Streams {
+		o.Streams[s.Name] = StreamBounds{MaxAge: time.Duration(i+1) * time.Minute, MaxBytes: int64(i+1) << 20}
+	}
+	for i, b := range def.Buckets {
+		o.BucketMaxBytes[b.Bucket] = int64(i+100) << 20
+	}
+	got := TopologyWith(o)
+	for i, s := range got.Streams {
+		if s.MaxAge != time.Duration(i+1)*time.Minute || s.MaxBytes != int64(i+1)<<20 {
+			t.Errorf("stream %s: %v %d", s.Name, s.MaxAge, s.MaxBytes)
+		}
+		want := def.Streams[i]
+		want.MaxAge, want.MaxBytes = s.MaxAge, s.MaxBytes
+		if d := StreamDrift(s, want); len(d) != 0 || s.Name != want.Name {
+			t.Errorf("stream %s: other settings changed: %v", s.Name, d)
+		}
+	}
+	for i, b := range got.Buckets {
+		if b.MaxBytes != int64(i+100)<<20 || b.TTL != def.Buckets[i].TTL || b.MaxValueSize != def.Buckets[i].MaxValueSize {
+			t.Errorf("bucket %s: max_bytes %d ttl %v max_value %d", b.Bucket, b.MaxBytes, b.TTL, b.MaxValueSize)
+		}
+	}
+	// The hot-path captures discard their oldest whatever their bounds;
+	// INGEST refuses new messages when full.
+	for _, top := range []Topology{def, got} {
+		for _, n := range []string{StreamTRK, StreamMAN, StreamPEER} {
+			if s, _ := top.Stream(n); s.Discard != jetstream.DiscardOld {
+				t.Errorf("%s discards %v, want old", n, s.Discard)
+			}
+		}
+		if s, _ := top.Stream(StreamINGEST); s.Discard != jetstream.DiscardNew {
+			t.Errorf("INGEST discards %v, want new", s.Discard)
+		}
+	}
+	// One stream configured, the rest default.
+	one := TopologyWith(TopologyOptions{Streams: map[string]StreamBounds{StreamTRK: {MaxBytes: 256 << 20}}})
+	for i, s := range one.Streams {
+		want := def.Streams[i]
+		if s.Name == StreamTRK {
+			want.MaxBytes = 256 << 20
+		}
+		if s.MaxAge != want.MaxAge || s.MaxBytes != want.MaxBytes {
+			t.Errorf("stream %s: %v %d, want %v %d", s.Name, s.MaxAge, s.MaxBytes, want.MaxAge, want.MaxBytes)
+		}
 	}
 }

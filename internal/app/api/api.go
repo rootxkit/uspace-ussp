@@ -148,6 +148,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	kvCounters := &core.Counters{}
 	proc.Publish(rt, "kv_projection", kvCounters)
 	kv := bus.NewProjector(rt.Bus, kvCounters)
+	kv.Topology = proc.TopologyOf(rt.Config)
 	pol := policy.New(rt.Store, kv, nil)
 	if _, err := pol.Load(ctx); err != nil {
 		rt.Logger.Warn("policy not loaded; the defaults apply until it is", obs.Err(err))
@@ -233,7 +234,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	flightCounters := &core.Counters{}
 	proc.Publish(rt, "flight_records", flightCounters)
 	rec := &flights.Recorder{
-		Source: &bus.StreamSource{Open: bus.PullOpener(rt.Bus.JetStream(), bus.DefaultTopology(), bus.StreamFLIGHT, bus.PullSpec{
+		Source: &bus.StreamSource{Open: bus.PullOpener(rt.Bus.JetStream(), proc.TopologyOf(rt.Config), bus.StreamFLIGHT, bus.PullSpec{
 			Durable: FlightsConsumer, FilterSubject: bus.SubjectFlightAll, MaxAckPending: 256,
 		})},
 		Store: isaRecorder{S: rt.Store, Planner: planner}, Counters: flightCounters, Logger: rt.Logger,
@@ -245,7 +246,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 	confCounters := &core.Counters{}
 	proc.Publish(rt, "conformance_records", confCounters)
 	crec := &conformance.Recorder{
-		Source: &bus.StreamSource{Open: bus.PullOpener(rt.Bus.JetStream(), bus.DefaultTopology(), bus.StreamCONF, bus.PullSpec{
+		Source: &bus.StreamSource{Open: bus.PullOpener(rt.Bus.JetStream(), proc.TopologyOf(rt.Config), bus.StreamCONF, bus.PullSpec{
 			Durable: ConformanceConsumer, FilterSubject: bus.SubjectConfAll, MaxAckPending: 1024,
 		})},
 		Store: confstore.Store{S: rt.Store}, Intents: intents, Counters: confCounters, Logger: rt.Logger,
@@ -278,7 +279,7 @@ func startAlerts(ctx context.Context, rt *proc.Runtime, current func() policy.Va
 	proc.Publish(rt, "alerts", counters)
 	st := alertstore.Store{S: rt.Store}
 	rec := &alerts.Recorder{
-		Source: &bus.StreamSource{Open: bus.PullOpener(rt.Bus.JetStream(), bus.DefaultTopology(), bus.StreamALRT, bus.PullSpec{
+		Source: &bus.StreamSource{Open: bus.PullOpener(rt.Bus.JetStream(), proc.TopologyOf(rt.Config), bus.StreamALRT, bus.PullSpec{
 			Durable: AlertsConsumer, FilterSubject: bus.SubjectAlrtAll, MaxAckPending: 1024,
 		})},
 		Store: st, Counters: counters, Logger: rt.Logger,
