@@ -216,7 +216,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 		return err
 	}
 	intents := startIntents(ctx, rt, pol, cisState, reg.Cache, kv, coord.gate, weatherCheck{wx})
-	alertSvc := startAlerts(ctx, rt, current)
+	alertSvc := startAlerts(ctx, rt, current, cisState.Evaluator)
 	geoState, rechecker := startGeo(ctx, rt, cisState, intents)
 	notices, err := startCoordination(ctx, rt, current, tokens, cisState)
 	if err != nil {
@@ -298,7 +298,7 @@ const AlertsConsumer = "api-alerts"
 // of alrt.v1 recorded by its id, the deliveries traffic-ws reports, and
 // the escalation of critical alerts left unacknowledged; it returns the
 // acknowledgement service of POST /v1/alerts/{alert_id}/ack.
-func startAlerts(ctx context.Context, rt *proc.Runtime, current func() policy.Values) *alerts.Service {
+func startAlerts(ctx context.Context, rt *proc.Runtime, current func() policy.Values, restrictions alerts.RestrictionLifter) *alerts.Service {
 	counters := &core.Counters{}
 	proc.Publish(rt, "alerts", counters)
 	st := alertstore.Store{S: rt.Store}
@@ -308,7 +308,8 @@ func startAlerts(ctx context.Context, rt *proc.Runtime, current func() policy.Va
 		})},
 		Store: st, Counters: counters, Logger: rt.Logger,
 	}
-	svc := &alerts.Service{Store: st, Bus: bus.NewPublisher(rt.Bus, counters), Policy: current, Counters: counters, Logger: rt.Logger}
+	svc := &alerts.Service{Store: st, Bus: bus.NewPublisher(rt.Bus, counters), Policy: current, Counters: counters, Logger: rt.Logger,
+		Restrictions: restrictions}
 	rt.Go(ctx, rec.Run)
 	rt.Go(ctx, func(ctx context.Context) { svc.RunEscalation(ctx, alerts.DefaultEscalateEvery) })
 	return svc
