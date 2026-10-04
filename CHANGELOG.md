@@ -20,6 +20,10 @@ additively within `/v1`.
   - a peer that failed and whose ISAs then ended is forgotten
     `peer_unavailable_s` after its last failure, so `network_rid` is no
     longer stale for ever over a peer nobody polls;
+  - the ANSP stream's last frame is the last frame the ANSP sent, not
+    the time of a reconnect: a stream that reconnects silent is
+    unavailable since that frame, and a new connection is never live
+    before its first frame;
 - This USSP's client id at the authority keeps the case of its code
   (`ussp-ABC1-01`, not `ussp-abc1-01`). The authority's token service
   registers only `ussp-<code>-<nn>` with an upper-case code (M8), and the

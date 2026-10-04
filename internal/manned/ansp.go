@@ -361,10 +361,9 @@ func (f *ANSPStream) session(ctx context.Context) (connected bool, err error) {
 	defer func() { _ = conn.CloseNow() }()
 	conn.SetReadLimit(ANSPFrameBytes)
 	f.Counters.Inc(CounterANSPConnects)
+	// The connection is no frame: lastFrame stays the last one the ANSP
+	// sent (Take), so the feed is unavailable since then until one comes.
 	f.setConnected(true, "")
-	f.mu.Lock()
-	f.lastFrame = f.now()
-	f.mu.Unlock()
 	f.logger().LogAttrs(ctx, slog.LevelInfo, "ANSP manned-traffic stream connected", slog.String("bbox", bbox))
 	f.snapshot(ctx, tok, bbox, hasBBox)
 
@@ -688,7 +687,11 @@ func (f *ANSPStream) aggregateLocked(now time.Time, dec coresources.Decision) Ag
 		a = Aggregate{State: sources.StateDisabled, Since: f.offSince, DisabledBy: &why,
 			Detail: "ansp_feed is switched off (" + why + "): the stream is closed, manned traffic is not shown"}
 	case last.IsZero():
-		a = Aggregate{State: sources.StateDown, Since: f.started, Detail: "unavailable: no frame from the ANSP yet (" + f.lastErr + ")"}
+		why := f.lastErr
+		if f.connected {
+			why = "connected, no frame read"
+		}
+		a = Aggregate{State: sources.StateDown, Since: f.started, Detail: "unavailable: no frame from the ANSP yet (" + why + ")"}
 	case !f.connected:
 		// Cut: the stream closed and is not open again; unavailable since
 		// its last frame at once (a reconnect that succeeds clears it).
