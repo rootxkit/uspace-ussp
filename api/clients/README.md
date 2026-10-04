@@ -23,4 +23,10 @@ Copies: `cisp.yaml` (WP-4, the CIS cache), generated into
 `datasets` and `subscriptions` tags only); `authority.yaml` (WP-5, the
 registry validity cache), generated into `internal/registry/authclient`
 with `api/oapi-codegen.authority.yaml` (the `registry-f8` tag only: the
-F8 lookups and the change feed).
+F8 lookups and the change feed).; `ansp.yaml` (WP-15, the Annex V coordination
+inbox), generated into `internal/coordination/anspclient` with
+`api/oapi-codegen.ansp.yaml` (the `coordination` tag only). The ANSP's
+file references its own body schema as
+`../schemas/coordination/annex_v/v1.json`; `scripts/generate.sh` stages
+the copy beside the pinned schema (`schemas/CONSUMED`) in the ANSP
+repository's layout before generating.
