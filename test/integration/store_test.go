@@ -13,6 +13,8 @@ import (
 
 	"github.com/rootxkit/uspace-core/f3411"
 
+	"github.com/rootxkit/uspace-ussp/internal/dss"
+	dsspg "github.com/rootxkit/uspace-ussp/internal/dss/pgstore"
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
 	"github.com/rootxkit/uspace-ussp/internal/store"
@@ -402,5 +404,76 @@ func TestIntegrationOutbox(t *testing.T) {
 	rest, err := ob.Claim(ctx, store.MaxClaim)
 	if err != nil || len(rest) != 21 || !slices.ContainsFunc(rest, func(i store.OutboxItem) bool { return i.ID == big[0].ID && i.Attempts == 2 }) {
 		t.Fatalf("after one failure: %d items %v", len(rest), err)
+	}
+}
+
+// A notification queued with a hold (store.EnqueueHeld, a displaced
+// peer's): the notification loop's claim does not take it while the hold
+// runs and the inline lease (ClaimByKey) does, once; a held item nobody
+// leased is the loop's when the hold runs out, and then no longer the
+// inline lease's. An item queued with no hold is due at once, as before.
+func TestIntegrationOutboxHeld(t *testing.T) {
+	ensureSchemas(t)
+	ctx := context.Background()
+	s := appStore(t)
+	st := dsspg.Store{S: s}
+	if _, err := relOwner(t).Exec(ctx, "DELETE FROM dss_outbox"); err != nil {
+		t.Fatal(err)
+	}
+	entity := fmt.Sprint("intent-", time.Now().UnixNano())
+	enqueue := func(id string, hold time.Duration) {
+		t.Helper()
+		if err := s.Tx(ctx, func(q *relational.Queries) error {
+			_, err := store.EnqueueHeld(ctx, q, store.OutboxPeerNotify, id, 1, map[string]any{}, hold)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Held: the loop takes nothing, the inline lease takes it once.
+	enqueue(entity+"/inline", time.Minute)
+	if got, err := st.Claim(ctx, dss.NotifyKinds, 10); err != nil || len(got) != 0 {
+		t.Fatalf("the loop took a held item: %+v %v", got, err)
+	}
+	it, err := st.ClaimByKey(ctx, store.OutboxPeerNotify, entity+"/inline", 1)
+	if err != nil || it == nil || it.Attempts != 1 {
+		t.Fatalf("inline lease: %+v %v", it, err)
+	}
+	if again, err := st.ClaimByKey(ctx, store.OutboxPeerNotify, entity+"/inline", 1); err != nil || again != nil {
+		t.Fatalf("leased twice: %+v %v", again, err)
+	}
+	if got, _ := st.Claim(ctx, dss.NotifyKinds, 10); len(got) != 0 {
+		t.Fatalf("the loop took a leased item: %+v", got)
+	}
+	// Released at once (the inline post failed): the loop takes it.
+	if err := st.Fail(ctx, it.ID, errors.New("peer: timeout"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Claim(ctx, dss.NotifyKinds, 10); err != nil || len(got) != 1 || got[0].ID != it.ID {
+		t.Fatalf("released item: %+v %v", got, err)
+	}
+
+	// Held, never leased: the loop's once the hold runs out.
+	enqueue(entity+"/stalled", 300*time.Millisecond)
+	if got, _ := st.Claim(ctx, dss.NotifyKinds, 10); len(got) != 0 {
+		t.Fatalf("the loop took a held item: %+v", got)
+	}
+	var late []store.OutboxItem
+	within(t, 5*time.Second, func() bool {
+		late, err = st.Claim(ctx, dss.NotifyKinds, 10)
+		return err != nil || len(late) > 0
+	})
+	if err != nil || len(late) != 1 || late[0].EntityID != entity+"/stalled" {
+		t.Fatalf("after the hold: %+v %v", late, err)
+	}
+	if it, err := st.ClaimByKey(ctx, store.OutboxPeerNotify, entity+"/stalled", 1); err != nil || it != nil {
+		t.Fatalf("leased inline while the loop holds it: %+v %v", it, err)
+	}
+
+	// No hold: due at once.
+	enqueue(entity+"/now", 0)
+	if got, err := st.Claim(ctx, dss.NotifyKinds, 10); err != nil || len(got) != 1 || got[0].EntityID != entity+"/now" {
+		t.Fatalf("unheld item: %+v %v", got, err)
 	}
 }

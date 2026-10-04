@@ -626,8 +626,8 @@ func (t memTx) SetHeld(_ context.Context, id string, h *DSSHeld) error {
 	return nil
 }
 
-func (t memTx) Enqueue(_ context.Context, kind, entityID string, version int64, payload any) error {
-	t.m.outbox = append(t.m.outbox, OutboxSpec{Kind: kind, EntityID: entityID, Version: version, Payload: payload})
+func (t memTx) Enqueue(_ context.Context, kind, entityID string, version int64, payload any, hold time.Duration) error {
+	t.m.outbox = append(t.m.outbox, OutboxSpec{Kind: kind, EntityID: entityID, Version: version, Payload: payload, Hold: hold})
 	return nil
 }
 

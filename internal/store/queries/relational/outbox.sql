@@ -1,10 +1,12 @@
 -- The DSS outbox (internal/store Outbox). Idempotent by (kind,
 -- entity_id, entity_version): a second Enqueue of the same change
--- returns no row.
+-- returns no row. An item is due hold_s after it is queued (0: at
+-- once); until then no worker's Claim takes it.
 
 -- name: EnqueueOutbox :one
-INSERT INTO dss_outbox (kind, entity_id, entity_version, payload)
-VALUES (sqlc.arg(kind), sqlc.arg(entity_id), sqlc.arg(entity_version), sqlc.arg(payload))
+INSERT INTO dss_outbox (kind, entity_id, entity_version, payload, next_at)
+VALUES (sqlc.arg(kind), sqlc.arg(entity_id), sqlc.arg(entity_version), sqlc.arg(payload),
+        now() + make_interval(secs => sqlc.arg(hold_s)::double precision))
 ON CONFLICT (kind, entity_id, entity_version) DO NOTHING
 RETURNING id;
 

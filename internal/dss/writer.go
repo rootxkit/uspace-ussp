@@ -1112,7 +1112,7 @@ func (w *Writer) notes(ctx context.Context, r *intent.Record, held *intent.DSSHe
 		n := PeerNotify{IntentID: r.ID, URL: s.UssBaseUrl, Displaced: displacedAt[base], QueuedAt: now,
 			Body: f3548.PutOperationalIntentDetailsParameters{OperationalIntentId: r.ID, OperationalIntent: oi, Subscriptions: s.Subscriptions}}
 		out = append(out, intent.OutboxSpec{Kind: store.OutboxPeerNotify, EntityID: r.ID + "/" + first.SubscriptionId,
-			Version: int64(first.NotificationIndex), Payload: n})
+			Version: int64(first.NotificationIndex), Payload: n, Hold: holdOf(n)})
 	}
 	var v int64
 	if held != nil {
@@ -1124,9 +1124,23 @@ func (w *Writer) notes(ctx context.Context, r *intent.Record, held *intent.DSSHe
 		}
 		n := PeerNotify{IntentID: r.ID, URL: base, Displaced: true, QueuedAt: now,
 			Body: f3548.PutOperationalIntentDetailsParameters{OperationalIntentId: r.ID, OperationalIntent: oi, Subscriptions: []f3548.SubscriptionState{}}}
-		out = append(out, intent.OutboxSpec{Kind: store.OutboxPeerNotify, EntityID: r.ID + "/displaced/" + base, Version: v, Payload: n})
+		out = append(out, intent.OutboxSpec{Kind: store.OutboxPeerNotify, EntityID: r.ID + "/displaced/" + base, Version: v, Payload: n, Hold: holdOf(n)})
 	}
 	return out
+}
+
+// holdOf keeps a displaced peer's notification from the notification
+// loop for displacedDeadline after the commit queues it: displacedNow
+// posts it inline first (PLAN §15 Q16). Without the hold a tick of the
+// loop between the commit and the inline lease took it, and the peer was
+// told without the inline attempt and its 900 ms deadline. The inline
+// lease takes a held item at once (ClaimByKey); one the writer never
+// reaches (the process ended) is the loop's when the hold runs out.
+func holdOf(n PeerNotify) time.Duration {
+	if n.Displaced {
+		return displacedDeadline
+	}
+	return 0
 }
 
 // displacedNow tells each peer this intent displaced at once, within
@@ -1134,8 +1148,10 @@ func (w *Writer) notes(ctx context.Context, r *intent.Record, held *intent.DSSHe
 // Q16), audits the displacement with both references, and leaves a
 // notification it could not deliver in time to the outbox, counted
 // peer_notify_late. Each notification is leased from the outbox before
-// it is posted (ClaimByKey): one the notification loop already holds is
-// left to it, so a peer is never told the same thing twice at once.
+// it is posted (ClaimByKey); it was queued held from the loop (holdOf),
+// so the lease finds it here unless the hold ran out first, and one the
+// notification loop holds is left to it: a peer is never told the same
+// thing twice at once.
 func (w *Writer) displacedNow(ctx context.Context, r *intent.Record, held *intent.DSSHeld, notes []intent.OutboxSpec, displaced []string) {
 	if len(displaced) == 0 {
 		return
