@@ -24,6 +24,11 @@ additively within `/v1`.
     the time of a reconnect: a stream that reconnects silent is
     unavailable since that frame, and a new connection is never live
     before its first frame;
+  - the ANSP stream's frame bound is the snapshot's 8 MiB (a
+    `console/snapshot/v1` carries what the snapshot does), and a frame
+    or snapshot over it raises an alarm (`ansp_feed_frame_oversize`, an
+    error log, `ansp_feed` stale with why) until the next snapshot reads,
+    instead of a silent reconnect;
 - This USSP's client id at the authority keeps the case of its code
   (`ussp-ABC1-01`, not `ussp-abc1-01`). The authority's token service
   registers only `ussp-<code>-<nn>` with an upper-case code (M8), and the

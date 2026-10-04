@@ -238,6 +238,52 @@ func TestANSPStreamUnavailableSinceTheLastRealFrame(t *testing.T) {
 	}
 }
 
+// The frame bound is the snapshot's (E-10): a console/snapshot/v1 of
+// 2 MiB, over the old 1 MiB, is read; a frame over ANSPFrameBytes is
+// refused with an alarm (counted, logged at error level, the feed stale
+// since then with why on /readyz), never a silent reconnect; the next
+// snapshot that reads clears it (E-01 pair).
+func TestANSPStreamAlarmsOnAnOversizeFrame(t *testing.T) {
+	if ANSPFrameBytes < ANSPSnapshotBytes {
+		t.Fatalf("a stream frame is bounded at %d bytes, below the snapshot's %d", ANSPFrameBytes, ANSPSnapshotBytes)
+	}
+	now := time.Now()
+	big := frame(t, SchemaConsoleSnapshot, now, now, map[string]any{"manned": []any{}, "pad": strings.Repeat("x", 2<<20)})
+	over := frame(t, SchemaConsoleSnapshot, now, now, map[string]any{"manned": []any{}, "pad": strings.Repeat("x", ANSPFrameBytes)})
+	status := frame(t, SchemaConsoleStatus, now, now, map[string]any{"degraded": []string{}})
+	snap := frame(t, SchemaConsoleSnapshot, now, now, map[string]any{"manned": []any{}})
+	var sendSnap atomic.Bool
+	a := newScriptedANSP(t, func(n int) [][]byte {
+		switch {
+		case n == 1:
+			return [][]byte{big, over}
+		case sendSnap.Load():
+			return [][]byte{status, snap}
+		}
+		return [][]byte{status}
+	})
+	var buf syncBuffer
+	st := &ANSPStream{URL: a.streamURL(), Tokens: &tokens{tok: "tok"}, Policy: fastPolicy, Counters: &core.Counters{},
+		Logger: slog.New(slog.NewJSONHandler(&buf, nil)), RetryMin: 10 * time.Millisecond, StatusEvery: 20 * time.Millisecond, GateEvery: 10 * time.Millisecond}
+	run(t, st.Run)
+	within(t, 10*time.Second, "the oversize frame refused", func() bool { return st.Counters.Get(CounterANSPFrameOversize) == 1 })
+	if st.Counters.Get(CounterANSPSnapshotFrames) < 1 {
+		t.Fatalf("a 2 MiB snapshot frame was not read: %v", st.Counters.Snapshot())
+	}
+	if !strings.Contains(buf.String(), `"level":"ERROR","msg":"ANSP manned-traffic frame over the bound refused`) {
+		t.Fatalf("no alarm logged: %s", buf.String())
+	}
+	within(t, 5*time.Second, "reconnected, stale with why", func() bool {
+		s := st.State()
+		return st.Counters.Get(CounterANSPConnects) >= 2 && s.State == sources.StateStale && strings.Contains(s.Detail, "over")
+	})
+	if state, d := st.Probe(context.Background()); state != obs.StateDegraded || !strings.Contains(d, "refused") {
+		t.Fatalf("probe %s %s", state, d)
+	}
+	sendSnap.Store(true)
+	within(t, 10*time.Second, "cleared by the next snapshot", func() bool { return st.State().State == sources.StateLive })
+}
+
 // The ANSP sends only console/status/v1 with an adapter stale: the feed
 // is stale since the ANSP's own time, not unavailable (02 F4); the
 // adapter's own status says it with that time.
