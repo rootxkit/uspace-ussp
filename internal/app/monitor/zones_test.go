@@ -38,11 +38,21 @@ func zoneFeature(id string) json.RawMessage {
 
 // staticZones is a ZoneProvider whose set a test replaces.
 type staticZones struct {
-	mu  sync.Mutex
-	set *geo.ZoneSet
+	mu    sync.Mutex
+	set   *geo.ZoneSet
+	stale bool
 }
 
 func (s *staticZones) Current() *geo.ZoneSet { s.mu.Lock(); defer s.mu.Unlock(); return s.set }
+
+func (s *staticZones) Freshness() geo.Freshness {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.set == nil || !s.set.Loaded {
+		return geo.Freshness{Stale: true}
+	}
+	return geo.Freshness{Loaded: true, CISVersion: s.set.CISVersion, Stale: s.stale}
+}
 
 func (s *staticZones) put(version string, ids ...string) {
 	ce := &cis.CellEntry{Cell: "c5:test", CISVersion: version}
@@ -183,7 +193,7 @@ func TestZoneProbeAndEnv(t *testing.T) {
 	if st, _ := zoneProbe(zs)(t.Context()); st != "up" {
 		t.Fatalf("loaded: %s", st)
 	}
-	zs.set.Stale = true
+	zs.stale = true
 	if st, _ := zoneProbe(zs)(t.Context()); st != "degraded" {
 		t.Fatalf("stale: %s", st)
 	}

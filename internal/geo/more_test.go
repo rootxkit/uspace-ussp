@@ -185,3 +185,32 @@ type windowsFunc func(ctx context.Context, clientID, intentID string) ([]geodesy
 func (f windowsFunc) Windows(ctx context.Context, clientID, intentID string) ([]geodesy.BBox, []time.Time, []time.Time, error) {
 	return f(ctx, clientID, intentID)
 }
+
+// Freshness: nothing read is stale; the bound is the policy's
+// cis_stale_s as configured, read on every call, the age at the bound
+// is fresh and one past it is stale.
+func TestZoneSourceFreshnessBound(t *testing.T) {
+	m := &memMirror{}
+	at := time.Date(2026, 10, 4, 6, 25, 48, 0, time.UTC)
+	clk := at
+	bound := 60.0
+	src := &ZoneSource{M: m, Now: func() time.Time { return clk }, StaleS: func() float64 { return bound }}
+	if f := src.Freshness(); f.Loaded || !f.Stale {
+		t.Fatalf("unread %+v", f)
+	}
+	vals := projection("zones:1", at, map[string][]feat{"zones": {amslZone("TZP001", "PROHIBITED")}})
+	vals[cis.KeyBasis].Basis.CISAgeS = 11
+	m.put(vals)
+	clk = at.Add(49 * time.Second)
+	if f := src.Freshness(); !f.Loaded || f.Stale || f.CISAgeS != 60 || f.CISVersion != "zones:1" {
+		t.Fatalf("at the bound %+v", f)
+	}
+	clk = clk.Add(time.Second)
+	if f := src.Freshness(); !f.Stale || f.CISAgeS != 61 {
+		t.Fatalf("past the bound %+v", f)
+	}
+	bound = 300
+	if f := src.Freshness(); f.Stale {
+		t.Fatalf("under a raised bound %+v", f)
+	}
+}
