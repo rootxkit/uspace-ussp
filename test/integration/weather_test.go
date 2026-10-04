@@ -4,6 +4,8 @@ package integration
 
 import (
 	"context"
+	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -125,10 +127,17 @@ func TestIntegrationWeatherFreshStaleAndAcrossARestart(t *testing.T) {
 		t.Fatal("a failed fetch reported success")
 	}
 	restarted := w.service(w.svc.Source)
+	// The failure time is the database clock's: it is compared with that
+	// clock, never with this process's.
+	dbNow, err := w.svc.Store.Now(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for name, svc := range map[string]*weather.Service{"running": w.svc, "restarted": restarted} {
 		a, err := svc.Answer(ctx, w.box(), time.Time{})
 		if err != nil || !a.Stale || a.Source.State != weather.StateFailing || a.Source.LastFailureAt == nil ||
-			time.Since(*a.Source.LastFailureAt) > time.Minute || !strings.Contains(*a.Source.Failure, "503") || len(a.Products) != 2 || !a.Products[0].Stale {
+			a.Source.LastFailureAt.After(dbNow) || dbNow.Sub(*a.Source.LastFailureAt) > time.Minute ||
+			!strings.Contains(*a.Source.Failure, "503") || len(a.Products) != 2 || !a.Products[0].Stale {
 			t.Fatalf("%s, the source down: %+v %v", name, a, err)
 		}
 	}
@@ -284,8 +293,18 @@ func TestIntegrationWeatherMigrationDownAndUpKeepsProducts(t *testing.T) {
 		VALUES (ST_Buffer(ST_MakePoint(0, 0)::geography, 10), now(), now(), now() + interval '1 hour', $1, '{"raw":"garbled"}', now())`, name); err != nil {
 		t.Fatal(err)
 	}
+	// The runbook's count of what the Up will delete, run as it is
+	// written there, names the one row that says neither.
+	all := "SELECT count(*) FROM weather_products"
+	before := count(t, owner, all)
+	if n := count(t, owner, runbookDeleteCount(t)); n != 1 {
+		t.Fatalf("the runbook counts %d rows to delete, want the 1 garbled", n)
+	}
 	if _, err := owner.Migrate(ctx, store.TreeRelational); err != nil {
 		t.Fatal(err)
+	}
+	if n := count(t, owner, all); n != before-1 {
+		t.Fatalf("%d rows after the Up, want %d: the runbook's count is not what the Up deleted", n, before-1)
 	}
 	if n := count(t, owner, "SELECT count(*) FROM weather_products WHERE source = $1", name); n != 2 {
 		t.Fatalf("%d products after down and up, want the 2 stored", n)
@@ -296,4 +315,19 @@ func TestIntegrationWeatherMigrationDownAndUpKeepsProducts(t *testing.T) {
 	if a, err := w.svc.Answer(ctx, w.box(), time.Time{}); err != nil || len(a.Products) != 2 {
 		t.Fatalf("%+v %v", a, err)
 	}
+}
+
+// runbookDeleteCount is the query docs/RUNBOOKS/WP-16.md gives to count,
+// before 00024's Up, the rows that Up deletes.
+func runbookDeleteCount(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile("../../docs/RUNBOOKS/WP-16.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?s)<!-- 00024-delete-count -->\s*` + "```" + `sql\r?\n(.*?)` + "```").FindSubmatch(b)
+	if m == nil {
+		t.Fatal("the runbook gives no count of the rows 00024 deletes")
+	}
+	return strings.TrimSuffix(strings.TrimSpace(string(m[1])), ";")
 }

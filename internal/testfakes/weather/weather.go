@@ -43,11 +43,16 @@ type Fake struct {
 	metars []METAR
 	tafs   []TAF
 	calls  int
+	served chan struct{}
 }
+
+// MaxServedSignals bounds the signals Served holds unread; a request
+// beyond it is still served, its signal dropped.
+const MaxServedSignals = 1024
 
 // New starts a fake source.
 func New() *Fake {
-	f := &Fake{}
+	f := &Fake{served: make(chan struct{}, MaxServedSignals)}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	return f
 }
@@ -66,6 +71,11 @@ func (f *Fake) Up() { f.mu.Lock(); f.down = false; f.mu.Unlock() }
 
 // Calls is the number of requests served.
 func (f *Fake) Calls() int { f.mu.Lock(); defer f.mu.Unlock(); return f.calls }
+
+// Served receives one signal per request, sent as the request arrives
+// (so a second signal means the first request was answered): a test
+// waits on it instead of polling Calls.
+func (f *Fake) Served() <-chan struct{} { return f.served }
 
 // Set replaces the reports.
 func (f *Fake) Set(metars []METAR, tafs []TAF) {
@@ -97,6 +107,10 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	down := f.down
 	metars, tafs := f.metars, f.tafs
 	f.mu.Unlock()
+	select {
+	case f.served <- struct{}{}:
+	default:
+	}
 	if down {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return

@@ -396,7 +396,8 @@ func TestPollPrunesPastRetention(t *testing.T) {
 	}
 	r.f.Set(nil, nil)
 	r.st.advance(time.Duration(r.pol.Values.RecordRetentionDays)*24*time.Hour + 30*time.Hour)
-	if err := r.svc.Poll(ctx); err != nil {
+	// A poll that delivers nothing is a failure and still prunes.
+	if err := r.svc.Poll(ctx); !errors.Is(err, ErrNothingDelivered) {
 		t.Fatal(err)
 	}
 	if n := r.c.Get("weather_product_pruned"); n != 2 || len(r.st.products) != 0 {
@@ -415,34 +416,42 @@ func TestPollCountsRefusedReports(t *testing.T) {
 }
 
 // Run polls at once and again after the period; it stops with ctx. The
-// test waits on the fake's call count, never on a sleep.
+// test waits on the fake's served signals, never on a sleep or a timer.
 func TestRunPollsUntilCancelled(t *testing.T) {
 	r := newRig(t, "31013KT 9999 Q1026")
 	r.pol.Values.WeatherRefreshS = 0.05 // below the policy's floor: only the loop is under test
+	served := r.f.Served()
+	wait := func(n int) {
+		for range n {
+			<-served
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { r.svc.Run(ctx); close(done) }()
-	deadline := time.Now().Add(10 * time.Second)
-	for r.f.Calls() < 4 {
-		if time.Now().After(deadline) {
-			t.Fatal("Run did not poll twice")
-		}
-		<-time.After(10 * time.Millisecond)
-	}
+	// Two polls of two requests each (METAR and TAF), and the first of a
+	// third: the second poll was answered.
+	wait(5)
 	cancel()
 	<-done
+	if r.c.Get("weather_fetched") < 2 {
+		t.Fatalf("Run did not poll twice: %v", r.c.Snapshot())
+	}
 	r.f.Down()
+	for len(served) > 0 {
+		<-served
+	}
 	ctx, cancel = context.WithCancel(context.Background())
 	done = make(chan struct{})
 	go func() { r.svc.Run(ctx); close(done) }()
-	for r.c.Get("weather_fetch_failed") < 1 {
-		if time.Now().After(deadline) {
-			t.Fatal("Run did not poll the failing source")
-		}
-		<-time.After(10 * time.Millisecond)
-	}
+	// The failing source is asked once per poll (the METAR's 503 ends
+	// it): a second request means the first poll returned, failed.
+	wait(2)
 	cancel()
 	<-done
+	if r.c.Get("weather_fetch_failed") < 1 {
+		t.Fatalf("Run did not poll the failing source: %v", r.c.Snapshot())
+	}
 }
 
 func TestStateNames(t *testing.T) {
@@ -476,5 +485,78 @@ func TestWeatherAnswerForTheNationalAPI(t *testing.T) {
 	r := newRig(t, "31013KT 9999 Q1026")
 	if a, err := r.svc.WeatherAnswer(context.Background(), tbilisi, time.Time{}); err != nil || !a.(Answer).Stale {
 		t.Fatal(a, err)
+	}
+}
+
+// A fetch that answers but delivers nothing in force, every report
+// refused or no report for any station (204), is a failed delivery:
+// the source is failing, its products stale and /readyz degraded. Its
+// twin: a report already held and still in force is a delivery (E-01).
+func TestPollNothingDeliveredIsAFailure(t *testing.T) {
+	ctx := context.Background()
+	for name, set := range map[string]func(f *fake.Fake){
+		"all refused": func(f *fake.Fake) {
+			f.Set([]fake.METAR{fake.NewMETAR("UGTB", obsAt, 41.669, 44.955, "31013KT 9999 GARBLE Q1026")}, nil)
+		},
+		"no report": func(f *fake.Fake) { f.Set(nil, nil) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t, "31013KT 9999 Q1026")
+			set(r.f)
+			if err := r.svc.Poll(ctx); !errors.Is(err, ErrNothingDelivered) {
+				t.Fatalf("Poll: %v", err)
+			}
+			a, err := r.svc.Answer(ctx, tbilisi, time.Time{})
+			if err != nil || !a.Stale || a.Source.State != StateFailing || a.Source.LastFailureAt == nil ||
+				!a.Source.LastFailureAt.Equal(r.st.now) || !strings.Contains(*a.Source.Failure, "nothing in force") {
+				t.Fatalf("%+v %v", a, err)
+			}
+			if st, d := r.svc.Probe()(ctx); st != obs.StateDegraded || !strings.Contains(d, "failed since") {
+				t.Fatal(st, d)
+			}
+			if r.c.Get("weather_nothing_delivered") != 1 || r.c.Get("weather_fetched") != 0 {
+				t.Fatal(r.c.Snapshot())
+			}
+		})
+	}
+
+	r := newRig(t, "31013KT 9999 Q1026")
+	for range 2 {
+		if err := r.svc.Poll(ctx); err != nil {
+			t.Fatal(err)
+		}
+		r.st.advance(time.Minute)
+	}
+	if a, _ := r.svc.Answer(ctx, tbilisi, time.Time{}); a.Stale || a.Source.State != StateUp || r.c.Get("weather_fetched") != 2 {
+		t.Fatalf("a report held and in force: %+v %v", a, r.c.Snapshot())
+	}
+	// The same reports once neither is in force any more: the station
+	// is stuck, nothing was delivered.
+	r.st.advance(26 * time.Hour)
+	if err := r.svc.Poll(ctx); !errors.Is(err, ErrNothingDelivered) {
+		t.Fatalf("a stuck station: %v", err)
+	}
+}
+
+// A decision over a window with nothing in force while the source is
+// failing says both: none consulted, and the source failed since T. Its
+// twin: nothing in force with the source up says only the first.
+func TestCheckNothingInForceCarriesTheFailure(t *testing.T) {
+	ctx := context.Background()
+	r := newRig(t, "31013KT 9999 Q1026")
+	if err := r.svc.Poll(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ahead := []time.Time{obsAt.Add(72 * time.Hour), obsAt.Add(73 * time.Hour)}
+	if c := r.svc.Check(ctx, []geodesy.BBox{tbilisi}, ahead[0], ahead[1]); c.Ref() != nil || c.Unavailable == "" || c.Stale != "" {
+		t.Fatalf("up, nothing in force: %+v", c)
+	}
+	r.f.Down()
+	r.st.advance(10 * time.Minute)
+	_ = r.svc.Poll(ctx)
+	c := r.svc.Check(ctx, []geodesy.BBox{tbilisi}, ahead[0], ahead[1])
+	if c.Ref() != nil || !strings.Contains(c.Unavailable, "no weather product") ||
+		!strings.Contains(c.Stale, "failed since 2026-10-04T13:15:00Z") || !strings.Contains(c.Stale, "503") {
+		t.Fatalf("failing, nothing in force: %+v", c)
 	}
 }
