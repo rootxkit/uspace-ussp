@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -77,17 +79,19 @@ func TestValuesJSONNamesCarryUnits(t *testing.T) {
 		t.Fatalf("%d JSON fields for %d struct fields", len(m), reflect.TypeFor[Values]().NumField())
 	}
 	for k := range m {
-		// _priority, _count, _code and _severity are dimensionless (an
-		// ordinal, a number of things, an enumeration code, a severity);
-		// every other name carries its unit.
+		// _priority, _count, _code, _severity and _ids are dimensionless
+		// (an ordinal, a number of things, an enumeration code, a
+		// severity, a list of identifiers); every other name carries its
+		// unit.
 		if !strings.HasSuffix(k, "_m") && !strings.HasSuffix(k, "_s") && !strings.HasSuffix(k, "_days") &&
 			!strings.HasSuffix(k, "_priority") && !strings.HasSuffix(k, "_count") && !strings.HasSuffix(k, "_hz") &&
-			!strings.HasSuffix(k, "_code") && !strings.HasSuffix(k, "_ms") && !strings.HasSuffix(k, "_severity") {
+			!strings.HasSuffix(k, "_code") && !strings.HasSuffix(k, "_ms") && !strings.HasSuffix(k, "_severity") &&
+			!strings.HasSuffix(k, "_ids") {
 			t.Errorf("%s has no unit", k)
 		}
 	}
 	var back Values
-	if err := json.Unmarshal(raw, &back); err != nil || back != Defaults() {
+	if err := json.Unmarshal(raw, &back); err != nil || !reflect.DeepEqual(back, Defaults()) {
 		t.Errorf("round trip %+v %v", back, err)
 	}
 }
@@ -303,14 +307,14 @@ func TestPutRefusesWhenTheProjectionFailsAndKeepsWhenItSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(st.rows) != 1 || r.Version != 2 || s.Counters().Get(CounterPut) != 1 || p.seen[1] != r {
+	if len(st.rows) != 1 || r.Version != 2 || s.Counters().Get(CounterPut) != 1 || !reflect.DeepEqual(p.seen[1], r) {
 		t.Fatalf("rows %v record %+v", st.rows, r)
 	}
-	if cur, ok := s.Current(); !ok || cur != r {
+	if cur, ok := s.Current(); !ok || !reflect.DeepEqual(cur, r) {
 		t.Fatalf("current %+v %v", cur, ok)
 	}
 	fresh := New(st, p, nil)
-	if got, err := fresh.Load(ctx); err != nil || got != r {
+	if got, err := fresh.Load(ctx); err != nil || !reflect.DeepEqual(got, r) {
 		t.Fatalf("load %+v %v", got, err)
 	}
 }
@@ -454,5 +458,47 @@ func TestRecordsBounds(t *testing.T) {
 	v.OperatorPositionRetentionDays = 1
 	if err := v.Validate(); err != nil {
 		t.Errorf("one day refused: %v", err)
+	}
+}
+
+// The weather settings (WP-16): the defaults validate; every value the
+// poll cannot use is refused naming its field; the station bound is
+// met and accepted, and exceeded and refused (E-10).
+func TestValidateWeather(t *testing.T) {
+	if err := Defaults().Validate(); err != nil {
+		t.Fatal(err)
+	}
+	at := Defaults()
+	at.WeatherStationIDs = nil
+	for i := range MaxWeatherStationIDs {
+		at.WeatherStationIDs = append(at.WeatherStationIDs, fmt.Sprintf("K%03d", i))
+	}
+	at.WeatherAdvisoryWindMS = 0
+	at.WeatherRefreshS, at.WeatherStaleS = MinWeatherRefreshS, MinWeatherRefreshS
+	if err := at.Validate(); err != nil {
+		t.Fatalf("at the bounds: %v", err)
+	}
+	none := Defaults()
+	none.WeatherStationIDs = []string{}
+	if err := none.Validate(); err != nil {
+		t.Fatalf("no station (weather answers no_stations): %v", err)
+	}
+	for field, mutate := range map[string]func(*Values){
+		"weather_station_ids":         func(v *Values) { v.WeatherStationIDs = slices.Concat(at.WeatherStationIDs, []string{"ZZZZ"}) },
+		"weather_station_ids[1]":      func(v *Values) { v.WeatherStationIDs = []string{"UGTB", "ugko"} },
+		"weather_station_ids[2]":      func(v *Values) { v.WeatherStationIDs = []string{"UGTB", "UGKO", "UGTB"} },
+		"weather_area_radius_m":       func(v *Values) { v.WeatherAreaRadiusM = MaxWeatherAreaRadiusM + 1 },
+		"weather_refresh_s":           func(v *Values) { v.WeatherRefreshS = MinWeatherRefreshS - 1 },
+		"weather_stale_s":             func(v *Values) { v.WeatherStaleS = v.WeatherRefreshS - 1 },
+		"weather_observation_valid_s": func(v *Values) { v.WeatherObservationValidS = 0 },
+		"weather_advisory_wind_ms":    func(v *Values) { v.WeatherAdvisoryWindMS = math.NaN() },
+	} {
+		v := Defaults()
+		mutate(&v)
+		err := v.Validate()
+		var fe *core.FieldError
+		if !errors.As(err, &fe) || !strings.Contains(err.Error(), field) {
+			t.Errorf("%s: %v", field, err)
+		}
 	}
 }

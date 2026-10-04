@@ -538,10 +538,20 @@ type UssReport struct {
 type WeatherProduct struct {
 	ID         pgtype.UUID `json:"id"`
 	Area       interface{} `json:"area"`
-	ObservedAt *time.Time  `json:"observed_at"`
+	ObservedAt time.Time   `json:"observed_at"`
 	ValidFrom  time.Time   `json:"valid_from"`
 	ValidTo    time.Time   `json:"valid_to"`
 	Source     string      `json:"source"`
 	Product    []byte      `json:"product"`
 	FetchedAt  time.Time   `json:"fetched_at"`
+	Station    string      `json:"station"`
+	Kind       string      `json:"kind"`
+}
+
+type WeatherSourceStatus struct {
+	Source        string     `json:"source"`
+	LastAttemptAt time.Time  `json:"last_attempt_at"`
+	LastSuccessAt *time.Time `json:"last_success_at"`
+	LastFailureAt *time.Time `json:"last_failure_at"`
+	LastError     *string    `json:"last_error"`
 }
