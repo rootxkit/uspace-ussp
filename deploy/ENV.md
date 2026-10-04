@@ -72,9 +72,9 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_PROXIMITY_STATE_BUCKET_MAX_BYTES` | `all` |  | `67108864` | bytes | size bound of the proximity_state bucket, reserved in the JetStream file store; a full bucket refuses puts |
 | `USSP_SESSIONS_LIVE_BUCKET_MAX_BYTES` | `all` |  | `67108864` | bytes | size bound of the sessions_live bucket, reserved in the JetStream file store; a full bucket refuses puts |
 | `USSP_RECORD_HOLDS_BUCKET_MAX_BYTES` | `all` |  | `16777216` | bytes | size bound of the record_holds bucket, reserved in the JetStream file store; a full bucket refuses puts |
-| `USSP_SYSTEM_ID` | `api,rid-sp,dss-sync` |  | `USSP-DEV` |  | the USSP code from the authority's certificate (M8); never an audience |
+| `USSP_SYSTEM_ID` | `api,rid-sp,monitor,dss-sync` |  | `USSP-DEV` |  | the USSP code from the authority's certificate (M8); never an audience |
 | `USSP_AUDIENCES` | `api,telemetry-ingest,rid-sp,traffic-ws` |  |  |  | hosts accepted as JWT aud, comma-separated: the public host and a lab alias (M18) |
-| `USSP_TOKEN_ISSUERS` | `api,telemetry-ingest,rid-sp,traffic-ws` |  |  |  | allow-listed token issuers as iss=jwks_url, comma-separated; the first is the token service for outgoing calls |
+| `USSP_TOKEN_ISSUERS` | `api,telemetry-ingest,rid-sp,monitor,traffic-ws` |  |  |  | allow-listed token issuers as iss=jwks_url, comma-separated; the first is the token service for outgoing calls |
 | `USSP_CIS_NOTIFY_ISSUERS` | `api` |  |  |  | issuers of CIS change notifications (the CISP, the ANSP) as iss=jwks_url, comma-separated |
 | `USSP_USS_BASE_URL` | `api,rid-sp,dss-sync` |  |  |  | this USSP's published base URL (uss_base_url in the DSS) |
 | `USSP_DSS_BASE_URL` | `api,rid-sp,dss-sync` |  |  |  | InterUSS DSS base URL; its host is the outgoing aud |
@@ -87,7 +87,7 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_CERTIFICATE_ID` | `api` |  |  |  | the id of this USSP's certificate at the authority (32 hex characters), named by the Art. 7(6) operating-status notices; unset, no notice can be sent and /readyz says so |
 | `USSP_AUTHORITY_BASE_URL` | `api` |  |  |  | authority base URL (F8 registry, occurrences, status) |
 | `USSP_ANSP_BASE_URL` | `api` |  |  |  | ANSP base URL (Annex V coordination notices) |
-| `USSP_ANSP_STREAM_URL` | `monitor` |  |  |  | ANSP manned-traffic stream (F4) |
+| `USSP_ANSP_STREAM_URL` | `monitor` |  |  |  | ANSP manned-traffic stream (F4, wss://<ansp>/v1/manned-traffic/stream): monitor reads it with a token of scope ansp.traffic and mTLS per USSP_MTLS_MODE and reports it as ansp_feed on /readyz; the manned tracks are held, not published to man.v1, until WP-14's echo guard (PLAN §15 Q23) |
 | `USSP_MTLS_MODE` | `api,monitor` |  | `required` |  | mTLS towards the ANSP (M25): Annex V notices (api) and the manned-traffic stream (monitor); off only in the lab and on staging, and logged at error level |
 | `USSP_MTLS_CERT_FILE` | `api,monitor` |  |  |  | client certificate (PEM) for USSP_MTLS_MODE=required |
 | `USSP_MTLS_KEY_FILE` | `api,monitor` |  |  |  | client key (PEM) for USSP_MTLS_MODE=required |

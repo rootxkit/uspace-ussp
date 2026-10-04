@@ -99,9 +99,9 @@ type Config struct {
 	SessionsLiveBucketMaxBytes     int    `env:"USSP_SESSIONS_LIVE_BUCKET_MAX_BYTES" default:"67108864" by:"all" min:"1048576" max:"1099511627776" unit:"bytes" help:"size bound of the sessions_live bucket, reserved in the JetStream file store; a full bucket refuses puts"`
 	RecordHoldsBucketMaxBytes      int    `env:"USSP_RECORD_HOLDS_BUCKET_MAX_BYTES" default:"16777216" by:"all" min:"1048576" max:"1099511627776" unit:"bytes" help:"size bound of the record_holds bucket, reserved in the JetStream file store; a full bucket refuses puts"`
 
-	SystemID                string   `env:"USSP_SYSTEM_ID" default:"USSP-DEV" by:"api,rid-sp,dss-sync" help:"the USSP code from the authority's certificate (M8); never an audience"`
+	SystemID                string   `env:"USSP_SYSTEM_ID" default:"USSP-DEV" by:"api,rid-sp,monitor,dss-sync" help:"the USSP code from the authority's certificate (M8); never an audience"`
 	Audiences               []string `env:"USSP_AUDIENCES" by:"api,telemetry-ingest,rid-sp,traffic-ws" help:"hosts accepted as JWT aud, comma-separated: the public host and a lab alias (M18)"`
-	TokenIssuers            []string `env:"USSP_TOKEN_ISSUERS" by:"api,telemetry-ingest,rid-sp,traffic-ws" kind:"issuers" help:"allow-listed token issuers as iss=jwks_url, comma-separated; the first is the token service for outgoing calls"`
+	TokenIssuers            []string `env:"USSP_TOKEN_ISSUERS" by:"api,telemetry-ingest,rid-sp,monitor,traffic-ws" kind:"issuers" help:"allow-listed token issuers as iss=jwks_url, comma-separated; the first is the token service for outgoing calls"`
 	CISNotifyIssuers        []string `env:"USSP_CIS_NOTIFY_ISSUERS" by:"api" kind:"issuers" help:"issuers of CIS change notifications (the CISP, the ANSP) as iss=jwks_url, comma-separated"`
 	USSBaseURL              string   `env:"USSP_USS_BASE_URL" by:"api,rid-sp,dss-sync" kind:"url" help:"this USSP's published base URL (uss_base_url in the DSS)"`
 	DSSBaseURL              string   `env:"USSP_DSS_BASE_URL" by:"api,rid-sp,dss-sync" kind:"url" help:"InterUSS DSS base URL; its host is the outgoing aud"`
@@ -114,7 +114,7 @@ type Config struct {
 	CertificateID           string   `env:"USSP_CERTIFICATE_ID" by:"api" help:"the id of this USSP's certificate at the authority (32 hex characters), named by the Art. 7(6) operating-status notices; unset, no notice can be sent and /readyz says so"`
 	AuthorityBaseURL        string   `env:"USSP_AUTHORITY_BASE_URL" by:"api" kind:"url" help:"authority base URL (F8 registry, occurrences, status)"`
 	ANSPBaseURL             string   `env:"USSP_ANSP_BASE_URL" by:"api" kind:"url" help:"ANSP base URL (Annex V coordination notices)"`
-	ANSPStreamURL           string   `env:"USSP_ANSP_STREAM_URL" by:"monitor" kind:"url" help:"ANSP manned-traffic stream (F4)"`
+	ANSPStreamURL           string   `env:"USSP_ANSP_STREAM_URL" by:"monitor" kind:"url" help:"ANSP manned-traffic stream (F4, wss://<ansp>/v1/manned-traffic/stream): monitor reads it with a token of scope ansp.traffic and mTLS per USSP_MTLS_MODE and reports it as ansp_feed on /readyz; the manned tracks are held, not published to man.v1, until WP-14's echo guard (PLAN §15 Q23)"`
 	MTLSMode                string   `env:"USSP_MTLS_MODE" default:"required" by:"api,monitor" enum:"required|off" help:"mTLS towards the ANSP (M25): Annex V notices (api) and the manned-traffic stream (monitor); off only in the lab and on staging, and logged at error level"`
 	MTLSCertFile            string   `env:"USSP_MTLS_CERT_FILE" by:"api,monitor" help:"client certificate (PEM) for USSP_MTLS_MODE=required"`
 	MTLSKeyFile             string   `env:"USSP_MTLS_KEY_FILE" by:"api,monitor" help:"client key (PEM) for USSP_MTLS_MODE=required"`
