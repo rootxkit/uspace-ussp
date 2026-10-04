@@ -49,6 +49,7 @@ import (
 	"time"
 
 	"github.com/rootxkit/uspace-core/core"
+	"github.com/rootxkit/uspace-core/terrain"
 
 	"github.com/rootxkit/uspace-ussp/internal/app/proc"
 	"github.com/rootxkit/uspace-ussp/internal/bus"
@@ -200,20 +201,14 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	// The zone path's inputs (brief WP-12): the zones of cis_current,
 	// rebuilt within one tick of a new projection, and the ground and the
 	// geoid under each sample.
-	und, geoidMissing := loadGeoid(rt.Config.GeoidFile)
-	rt.Health.Register(DepGeoid, false, func(context.Context) (obs.State, string) {
-		if und == nil {
-			return obs.StateDown, geoidMissing
-		}
-		return obs.StateUp, ""
-	})
-	ground, terrainMissing := loadTerrain(rt.Config.TerrainDir)
-	rt.Health.Register(DepTerrain, false, func(context.Context) (obs.State, string) {
-		if ground == nil {
-			return obs.StateDegraded, terrainMissing
-		}
-		return obs.StateUp, ""
-	})
+	und, geoidMapped, geoidMissing := loadGeoid(rt.Config.GeoidFile)
+	rt.Health.Register(DepGeoid, false, geoidProbe(und, geoidMapped, geoidMissing))
+	tiles, terrainMissing := loadTerrain(rt.Config.TerrainDir)
+	rt.Health.Register(DepTerrain, false, terrainProbe(tiles, terrainMissing))
+	var ground terrain.Ground // a nil interface without terrain, never a nil *mappedTerrain
+	if tiles != nil {
+		ground = tiles
+	}
 	zoneCounters := &core.Counters{}
 	proc.Publish(rt, "zones", zoneCounters)
 	cisM := &bus.Mirror[telemetry.CISValue]{JS: js, Bucket: bus.BucketCISCurrent, Decode: telemetry.DecodeCIS, Counters: followCounters, Logger: logger}

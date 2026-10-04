@@ -405,6 +405,9 @@ func TestIntegrationTelemetryGeoid(t *testing.T) {
 			if !withGrid && (body.Dependencies["geoid"].Detail == nil || !strings.HasPrefix(*body.Dependencies["geoid"].Detail, "missing")) {
 				t.Fatalf("geoid detail %+v", body.Dependencies["geoid"])
 			}
+			if withGrid && (body.Dependencies["geoid"].Detail == nil || *body.Dependencies["geoid"].Detail != geoidMappedDetail()) {
+				t.Fatalf("geoid detail %+v, want %q", body.Dependencies["geoid"], geoidMappedDetail())
+			}
 			seen := recordTracks(t, r.nc, r.client)
 			at := origin(t)
 			f := operator.New(r.base, r.token, at.LatDeg, at.LonDeg, r.serials...)

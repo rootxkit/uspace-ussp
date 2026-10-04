@@ -9,7 +9,7 @@ rules); the allowed list is `docs/PLAN.md` §14. Versions are the ones
 
 | Module | Version | Added by | Why |
 |---|---|---|---|
-| `github.com/rootxkit/uspace-core` | v1.3.0 | WP-0 | every judgement the ecosystem shares (CLAUDE.md rule 3); `auth` verifies tokens (`StrictSessionClaims`, `Audiences`) and signs session tokens (`Issuer.IssueSession`, v1.2.0), `core` carries `FieldError` and `Counters` |
+| `github.com/rootxkit/uspace-core` | v1.4.0 | WP-0 | every judgement the ecosystem shares (CLAUDE.md rule 3); `auth` verifies tokens (`StrictSessionClaims`, `Audiences`) and signs session tokens (`Issuer.IssueSession`, v1.2.0), `core` carries `FieldError` and `Counters`, `geoid.LoadMapped` and `terrain.MappedDirOpener` (v1.4.0) map the grids read-only |
 | `github.com/jackc/pgx/v5` | v5.11.0 | WP-0 | PostgreSQL + PostGIS and TimescaleDB driver and pool (`internal/store` only); the readiness probes of both databases |
 | `github.com/nats-io/nats.go` | v1.54.0 | WP-0 | NATS JetStream client (`internal/bus` only); the connection that reconnects forever and its readiness probe |
 | `github.com/prometheus/client_golang` | v1.24.1 | WP-0 | `/metrics`: `ussp_build_info`, `ussp_dependency_*`, the counters (E-09) |

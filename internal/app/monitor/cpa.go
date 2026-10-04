@@ -147,16 +147,31 @@ func startCPA(ctx context.Context, rt *proc.Runtime, own cell.Ownership, current
 	return c, nil
 }
 
-// loadGeoid is the geoid grid of path; nil with why when there is none.
-func loadGeoid(path string) (geoid.Undulator, string) {
+// loadGeoid is the geoid grid of path, loaded with core's
+// geoid.LoadMapped (WP-19: a read-only memory map on linux, shared in the
+// page cache by every process on the host; read into memory elsewhere),
+// and whether it is mapped; nil with why when there is none.
+func loadGeoid(path string) (und geoid.Undulator, mapped bool, why string) {
 	if path == "" {
-		return nil, "USSP_GEOID_FILE is not set: manned aircraft have no AMSL altitude and are judged on the horizontal alone (R-09)"
+		return nil, false, "USSP_GEOID_FILE is not set: manned aircraft have no AMSL altitude and are judged on the horizontal alone (R-09)"
 	}
-	g, err := geoid.Load(path)
+	g, err := geoid.LoadMapped(path)
 	if err != nil {
-		return nil, "the geoid grid of USSP_GEOID_FILE does not load (" + err.Error() + "): manned aircraft are judged on the horizontal alone"
+		return nil, false, "the geoid grid of USSP_GEOID_FILE does not load (" + err.Error() + "): manned aircraft are judged on the horizontal alone"
 	}
-	return g, ""
+	mapped = g.Mapped()
+	return g, mapped, ""
+}
+
+// geoidProbe is the readiness of the geoid: down with why without one,
+// up with whether the grid is memory-mapped (Grid.Mapped) otherwise.
+func geoidProbe(und geoid.Undulator, mapped bool, why string) obs.Probe {
+	return func(context.Context) (obs.State, string) {
+		if und == nil {
+			return obs.StateDown, why
+		}
+		return obs.StateUp, fmt.Sprintf("mapped: %t", mapped)
+	}
 }
 
 // CPAStatusAttrs are the CPA path's attributes of the status line.
