@@ -44,6 +44,19 @@ additively within `/v1`.
 
 ### Fixed
 
+- A restriction the ANSP has planned is no longer treated as in force
+  (spec 02 F2; PLAN §15.1 Q29). The standing re-check raised
+  `restriction_activated` when the restriction was planned, not when it
+  was activated (lab `ussp-wp12-restriction`: raised at the plan step,
+  +30 s, instead of after the activate step, +40 s). Now a planned
+  restriction refuses no new intent (condition `restriction_planned`),
+  withdraws or marks none, and is not judged as a zone by the monitor.
+  Its activation raises the alert.
+- A `restriction_activated` alert now clears `resolved` once its
+  restriction is ended, cancelled or gone from the CIS (not while the
+  CIS is stale). Until now it stayed open until the intent ended. The
+  intent keeps its state and `change_reason`. Counted as
+  `alerts_notices_lifted`.
 - WP-17 review follow-ups:
   - a portal session's use whose portal user cannot be read keeps the
     earlier `sessions_live` projection (operator and idle end) instead
