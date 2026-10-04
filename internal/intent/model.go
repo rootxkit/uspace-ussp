@@ -210,6 +210,10 @@ const (
 	CondLimitNotJudged       = "zone_limit_not_judged"
 	CondAirspaceRequirements = "uspace_airspace_requirements"
 	CondLocalDeconfliction   = "local_deconfliction_only"
+	// CondRestrictionPlanned: a restriction the ANSP has planned and not
+	// activated overlaps the volumes. It is not in force (spec 02 F2) and
+	// refuses nothing; its activation is re-checked (Art. 10(10)).
+	CondRestrictionPlanned = "restriction_planned"
 	// CondSpecialUnverified: flight_type special_operation is recorded as
 	// declared, but nothing this USSP can check verifies it, so it is
 	// judged at priority 0.

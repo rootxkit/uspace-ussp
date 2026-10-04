@@ -55,7 +55,7 @@ type ZoneMeta struct {
 
 // ZoneSet is the zones the monitor judges: every PROHIBITED,
 // REQ_AUTHORIZATION and CONDITIONAL zone of the zones and restrictions
-// datasets in cis_current (restrictions ended or cancelled left out),
+// datasets in cis_current (restrictions planned, ended or cancelled left out),
 // built by uspace-core with their applicability. USPACE features (the
 // uspace_airspace dataset) are information, not incursions, and
 // NO_RESTRICTION raises nothing: neither is held.
@@ -106,11 +106,9 @@ func judged(z *cis.ApplicableZone) bool {
 		return false
 	case core.ZoneProhibited, core.ZoneReqAuthorization, core.ZoneConditional:
 	}
-	switch z.RestrictionState {
-	case "ended", "cancelled":
-		return false
-	}
-	return true
+	// A restriction is judged only while in force: a planned one is not
+	// (spec 02 F2), nor an ended or cancelled one.
+	return z.Dataset != string(cis.Restrictions) || cis.RestrictionStateInForce(z.RestrictionState)
 }
 
 // BuildZoneSet builds the set from cis_current's values (the cell

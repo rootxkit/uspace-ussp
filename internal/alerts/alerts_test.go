@@ -680,3 +680,112 @@ func TestAckForOperatorRecordsTheActor(t *testing.T) {
 		t.Fatal("a refused ack published or was not counted")
 	}
 }
+
+// lifter answers RestrictionLifted from a map of restriction ids to
+// lifted; judged is false for every id while stale.
+type lifter struct {
+	lifted map[string]bool
+	stale  bool
+}
+
+func (l *lifter) RestrictionLifted(id string) (bool, bool) {
+	if l.stale {
+		return false, false
+	}
+	return l.lifted[id], true
+}
+
+// noticeOf is an open restriction_activated notice caused by restriction
+// ref.
+func noticeOf(alertID, cause, ref string) Record {
+	intentID := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	b := body(StateRaised, t0)
+	b.AlertID, b.Kind, b.FlightID, b.IntentID = alertID, KindRestrictionActivated, "", &intentID
+	b.Detail = json.RawMessage(fmt.Sprintf(`{"cause":%q,"ref":%q,"restriction_id":%q,"decision":"marked","withdrawn":true}`, cause, ref, ref))
+	return Record{Body: b, Cell5: cellA}
+}
+
+// published decodes what the bus holds.
+func published(t *testing.T, p *pub) []Body {
+	t.Helper()
+	p.mu.Lock()
+	ms := slices.Clone(p.msgs)
+	p.mu.Unlock()
+	out := make([]Body, 0, len(ms))
+	for i := range ms {
+		raw, err := json.Marshal(&ms[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, err := Decode(raw)
+		if err != nil {
+			t.Fatalf("published alert does not decode: %v", err)
+		}
+		out = append(out, m.Body)
+	}
+	return out
+}
+
+// A notice whose restriction the ANSP deactivated is cleared resolved,
+// with the restriction in clearing_detail, and is no longer republished
+// raised; a notice whose restriction is still in force stays open and
+// is republished (E-01 pair); a stale CIS clears nothing; without a CIS
+// nothing is cleared this way.
+func TestClearLiftedNotices(t *testing.T) {
+	st := newMem()
+	ended := noticeOf("4d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7e91", "restriction", "DARENDD")
+	live := noticeOf("4d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7e92", "restriction", "DARLIVE")
+	zone := noticeOf("4d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7e93", "zone", "DARENDD")
+	for _, r := range []Record{ended, live, zone} {
+		st.rows[r.AlertID] = r
+	}
+	st.rows[alertA] = Record{Body: body(StateRaised, t0), Cell5: cellA}
+	l := &lifter{lifted: map[string]bool{"DARENDD": true}, stale: true}
+	bus := &pub{}
+	svc := &Service{Store: st, Bus: bus, Restrictions: l, Now: func() time.Time { return t0.Add(time.Minute) }}
+
+	// Stale: nothing is cleared, all three are republished raised.
+	if n, err := svc.ClearLiftedNotices(t.Context()); err != nil || n != 0 || len(published(t, bus)) != 0 {
+		t.Fatalf("stale: %d %v", n, err)
+	}
+	if n, err := svc.RepublishOpenNotices(t.Context()); err != nil || n != 3 {
+		t.Fatalf("stale republish: %d %v", n, err)
+	}
+	bus.msgs = nil
+
+	l.stale = false
+	n, err := svc.ClearLiftedNotices(t.Context())
+	if err != nil || n != 1 {
+		t.Fatalf("lifted: %d %v", n, err)
+	}
+	ms := published(t, bus)
+	if len(ms) != 1 {
+		t.Fatalf("published %d", len(ms))
+	}
+	c := ms[0]
+	var cd map[string]string
+	if c.AlertID != ended.AlertID || c.State != StateCleared || c.ClearReason == nil || *c.ClearReason != "resolved" ||
+		json.Unmarshal(c.ClearingDetail, &cd) != nil || cd["restriction_id"] != "DARENDD" || svc.counters().Get(CounterNoticesLifted) != 1 {
+		t.Fatalf("clear %+v %s", c, c.ClearingDetail)
+	}
+	bus.msgs = nil
+	// The record has not taken the clear yet: the republish leaves the
+	// lifted notice out and republishes the two others raised.
+	if n, err := svc.RepublishOpenNotices(t.Context()); err != nil || n != 2 {
+		t.Fatalf("republish: %d %v", n, err)
+	}
+	for _, b := range published(t, bus) {
+		if b.AlertID == ended.AlertID || b.State != StateRaised {
+			t.Fatalf("republished %+v", b)
+		}
+	}
+
+	none := &Service{Store: st, Bus: &pub{}}
+	if n, err := none.ClearLiftedNotices(t.Context()); err != nil || n != 0 {
+		t.Fatalf("without a CIS: %d %v", n, err)
+	}
+	st.fail = errors.New("down")
+	if _, err := svc.ClearLiftedNotices(t.Context()); err == nil {
+		t.Fatal("a failed store not reported")
+	}
+}
