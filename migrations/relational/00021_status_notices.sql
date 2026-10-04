@@ -17,7 +17,10 @@
 -- The columns arrive nullable, a row already there (none in a
 -- deployment; a tree rolled back past this migration and up again keeps
 -- its rows) is given what it implies (a certificate of its own, a
--- reference of its own), then the rules apply to every row.
+-- reference of its own), then the rules apply to every row. Its
+-- certificate id is made up, so one not yet delivered is failed with
+-- the reason, never left pending: sent, it would name a certificate the
+-- authority never issued.
 ALTER TABLE operating_status_notices
     ADD COLUMN certificate_id text,
     ADD COLUMN reference      text,
@@ -31,7 +34,10 @@ ALTER TABLE operating_status_notices
 UPDATE operating_status_notices
 SET certificate_id = coalesce(certificate_id, md5(id::text)), reference = coalesce(reference, 'legacy:' || id::text),
     requested_by = coalesce(requested_by, 'unknown'),
-    state = CASE WHEN submitted_at IS NOT NULL THEN 'delivered' ELSE 'pending' END;
+    state = CASE WHEN submitted_at IS NOT NULL THEN 'delivered' ELSE 'failed' END,
+    failed_at = CASE WHEN submitted_at IS NULL THEN now() END,
+    last_error = CASE WHEN submitted_at IS NULL
+        THEN 'stored before migration 00021 without a certificate id; not sent (request it again)' END;
 ALTER TABLE operating_status_notices
     ALTER COLUMN certificate_id SET NOT NULL,
     ALTER COLUMN reference SET NOT NULL,

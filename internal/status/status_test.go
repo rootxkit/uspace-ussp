@@ -24,6 +24,12 @@ type memStore struct {
 	now     time.Time
 	notices []Notice // oldest first
 	errOf   map[string]error
+	// follows is the id each notice follows, by its id (the unique
+	// index of 00023).
+	follows map[string]string
+	// beforeInsert, when set, runs once at the next Insert before it
+	// stores anything (a request racing this one).
+	beforeInsert func()
 }
 
 func newMem() *memStore {
@@ -45,7 +51,11 @@ func (m *memStore) Notices(_ context.Context, cert string, n int) ([]Notice, err
 	return out, nil
 }
 
-func (m *memStore) Insert(_ context.Context, kind, cert, ref, by string) (Notice, error) {
+func (m *memStore) Insert(_ context.Context, kind, cert, ref, by, follows string) (Notice, error) {
+	if f := m.beforeInsert; f != nil {
+		m.beforeInsert = nil
+		f()
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.errOf["insert"]; err != nil {
@@ -55,11 +65,18 @@ func (m *memStore) Insert(_ context.Context, kind, cert, ref, by string) (Notice
 		if n := &m.notices[i]; kind == KindStart && n.Kind == KindStart && n.CertificateID == cert && n.State != "failed" {
 			return Notice{}, ErrStartExists
 		}
+		if n := &m.notices[i]; follows != "" && m.follows[n.ID] == follows && n.State != "failed" {
+			return Notice{}, ErrFollowed
+		}
 	}
 	next := m.now
 	n := Notice{ID: fmt.Sprint(len(m.notices) + 1), Kind: kind, At: m.now, CertificateID: cert, Reference: ref, RequestedBy: by, State: "pending",
 		NextAt: &next, CreatedAt: m.now}
 	m.notices = append(m.notices, n)
+	if m.follows == nil {
+		m.follows = map[string]string{}
+	}
+	m.follows[n.ID] = follows
 	return n, nil
 }
 
@@ -185,6 +202,42 @@ func TestStartOnceCeaseAndRestart(t *testing.T) {
 // The order of the notices (E-01 pairs): a cease needs a start, a
 // restart needs a cease; asking again for the same state answers the
 // last notice; an unknown kind and a missing certificate id are refused.
+// Two requests for the same change that read the notices before either
+// stored its own (two consoles, one click each): one notice is stored
+// and both answer it; the chain stays start, cease, restart.
+func TestConcurrentRequestsStoreOneNotice(t *testing.T) {
+	ctx := context.Background()
+	for _, kind := range []string{KindCease, KindRestart} {
+		st := newMem()
+		s := newService(st, nil)
+		if _, _, err := s.Request(ctx, "staff-1", KindStart); err != nil {
+			t.Fatal(err)
+		}
+		if kind == KindRestart {
+			if _, _, err := s.Request(ctx, "staff-1", KindCease); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var other Notice
+		var otherCreated bool
+		var otherErr error
+		st.beforeInsert = func() { other, otherCreated, otherErr = s.Request(ctx, "staff-2", kind) }
+		mine, created, err := s.Request(ctx, "staff-1", kind)
+		if err != nil || otherErr != nil {
+			t.Fatalf("%s: %v %v", kind, err, otherErr)
+		}
+		n := 0
+		for _, x := range st.notices {
+			if x.Kind == kind {
+				n++
+			}
+		}
+		if n != 1 || created == otherCreated || mine.Reference != other.Reference {
+			t.Fatalf("%s: %d stored; created %v and %v; references %s and %s", kind, n, created, otherCreated, mine.Reference, other.Reference)
+		}
+	}
+}
+
 func TestRequestRules(t *testing.T) {
 	st := newMem()
 	s := newService(st, nil)

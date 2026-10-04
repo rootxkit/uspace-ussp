@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -13,7 +14,39 @@ import (
 // position on old telemetry. It runs as the time-series owner
 // (ussp_tsdb); the TimescaleDB job functions are called as SQL, which
 // sqlc cannot type.
-type TSRetention struct{ Pool *Pool }
+type TSRetention struct {
+	Pool *Pool
+	// Window is the span of captured_at one statement of
+	// NullOperatorPositions changes (DefaultOperatorPositionWindow when
+	// zero): one telemetry chunk, so no statement locks or rewrites the
+	// whole history at once.
+	Window time.Duration
+}
+
+// DefaultOperatorPositionWindow is telemetry's chunk interval
+// (migrations/timeseries/00002).
+const DefaultOperatorPositionWindow = 24 * time.Hour
+
+// window is one [lo, hi) span of captured_at.
+type window struct{ lo, hi time.Time }
+
+// operatorPositionWindows cuts [from, cutoff) into consecutive windows
+// of at most w (DefaultOperatorPositionWindow when w <= 0).
+func operatorPositionWindows(from, cutoff time.Time, w time.Duration) []window {
+	if w <= 0 {
+		w = DefaultOperatorPositionWindow
+	}
+	var out []window
+	for lo := from; lo.Before(cutoff); {
+		hi := lo.Add(w)
+		if hi.After(cutoff) {
+			hi = cutoff
+		}
+		out = append(out, window{lo, hi})
+		lo = hi
+	}
+	return out
+}
 
 // errNoTS is a TSRetention without the time-series pool.
 var errNoTS = errors.New("timeseries: " + ErrNoPool.Error())
@@ -67,6 +100,9 @@ func (r TSRetention) SetTelemetryRetentionDays(ctx context.Context, days int) er
 // NullOperatorPositions removes the remote pilot's position from every
 // telemetry row captured more than days ago (database clock), except
 // the rows of the held flights, and returns how many rows it changed.
+// It runs one statement, in its own transaction, per Window of
+// captured_at from the oldest such row to the cutoff; a failure keeps
+// what the earlier windows changed (the next run takes the rest).
 func (r TSRetention) NullOperatorPositions(ctx context.Context, days int, held []string) (int64, error) {
 	if r.Pool == nil {
 		return 0, errNoTS
@@ -77,12 +113,26 @@ func (r TSRetention) NullOperatorPositions(ctx context.Context, days int, held [
 	if held == nil {
 		held = []string{}
 	}
-	tag, err := r.Pool.Exec(ctx, `UPDATE telemetry SET operator_position = NULL
-		WHERE operator_position IS NOT NULL
-		  AND captured_at < now() - make_interval(days => $1::integer)
-		  AND NOT (flight_id = ANY($2::uuid[]))`, days, held)
-	if err != nil {
-		return 0, fmt.Errorf("null operator positions: %w", err)
+	var cutoff time.Time
+	var from *time.Time
+	if err := r.Pool.QueryRow(ctx, `SELECT c.cutoff,
+		       (SELECT min(captured_at) FROM telemetry WHERE operator_position IS NOT NULL AND captured_at < c.cutoff)
+		FROM (SELECT now() - make_interval(days => $1::integer) AS cutoff) c`, days).Scan(&cutoff, &from); err != nil {
+		return 0, fmt.Errorf("operator positions past their retention: %w", err)
 	}
-	return tag.RowsAffected(), nil
+	if from == nil {
+		return 0, nil
+	}
+	var n int64
+	for _, w := range operatorPositionWindows(*from, cutoff, r.Window) {
+		tag, err := r.Pool.Exec(ctx, `UPDATE telemetry SET operator_position = NULL
+			WHERE operator_position IS NOT NULL
+			  AND captured_at >= $1 AND captured_at < $2
+			  AND NOT (flight_id = ANY($3::uuid[]))`, w.lo, w.hi, held)
+		if err != nil {
+			return n, fmt.Errorf("null operator positions in [%s, %s): %w", w.lo.Format(time.RFC3339), w.hi.Format(time.RFC3339), err)
+		}
+		n += tag.RowsAffected()
+	}
+	return n, nil
 }

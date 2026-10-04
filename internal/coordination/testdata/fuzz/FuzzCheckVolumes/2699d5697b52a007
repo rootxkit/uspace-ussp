@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("[{\"volume\":{\"outline_CirCle\":{\"rAdius\":{\"vAlue\":1}}}}]")

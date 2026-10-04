@@ -9,7 +9,6 @@ import (
 	"math"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/rootxkit/uspace-core/core"
@@ -61,6 +60,9 @@ const (
 	// HoldsEvery is how often every held flight is written to
 	// record_holds again (a projection that failed after its commit).
 	HoldsEvery = 10 * time.Minute
+	// HoldsBatch bounds the held flights read and written per page of
+	// one projection.
+	HoldsBatch = 500
 	// MaxListed bounds the reports the console lists at once.
 	MaxListed = 500
 )
@@ -81,8 +83,6 @@ type Service struct {
 	MaxAttempts int
 	Counters    *core.Counters
 	Logger      *slog.Logger
-
-	holdMu sync.Mutex
 }
 
 func (s *Service) logger() *slog.Logger {
@@ -345,12 +345,13 @@ func (s *Service) enqueue(ctx context.Context, r Report) (Item, bool, error) {
 	return it, created, nil
 }
 
+// hold writes the holds of ids. It takes no lock: each write is a
+// whole-value put of one key, so a supervisor's flag never waits behind
+// a periodic projection of every held flight.
 func (s *Service) hold(ctx context.Context, ids []string, reason string, since time.Time) {
 	if s.Holds == nil {
 		return
 	}
-	s.holdMu.Lock()
-	defer s.holdMu.Unlock()
 	for _, id := range ids {
 		if err := s.Holds.Hold(ctx, id, []string{reason}, since); err != nil {
 			s.count(CounterHoldFailed)
@@ -360,18 +361,28 @@ func (s *Service) hold(ctx context.Context, ids []string, reason string, since t
 }
 
 // ProjectHolds writes every held flight to record_holds again (since:
-// the database clock of this write).
+// the database clock of this write), reading and writing them in pages
+// of HoldsBatch.
 func (s *Service) ProjectHolds(ctx context.Context) error {
-	ids, err := s.Store.Held(ctx)
-	if err != nil {
-		return err
-	}
 	now, err := s.Store.Now(ctx)
 	if err != nil {
 		return err
 	}
-	s.hold(ctx, ids, "occurrence", now)
-	return nil
+	after := ""
+	for {
+		ids, err := s.Store.Held(ctx, after, HoldsBatch)
+		if err != nil {
+			return err
+		}
+		s.hold(ctx, ids, "occurrence", now)
+		if len(ids) < HoldsBatch {
+			return nil
+		}
+		after = ids[len(ids)-1]
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
 }
 
 func (s *Service) projectHoldsLoop(ctx context.Context) {

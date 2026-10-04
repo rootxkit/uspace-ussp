@@ -334,6 +334,7 @@ type OperatingStatusNotice struct {
 	LastError     *string     `json:"last_error"`
 	FailedAt      *time.Time  `json:"failed_at"`
 	CreatedAt     time.Time   `json:"created_at"`
+	Follows       pgtype.UUID `json:"follows"`
 }
 
 type OperationalIntent struct {

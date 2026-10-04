@@ -104,10 +104,15 @@ func problemDetail(b []byte) string {
 	return clip(strings.TrimSpace(slug + " " + p.Detail))
 }
 
+// retryAfter is the ANSP's Retry-After in whole seconds, at most
+// MaxRetryAfter (a larger number would overflow the duration).
 func retryAfter(h http.Header) time.Duration {
 	s, err := strconv.Atoi(strings.TrimSpace(h.Get("Retry-After")))
 	if err != nil || s <= 0 {
 		return 0
+	}
+	if s > int(MaxRetryAfter/time.Second) {
+		return MaxRetryAfter
 	}
 	return time.Duration(s) * time.Second
 }
@@ -116,14 +121,14 @@ func retryAfter(h http.Header) time.Duration {
 // of the request itself (400, 403, 404, 409, 413, 415, 422) is
 // permanent; anything else (401 while a token renews, 408, 429, 5xx, a
 // redirect) is tried again.
-func classify(resp *http.Response, body []byte) error {
+func classify(status int, h http.Header, body []byte) error {
 	d := problemDetail(body)
-	switch resp.StatusCode {
+	switch status {
 	case http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound, http.StatusConflict,
 		http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType, http.StatusUnprocessableEntity:
-		return &PermanentError{Status: resp.StatusCode, Detail: d}
+		return &PermanentError{Status: status, Detail: d}
 	}
-	return &RetryableError{Status: resp.StatusCode, Detail: d, RetryAfter: retryAfter(resp.Header)}
+	return &RetryableError{Status: status, Detail: d, RetryAfter: retryAfter(h)}
 }
 
 // Submit implements ANSP: POST /v1/coordination/notices with body as it
@@ -143,14 +148,20 @@ func (c *Client) Submit(ctx context.Context, body []byte) (Receipt, error) {
 	if err != nil {
 		return Receipt{}, &RetryableError{Status: resp.StatusCode, Detail: err.Error()}
 	}
-	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
-		return Receipt{}, classify(resp, b)
+	return receiptOf(resp.StatusCode, resp.Header, b)
+}
+
+// receiptOf decodes the ANSP's answer to a submit: status, its headers
+// and the body as read.
+func receiptOf(status int, h http.Header, b []byte) (Receipt, error) {
+	if status != http.StatusAccepted && status != http.StatusOK {
+		return Receipt{}, classify(status, h, b)
 	}
 	var r anspclient.NoticeReceipt
 	if err := json.Unmarshal(b, &r); err != nil || r.AckId == "" || len(r.AckId) > 64 || r.State != anspclient.NoticeReceiptStateReceived {
-		return Receipt{}, &RetryableError{Status: resp.StatusCode, Detail: "the receipt does not read as NoticeReceipt"}
+		return Receipt{}, &RetryableError{Status: status, Detail: "the receipt does not read as NoticeReceipt"}
 	}
-	return Receipt{AckID: r.AckId, ReceivedAt: r.ReceivedAt.UTC(), Repeat: resp.StatusCode == http.StatusOK}, nil
+	return Receipt{AckID: r.AckId, ReceivedAt: r.ReceivedAt.UTC(), Repeat: status == http.StatusOK}, nil
 }
 
 // Get implements ANSP: GET /v1/coordination/notices/{ack_id}.
@@ -169,12 +180,18 @@ func (c *Client) Get(ctx context.Context, ackID string) (NoticeState, error) {
 	if err != nil {
 		return NoticeState{}, &RetryableError{Status: resp.StatusCode, Detail: err.Error()}
 	}
-	if resp.StatusCode != http.StatusOK {
-		return NoticeState{}, classify(resp, b)
+	return noticeStateOf(resp.StatusCode, resp.Header, b)
+}
+
+// noticeStateOf decodes the ANSP's answer to a get: status, its headers
+// and the body as read.
+func noticeStateOf(status int, h http.Header, b []byte) (NoticeState, error) {
+	if status != http.StatusOK {
+		return NoticeState{}, classify(status, h, b)
 	}
 	var n anspclient.CoordinationNotice
 	if err := json.Unmarshal(b, &n); err != nil || !n.State.Valid() {
-		return NoticeState{}, &RetryableError{Status: resp.StatusCode, Detail: "the notice does not read as CoordinationNotice"}
+		return NoticeState{}, &RetryableError{Status: status, Detail: "the notice does not read as CoordinationNotice"}
 	}
 	out := NoticeState{State: string(n.State)}
 	if n.AcknowledgedAt != nil {

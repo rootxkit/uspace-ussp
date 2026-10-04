@@ -13,7 +13,7 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/telemetry"
 )
 
-func statusMsg(t *testing.T, gap *telemetry.Gap) []byte {
+func statusMsg(t testing.TB, gap *telemetry.Gap) []byte {
 	t.Helper()
 	inst := "client-1"
 	m := telemetry.SourceStatus{Envelope: bus.SystemEnvelope("source/status/v1", "ussp/telemetry-ingest", t0),

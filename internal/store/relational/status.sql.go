@@ -117,16 +117,17 @@ func (q *Queries) StatusFail(ctx context.Context, arg StatusFailParams) (StatusF
 }
 
 const statusInsert = `-- name: StatusInsert :one
-INSERT INTO operating_status_notices (kind, at, certificate_id, reference, requested_by)
-VALUES ($1, now(), $2, $3, $4)
-RETURNING id, kind, at, submitted_at, authority_ref, certificate_id, reference, requested_by, state, attempts, next_at, last_error, failed_at, created_at
+INSERT INTO operating_status_notices (kind, at, certificate_id, reference, requested_by, follows)
+VALUES ($1, now(), $2, $3, $4, $5::uuid)
+RETURNING id, kind, at, submitted_at, authority_ref, certificate_id, reference, requested_by, state, attempts, next_at, last_error, failed_at, created_at, follows
 `
 
 type StatusInsertParams struct {
-	Kind          string `json:"kind"`
-	CertificateID string `json:"certificate_id"`
-	Reference     string `json:"reference"`
-	RequestedBy   string `json:"requested_by"`
+	Kind          string      `json:"kind"`
+	CertificateID string      `json:"certificate_id"`
+	Reference     string      `json:"reference"`
+	RequestedBy   string      `json:"requested_by"`
+	Follows       pgtype.UUID `json:"follows"`
 }
 
 func (q *Queries) StatusInsert(ctx context.Context, arg StatusInsertParams) (OperatingStatusNotice, error) {
@@ -135,6 +136,7 @@ func (q *Queries) StatusInsert(ctx context.Context, arg StatusInsertParams) (Ope
 		arg.CertificateID,
 		arg.Reference,
 		arg.RequestedBy,
+		arg.Follows,
 	)
 	var i OperatingStatusNotice
 	err := row.Scan(
@@ -152,13 +154,14 @@ func (q *Queries) StatusInsert(ctx context.Context, arg StatusInsertParams) (Ope
 		&i.LastError,
 		&i.FailedAt,
 		&i.CreatedAt,
+		&i.Follows,
 	)
 	return i, err
 }
 
 const statusNotices = `-- name: StatusNotices :many
 
-SELECT id, kind, at, submitted_at, authority_ref, certificate_id, reference, requested_by, state, attempts, next_at, last_error, failed_at, created_at
+SELECT id, kind, at, submitted_at, authority_ref, certificate_id, reference, requested_by, state, attempts, next_at, last_error, failed_at, created_at, follows
 FROM operating_status_notices
 WHERE certificate_id = $1
 ORDER BY created_at DESC, id DESC
@@ -198,6 +201,7 @@ func (q *Queries) StatusNotices(ctx context.Context, arg StatusNoticesParams) ([
 			&i.LastError,
 			&i.FailedAt,
 			&i.CreatedAt,
+			&i.Follows,
 		); err != nil {
 			return nil, err
 		}

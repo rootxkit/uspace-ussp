@@ -11,8 +11,8 @@ ORDER BY created_at DESC, id DESC
 LIMIT sqlc.arg(n);
 
 -- name: StatusInsert :one
-INSERT INTO operating_status_notices (kind, at, certificate_id, reference, requested_by)
-VALUES (sqlc.arg(kind), now(), sqlc.arg(certificate_id), sqlc.arg(reference), sqlc.arg(requested_by))
+INSERT INTO operating_status_notices (kind, at, certificate_id, reference, requested_by, follows)
+VALUES (sqlc.arg(kind), now(), sqlc.arg(certificate_id), sqlc.arg(reference), sqlc.arg(requested_by), sqlc.narg(follows)::uuid)
 RETURNING *;
 
 -- name: StatusClaim :many

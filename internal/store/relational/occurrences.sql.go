@@ -422,12 +422,23 @@ func (q *Queries) OccurrenceFlights(ctx context.Context, ids []pgtype.UUID) ([]O
 }
 
 const occurrenceHeld = `-- name: OccurrenceHeld :many
-SELECT DISTINCT unnest(flight_ids)::text AS flight_id
-FROM occurrence_reports
+SELECT DISTINCT f.flight_id::text AS flight_id
+FROM occurrence_reports r, unnest(r.flight_ids) AS f(flight_id)
+WHERE f.flight_id > $1::uuid
+ORDER BY 1
+LIMIT $2
 `
 
-func (q *Queries) OccurrenceHeld(ctx context.Context) ([]string, error) {
-	rows, err := q.db.Query(ctx, occurrenceHeld)
+type OccurrenceHeldParams struct {
+	After pgtype.UUID `json:"after"`
+	N     int32       `json:"n"`
+}
+
+// One page of the held flights in id order, after the last id of the
+// previous page (the nil UUID for the first): the projection reads them
+// in bounded batches, never the whole set at once.
+func (q *Queries) OccurrenceHeld(ctx context.Context, arg OccurrenceHeldParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, occurrenceHeld, arg.After, arg.N)
 	if err != nil {
 		return nil, err
 	}

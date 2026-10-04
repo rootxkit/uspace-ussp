@@ -56,11 +56,14 @@ DROP INDEX occurrence_reports_undelivered_idx;
 CREATE INDEX occurrence_reports_due_idx ON occurrence_reports (next_at) WHERE state = 'pending';
 CREATE INDEX occurrence_reports_open_idx ON occurrence_reports (deadline_at) WHERE state <> 'delivered';
 CREATE INDEX occurrence_reports_flights_idx ON occurrence_reports USING gin (flight_ids);
--- The automatic detection reads the recent alerts by kind.
-CREATE INDEX alerts_kind_raised_idx ON alerts (kind, raised_at);
+-- The index of the recent alerts by kind the automatic detection reads
+-- is built by 00022, concurrently: alerts is written while this runs,
+-- and a CREATE INDEX here would stop every write to it for the build.
 
 -- +goose Down
-DROP INDEX alerts_kind_raised_idx;
+-- A database that ran this file before the index moved to 00022 holds
+-- it; 00022's Down has dropped it on every other.
+DROP INDEX IF EXISTS alerts_kind_raised_idx;
 DROP INDEX occurrence_reports_flights_idx;
 DROP INDEX occurrence_reports_open_idx;
 DROP INDEX occurrence_reports_due_idx;
