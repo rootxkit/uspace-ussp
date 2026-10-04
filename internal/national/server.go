@@ -70,7 +70,10 @@ type Server struct {
 	Coordination CoordinationLister
 	// Records serves /v1/records; nil answers 503 records_unavailable.
 	Records *Records
-	Logger  *slog.Logger
+	// Occurrences serves /v1/admin/occurrences; nil answers 503
+	// occurrences_unavailable.
+	Occurrences *Occurrences
+	Logger      *slog.Logger
 }
 
 // RegistryValidator is the cached, audited F8 lookup
@@ -92,6 +95,8 @@ var portalAdmin = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.Real
 var anySession = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmPortal}, {Realm: auth.RealmConsole}}}
 
 var consoleStaff = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmConsole, Roles: []string{auth.RoleSupervisor, auth.RoleSupport}}}}
+
+var consoleSupervisor = httpx.Access{Sessions: []httpx.SessionAccess{{Realm: auth.RealmConsole, Roles: []string{auth.RoleSupervisor}}}}
 
 // AccessTable is the access entry of every operation of
 // api/openapi.yaml this process serves, by ServeMux pattern. The
@@ -116,6 +121,8 @@ func AccessTable() map[string]httpx.Access {
 		"GET /v1/geo/intents/{intent_id}":                   {Scopes: []string{auth.ScopeGeo}},
 		"POST /v1/alerts/{alert_id}/ack":                    {Scopes: []string{auth.ScopeTraffic}},
 		"GET /v1/admin/coordination":                        consoleStaff,
+		"GET /v1/admin/occurrences":                         consoleStaff,
+		"POST /v1/admin/occurrences":                        consoleSupervisor,
 		"GET /v1/records/flights/{flight_id}":               {Scopes: []string{ScopeRecords}},
 		"GET /v1/records/daily/{date}":                      {Scopes: []string{ScopeRecords}},
 		"POST /v1/accounts/logout":                          anySession,

@@ -179,3 +179,28 @@ func DateTime(d pgtype.Date) time.Time {
 	y, m, dd := d.Time.Date()
 	return time.Date(y, m, dd, 0, 0, 0, 0, time.UTC)
 }
+
+// UUIDs parses every s of ss (UUID); the first malformed one is a
+// *core.FieldError on field.
+func UUIDs(field string, ss []string) ([]pgtype.UUID, error) {
+	out := make([]pgtype.UUID, 0, len(ss))
+	for _, s := range ss {
+		u, err := UUID(field, s)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, nil
+}
+
+// UUIDTexts is the canonical text of every non-NULL u of us.
+func UUIDTexts(us []pgtype.UUID) []string {
+	out := make([]string, 0, len(us))
+	for _, u := range us {
+		if u.Valid {
+			out = append(out, u.String())
+		}
+	}
+	return out
+}

@@ -571,6 +571,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/occurrences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The occurrence reports not yet delivered
+         * @description Console session of a supervisor or support (served by api; spec
+         *     02 F7, Reg. (EU) 376/2014 Art. 4(8)). Every report to the
+         *     authority that is not delivered (pending, with its tries and last
+         *     error; failed), the nearest deadline first, with the time to its
+         *     72 h deadline; a report past its deadline is critical. delivery
+         *     says why nothing is sent while the authority publishes no POST
+         *     /v1/occurrences (a spec gap); null when reports are sent. A list
+         *     that cannot be read is 503, never an empty list.
+         */
+        get: operations["listOccurrences"];
+        put?: never;
+        /**
+         * Report an alert as an occurrence
+         * @description Console session of a supervisor (served by api; the internal
+         *     endpoint WP-18's console calls). The alert of one of this USSP's
+         *     flights is queued as an occurrence report (occurrence/v1, owned by
+         *     the authority) with became_aware_at now and deadline_at 72 h
+         *     later, reporter.person_ref the supervisor's account id (an opaque
+         *     reference, M13). kind defaults to the alert's own (airprox for a
+         *     proximity alert); other is a voluntary report, every other kind
+         *     mandatory. An event already reported answers 200 with its report
+         *     (a proximity conflict is one report for both flights' alerts); a
+         *     new report 201. The narrative is free text for the authority's
+         *     safety analysis and must name no person. A report never makes a
+         *     violation (Art. 15(2)).
+         */
+        post: operations["flagOccurrence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/oauth/token": {
         parameters: {
             query?: never;
@@ -1101,6 +1143,51 @@ export interface components {
                 }[];
                 missing?: number[];
             };
+        };
+        OccurrenceFlag: {
+            /** Format: uuid */
+            alert_id: string;
+            /** @enum {string} */
+            kind?: "airprox" | "nonconformance_in_prohibited" | "lost_link_in_uspace" | "emergency" | "other";
+            narrative?: string;
+        };
+        OccurrenceReports: {
+            reports: components["schemas"]["OccurrenceReportItem"][];
+            truncated: boolean;
+            /** @description Why no report is sent (null when reports are sent). */
+            delivery: string | null;
+        };
+        OccurrenceReportItem: {
+            report_ref: string;
+            /** @enum {string} */
+            kind: "airprox" | "nonconformance_in_prohibited" | "lost_link_in_uspace" | "emergency" | "other";
+            /** @enum {string} */
+            state: "pending" | "delivered" | "failed";
+            /** @enum {string} */
+            channel: "mandatory" | "voluntary";
+            /** @enum {string} */
+            flagged_by: "system" | "supervisor";
+            /** Format: date-time */
+            became_aware_at: string;
+            /** Format: date-time */
+            deadline_at: string;
+            /**
+             * Format: double
+             * @description Seconds to the deadline; negative past it.
+             */
+            time_to_deadline_s: number;
+            /** @description Not delivered and past its deadline. */
+            critical: boolean;
+            attempts: number;
+            last_error: string | null;
+            flight_ids: string[];
+            /** Format: date-time */
+            submitted_at?: string | null;
+            authority_ref?: string | null;
+            /** Format: date-time */
+            failed_at?: string | null;
+            /** Format: date-time */
+            next_at?: string | null;
         };
         /**
          * @description The ecosystem-wide error body (RFC 9457), the shape of
@@ -2324,6 +2411,69 @@ export interface operations {
             403: components["responses"]["Problem"];
             404: components["responses"]["Problem"];
             500: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listOccurrences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The reports not delivered. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OccurrenceReports"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            503: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    flagOccurrence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OccurrenceFlag"];
+            };
+        };
+        responses: {
+            /** @description The event was reported before; its report. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OccurrenceReportItem"];
+                };
+            };
+            /** @description The report as queued. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OccurrenceReportItem"];
+                };
+            };
+            400: components["responses"]["Problem"];
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
             503: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
         };

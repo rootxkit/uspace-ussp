@@ -45,8 +45,10 @@ func TestIntegrationRetention(t *testing.T) {
 	now := time.Now().UTC()
 	for k, id := range ids {
 		for i, age := range []time.Duration{100 * 24 * time.Hour, 99 * 24 * time.Hour, 10 * 24 * time.Hour} {
-			if _, err := tsOwner(t).Exec(ctx, `INSERT INTO telemetry (flight_id, captured_at, rx_ts, time_source, geom, cell5, msg_id, operator_position)
-				VALUES ($1::uuid, $2, $2, 'operator', ST_SetSRID(ST_MakePoint(44.78, 41.71), 4326), 'c5:417:447', $3,
+			// ts is set: a row without one would refuse the time-series
+			// tree's down migration (00003), which the suite runs too.
+			if _, err := tsOwner(t).Exec(ctx, `INSERT INTO telemetry (flight_id, captured_at, ts, rx_ts, time_source, geom, cell5, msg_id, operator_position)
+				VALUES ($1::uuid, $2, $2, $2, 'operator', ST_SetSRID(ST_MakePoint(44.78, 41.71), 4326), 'c5:417:447', $3,
 				        ST_SetSRID(ST_MakePoint(44.77, 41.70), 4326))`, id, now.Add(-age), fmt.Sprintf("ret-%s-%d", k, i)); err != nil {
 				t.Fatal(err)
 			}

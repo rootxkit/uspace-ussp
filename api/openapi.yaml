@@ -880,6 +880,88 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
 
+  /v1/admin/occurrences:
+    get:
+      operationId: listOccurrences
+      tags: [admin]
+      summary: The occurrence reports not yet delivered
+      description: |
+        Console session of a supervisor or support (served by api; spec
+        02 F7, Reg. (EU) 376/2014 Art. 4(8)). Every report to the
+        authority that is not delivered (pending, with its tries and last
+        error; failed), the nearest deadline first, with the time to its
+        72 h deadline; a report past its deadline is critical. delivery
+        says why nothing is sent while the authority publishes no POST
+        /v1/occurrences (a spec gap); null when reports are sent. A list
+        that cannot be read is 503, never an empty list.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The reports not delivered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccurrenceReports"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: flagOccurrence
+      tags: [admin]
+      summary: Report an alert as an occurrence
+      description: |
+        Console session of a supervisor (served by api; the internal
+        endpoint WP-18's console calls). The alert of one of this USSP's
+        flights is queued as an occurrence report (occurrence/v1, owned by
+        the authority) with became_aware_at now and deadline_at 72 h
+        later, reporter.person_ref the supervisor's account id (an opaque
+        reference, M13). kind defaults to the alert's own (airprox for a
+        proximity alert); other is a voluntary report, every other kind
+        mandatory. An event already reported answers 200 with its report
+        (a proximity conflict is one report for both flights' alerts); a
+        new report 201. The narrative is free text for the authority's
+        safety analysis and must name no person. A report never makes a
+        violation (Art. 15(2)).
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OccurrenceFlag"
+      responses:
+        "200":
+          description: The event was reported before; its report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccurrenceReportItem"
+        "201":
+          description: The report as queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccurrenceReportItem"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
   /oauth/token:
     post:
       operationId: requestToken
@@ -1638,6 +1720,64 @@ components:
                 missing:
                   type: array
                   items: {type: integer}
+    OccurrenceFlag:
+      type: object
+      additionalProperties: false
+      required: [alert_id]
+      properties:
+        alert_id: {type: string, format: uuid}
+        kind:
+          type: string
+          enum: [airprox, nonconformance_in_prohibited, lost_link_in_uspace, emergency, other]
+        narrative: {type: string, maxLength: 2000}
+    OccurrenceReports:
+      type: object
+      required: [reports, truncated, delivery]
+      properties:
+        reports:
+          type: array
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/OccurrenceReportItem"
+        truncated: {type: boolean}
+        delivery:
+          type: [string, "null"]
+          description: Why no report is sent (null when reports are sent).
+    OccurrenceReportItem:
+      type: object
+      required: [report_ref, kind, state, channel, flagged_by, became_aware_at, deadline_at, time_to_deadline_s, critical, attempts, last_error, flight_ids]
+      properties:
+        report_ref: {type: string}
+        kind:
+          type: string
+          enum: [airprox, nonconformance_in_prohibited, lost_link_in_uspace, emergency, other]
+        state:
+          type: string
+          enum: [pending, delivered, failed]
+        channel:
+          type: string
+          enum: [mandatory, voluntary]
+        flagged_by:
+          type: string
+          enum: [system, supervisor]
+        became_aware_at: {type: string, format: date-time}
+        deadline_at: {type: string, format: date-time}
+        time_to_deadline_s:
+          type: number
+          format: double
+          description: Seconds to the deadline; negative past it.
+        critical:
+          type: boolean
+          description: Not delivered and past its deadline.
+        attempts: {type: integer, minimum: 0}
+        last_error: {type: [string, "null"]}
+        flight_ids:
+          type: array
+          items: {type: string, format: uuid}
+        submitted_at: {type: [string, "null"], format: date-time}
+        authority_ref: {type: [string, "null"]}
+        failed_at: {type: [string, "null"], format: date-time}
+        next_at: {type: [string, "null"], format: date-time}
     Problem:
       type: object
       description: |

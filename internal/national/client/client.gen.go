@@ -519,6 +519,117 @@ func (e OAuthProblemError) Valid() bool {
 	}
 }
 
+// Defines values for OccurrenceFlagKind.
+const (
+	OccurrenceFlagKindAirprox                    OccurrenceFlagKind = "airprox"
+	OccurrenceFlagKindEmergency                  OccurrenceFlagKind = "emergency"
+	OccurrenceFlagKindLostLinkInUspace           OccurrenceFlagKind = "lost_link_in_uspace"
+	OccurrenceFlagKindNonconformanceInProhibited OccurrenceFlagKind = "nonconformance_in_prohibited"
+	OccurrenceFlagKindOther                      OccurrenceFlagKind = "other"
+)
+
+// Valid indicates whether the value is a known member of the OccurrenceFlagKind enum.
+func (e OccurrenceFlagKind) Valid() bool {
+	switch e {
+	case OccurrenceFlagKindAirprox:
+		return true
+	case OccurrenceFlagKindEmergency:
+		return true
+	case OccurrenceFlagKindLostLinkInUspace:
+		return true
+	case OccurrenceFlagKindNonconformanceInProhibited:
+		return true
+	case OccurrenceFlagKindOther:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OccurrenceReportItemChannel.
+const (
+	Mandatory OccurrenceReportItemChannel = "mandatory"
+	Voluntary OccurrenceReportItemChannel = "voluntary"
+)
+
+// Valid indicates whether the value is a known member of the OccurrenceReportItemChannel enum.
+func (e OccurrenceReportItemChannel) Valid() bool {
+	switch e {
+	case Mandatory:
+		return true
+	case Voluntary:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OccurrenceReportItemFlaggedBy.
+const (
+	Supervisor OccurrenceReportItemFlaggedBy = "supervisor"
+	System     OccurrenceReportItemFlaggedBy = "system"
+)
+
+// Valid indicates whether the value is a known member of the OccurrenceReportItemFlaggedBy enum.
+func (e OccurrenceReportItemFlaggedBy) Valid() bool {
+	switch e {
+	case Supervisor:
+		return true
+	case System:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OccurrenceReportItemKind.
+const (
+	OccurrenceReportItemKindAirprox                    OccurrenceReportItemKind = "airprox"
+	OccurrenceReportItemKindEmergency                  OccurrenceReportItemKind = "emergency"
+	OccurrenceReportItemKindLostLinkInUspace           OccurrenceReportItemKind = "lost_link_in_uspace"
+	OccurrenceReportItemKindNonconformanceInProhibited OccurrenceReportItemKind = "nonconformance_in_prohibited"
+	OccurrenceReportItemKindOther                      OccurrenceReportItemKind = "other"
+)
+
+// Valid indicates whether the value is a known member of the OccurrenceReportItemKind enum.
+func (e OccurrenceReportItemKind) Valid() bool {
+	switch e {
+	case OccurrenceReportItemKindAirprox:
+		return true
+	case OccurrenceReportItemKindEmergency:
+		return true
+	case OccurrenceReportItemKindLostLinkInUspace:
+		return true
+	case OccurrenceReportItemKindNonconformanceInProhibited:
+		return true
+	case OccurrenceReportItemKindOther:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OccurrenceReportItemState.
+const (
+	OccurrenceReportItemStateDelivered OccurrenceReportItemState = "delivered"
+	OccurrenceReportItemStateFailed    OccurrenceReportItemState = "failed"
+	OccurrenceReportItemStatePending   OccurrenceReportItemState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the OccurrenceReportItemState enum.
+func (e OccurrenceReportItemState) Valid() bool {
+	switch e {
+	case OccurrenceReportItemStateDelivered:
+		return true
+	case OccurrenceReportItemStateFailed:
+		return true
+	case OccurrenceReportItemStatePending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for OperatorScope.
 const (
 	UsspGeo       OperatorScope = "ussp.geo"
@@ -827,25 +938,25 @@ func (e TelemetryFrameHeightRef) Valid() bool {
 
 // Defines values for TelemetryFrameStatus.
 const (
-	Airborne              TelemetryFrameStatus = "Airborne"
-	Emergency             TelemetryFrameStatus = "Emergency"
-	Ground                TelemetryFrameStatus = "Ground"
-	RemoteIDSystemFailure TelemetryFrameStatus = "RemoteIDSystemFailure"
-	Undeclared            TelemetryFrameStatus = "Undeclared"
+	TelemetryFrameStatusAirborne              TelemetryFrameStatus = "Airborne"
+	TelemetryFrameStatusEmergency             TelemetryFrameStatus = "Emergency"
+	TelemetryFrameStatusGround                TelemetryFrameStatus = "Ground"
+	TelemetryFrameStatusRemoteIDSystemFailure TelemetryFrameStatus = "RemoteIDSystemFailure"
+	TelemetryFrameStatusUndeclared            TelemetryFrameStatus = "Undeclared"
 )
 
 // Valid indicates whether the value is a known member of the TelemetryFrameStatus enum.
 func (e TelemetryFrameStatus) Valid() bool {
 	switch e {
-	case Airborne:
+	case TelemetryFrameStatusAirborne:
 		return true
-	case Emergency:
+	case TelemetryFrameStatusEmergency:
 		return true
-	case Ground:
+	case TelemetryFrameStatusGround:
 		return true
-	case RemoteIDSystemFailure:
+	case TelemetryFrameStatusRemoteIDSystemFailure:
 		return true
-	case Undeclared:
+	case TelemetryFrameStatusUndeclared:
 		return true
 	default:
 		return false
@@ -1626,6 +1737,60 @@ type OAuthProblem struct {
 // OAuthProblemError defines model for OAuthProblem.Error.
 type OAuthProblemError string
 
+// OccurrenceFlag defines model for OccurrenceFlag.
+type OccurrenceFlag struct {
+	AlertId   openapi_types.UUID  `json:"alert_id"`
+	Kind      *OccurrenceFlagKind `json:"kind,omitempty"`
+	Narrative *string             `json:"narrative,omitempty"`
+}
+
+// OccurrenceFlagKind defines model for OccurrenceFlag.Kind.
+type OccurrenceFlagKind string
+
+// OccurrenceReportItem defines model for OccurrenceReportItem.
+type OccurrenceReportItem struct {
+	Attempts      int                         `json:"attempts"`
+	AuthorityRef  *string                     `json:"authority_ref,omitempty"`
+	BecameAwareAt time.Time                   `json:"became_aware_at"`
+	Channel       OccurrenceReportItemChannel `json:"channel"`
+
+	// Critical Not delivered and past its deadline.
+	Critical    bool                          `json:"critical"`
+	DeadlineAt  time.Time                     `json:"deadline_at"`
+	FailedAt    *time.Time                    `json:"failed_at,omitempty"`
+	FlaggedBy   OccurrenceReportItemFlaggedBy `json:"flagged_by"`
+	FlightIds   []openapi_types.UUID          `json:"flight_ids"`
+	Kind        OccurrenceReportItemKind      `json:"kind"`
+	LastError   *string                       `json:"last_error"`
+	NextAt      *time.Time                    `json:"next_at,omitempty"`
+	ReportRef   string                        `json:"report_ref"`
+	State       OccurrenceReportItemState     `json:"state"`
+	SubmittedAt *time.Time                    `json:"submitted_at,omitempty"`
+
+	// TimeToDeadlineS Seconds to the deadline; negative past it.
+	TimeToDeadlineS float64 `json:"time_to_deadline_s"`
+}
+
+// OccurrenceReportItemChannel defines model for OccurrenceReportItem.Channel.
+type OccurrenceReportItemChannel string
+
+// OccurrenceReportItemFlaggedBy defines model for OccurrenceReportItem.FlaggedBy.
+type OccurrenceReportItemFlaggedBy string
+
+// OccurrenceReportItemKind defines model for OccurrenceReportItem.Kind.
+type OccurrenceReportItemKind string
+
+// OccurrenceReportItemState defines model for OccurrenceReportItem.State.
+type OccurrenceReportItemState string
+
+// OccurrenceReports defines model for OccurrenceReports.
+type OccurrenceReports struct {
+	// Delivery Why no report is sent (null when reports are sent).
+	Delivery  *string                `json:"delivery"`
+	Reports   []OccurrenceReportItem `json:"reports"`
+	Truncated bool                   `json:"truncated"`
+}
+
 // Operator defines model for Operator.
 type Operator struct {
 	ContactEmail       string         `json:"contact_email"`
@@ -2007,6 +2172,9 @@ type CreateClientJSONRequestBody = ClientRequest
 
 // BindSerialJSONRequestBody defines body for BindSerial for application/json ContentType.
 type BindSerialJSONRequestBody = SerialBindingRequest
+
+// FlagOccurrenceJSONRequestBody defines body for FlagOccurrence for application/json ContentType.
+type FlagOccurrenceJSONRequestBody = OccurrenceFlag
 
 // CreateIntentJSONRequestBody defines body for CreateIntent for application/json ContentType.
 type CreateIntentJSONRequestBody = IntentRequest
@@ -2499,6 +2667,60 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /v1/admin/coordination (the `ListCoordinationNotices` operationId).
 	ListCoordinationNotices(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListOccurrences The occurrence reports not yet delivered
+	//
+	// Console session of a supervisor or support (served by api; spec
+	// 02 F7, Reg. (EU) 376/2014 Art. 4(8)). Every report to the
+	// authority that is not delivered (pending, with its tries and last
+	// error; failed), the nearest deadline first, with the time to its
+	// 72 h deadline; a report past its deadline is critical. delivery
+	// says why nothing is sent while the authority publishes no POST
+	// /v1/occurrences (a spec gap); null when reports are sent. A list
+	// that cannot be read is 503, never an empty list.
+	//
+	// Corresponds with GET /v1/admin/occurrences (the `ListOccurrences` operationId).
+	ListOccurrences(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FlagOccurrenceWithBody Report an alert as an occurrence
+	//
+	// Console session of a supervisor (served by api; the internal
+	// endpoint WP-18's console calls). The alert of one of this USSP's
+	// flights is queued as an occurrence report (occurrence/v1, owned by
+	// the authority) with became_aware_at now and deadline_at 72 h
+	// later, reporter.person_ref the supervisor's account id (an opaque
+	// reference, M13). kind defaults to the alert's own (airprox for a
+	// proximity alert); other is a voluntary report, every other kind
+	// mandatory. An event already reported answers 200 with its report
+	// (a proximity conflict is one report for both flights' alerts); a
+	// new report 201. The narrative is free text for the authority's
+	// safety analysis and must name no person. A report never makes a
+	// violation (Art. 15(2)).
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/admin/occurrences (the `FlagOccurrence` operationId).
+	FlagOccurrenceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FlagOccurrence Report an alert as an occurrence
+	//
+	// Console session of a supervisor (served by api; the internal
+	// endpoint WP-18's console calls). The alert of one of this USSP's
+	// flights is queued as an occurrence report (occurrence/v1, owned by
+	// the authority) with became_aware_at now and deadline_at 72 h
+	// later, reporter.person_ref the supervisor's account id (an opaque
+	// reference, M13). kind defaults to the alert's own (airprox for a
+	// proximity alert); other is a voluntary report, every other kind
+	// mandatory. An event already reported answers 200 with its report
+	// (a proximity conflict is one report for both flights' alerts); a
+	// new report 201. The narrative is free text for the authority's
+	// safety analysis and must name no person. A report never makes a
+	// violation (Art. 15(2)).
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/admin/occurrences (the `FlagOccurrence` operationId).
+	FlagOccurrence(ctx context.Context, body FlagOccurrenceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// OpenAlertStream Stream the alerts of one intent (WebSocket)
 	//
@@ -3323,6 +3545,90 @@ func (c *Client) UnbindSerial(ctx context.Context, operatorId OperatorID, client
 // Corresponds with GET /v1/admin/coordination (the `ListCoordinationNotices` operationId).
 func (c *Client) ListCoordinationNotices(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListCoordinationNoticesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListOccurrences The occurrence reports not yet delivered
+//
+// Console session of a supervisor or support (served by api; spec
+// 02 F7, Reg. (EU) 376/2014 Art. 4(8)). Every report to the
+// authority that is not delivered (pending, with its tries and last
+// error; failed), the nearest deadline first, with the time to its
+// 72 h deadline; a report past its deadline is critical. delivery
+// says why nothing is sent while the authority publishes no POST
+// /v1/occurrences (a spec gap); null when reports are sent. A list
+// that cannot be read is 503, never an empty list.
+//
+// Corresponds with GET /v1/admin/occurrences (the `ListOccurrences` operationId).
+func (c *Client) ListOccurrences(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListOccurrencesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FlagOccurrenceWithBody Report an alert as an occurrence
+//
+// Console session of a supervisor (served by api; the internal
+// endpoint WP-18's console calls). The alert of one of this USSP's
+// flights is queued as an occurrence report (occurrence/v1, owned by
+// the authority) with became_aware_at now and deadline_at 72 h
+// later, reporter.person_ref the supervisor's account id (an opaque
+// reference, M13). kind defaults to the alert's own (airprox for a
+// proximity alert); other is a voluntary report, every other kind
+// mandatory. An event already reported answers 200 with its report
+// (a proximity conflict is one report for both flights' alerts); a
+// new report 201. The narrative is free text for the authority's
+// safety analysis and must name no person. A report never makes a
+// violation (Art. 15(2)).
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/admin/occurrences (the `FlagOccurrence` operationId).
+func (c *Client) FlagOccurrenceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFlagOccurrenceRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// FlagOccurrence Report an alert as an occurrence
+//
+// Console session of a supervisor (served by api; the internal
+// endpoint WP-18's console calls). The alert of one of this USSP's
+// flights is queued as an occurrence report (occurrence/v1, owned by
+// the authority) with became_aware_at now and deadline_at 72 h
+// later, reporter.person_ref the supervisor's account id (an opaque
+// reference, M13). kind defaults to the alert's own (airprox for a
+// proximity alert); other is a voluntary report, every other kind
+// mandatory. An event already reported answers 200 with its report
+// (a proximity conflict is one report for both flights' alerts); a
+// new report 201. The narrative is free text for the authority's
+// safety analysis and must name no person. A report never makes a
+// violation (Art. 15(2)).
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/admin/occurrences (the `FlagOccurrence` operationId).
+func (c *Client) FlagOccurrence(ctx context.Context, body FlagOccurrenceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFlagOccurrenceRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -4429,6 +4735,73 @@ func NewListCoordinationNoticesRequest(server string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewListOccurrencesRequest constructs an http.Request for the ListOccurrences method
+func NewListOccurrencesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/occurrences")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewFlagOccurrenceRequest calls the generic FlagOccurrence builder with application/json body
+func NewFlagOccurrenceRequest(server string, body FlagOccurrenceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewFlagOccurrenceRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewFlagOccurrenceRequestWithBody constructs an http.Request for the FlagOccurrence method, with any body, and a specified content type
+func NewFlagOccurrenceRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/occurrences")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -5569,6 +5942,62 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /v1/admin/coordination (the `ListCoordinationNotices` operationId).
 	ListCoordinationNoticesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListCoordinationNoticesResponse, error)
+
+	// ListOccurrencesWithResponse The occurrence reports not yet delivered
+	//
+	// Console session of a supervisor or support (served by api; spec
+	// 02 F7, Reg. (EU) 376/2014 Art. 4(8)). Every report to the
+	// authority that is not delivered (pending, with its tries and last
+	// error; failed), the nearest deadline first, with the time to its
+	// 72 h deadline; a report past its deadline is critical. delivery
+	// says why nothing is sent while the authority publishes no POST
+	// /v1/occurrences (a spec gap); null when reports are sent. A list
+	// that cannot be read is 503, never an empty list.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/admin/occurrences (the `ListOccurrences` operationId).
+	ListOccurrencesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListOccurrencesResponse, error)
+
+	// FlagOccurrenceWithBodyWithResponse Report an alert as an occurrence
+	//
+	// Console session of a supervisor (served by api; the internal
+	// endpoint WP-18's console calls). The alert of one of this USSP's
+	// flights is queued as an occurrence report (occurrence/v1, owned by
+	// the authority) with became_aware_at now and deadline_at 72 h
+	// later, reporter.person_ref the supervisor's account id (an opaque
+	// reference, M13). kind defaults to the alert's own (airprox for a
+	// proximity alert); other is a voluntary report, every other kind
+	// mandatory. An event already reported answers 200 with its report
+	// (a proximity conflict is one report for both flights' alerts); a
+	// new report 201. The narrative is free text for the authority's
+	// safety analysis and must name no person. A report never makes a
+	// violation (Art. 15(2)).
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/admin/occurrences (the `FlagOccurrence` operationId).
+	FlagOccurrenceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FlagOccurrenceResponse, error)
+
+	// FlagOccurrenceWithResponse Report an alert as an occurrence
+	//
+	// Console session of a supervisor (served by api; the internal
+	// endpoint WP-18's console calls). The alert of one of this USSP's
+	// flights is queued as an occurrence report (occurrence/v1, owned by
+	// the authority) with became_aware_at now and deadline_at 72 h
+	// later, reporter.person_ref the supervisor's account id (an opaque
+	// reference, M13). kind defaults to the alert's own (airprox for a
+	// proximity alert); other is a voluntary report, every other kind
+	// mandatory. An event already reported answers 200 with its report
+	// (a proximity conflict is one report for both flights' alerts); a
+	// new report 201. The narrative is free text for the authority's
+	// safety analysis and must name no person. A report never makes a
+	// violation (Art. 15(2)).
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/admin/occurrences (the `FlagOccurrence` operationId).
+	FlagOccurrenceWithResponse(ctx context.Context, body FlagOccurrenceJSONRequestBody, reqEditors ...RequestEditorFn) (*FlagOccurrenceResponse, error)
 
 	// OpenAlertStreamWithResponse Stream the alerts of one intent (WebSocket)
 	//
@@ -6987,6 +7416,165 @@ func (r ListCoordinationNoticesResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ListCoordinationNoticesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListOccurrencesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *OccurrenceReports
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListOccurrencesResponse) GetJSON200() *OccurrenceReports {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ListOccurrencesResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ListOccurrencesResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ListOccurrencesResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListOccurrencesResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListOccurrencesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListOccurrencesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListOccurrencesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListOccurrencesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type FlagOccurrenceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *OccurrenceReportItem
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *OccurrenceReportItem
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r FlagOccurrenceResponse) GetJSON200() *OccurrenceReportItem {
+	return r.JSON200
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r FlagOccurrenceResponse) GetJSON201() *OccurrenceReportItem {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r FlagOccurrenceResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r FlagOccurrenceResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r FlagOccurrenceResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r FlagOccurrenceResponse) GetApplicationproblemJSON404() *Problem {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r FlagOccurrenceResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r FlagOccurrenceResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r FlagOccurrenceResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r FlagOccurrenceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FlagOccurrenceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r FlagOccurrenceResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -8733,6 +9321,80 @@ func (c *ClientWithResponses) ListCoordinationNoticesWithResponse(ctx context.Co
 	return ParseListCoordinationNoticesResponse(rsp)
 }
 
+// ListOccurrencesWithResponse The occurrence reports not yet delivered
+//
+// Console session of a supervisor or support (served by api; spec
+// 02 F7, Reg. (EU) 376/2014 Art. 4(8)). Every report to the
+// authority that is not delivered (pending, with its tries and last
+// error; failed), the nearest deadline first, with the time to its
+// 72 h deadline; a report past its deadline is critical. delivery
+// says why nothing is sent while the authority publishes no POST
+// /v1/occurrences (a spec gap); null when reports are sent. A list
+// that cannot be read is 503, never an empty list.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/admin/occurrences (the `ListOccurrences` operationId).
+func (c *ClientWithResponses) ListOccurrencesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListOccurrencesResponse, error) {
+	rsp, err := c.ListOccurrences(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListOccurrencesResponse(rsp)
+}
+
+// FlagOccurrenceWithBodyWithResponse Report an alert as an occurrence
+//
+// Console session of a supervisor (served by api; the internal
+// endpoint WP-18's console calls). The alert of one of this USSP's
+// flights is queued as an occurrence report (occurrence/v1, owned by
+// the authority) with became_aware_at now and deadline_at 72 h
+// later, reporter.person_ref the supervisor's account id (an opaque
+// reference, M13). kind defaults to the alert's own (airprox for a
+// proximity alert); other is a voluntary report, every other kind
+// mandatory. An event already reported answers 200 with its report
+// (a proximity conflict is one report for both flights' alerts); a
+// new report 201. The narrative is free text for the authority's
+// safety analysis and must name no person. A report never makes a
+// violation (Art. 15(2)).
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/admin/occurrences (the `FlagOccurrence` operationId).
+func (c *ClientWithResponses) FlagOccurrenceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*FlagOccurrenceResponse, error) {
+	rsp, err := c.FlagOccurrenceWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFlagOccurrenceResponse(rsp)
+}
+
+// FlagOccurrenceWithResponse Report an alert as an occurrence
+//
+// Console session of a supervisor (served by api; the internal
+// endpoint WP-18's console calls). The alert of one of this USSP's
+// flights is queued as an occurrence report (occurrence/v1, owned by
+// the authority) with became_aware_at now and deadline_at 72 h
+// later, reporter.person_ref the supervisor's account id (an opaque
+// reference, M13). kind defaults to the alert's own (airprox for a
+// proximity alert); other is a voluntary report, every other kind
+// mandatory. An event already reported answers 200 with its report
+// (a proximity conflict is one report for both flights' alerts); a
+// new report 201. The narrative is free text for the authority's
+// safety analysis and must name no person. A report never makes a
+// violation (Art. 15(2)).
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/admin/occurrences (the `FlagOccurrence` operationId).
+func (c *ClientWithResponses) FlagOccurrenceWithResponse(ctx context.Context, body FlagOccurrenceJSONRequestBody, reqEditors ...RequestEditorFn) (*FlagOccurrenceResponse, error) {
+	rsp, err := c.FlagOccurrence(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFlagOccurrenceResponse(rsp)
+}
+
 // OpenAlertStreamWithResponse Stream the alerts of one intent (WebSocket)
 //
 // A WebSocket upgrade (served by traffic-ws; Art. 13, spec 02 F5)
@@ -10072,6 +10734,135 @@ func ParseListCoordinationNoticesResponse(rsp *http.Response) (*ListCoordination
 			return nil, err
 		}
 		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListOccurrencesResponse parses an HTTP response from a ListOccurrencesWithResponse call
+func ParseListOccurrencesResponse(rsp *http.Response) (*ListOccurrencesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListOccurrencesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest OccurrenceReports
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFlagOccurrenceResponse parses an HTTP response from a FlagOccurrenceWithResponse call
+func ParseFlagOccurrenceResponse(rsp *http.Response) (*FlagOccurrenceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FlagOccurrenceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest OccurrenceReportItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest OccurrenceReportItem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Problem

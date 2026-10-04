@@ -517,6 +517,117 @@ func (e OAuthProblemError) Valid() bool {
 	}
 }
 
+// Defines values for OccurrenceFlagKind.
+const (
+	OccurrenceFlagKindAirprox                    OccurrenceFlagKind = "airprox"
+	OccurrenceFlagKindEmergency                  OccurrenceFlagKind = "emergency"
+	OccurrenceFlagKindLostLinkInUspace           OccurrenceFlagKind = "lost_link_in_uspace"
+	OccurrenceFlagKindNonconformanceInProhibited OccurrenceFlagKind = "nonconformance_in_prohibited"
+	OccurrenceFlagKindOther                      OccurrenceFlagKind = "other"
+)
+
+// Valid indicates whether the value is a known member of the OccurrenceFlagKind enum.
+func (e OccurrenceFlagKind) Valid() bool {
+	switch e {
+	case OccurrenceFlagKindAirprox:
+		return true
+	case OccurrenceFlagKindEmergency:
+		return true
+	case OccurrenceFlagKindLostLinkInUspace:
+		return true
+	case OccurrenceFlagKindNonconformanceInProhibited:
+		return true
+	case OccurrenceFlagKindOther:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OccurrenceReportItemChannel.
+const (
+	Mandatory OccurrenceReportItemChannel = "mandatory"
+	Voluntary OccurrenceReportItemChannel = "voluntary"
+)
+
+// Valid indicates whether the value is a known member of the OccurrenceReportItemChannel enum.
+func (e OccurrenceReportItemChannel) Valid() bool {
+	switch e {
+	case Mandatory:
+		return true
+	case Voluntary:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OccurrenceReportItemFlaggedBy.
+const (
+	Supervisor OccurrenceReportItemFlaggedBy = "supervisor"
+	System     OccurrenceReportItemFlaggedBy = "system"
+)
+
+// Valid indicates whether the value is a known member of the OccurrenceReportItemFlaggedBy enum.
+func (e OccurrenceReportItemFlaggedBy) Valid() bool {
+	switch e {
+	case Supervisor:
+		return true
+	case System:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OccurrenceReportItemKind.
+const (
+	OccurrenceReportItemKindAirprox                    OccurrenceReportItemKind = "airprox"
+	OccurrenceReportItemKindEmergency                  OccurrenceReportItemKind = "emergency"
+	OccurrenceReportItemKindLostLinkInUspace           OccurrenceReportItemKind = "lost_link_in_uspace"
+	OccurrenceReportItemKindNonconformanceInProhibited OccurrenceReportItemKind = "nonconformance_in_prohibited"
+	OccurrenceReportItemKindOther                      OccurrenceReportItemKind = "other"
+)
+
+// Valid indicates whether the value is a known member of the OccurrenceReportItemKind enum.
+func (e OccurrenceReportItemKind) Valid() bool {
+	switch e {
+	case OccurrenceReportItemKindAirprox:
+		return true
+	case OccurrenceReportItemKindEmergency:
+		return true
+	case OccurrenceReportItemKindLostLinkInUspace:
+		return true
+	case OccurrenceReportItemKindNonconformanceInProhibited:
+		return true
+	case OccurrenceReportItemKindOther:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OccurrenceReportItemState.
+const (
+	OccurrenceReportItemStateDelivered OccurrenceReportItemState = "delivered"
+	OccurrenceReportItemStateFailed    OccurrenceReportItemState = "failed"
+	OccurrenceReportItemStatePending   OccurrenceReportItemState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the OccurrenceReportItemState enum.
+func (e OccurrenceReportItemState) Valid() bool {
+	switch e {
+	case OccurrenceReportItemStateDelivered:
+		return true
+	case OccurrenceReportItemStateFailed:
+		return true
+	case OccurrenceReportItemStatePending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for OperatorScope.
 const (
 	UsspGeo       OperatorScope = "ussp.geo"
@@ -825,25 +936,25 @@ func (e TelemetryFrameHeightRef) Valid() bool {
 
 // Defines values for TelemetryFrameStatus.
 const (
-	Airborne              TelemetryFrameStatus = "Airborne"
-	Emergency             TelemetryFrameStatus = "Emergency"
-	Ground                TelemetryFrameStatus = "Ground"
-	RemoteIDSystemFailure TelemetryFrameStatus = "RemoteIDSystemFailure"
-	Undeclared            TelemetryFrameStatus = "Undeclared"
+	TelemetryFrameStatusAirborne              TelemetryFrameStatus = "Airborne"
+	TelemetryFrameStatusEmergency             TelemetryFrameStatus = "Emergency"
+	TelemetryFrameStatusGround                TelemetryFrameStatus = "Ground"
+	TelemetryFrameStatusRemoteIDSystemFailure TelemetryFrameStatus = "RemoteIDSystemFailure"
+	TelemetryFrameStatusUndeclared            TelemetryFrameStatus = "Undeclared"
 )
 
 // Valid indicates whether the value is a known member of the TelemetryFrameStatus enum.
 func (e TelemetryFrameStatus) Valid() bool {
 	switch e {
-	case Airborne:
+	case TelemetryFrameStatusAirborne:
 		return true
-	case Emergency:
+	case TelemetryFrameStatusEmergency:
 		return true
-	case Ground:
+	case TelemetryFrameStatusGround:
 		return true
-	case RemoteIDSystemFailure:
+	case TelemetryFrameStatusRemoteIDSystemFailure:
 		return true
-	case Undeclared:
+	case TelemetryFrameStatusUndeclared:
 		return true
 	default:
 		return false
@@ -1624,6 +1735,60 @@ type OAuthProblem struct {
 // OAuthProblemError defines model for OAuthProblem.Error.
 type OAuthProblemError string
 
+// OccurrenceFlag defines model for OccurrenceFlag.
+type OccurrenceFlag struct {
+	AlertId   openapi_types.UUID  `json:"alert_id"`
+	Kind      *OccurrenceFlagKind `json:"kind,omitempty"`
+	Narrative *string             `json:"narrative,omitempty"`
+}
+
+// OccurrenceFlagKind defines model for OccurrenceFlag.Kind.
+type OccurrenceFlagKind string
+
+// OccurrenceReportItem defines model for OccurrenceReportItem.
+type OccurrenceReportItem struct {
+	Attempts      int                         `json:"attempts"`
+	AuthorityRef  *string                     `json:"authority_ref,omitempty"`
+	BecameAwareAt time.Time                   `json:"became_aware_at"`
+	Channel       OccurrenceReportItemChannel `json:"channel"`
+
+	// Critical Not delivered and past its deadline.
+	Critical    bool                          `json:"critical"`
+	DeadlineAt  time.Time                     `json:"deadline_at"`
+	FailedAt    *time.Time                    `json:"failed_at,omitempty"`
+	FlaggedBy   OccurrenceReportItemFlaggedBy `json:"flagged_by"`
+	FlightIds   []openapi_types.UUID          `json:"flight_ids"`
+	Kind        OccurrenceReportItemKind      `json:"kind"`
+	LastError   *string                       `json:"last_error"`
+	NextAt      *time.Time                    `json:"next_at,omitempty"`
+	ReportRef   string                        `json:"report_ref"`
+	State       OccurrenceReportItemState     `json:"state"`
+	SubmittedAt *time.Time                    `json:"submitted_at,omitempty"`
+
+	// TimeToDeadlineS Seconds to the deadline; negative past it.
+	TimeToDeadlineS float64 `json:"time_to_deadline_s"`
+}
+
+// OccurrenceReportItemChannel defines model for OccurrenceReportItem.Channel.
+type OccurrenceReportItemChannel string
+
+// OccurrenceReportItemFlaggedBy defines model for OccurrenceReportItem.FlaggedBy.
+type OccurrenceReportItemFlaggedBy string
+
+// OccurrenceReportItemKind defines model for OccurrenceReportItem.Kind.
+type OccurrenceReportItemKind string
+
+// OccurrenceReportItemState defines model for OccurrenceReportItem.State.
+type OccurrenceReportItemState string
+
+// OccurrenceReports defines model for OccurrenceReports.
+type OccurrenceReports struct {
+	// Delivery Why no report is sent (null when reports are sent).
+	Delivery  *string                `json:"delivery"`
+	Reports   []OccurrenceReportItem `json:"reports"`
+	Truncated bool                   `json:"truncated"`
+}
+
 // Operator defines model for Operator.
 type Operator struct {
 	ContactEmail       string         `json:"contact_email"`
@@ -1986,6 +2151,9 @@ type CreateClientJSONRequestBody = ClientRequest
 // BindSerialJSONRequestBody defines body for BindSerial for application/json ContentType.
 type BindSerialJSONRequestBody = SerialBindingRequest
 
+// FlagOccurrenceJSONRequestBody defines body for FlagOccurrence for application/json ContentType.
+type FlagOccurrenceJSONRequestBody = OccurrenceFlag
+
 // CreateIntentJSONRequestBody defines body for CreateIntent for application/json ContentType.
 type CreateIntentJSONRequestBody = IntentRequest
 
@@ -2173,6 +2341,12 @@ type ServerInterface interface {
 	// ListCoordinationNotices The Annex V notices the console must see
 	// (GET /v1/admin/coordination)
 	ListCoordinationNotices(w http.ResponseWriter, r *http.Request)
+	// ListOccurrences The occurrence reports not yet delivered
+	// (GET /v1/admin/occurrences)
+	ListOccurrences(w http.ResponseWriter, r *http.Request)
+	// FlagOccurrence Report an alert as an occurrence
+	// (POST /v1/admin/occurrences)
+	FlagOccurrence(w http.ResponseWriter, r *http.Request)
 	// AckAlert Acknowledge an alert
 	// (POST /v1/alerts/{alert_id}/ack)
 	AckAlert(w http.ResponseWriter, r *http.Request, alertId AlertID)
@@ -2526,6 +2700,34 @@ func (siw *ServerInterfaceWrapper) ListCoordinationNotices(w http.ResponseWriter
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListCoordinationNotices(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListOccurrences operation middleware
+func (siw *ServerInterfaceWrapper) ListOccurrences(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListOccurrences(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// FlagOccurrence operation middleware
+func (siw *ServerInterfaceWrapper) FlagOccurrence(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.FlagOccurrence(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3043,6 +3245,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/coordination", wrapper.ListCoordinationNotices)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/records/flights/{flight_id}", wrapper.GetFlightRecord)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/records/daily/{date}", wrapper.GetDailyRecords)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/occurrences", wrapper.ListOccurrences)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/occurrences", wrapper.FlagOccurrence)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/oauth/token", wrapper.RequestToken)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/jwks.json", wrapper.GetJWKS)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/login", wrapper.Login)

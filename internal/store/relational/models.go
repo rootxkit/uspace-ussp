@@ -295,17 +295,28 @@ type OauthClient struct {
 }
 
 type OccurrenceReport struct {
-	ID            pgtype.UUID `json:"id"`
-	ReportRef     string      `json:"report_ref"`
-	Kind          string      `json:"kind"`
-	OccurredAt    *time.Time  `json:"occurred_at"`
-	BecameAwareAt time.Time   `json:"became_aware_at"`
-	DeadlineAt    time.Time   `json:"deadline_at"`
-	Payload       []byte      `json:"payload"`
-	SubmittedAt   *time.Time  `json:"submitted_at"`
-	AuthorityRef  *string     `json:"authority_ref"`
-	Attempts      int32       `json:"attempts"`
-	LastError     *string     `json:"last_error"`
+	ID            pgtype.UUID   `json:"id"`
+	ReportRef     string        `json:"report_ref"`
+	Kind          string        `json:"kind"`
+	OccurredAt    *time.Time    `json:"occurred_at"`
+	BecameAwareAt time.Time     `json:"became_aware_at"`
+	DeadlineAt    time.Time     `json:"deadline_at"`
+	Payload       []byte        `json:"payload"`
+	SubmittedAt   *time.Time    `json:"submitted_at"`
+	AuthorityRef  *string       `json:"authority_ref"`
+	Attempts      int32         `json:"attempts"`
+	LastError     *string       `json:"last_error"`
+	SourceKind    string        `json:"source_kind"`
+	SourceRef     string        `json:"source_ref"`
+	Channel       string        `json:"channel"`
+	FlaggedBy     string        `json:"flagged_by"`
+	ReporterRef   string        `json:"reporter_ref"`
+	FlightIds     []pgtype.UUID `json:"flight_ids"`
+	IntentIds     []pgtype.UUID `json:"intent_ids"`
+	State         string        `json:"state"`
+	NextAt        time.Time     `json:"next_at"`
+	FailedAt      *time.Time    `json:"failed_at"`
+	CreatedAt     time.Time     `json:"created_at"`
 }
 
 type OperatingStatusNotice struct {
