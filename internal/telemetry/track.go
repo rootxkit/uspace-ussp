@@ -143,3 +143,19 @@ func verticalM(a f3411.VerticalAccuracy) *float64 {
 	}
 	return nil
 }
+
+// AccuracyHM is the metre bound of an F3411 horizontal accuracy
+// category, nil for one without (unknown, or "more than").
+func AccuracyHM(a f3411.HorizontalAccuracy) *float64 { return horizontalM(a) }
+
+// AccuracyVM is the metre bound of an F3411 vertical accuracy category,
+// nil for one without.
+func AccuracyVM(a f3411.VerticalAccuracy) *float64 { return verticalM(a) }
+
+// VerticalAccuracyCode is the MAV_ODID_VER_ACC code of an F3411 vertical
+// accuracy category (what uspace-core rid.AltInput reads); false for one
+// without a code (VA150mPlus, or a value outside the enumeration).
+func VerticalAccuracyCode(a f3411.VerticalAccuracy) (uint8, bool) {
+	c, ok := verticalCode[a]
+	return c, ok
+}

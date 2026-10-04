@@ -7,7 +7,12 @@
 // with the first receipt, the same ref with another body 409
 // notice_ref_reused; GET /v1/coordination/notices/{ack_id} answers the
 // notice's state, acknowledged once a test calls Acknowledge. Down
-// makes its server answer 503.
+// makes its server answer 503. WP-14 adds the manned-traffic service of
+// 02 F4 (stream.go): GET /v1/manned-traffic/stream, a WebSocket of
+// envelope frames (console/snapshot/v1 on connect, track/manned/v1 for
+// every aircraft each TrackEvery, console/status/v1 each StatusEvery
+// with the adapters' states), and GET /v1/manned-traffic/snapshot;
+// CutStream closes every stream at once and refuses new ones.
 package ansp
 
 import (
@@ -38,6 +43,8 @@ type Fake struct {
 	notices []*Notice
 	posts   int
 	gets    int
+	// stream is the manned-traffic service's state (stream.go).
+	stream streamState
 }
 
 // Notice is one notice the fake inbox received.
@@ -71,6 +78,10 @@ func New() (*Fake, error) {
 			f.submit(w, r)
 		case strings.HasPrefix(r.URL.Path, "/v1/coordination/notices/") && r.Method == http.MethodGet:
 			f.get(w, r, strings.TrimPrefix(r.URL.Path, "/v1/coordination/notices/"))
+		case r.URL.Path == "/v1/manned-traffic/stream" && r.Method == http.MethodGet:
+			f.serveStream(w, r)
+		case r.URL.Path == "/v1/manned-traffic/snapshot" && r.Method == http.MethodGet:
+			f.serveSnapshot(w, r)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

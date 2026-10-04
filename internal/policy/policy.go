@@ -22,6 +22,7 @@ import (
 	"github.com/rootxkit/uspace-core/alerting"
 	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/cpa"
+	"github.com/rootxkit/uspace-core/f3411"
 	"github.com/rootxkit/uspace-core/rid"
 	"github.com/rootxkit/uspace-core/zones"
 )
@@ -239,7 +240,26 @@ type Values struct {
 	OperatorPositionRetentionDays int     `json:"operator_position_retention_days"`
 	AirproxReportM                float64 `json:"airprox_report_m"`
 	AirproxReportVM               float64 `json:"airprox_report_v_m"`
+
+	// Peer flights and manned traffic inputs (WP-14). MannedMarginM pads
+	// the union of the U-space airspaces for the bbox of the ANSP's
+	// manned-traffic stream (02 F4); MannedUnavailableS is the silence
+	// of that stream after which manned traffic is unavailable since the
+	// last frame (the ANSP sends a status every 2 s). PeerUnavailableS is
+	// how long a peer Service Provider's flights stay in the product,
+	// marked peer_unavailable, after the peer stopped answering; then
+	// they age out. PeerFlightsMax bounds the flights one GET
+	// /uss/flights answer may carry: a larger answer is refused whole
+	// and counted, never shown in part as if complete (06 T9). It is a
+	// count, so its name carries no unit.
+	MannedMarginM      float64 `json:"manned_margin_m"`
+	MannedUnavailableS float64 `json:"manned_unavailable_s"`
+	PeerUnavailableS   float64 `json:"peer_unavailable_s"`
+	PeerFlightsMax     int     `json:"peer_flights_max_count"`
 }
+
+// MaxPeerFlightsMax bounds PeerFlightsMax.
+const MaxPeerFlightsMax = 100_000
 
 // MaxOperatorPositionRetentionDays bounds OperatorPositionRetentionDays.
 const MaxOperatorPositionRetentionDays = 3660
@@ -328,6 +348,12 @@ const TelemetryRetentionFloorDays = 30
 // of an ANSP notice every 10 s for 5 min, B-13's 3 s silence, spec 05
 // §4's 90 days for the remote pilot's position and, for an airprox
 // report, the CPA minima.
+//
+// The peer and manned defaults (WP-14) are the brief's 5 km margin and
+// 10 s silence (five of the ANSP's 2 s status periods), F3411's 60 s
+// near-real-time window for a peer's last report
+// (NetMaxNearRealTimeDataPeriodSeconds: older is never current) and 1000
+// flights per answer (no figure in the plan).
 func Defaults() Values {
 	c := cpa.DefaultPolicy
 	alt := rid.DefaultAltPolicy()
@@ -406,6 +432,11 @@ func Defaults() Values {
 		OperatorPositionRetentionDays: 90,
 		AirproxReportM:                c.DHorizontalMinM,
 		AirproxReportVM:               c.DVerticalMinM,
+
+		MannedMarginM:      5000,
+		MannedUnavailableS: 10,
+		PeerUnavailableS:   f3411.NetMaxNearRealTimeDataPeriodSeconds,
+		PeerFlightsMax:     1000,
 	}
 }
 
@@ -480,6 +511,7 @@ func (v Values) Validate() error {
 		{"zone_clear_after_s", v.ZoneClearAfterS}, {"zone_stale_after_s", v.ZoneStaleAfterS},
 		{"ats_ack_poll_s", v.ATSAckPollS}, {"ats_ack_escalate_s", v.ATSAckEscalateS}, {"record_gap_s", v.RecordGapS},
 		{"airprox_report_m", v.AirproxReportM}, {"airprox_report_v_m", v.AirproxReportVM},
+		{"manned_unavailable_s", v.MannedUnavailableS}, {"peer_unavailable_s", v.PeerUnavailableS},
 	}
 	for _, f := range positive {
 		if !finite(f.v) || f.v <= 0 {
@@ -491,7 +523,8 @@ func (v Values) Validate() error {
 		v    float64
 	}{{"cpa_tcpa_max_s", v.CPATCPAMaxS}, {"cpa_neighbour_max_age_s", v.CPANeighbourMaxAgeS},
 		{"deconflict_buffer_m", v.DeconflictBufferM}, {"deconflict_vertical_buffer_m", v.DeconflictVerticalBufferM},
-		{"pressure_uncertainty_m", v.PressureUncertaintyM}, {"peer_subscription_margin_m", v.PeerSubscriptionMarginM}} {
+		{"pressure_uncertainty_m", v.PressureUncertaintyM}, {"peer_subscription_margin_m", v.PeerSubscriptionMarginM},
+		{"manned_margin_m", v.MannedMarginM}} {
 		if !finite(f.v) || f.v < 0 {
 			errs = append(errs, core.Fieldf(f.name, "must be a finite number of at least 0, got %v", f.v))
 		}
@@ -565,6 +598,9 @@ func (v Values) Validate() error {
 	}
 	if finite(v.TrafficDropAfterS) && finite(v.TrafficStaleAfterS) && v.TrafficDropAfterS <= v.TrafficStaleAfterS {
 		errs = append(errs, core.Fieldf("traffic_drop_after_s", "must be longer than traffic_stale_after_s (%v), got %v", v.TrafficStaleAfterS, v.TrafficDropAfterS))
+	}
+	if v.PeerFlightsMax < 1 || v.PeerFlightsMax > MaxPeerFlightsMax {
+		errs = append(errs, core.Fieldf("peer_flights_max_count", "must be from 1 to %d, got %d", MaxPeerFlightsMax, v.PeerFlightsMax))
 	}
 	if v.ClientSecretOverlapS < 0 || v.ClientSecretOverlapS > MaxClientSecretOverlapS {
 		errs = append(errs, core.Fieldf("client_secret_overlap_s", "must be from 0 to %d, got %d", MaxClientSecretOverlapS, v.ClientSecretOverlapS))

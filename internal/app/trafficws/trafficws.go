@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/rootxkit/uspace-core/core"
+	"github.com/rootxkit/uspace-core/geoid"
 
 	"github.com/rootxkit/uspace-ussp/internal/app/proc"
 	"github.com/rootxkit/uspace-ussp/internal/auth"
@@ -53,6 +54,7 @@ const (
 	DepSourceControl  = "source_control"
 	DepCIS            = "cis_current"
 	DepSessionsLive   = "sessions_live"
+	DepGeoid          = "geoid"
 )
 
 // AlertReplay is how far back the alert feed starts: every active alert
@@ -176,7 +178,25 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 
 	hubCounters := &core.Counters{}
 	proc.Publish(rt, "traffic_ws", hubCounters)
+	// The geoid shows a manned track's geometric altitude as AMSL in the
+	// product (brief WP-14: alt_source as the data allows).
+	var und geoid.Undulator
+	geoidWhy := "USSP_GEOID_FILE is not set: a manned track's geometric altitude is not shown as AMSL (alt_source none, or pressure when it has one)"
+	if gf := rt.Config.GeoidFile; gf != "" {
+		if g, err := geoid.LoadMapped(gf); err == nil {
+			und, geoidWhy = g, ""
+		} else {
+			geoidWhy = "the geoid grid of USSP_GEOID_FILE does not load (" + err.Error() + "): a manned track's geometric altitude is not shown as AMSL"
+		}
+	}
+	rt.Health.Register(DepGeoid, false, func(context.Context) (obs.State, string) {
+		if und == nil {
+			return obs.StateDown, geoidWhy
+		}
+		return obs.StateUp, ""
+	})
 	hub := &Hub{
+		Geoid:   und,
 		Picture: &traffic.Picture{Counters: hubCounters}, Book: &traffic.Book{Counters: hubCounters},
 		Policy: current, Gate: src, Intents: intents, Bindings: bindings,
 		CIS: func() (cis.BasisValue, bool) {

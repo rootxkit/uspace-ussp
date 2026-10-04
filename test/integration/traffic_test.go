@@ -149,7 +149,7 @@ func newTrafficRig(t *testing.T) *trafficRig {
 	addr, _ := runStoppable(t, trafficws.SpecWith(trafficws.Options{}), map[string]string{
 		"USSP_TRAFFIC_WS_ADDR": "127.0.0.1:0", "USSP_NATS_URL": mustEnv(t, "USSP_TEST_NATS_URL"),
 		"USSP_AUDIENCES": testHost, "USSP_TOKEN_ISSUERS": testIssuer + "=" + g.own.jwks, "USSP_ISSUER_URL": testIssuer,
-		"USSP_WS_ALLOWED_ORIGINS": "https://console.test",
+		"USSP_WS_ALLOWED_ORIGINS": "https://console.test", "USSP_GEOID_FILE": geoidFile(t),
 	})
 	g.ws = "ws://" + addr
 	// Subscriptions are answered once the projections are read (503

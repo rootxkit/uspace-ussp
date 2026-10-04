@@ -76,8 +76,8 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_AUDIENCES` | `api,telemetry-ingest,rid-sp,traffic-ws` |  |  |  | hosts accepted as JWT aud, comma-separated: the public host and a lab alias (M18) |
 | `USSP_TOKEN_ISSUERS` | `api,telemetry-ingest,rid-sp,monitor,traffic-ws` |  |  |  | allow-listed token issuers as iss=jwks_url, comma-separated; the first is the token service for outgoing calls |
 | `USSP_CIS_NOTIFY_ISSUERS` | `api` |  |  |  | issuers of CIS change notifications (the CISP, the ANSP) as iss=jwks_url, comma-separated |
-| `USSP_USS_BASE_URL` | `api,rid-sp,dss-sync` |  |  |  | this USSP's published base URL (uss_base_url in the DSS) |
-| `USSP_DSS_BASE_URL` | `api,rid-sp,dss-sync` |  |  |  | InterUSS DSS base URL; its host is the outgoing aud |
+| `USSP_USS_BASE_URL` | `api,rid-sp,monitor,dss-sync` |  |  |  | this USSP's published base URL (uss_base_url in the DSS); monitor's Display Provider subscribes with it and never polls an ISA that names it |
+| `USSP_DSS_BASE_URL` | `api,rid-sp,monitor,dss-sync` |  |  |  | InterUSS DSS base URL; its host is the outgoing aud; monitor discovers the peers' ISAs there (F3411 Display Provider) |
 | `USSP_DSS_FOR_ALL` | `api` |  | `off` |  | on: every intent that needs an authorisation is deconflicted and written through the DSS, outside U-space airspace too; off: only intents inside U-space airspace (02 F5) |
 | `USSP_CISP_BASE_URL` | `api` |  |  |  | CISP base URL (F3 pull) |
 | `USSP_CIS_BBOX` | `api` |  |  |  | box of the CIS change subscription as min_lng,min_lat,max_lng,max_lat in WGS84 degrees; empty is everywhere |
@@ -87,7 +87,7 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_CERTIFICATE_ID` | `api` |  |  |  | the id of this USSP's certificate at the authority (32 hex characters), named by the Art. 7(6) operating-status notices; unset, no notice can be sent and /readyz says so |
 | `USSP_AUTHORITY_BASE_URL` | `api` |  |  |  | authority base URL (F8 registry, occurrences, status) |
 | `USSP_ANSP_BASE_URL` | `api` |  |  |  | ANSP base URL (Annex V coordination notices) |
-| `USSP_ANSP_STREAM_URL` | `monitor` |  |  |  | ANSP manned-traffic stream (F4, wss://<ansp>/v1/manned-traffic/stream): monitor reads it with a token of scope ansp.traffic and mTLS per USSP_MTLS_MODE and reports it as ansp_feed on /readyz; the manned tracks are held, not published to man.v1, until WP-14's echo guard (PLAN §15 Q23) |
+| `USSP_ANSP_STREAM_URL` | `monitor` |  |  |  | ANSP manned-traffic stream (F4, wss://<ansp>/v1/manned-traffic/stream): monitor reads it with a token of scope ansp.traffic and mTLS per USSP_MTLS_MODE, bootstraps from /v1/manned-traffic/snapshot, publishes its tracks on man.v1 (an echo of one of this USSP's own flights left out, PLAN §15 Q23) and reports it as ansp_feed on /readyz; unset means no manned traffic, shown as unavailable |
 | `USSP_MTLS_MODE` | `api,monitor` |  | `required` |  | mTLS towards the ANSP (M25): Annex V notices (api) and the manned-traffic stream (monitor); off only in the lab and on staging, and logged at error level |
 | `USSP_MTLS_CERT_FILE` | `api,monitor` |  |  |  | client certificate (PEM) for USSP_MTLS_MODE=required |
 | `USSP_MTLS_KEY_FILE` | `api,monitor` |  |  |  | client key (PEM) for USSP_MTLS_MODE=required |
@@ -105,12 +105,14 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_REGISTRY_RATE_PER_MIN` | `api` |  | `60` | 1/min | GET /v1/registry/validate lookups per operator client per minute (per process) |
 | `USSP_TRUSTED_PROXIES` | `api,telemetry-ingest,rid-sp,traffic-ws` |  |  |  | CIDRs or addresses of the reverse proxies whose X-Forwarded-For is believed, comma-separated; the client is the rightmost hop that is not one of them; empty: the peer is the client |
 | `USSP_TOKEN_CLIENT_SECRET_FILE` | `api,rid-sp,monitor,dss-sync` |  |  |  | file holding the client secret of this USSP's client ussp-<code>-01 at the first USSP_TOKEN_ISSUERS entry, for outgoing calls |
-| `USSP_GEOID_FILE` | `api,telemetry-ingest,monitor` |  |  |  | geoid grid file for AMSL |
+| `USSP_GEOID_FILE` | `api,telemetry-ingest,monitor,traffic-ws` |  |  |  | geoid grid file for AMSL |
 | `USSP_TERRAIN_DIR` | `monitor` |  |  |  | directory of terrain tiles |
 | `USSP_CELL_OWNERSHIP` | `monitor` |  | `all` |  | cells this monitor instance owns: all, or a comma list of c3 cells |
 | `USSP_AUTHORITY_PUSH` | `rid-sp` |  | `off` |  | the optional WS /v1/authority/flights extension (D12) |
 | `USSP_RECORDS_DIR` | `api` |  |  |  | directory (a local volume) the daily record bundles are written to and served from (GET /v1/records/daily/{date}); unset, no bundle is built and /readyz says so |
 | `USSP_WEATHER_SOURCE` | `api` |  |  |  | weather source adapter and URL; unset means weather answers 503 weather_unavailable |
-| `USSP_ADSB_SOURCE` | `monitor` |  |  |  | e-conspicuity receiver feed; unset means no receiver, shown as such |
+| `USSP_ADSB_SOURCE` | `monitor` |  |  |  | e-conspicuity receiver feed: http(s)://<host>/data/aircraft.json (readsb/dump1090, polled at 1 Hz), sbs://<host>:<port> (BaseStation lines) or file://<path>.jsonl (a recorded aircraft.json replay, timestamps re-based); unset means no receiver, shown as such |
+| `USSP_ADSB_RECEIVER_ID` | `monitor` |  | `adsb-rx-1` |  | the e-conspicuity receiver's id: source_instance of its tracks and the instance of its adsb_rx source switch |
+| `USSP_TRAFFIC_INPUT_BBOX` | `monitor` |  |  |  | box of the manned and peer inputs as min_lng,min_lat,max_lng,max_lat in WGS84 degrees: the ANSP stream's bbox and the peer Display Provider's area; empty is every U-space airspace of cis_current, padded |
 | `USSP_WS_ALLOWED_ORIGINS` | `telemetry-ingest,traffic-ws` |  |  |  | Origin allow-list of browser WebSocket upgrades (M22), comma-separated |
 | `USSP_READINESS_CHECK_TIMEOUT_MS` | `all` |  | `2000` | ms | bound on one dependency check of /readyz |

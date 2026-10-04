@@ -41,6 +41,17 @@ type SourceGate interface {
 	Enabled(sourceType, instance string) bool
 }
 
+// SourceNetworkRID is the peer flights' adapter type (internal/peers):
+// its instances are the peers' base URLs.
+const SourceNetworkRID = "network_rid"
+
+// PeerState is what a gate may also say of the peer USSPs (traffic-ws's
+// hub, from their src.v1 status): whether the peer that serves a
+// track, by its base URL, does not answer now (WP-14).
+type PeerState interface {
+	PeerUnavailable(instance string) bool
+}
+
 // held is one track of the picture: its last sample and the message it
 // came in (the snapshot carries the message itself).
 type held struct {
@@ -163,9 +174,11 @@ type Selected struct {
 // wherever it is), as shown at now, sorted by track id: live, stale
 // (captured more than traffic_stale_after_s ago, or the source said so)
 // or source_disabled (its source is switched off now, or the source said
-// so), each with its age. The lock is held only to collect the held
-// tracks, which are replaced and never changed; the product is built
-// after it.
+// so), each with its age. A peer flight whose peer does not answer (the
+// gate's PeerState) is marked peer_unavailable, and left out once its
+// last report is older than peer_unavailable_s (WP-14). The lock is held
+// only to collect the held tracks, which are replaced and never changed;
+// the product is built after it.
 func (p *Picture) Tracks(a Area, now time.Time, v policy.Values, gate SourceGate) []Selected {
 	type pick struct {
 		id string
@@ -179,11 +192,18 @@ func (p *Picture) Tracks(a Area, now time.Time, v policy.Values, gate SourceGate
 		}
 	}
 	p.mu.RUnlock()
+	peers, _ := gate.(PeerState)
 	out := make([]Selected, 0, len(picks))
 	for _, pk := range picks {
 		in := &pk.h.in
 		t := productTrack(in)
 		t.AgeS = max(now.Sub(in.Times.CapturedAt).Seconds(), 0)
+		if peers != nil && in.Source == SourceNetworkRID && strings.HasPrefix(pk.id, NSPeer+":") && peers.PeerUnavailable(in.Instance) {
+			if t.AgeS > v.PeerUnavailableS {
+				continue
+			}
+			t.PeerUnavailable = true
+		}
 		switch {
 		case in.State == StateSourceDisabled || (gate != nil && !gate.Enabled(in.Source, in.Instance)):
 			t.State = StateSourceDisabled
@@ -229,6 +249,9 @@ type ProductTrack struct {
 	TimeOfReport   bus.Stamp      `json:"time_of_report"`
 	Callsign       *string        `json:"callsign,omitempty"`
 	Own            bool           `json:"own,omitempty"`
+	// PeerUnavailable is set on a peer flight whose peer does not answer
+	// (its last report, with its age).
+	PeerUnavailable bool `json:"peer_unavailable,omitempty"`
 }
 
 func productTrack(in *Input) ProductTrack {
