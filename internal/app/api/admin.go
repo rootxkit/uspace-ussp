@@ -164,7 +164,7 @@ func startAdmin(ctx context.Context, rt *proc.Runtime, pol *policy.Service, kv *
 	writer := &sources.Writer{Store: rt.Store, Projector: kv, Counters: counters, Logger: logger}
 	rt.Go(ctx, writer.Run)
 	js := rt.Bus.JetStream()
-	inputs := &admin.Inputs{Link: rt.Bus.Link, Counters: counters, Logger: logger,
+	inputs := &admin.Inputs{Link: rt.Bus.Link, Counters: counters, Logger: logger, Now: time.Now,
 		Monitors: func(ctx context.Context) ([]bus.MonitorEntry, error) { return bus.MonitorStatuses(ctx, js) }}
 	rt.Go(ctx, func(ctx context.Context) { inputs.Run(ctx, rt.Bus.Listen) })
 	svc := &admin.Service{

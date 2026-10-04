@@ -458,12 +458,12 @@ func (in *Inputs) monitor(ctx context.Context, now time.Time, missingS float64) 
 	return out
 }
 
-// InputsView is GET /v1/admin/inputs. It reads one clock once, the
-// tracker's (Inputs.Now), after the switches are read: the clock that
-// stamped when each source status was heard and when the tracker
-// started, so a source's silence is measured on the clock that stamped
-// it and the Service's clock is never compared with those stamps. The
-// same reading is checked_at and the "now" of the monitor's ages.
+// InputsView is GET /v1/admin/inputs. It reads one clock once, after
+// the switches are read: the tracker's (Inputs.Now) when it has one, the
+// clock that stamped when each source status was heard and when the
+// tracker started, so a source's silence is measured on the clock that
+// stamped it; the Service's otherwise. The same reading is checked_at
+// and the "now" of the monitor's ages.
 func (s *Service) InputsView(ctx context.Context) (InputsView, error) {
 	out := InputsView{Dependencies: map[string]obs.DependencyStatus{}, Sources: []Input{}}
 	var switches []SwitchRow
@@ -486,9 +486,15 @@ func (s *Service) InputsView(ctx context.Context) (InputsView, error) {
 	staff := s.staffNames(ctx, actorsOf(switches))
 	in := s.Inputs
 	if in == nil {
-		in = &Inputs{Now: s.Now}
+		in = &Inputs{}
 	}
-	now := in.now()
+	// The tracker's clock when it has one of its own; otherwise the
+	// Service's, the clock the caller configured (both are time.Now in
+	// api, which sets them together).
+	now := s.now()
+	if in.Now != nil {
+		now = in.Now()
+	}
 	out.CheckedAt = now.UTC()
 	out.Bus, out.Sources, out.SourcesTruncated = in.view(now, switches, staff)
 	out.Monitor = in.monitor(ctx, now, s.policy().Values.MonitorStatusMissingS)
