@@ -67,11 +67,23 @@ func (p Store) RecordAlert(ctx context.Context, r alerts.Record) (bool, error) {
 	params.Severity, params.State, params.RaisedAt, params.UpdatedAt = string(r.Severity), r.State, r.RaisedAt.UTC(), r.UpdatedAt.UTC()
 	params.ClearedAt, params.ClearReason, params.Detail, params.CapturedAt = cleared, r.ClearReason, r.Detail, &captured
 	params.PolicyVersion, params.Cell5 = r.PolicyVersion, cell
-	res, err := p.S.Queries().RecordAlert(ctx, params)
+	var known bool
+	err = p.S.Tx(ctx, func(q *relational.Queries) error {
+		// A row recorded under its intent before its flight was (WP-17)
+		// gets the flight first, then the message as usual.
+		if params.FlightID.Valid {
+			if err := q.FillAlertFlight(ctx, relational.FillAlertFlightParams{ID: id, FlightID: params.FlightID}); err != nil {
+				return err
+			}
+		}
+		res, err := q.RecordAlert(ctx, params)
+		known = res.FlightKnown
+		return err
+	})
 	if err != nil {
 		return false, fmt.Errorf("alert record: %w", err)
 	}
-	return res.FlightKnown, nil
+	return known, nil
 }
 
 // RecordDelivery implements alerts.Store.

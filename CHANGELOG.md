@@ -59,6 +59,12 @@ additively within `/v1`.
   - the portal's BFF no longer lets `/v1/traffic/snapshot` through: it
     proxies to api, and the snapshot is traffic-ws's (a test holds the
     allow-list to api's routes).
+  - an alert whose flight api has not recorded yet is recorded at once
+    under the intent it names (its flight filled in by a later
+    delivery, on a cleared row too), so the operator's first
+    acknowledgement, portal or machine client, answers instead of 404
+    until the recorder's next redelivery; the browser test acknowledges
+    with one click instead of retrying for up to 60 s.
 - WP-16 review follow-ups:
   - a weather fetch that answers but delivers nothing in force (every
     report refused, no report for any station, or only reports held

@@ -1,33 +1,39 @@
 -- Alerts (internal/alerts, WP-11): the record of every alert/v1 the
 -- monitor publishes, written by api from alrt.v1 (docs/PLAN.md §3.2),
 -- the operator's acknowledgement and the escalation of an unacknowledged
--- critical alert. A row is written only for a flight the flights table
--- holds: 0 rows means the flight fact has not been recorded yet and the
--- consumer tries again. A cleared row is never reopened by a later
+-- critical alert. A row is written for a flight the flights table holds
+-- or, while it does not hold it yet, for the intent the alert names (its
+-- flight_id NULL until a later delivery fills it in, FillAlertFlight):
+-- the operator can acknowledge an alert as soon as it is raised (brief
+-- WP-17). Neither known means the facts have not been recorded yet and
+-- the consumer tries again. A cleared row is never reopened by a later
 -- message (a republish that crossed the clear); acknowledgement and
 -- escalation are never undone by a message.
 
 -- name: RecordAlert :one
 -- flight_known is false when the flights table does not hold the flight
--- yet (the consumer tries again); an alert of an intent without a
--- flight (restriction_activated before the activation, WP-12) is known
--- once its intent is. written is false for a message on a cleared
--- alert, which changes nothing.
+-- yet (the consumer tries again, and FillAlertFlight fills the flight in
+-- then); an alert of an intent without a flight (restriction_activated
+-- before the activation, WP-12) is known once its intent is. The row is
+-- written when the flight or the intent is recorded, so an alert whose
+-- flight fact is late is recorded under its intent at once. written is
+-- false for a message on a cleared alert, which changes nothing.
 WITH f AS (
     SELECT id FROM flights WHERE id = sqlc.narg(flight_id)::uuid
+), oi AS (
+    SELECT id FROM operational_intents WHERE id = sqlc.narg(intent_id)::uuid
 ), known AS (
     SELECT CASE WHEN sqlc.narg(flight_id)::uuid IS NULL
-                THEN EXISTS (SELECT 1 FROM operational_intents oi WHERE oi.id = sqlc.narg(intent_id)::uuid)
+                THEN EXISTS (SELECT 1 FROM oi)
                 ELSE EXISTS (SELECT 1 FROM f) END AS ok
 ), ins AS (
     INSERT INTO alerts (id, kind, flight_id, intent_id, authorisation_number, peer_ref, severity, state, raised_at, updated_at,
                         cleared_at, clear_reason, detail, captured_at, policy_version, cell5)
-    SELECT sqlc.arg(id)::uuid, sqlc.arg(kind), (SELECT id FROM f),
-           (SELECT oi.id FROM operational_intents oi WHERE oi.id = sqlc.narg(intent_id)::uuid),
+    SELECT sqlc.arg(id)::uuid, sqlc.arg(kind), (SELECT id FROM f), (SELECT id FROM oi),
            sqlc.narg(authorisation_number), sqlc.narg(peer_ref), sqlc.arg(severity), sqlc.arg(state), sqlc.arg(raised_at),
            sqlc.arg(updated_at), sqlc.narg(cleared_at), sqlc.narg(clear_reason), sqlc.arg(detail), sqlc.arg(captured_at),
            sqlc.arg(policy_version), sqlc.narg(cell5)
-    FROM known WHERE known.ok
+    WHERE EXISTS (SELECT 1 FROM f) OR EXISTS (SELECT 1 FROM oi)
     ON CONFLICT (id) DO UPDATE
     SET severity = EXCLUDED.severity,
         state = EXCLUDED.state,
@@ -44,6 +50,18 @@ WITH f AS (
     RETURNING 1
 )
 SELECT (SELECT ok FROM known)::bool AS flight_known, EXISTS (SELECT 1 FROM ins) AS written;
+
+-- name: FillAlertFlight :exec
+-- The flight of an alert recorded under its intent before the flights
+-- table held the flight, once it does; on a cleared row too (the flight
+-- is a fact of the alert, not a message's numbers). Nothing else
+-- changes.
+UPDATE alerts a
+SET flight_id = f.id
+FROM flights f
+WHERE a.id = sqlc.arg(id)::uuid
+  AND a.flight_id IS NULL
+  AND f.id = sqlc.arg(flight_id)::uuid;
 
 -- name: GetAlert :one
 SELECT id, kind, flight_id, intent_id, authorisation_number, peer_ref, severity, state, raised_at, updated_at, cleared_at,

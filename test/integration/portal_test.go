@@ -4,11 +4,21 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/rootxkit/uspace-core/core"
 
 	"github.com/rootxkit/uspace-ussp/internal/accounts"
+	"github.com/rootxkit/uspace-ussp/internal/alerts"
+	alertstore "github.com/rootxkit/uspace-ussp/internal/alerts/pgstore"
 	"github.com/rootxkit/uspace-ussp/internal/auth"
+	"github.com/rootxkit/uspace-ussp/internal/bus"
+	"github.com/rootxkit/uspace-ussp/internal/flights"
+	flightstore "github.com/rootxkit/uspace-ussp/internal/flights/pgstore"
 	"github.com/rootxkit/uspace-ussp/internal/intent"
 	"github.com/rootxkit/uspace-ussp/internal/store"
 )
@@ -178,5 +188,71 @@ func TestIntegrationPortalClientListBounds(t *testing.T) {
 	if first["client_id"] != p.clientID || first["serials_truncated"] != true || len(ss) != accounts.MaxSerialsListedPerItem ||
 		strings.Contains(r.raw, `"`+p.serial+`"`) {
 		t.Fatalf("first client %v, %d serials", first["client_id"], len(ss))
+	}
+}
+
+// The alert race (brief WP-17): the browser sees an alert on traffic-ws
+// as soon as the monitor raises it, but its flight's row is written by
+// api from the flight fact, which may come later. The alert is recorded
+// at once under the intent it names (the flight left NULL, and the
+// message still deferred for it), so the portal's acknowledgement finds
+// it and answers; another operator's does not (E-01). Once the flight
+// is recorded the next delivery fills the flight in, on a cleared row
+// too, and keeps the acknowledgement.
+func TestIntegrationPortalAcksBeforeTheFlightIsRecorded(t *testing.T) {
+	g := newIntentRig(t)
+	g.publishAll(nil, nil, nil)
+	p := g.portalOperator()
+	r := g.stack.call("POST", "/v1/intents", g.request(p.number, p.serial, "ack-race", g.box(0.3, 0, 0.01)), bearer(p.session))
+	if r.status != 201 {
+		t.Fatalf("file: %d %s", r.status, r.raw)
+	}
+	intentID, flightID, alertID := r.str("intent_id"), newUUID(), newUUID()
+	ctx := context.Background()
+	db := relOwner(t)
+	ast := alertstore.Store{S: appStore(t)}
+	svc := &alerts.Service{Store: ast, Logger: quiet()}
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	msg := func(state string) alerts.Record {
+		b := alerts.Body{AlertID: alertID, Kind: "proximity", Severity: core.SeverityCritical, State: state, FlightID: flightID,
+			IntentID: &intentID, CapturedAt: now, RaisedAt: now, UpdatedAt: now, PolicyVersion: 1, Detail: json.RawMessage(`{}`)}
+		if state == alerts.StateCleared {
+			reason := "resolved"
+			b.ClearReason, b.UpdatedAt = &reason, now.Add(time.Second)
+		}
+		return alerts.Record{Body: b}
+	}
+
+	recorded, err := ast.RecordAlert(ctx, msg(alerts.StateRaised))
+	if err != nil || recorded {
+		t.Fatalf("raised before the flight: recorded %v, %v (the message must stay deferred for its flight)", recorded, err)
+	}
+	if n := count(t, db, "SELECT count(*) FROM alerts WHERE id = $1 AND flight_id IS NULL AND intent_id = $2", alertID, intentID); n != 1 {
+		t.Fatal("the alert is not recorded under its intent while its flight is not")
+	}
+	actor := auth.ActorPortalUser + ":" + newUUID()
+	other := g.portalOperator()
+	if _, err := svc.AckForOperator(ctx, alertID, other.opID, actor); !errors.Is(err, alerts.ErrNotFound) {
+		t.Fatalf("another operator's acknowledgement: %v", err)
+	}
+	res, err := svc.AckForOperator(ctx, alertID, p.opID, actor)
+	if err != nil || res.AckedBy != actor {
+		t.Fatalf("acknowledged before the flight is recorded: %+v %v", res, err)
+	}
+
+	if _, err := ast.RecordAlert(ctx, msg(alerts.StateCleared)); err != nil {
+		t.Fatal(err)
+	}
+	if err := (flightstore.Store{S: appStore(t)}).Record(ctx, flights.Body{FlightID: flightID, Event: flights.EventStarted,
+		At: bus.Stamp{Time: now}, StartedAt: bus.Stamp{Time: now}, ClientID: p.clientID, UASSerial: p.serial, IntentID: &intentID}); err != nil {
+		t.Fatal(err)
+	}
+	recorded, err = ast.RecordAlert(ctx, msg(alerts.StateCleared))
+	if err != nil || !recorded {
+		t.Fatalf("after the flight: recorded %v, %v", recorded, err)
+	}
+	if n := count(t, db, `SELECT count(*) FROM alerts WHERE id = $1 AND flight_id = $2 AND cleared_at IS NOT NULL
+		AND acked_by = $3`, alertID, flightID, actor); n != 1 {
+		t.Fatal("the flight was not filled in, or the clear or the acknowledgement was lost")
 	}
 }
