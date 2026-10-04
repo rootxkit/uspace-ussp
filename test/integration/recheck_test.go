@@ -295,8 +295,8 @@ func TestIntegrationPlannedRestrictionRaisesOnActivationAndClearsOnEnd(t *testin
 	if _, err := svc.ClearLiftedNotices(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if n := len(log.of(id)); n != 1 || g.counters.Get(cis.CounterInconsistency) < 1 {
-		t.Fatalf("a gone restriction: %d messages, cis_inconsistency %d", n-1, g.counters.Get(cis.CounterInconsistency))
+	if n := len(log.of(id)); n != 1 || g.cis.counters.Get(cis.CounterInconsistency) < 1 {
+		t.Fatalf("a gone restriction: %d messages, cis_inconsistency %d", n-1, g.cis.counters.Get(cis.CounterInconsistency))
 	}
 	if st, detail := g.cis.cache.Probe(ctx); st != obs.StateDegraded || !strings.Contains(detail, "cis_inconsistency") {
 		t.Fatalf("probe %s %s", st, detail)
