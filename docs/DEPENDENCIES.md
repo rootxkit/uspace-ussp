@@ -28,16 +28,20 @@ Planned by `docs/PLAN.md` §14 and added by the work package that first
 needs them, each with its row: `google/uuid` (not needed by WP-2: the
 database makes the ids).
 
-## web/ (npm, exact pins)
+## web/ (pnpm, exact pins)
 
 | Package | Version | Why |
 |---|---|---|
-| `next`, `react`, `react-dom` | 16.3.8, 19.2.8, 19.2.8 | the portal and console (App Router, standalone output) |
-| `@fontsource/noto-sans-georgian` | 5.3.0 | Noto Sans Georgian woff2 files, bundled through `next/font/local` (no third-party font request) |
-| `server-only` | 0.0.1 | marks the BFF fetch module so it can never reach the browser bundle |
-| `openapi-typescript` (dev) | 7.13.0 | `src/api/types.ts` from `api/openapi.yaml` |
-| `@playwright/test` (dev) | 1.63.0 | the smoke test of the one page in `ka` and `en` |
-| `tailwindcss`, `@tailwindcss/postcss`, `eslint`, `eslint-config-next`, `typescript`, `@types/*` (dev) | see `web/package.json` | the `create-next-app` toolchain: styles, lint rules, strict types |
+| `@rootxkit/uspace-ui` | 0.1.0 (GitHub Release asset, sha512 in `pnpm-lock.yaml`, attestation verified) | the shared kit: theme, fonts (Noto Sans and Noto Sans Georgian via `next/font/local`), map and layers, legends, live client, form, table, alerts, BFF and session helpers, ESLint rules (WP-17) |
+| `next`, `react`, `react-dom` | 16.3.8, 19.3.0, 19.3.0 | the portal (App Router, standalone output); React 19.3 as the kit is tested with |
+| `maplibre-gl` | 5.24.0 | the kit's map peer (WP-17) |
+| `react-hook-form`, `zod` | 7.89.0, 4.6.5 | the kit's `form` peers: the shape of a form; the API judges the meaning (WP-17) |
+| `server-only` | 0.0.1 | keeps the server modules out of the browser bundle |
+| `@playwright/test` (dev) | 1.63.0 | the browser tests of the operator flows against the e2e stack |
+| `axe-core` (dev) | 4.13.0 | the WCAG 2.2 AA checks of the browser tests, injected without a network |
+| `eslint`, `typescript-eslint`, `eslint-plugin-react-hooks`, `eslint-plugin-jsx-a11y` (dev) | 9.39.5, 8.71.0, 7.1.1, 6.10.2 | the kit's ESLint config and its peers (replace `eslint-config-next`, WP-17) |
+| `tailwindcss`, `@tailwindcss/postcss`, `typescript`, `@types/*` (dev) | see `web/package.json` | styles over the kit's tokens, strict types |
 
-`@rootxkit/uspace-ui` joins with an exact pin when it publishes
-`0.1.0-rc` (M32); see `web/README.md`.
+`@fontsource/noto-sans-georgian` and `openapi-typescript` left with
+WP-17: the kit bundles the fonts and pins openapi-typescript in its
+`uspace-ui-gen-api`.

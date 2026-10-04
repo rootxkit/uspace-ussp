@@ -349,7 +349,7 @@ the **decision** body (`intent/decision/v1`), never on the problem.
 
 | Endpoint | Process | Scope / role | Spec | Notes |
 |---|---|---|---|---|
-| `POST /v1/intents` | api | `ussp.intents` | `02 F5`, `04 §3.5`, Art. 6(4), 10 | body `intent/request/v1` (the ten Annex IV items + contingency + emergency contact ref); returns `intent/decision/v1`; `client_ref` idempotent |
+| `POST /v1/intents` | api | `ussp.intents`, or a portal session (`operator_admin`, `remote_pilot`; filed under the client the serial is bound to; WP-17) | `02 F5`, `04 §3.5`, Art. 6(4), 10 | body `intent/request/v1` (the ten Annex IV items + contingency + emergency contact ref); returns `intent/decision/v1`; `client_ref` idempotent |
 | `GET /v1/intents/{id}` | api | `ussp.intents` (own) | `02 F5` | decision, state, conflicts, versions |
 | `GET /v1/intents?from=&to=&state=` | api | `ussp.intents` (own) | `02 F5` | list |
 | `PATCH /v1/intents/{id}` | api | `ussp.intents` | Art. 6(5), 10(5), 6(7) | `{action: activate | modify | end, volumes?}`; activation confirmed in the response without unjustified delay; modify = new version re-decided |
@@ -369,7 +369,7 @@ the **decision** body (`intent/decision/v1`), never on the problem.
 | `POST /oauth/token` | api | client credentials | `06 §3` | USSP issuer for operator clients; `aud` = this USSP's host (M18), TTL ≤ 1 h |
 | `GET /.well-known/jwks.json` | api | public | `06 §3` | issuer keys |
 | `POST /v1/accounts/login`, `/logout`, `GET /v1/accounts/me` | api | portal / console sessions | `01 §3`; M20, M21 | argon2id; session JWT for the `uspace_session` cookie (`iss` = this issuer, `aud` = this host, `sub` = account id, `scope = "session"`, `roles: [..]`, `realm` = `portal` for operators / `console` for staff, `jti` = session id, `exp` ≤ 12 h, `kid`); MFA for staff admin |
-| `POST /v1/accounts/operators` (self-registration with registration number), `GET/PATCH /v1/accounts/operators/{id}`, `POST /v1/accounts/operators/{id}/clients`, `POST .../clients/{id}/serials`, `DELETE .../serials/{serial}`, `POST .../clients/{id}/rotate` | api | `operator_admin` | `01 §3`, `06 T3` | validity checked through F8 before activation |
+| `POST /v1/accounts/operators` (self-registration with registration number), `GET/PATCH /v1/accounts/operators/{id}`, `GET` (any portal role; WP-17) and `POST /v1/accounts/operators/{id}/clients`, `POST .../clients/{id}/serials`, `DELETE .../serials/{serial}`, `POST .../clients/{id}/rotate` | api | `operator_admin` | `01 §3`, `06 T3` | validity checked through F8 before activation |
 | `GET /v1/admin/flights`, `/alerts`, `/dss`, `/inputs`, `/escalations`; `POST /v1/admin/alerts/{id}/escalate|close`; `POST /v1/admin/emergency/{flight_id}` (open, note, close) | api | `supervisor`, `support` | `01` S11, `05 §6` | console; degraded inputs with age |
 | `GET/PUT /v1/admin/policy`, `GET/POST /v1/admin/sources` | api | `admin` | INV-03, U-15 | audited; 503 when the KV cannot take the switch (B-09) |
 | `GET /healthz`, `GET /readyz`, `GET /metrics` | every process | none / network | — | `readyz` lists each dependency with state and age |
