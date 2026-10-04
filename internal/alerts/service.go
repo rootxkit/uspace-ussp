@@ -289,14 +289,25 @@ func noticeRestriction(st Stored) string {
 	return c.Ref
 }
 
+// lifts indexes, for one pass, what the CIS said of each restriction by
+// its identifier: every notice of one restriction gets one answer, and
+// the CIS is asked once per restriction, not once per notice.
+type lifts map[string]cis.Lift
+
 // liftOf is the restriction of a notice and what the CIS says of it
-// (LiftUnjudged without a CIS or a restriction).
-func (s *Service) liftOf(ctx context.Context, st Stored) (string, cis.Lift) {
+// (LiftUnjudged without a CIS or a restriction), from idx when this pass
+// asked already.
+func (s *Service) liftOf(ctx context.Context, idx lifts, st Stored) (string, cis.Lift) {
 	id := noticeRestriction(st)
 	if s.Restrictions == nil || id == "" {
 		return id, cis.LiftUnjudged
 	}
-	return id, s.Restrictions.RestrictionLift(ctx, id)
+	l, ok := idx[id]
+	if !ok {
+		l = s.Restrictions.RestrictionLift(ctx, id)
+		idx[id] = l
+	}
+	return id, l
 }
 
 // gone reports whether l says the restriction left the set without an
@@ -341,6 +352,7 @@ func (s *Service) ClearLiftedNotices(ctx context.Context) (int, error) {
 	}
 	now := s.now().UTC()
 	n := 0
+	idx := lifts{}
 	var after NoticeCursor
 	for {
 		rows, err := s.Store.OpenNoticesAfter(ctx, after, MaxNoticeRepublish)
@@ -348,7 +360,7 @@ func (s *Service) ClearLiftedNotices(ctx context.Context) (int, error) {
 			return n, err
 		}
 		for i := range rows {
-			cleared, err := s.clearLifted(ctx, rows[i], now)
+			cleared, err := s.clearLifted(ctx, idx, rows[i], now)
 			if err != nil {
 				return n, err
 			}
@@ -367,8 +379,8 @@ func (s *Service) ClearLiftedNotices(ctx context.Context) (int, error) {
 
 // clearLifted clears one open notice when its restriction is lifted
 // (ClearLiftedNotices) and says whether it did.
-func (s *Service) clearLifted(ctx context.Context, st Stored, now time.Time) (bool, error) {
-	id, l := s.liftOf(ctx, st)
+func (s *Service) clearLifted(ctx context.Context, idx lifts, st Stored, now time.Time) (bool, error) {
+	id, l := s.liftOf(ctx, idx, st)
 	if !s.clears(l) {
 		if gone(l) {
 			s.counters().Inc(CounterNoticesKeptGone)
@@ -427,8 +439,9 @@ func (s *Service) RepublishOpenNotices(ctx context.Context) (int, error) {
 		rows = rows[:MaxNoticeRepublish]
 	}
 	n := 0
+	idx := lifts{}
 	for i := range rows {
-		if _, l := s.liftOf(ctx, rows[i]); s.clears(l) {
+		if _, l := s.liftOf(ctx, idx, rows[i]); s.clears(l) {
 			// Its clear is ClearLiftedNotices'; republishing it raised
 			// would undo the clear at traffic-ws.
 			continue

@@ -914,3 +914,25 @@ func TestClearLiftedNoticesPagesThroughEveryNotice(t *testing.T) {
 		t.Fatalf("one page: %d %v %d", n, err, st.pages)
 	}
 }
+
+// One pass asks the CIS once per restriction, however many notices name
+// it: the clear and the republish index the answers by identifier. Two
+// restrictions are two questions (E-01: the index does not merge them).
+func TestLiftedPassAsksOncePerRestriction(t *testing.T) {
+	st := newMem()
+	for i := range 3 {
+		r := noticeOf(fmt.Sprintf("8d6f0f7e-8d7c-4c1a-9e2b-%012d", i), "restriction", "DARLIVE")
+		st.rows[r.AlertID] = r
+	}
+	other := noticeOf("8d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7ec1", "restriction", "DARENDD")
+	st.rows[other.AlertID] = other
+	l := &lifter{lifts: map[string]cis.Lift{"DARENDD": cis.LiftEnded}}
+	svc := &Service{Store: st, Bus: &pub{}, Restrictions: l, Now: func() time.Time { return t0.Add(time.Minute) }}
+	if n, err := svc.ClearLiftedNotices(t.Context()); err != nil || n != 1 || l.asked != 2 {
+		t.Fatalf("clear: %d %v, asked %d", n, err, l.asked)
+	}
+	l.asked = 0
+	if n, err := svc.RepublishOpenNotices(t.Context()); err != nil || n != 3 || l.asked != 2 {
+		t.Fatalf("republish: %d %v, asked %d", n, err, l.asked)
+	}
+}
