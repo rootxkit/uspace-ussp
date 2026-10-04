@@ -32,6 +32,11 @@ info:
     The Remote ID receiver operations carry `x-receiver: true` instead:
     the receiver's bearer key and the HMAC of the body authenticate
     them (WP-7), and they are served outside the generated server.
+    The CIS change-notification receiver carries `x-cis-delivery: true`:
+    the compact JWS of its body is its credential (WP-6), and it is
+    served outside the generated server too. The operations dp-poller
+    serves carry `x-dp: true` (WP-14): it verifies their bearer token
+    itself, and they are served outside the generated server.
 
     Work packages add their path groups below under a `# WP-k` comment
     and regenerate `api/gen/` with `scripts/generate.sh`.
@@ -77,6 +82,51 @@ tags:
     description: "Source control (WP-10, U-15): switches by type and instance, audited, and every source's health."
   - name: cells
     description: The partition cells' ownership map (WP-10, spec 05 §3); cells never cross an external interface.
+  - name: zones
+    description: |
+      Geo-zones (WP-5, spec 01 A2): ED-318 UASZone versions authored,
+      approved and published; ED-318 and ED-269 import; export at an
+      instant.
+  - name: uspace
+    description: U-space airspace designations (WP-5, spec 01 A3), published as ED-318 USPACE zones (admin).
+  - name: cisp
+    description: |
+      The CISP client (WP-6, spec 02 F1, F3): the state of the signed
+      publication outbox and of the CIS subscriber, and the change
+      notification receiver every subscriber implements (M1).
+
+  - name: violations
+    description: |
+      Violations found from the authority's own evidence (WP-12, spec 01
+      A7, 2019/947 Art. 18(k)): raised and cleared by detect, persisted
+      with their evidence excerpt, and reviewed by inspectors.
+
+  - name: incidents
+    description: |
+      Incidents and evidence packs (WP-17, spec 01 A10, 02 F10): the
+      authority's own case files, opened from escalated violations, its
+      own observations and notices, and hash-sealed evidence packs
+      whose creation and every download are audited with the purpose.
+  - name: certificates
+    description: |
+      USSP and CISP certificates (WP-16, spec 01 A5, 02 F1 and F7):
+      issue with the holder's client, suspension, limitation,
+      revocation and reinstatement, the holder's operating-status
+      notices, the Art. 16(2) lapse job, the public register (Art.
+      18(a)) and the USSP list published to the CISP.
+  - name: dp
+    description: |
+      The ASTM F3411-22a Display Provider (WP-14, spec 02 F7):
+      oversight areas, the Service Providers seen and their state, USS
+      availability arbitration (F3548), the ISA change notification a
+      Service Provider posts, and the conformance observation hook
+      (Q-A7).
+  - name: picture
+    description: |
+      The console picture (WP-13, served by picture-ws, not api): the
+      WebSocket of the common console frame (M29) and two reads of the
+      same state. A session of the console or the police realm is
+      required, checked against the sessions table through api.
 
 paths:
   # WP-0: health paths, served by every process on its admin port.
@@ -336,10 +386,21 @@ paths:
       operationId: getSession
       tags: [auth]
       summary: The session of the caller
+      description: >-
+        The caller's session, checked against its sessions row. A read
+        is the console's activity and moves the idle expiry, unless
+        `activity=false`: a check-only read (picture-ws re-checks every
+        open stream with it) leaves `last_seen_at` as it was, so an idle
+        console still ends at the idle timeout.
       security:
         - sessionCookie: []
       x-session: any
       x-audit: none
+      parameters:
+        - name: activity
+          in: query
+          description: false checks the session without counting the request as activity.
+          schema: {type: boolean, default: true}
       responses:
         "200":
           description: The session.
@@ -1990,6 +2051,1806 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
 
+  # WP-5: geo-zones and U-space airspace authoring (spec 01 A2, A3; 02
+  # F1; 03 §1 geo_zones, uspace_airspaces). A zone is an ED-318 UASZone
+  # feature, validated on every write by uspace-core ed318.Parse and
+  # never repaired (06 T9): accepted whole or refused whole with every
+  # problem by JSON path. Each write makes a new version (draft); an
+  # admin approves it and publishes the dataset, which supersedes older
+  # versions, writes the zones projection the hot path judges with (a
+  # failed projection write rolls the publication back, 503
+  # projection_unavailable) and the F1 outbox row (pending and signed;
+  # WP-6 sends it to the CISP). The period of validity is mandatory
+  # (947 Art. 15(3)). A WGS84 vertical reference is accepted and named
+  # in `extensions`: it is this project's extension, not a published
+  # ED-318 reference (LESSONS Z-05).
+  /v1/zones:
+    get:
+      operationId: listZones
+      tags: [zones]
+      summary: The newest version of every geo-zone, in identifier order
+      security:
+        - sessionCookie: []
+      x-roles: [inspector, admin, viewer]
+      x-audit: none
+      parameters:
+        - {name: state, in: query, schema: {$ref: "#/components/schemas/ZoneState"}}
+        - {name: after, in: query, description: The next_after of the previous page., schema: {type: string, maxLength: 7}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+      responses:
+        "200":
+          description: One page of zones.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneVersionList"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createZone
+      tags: [zones]
+      summary: Author a new geo-zone (version 1, draft)
+      description: |
+        The feature must be an ED-318 UASZone feature that uspace-core
+        ed318.Parse accepts, that ed318.ToZones can judge (rings, limits,
+        an applicability it can evaluate), and of any type but USPACE
+        (a U-space airspace is authored under /v1/uspace). 409 when the
+        identifier is taken in either dataset.
+      security:
+        - sessionCookie: []
+      x-roles: [inspector]
+      x-audit: {event_type: zone_drafted, entity_type: zone, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ZoneDraftInput"
+      responses:
+        "201":
+          description: The new draft.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneVersion"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/zones/export:
+    get:
+      operationId: exportZones
+      tags: [zones]
+      summary: The published geo-zones as an ED-318 FeatureCollection
+      description: |
+        Per identifier, the newest published version whose period of
+        validity holds at the instant (both ends included): `at` when
+        given, else the database's now. With `at` the features that do
+        not apply at `at` (uspace-core ed318.Applies at the centre of the
+        feature's bounding box) are left out and every feature whose
+        applicability cannot be evaluated is kept with
+        extendedProperties.cis_applicability `unknown`, never dropped.
+        `applies_at` annotates without filtering: every feature carries
+        extendedProperties.cis_applicability `applies`, `not_applicable`
+        or `unknown` at that instant (M17). `at` and `applies_at`
+        together are refused 400 filter_conflict. Daylight events are
+        resolved by the ground package; until it is wired they cannot
+        be (the answer is `unknown`). The collection metadata uses
+        ed318.Metadata's names: `issued` (the database's now) and
+        `provider` (ZONES_PROVIDER_NAME).
+      security:
+        - sessionCookie: []
+      x-roles: [inspector, admin, viewer]
+      x-audit: {event_type: zones_exported, entity_type: zone, purpose: none}
+      parameters:
+        - {name: at, in: query, description: RFC 3339 instant with an offset., schema: {type: string, format: date-time}}
+        - {name: applies_at, in: query, description: RFC 3339 instant with an offset., schema: {type: string, format: date-time}}
+      responses:
+        "200":
+          description: The ED-318 FeatureCollection, exactly as uspace-core ed318.Export writes it.
+          content:
+            application/geo+json:
+              schema:
+                $ref: "#/components/schemas/ED318Collection"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/zones/import:
+    post:
+      operationId: importZones
+      tags: [zones]
+      summary: Import an ED-318 or ED-269 file as drafts, all or nothing
+      description: |
+        The body is the file's bytes (at most 4 MiB, uspace-core
+        ed269.DefaultLimits; a UTF-8 byte order mark is accepted). The
+        format is detected by its wrapper: a top-level `type`
+        FeatureCollection is ED-318; `features` without it, or
+        `UASZoneList`, is ED-269, parsed by ed269.Parse and mapped by
+        ed318.FromED269 (what ED-318 cannot hold is refused by name).
+        Every zone is validated as a single write is; the file is
+        accepted whole (one draft version per zone, in one transaction)
+        or refused whole with every problem by JSON path (at most 100,
+        `truncated` beyond). The period of validity is `valid_from` and
+        `valid_to`, else the ED-318 collection's metadata validFrom and
+        validTo; without one the import is refused (947 Art. 15(3)).
+      security:
+        - sessionCookie: []
+      x-roles: [inspector]
+      x-audit: {event_type: zones_imported, entity_type: zone, purpose: none}
+      parameters:
+        - {name: valid_from, in: query, schema: {type: string, format: date-time}}
+        - {name: valid_to, in: query, schema: {type: string, format: date-time}}
+        - {name: lang, in: query, description: "Language of an ED-269 file's texts (default en-GB).", schema: {type: string, maxLength: 5}}
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: The drafts created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneImportResult"
+        "413":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/zones/import/airspace-gov-ge:
+    post:
+      operationId: importGovGeZones
+      tags: [zones]
+      summary: Convert airspace.gov.ge's zone files with a rules file, then import
+      description: |
+        airspace.gov.ge publishes no feed, no limits and no times (LESSONS
+        Z-13): its zones are JavaScript variables in `points.js`
+        (`var NAME_points = [[lat, lon], ...];` polygons, `var NAME_point
+        = [lat, lon];` circle centres) and the circles' radii are in the
+        page's `L.circle(NAME_point, {radius: <m>})` calls. The rules file
+        says, per kind of zone (the variable name's last `_` part), the
+        restriction, limits, applicability and reasons; a kind without a
+        rule refuses the conversion by name. The result is an ED-269
+        document imported exactly as /v1/zones/import does.
+        docs/runbooks/zones.md documents the rules format. Nothing here
+        fetches the site.
+      security:
+        - sessionCookie: []
+      x-roles: [inspector]
+      x-audit: {event_type: zones_imported, entity_type: zone, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GovGeImportInput"
+      responses:
+        "201":
+          description: The drafts created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneImportResult"
+        "413":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/zones/publish:
+    post:
+      operationId: publishZones
+      tags: [zones]
+      summary: Publish every approved geo-zone version
+      description: |
+        In one transaction under the zones advisory lock: every approved
+        version becomes published under a new zones version and
+        supersedes the identifier's older published versions; the zones
+        projection is rewritten in the telemetry database (a failed write
+        rolls the publication back, 503 projection_unavailable); the full
+        set in force now is exported (ED-318, ed318.Export) into the F1
+        outbox row of dataset `zones`, state `pending`, after it passed
+        the CISP's dataset checks (ed318.Parse) and was signed with the
+        publication key (a detached JWS, WP-6); a payload that fails is
+        refused with every problem by path and nothing is published.
+        Then zones.v1.changed and KV
+        zones_version announce the version. 409 nothing_to_publish when
+        no version is approved.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: zones_published, entity_type: zone, purpose: none}
+      responses:
+        "200":
+          description: The publication.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZonePublication"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/zones/{identifier}:
+    parameters:
+      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7}}
+    get:
+      operationId: getZone
+      tags: [zones]
+      summary: The newest version of a geo-zone
+      security:
+        - sessionCookie: []
+      x-roles: [inspector, admin, viewer]
+      x-audit: none
+      responses:
+        "200":
+          description: The zone version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneVersion"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      operationId: replaceZone
+      tags: [zones]
+      summary: Author a new version of a geo-zone (draft)
+      description: |
+        Validated as a creation is; the feature's identifier must be the
+        path's. The identifier's unpublished versions are superseded;
+        its published version stays in force until this one is
+        published.
+      security:
+        - sessionCookie: []
+      x-roles: [inspector]
+      x-audit: {event_type: zone_drafted, entity_type: zone, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ZoneDraftInput"
+      responses:
+        "201":
+          description: The new draft.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneVersion"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/zones/{identifier}/approve:
+    parameters:
+      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7}}
+    post:
+      operationId: approveZone
+      tags: [zones]
+      summary: Approve a draft version for publication
+      description: Only the identifier's newest version, and only a draft (409 otherwise).
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: zone_approved, entity_type: zone, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ZoneApproveInput"
+      responses:
+        "200":
+          description: The approved version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneVersion"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/zones/{identifier}/versions:
+    parameters:
+      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7}}
+    get:
+      operationId: listZoneVersions
+      tags: [zones]
+      summary: A geo-zone's versions, newest first
+      security:
+        - sessionCookie: []
+      x-roles: [inspector, admin, viewer]
+      x-audit: none
+      parameters:
+        - {name: before, in: query, description: The next_before of the previous page., schema: {type: integer, minimum: 1}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+      responses:
+        "200":
+          description: One page of versions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneVersionPage"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/zones/{identifier}/applies:
+    parameters:
+      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7}}
+    get:
+      operationId: getZoneApplicability
+      tags: [zones]
+      summary: Whether a zone version applies at an instant
+      description: |
+        uspace-core ed318.Applies over the version's limitedApplicability
+        at the centre of its bounding box (the newest version unless
+        `zone_version` names one). A daylight event (BMCT, SR, SS, EECT)
+        needs the ground package's sunrise and sunset; until it is wired
+        such a question is refused 503 daylight_unavailable rather than
+        guessed. Any other event that cannot be resolved answers
+        `unknown` with the reason.
+      security:
+        - sessionCookie: []
+      x-roles: [inspector, admin, viewer]
+      x-audit: none
+      parameters:
+        - {name: at, in: query, required: true, description: RFC 3339 instant with an offset., schema: {type: string, format: date-time}}
+        - {name: zone_version, in: query, schema: {type: integer, minimum: 1}}
+      responses:
+        "200":
+          description: The answer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneApplicability"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # WP-5: U-space airspace designations (spec 01 A3, A4; 2021/664 Art. 3
+  # and 5). A U-space airspace is published as an ED-318 USPACE zone
+  # whose extendedProperties.uspace_requirements is the Art. 3(4) block
+  # in the CISP's cis/uspace_requirements/v1 shape (M7), written by this
+  # service from the designation fields. Its versions follow the zones'
+  # workflow (draft, designated = approved, published, superseded) and
+  # are published as the dataset `uspace_airspace`. Admin only.
+  /v1/uspace:
+    get:
+      operationId: listUSpaceAirspaces
+      tags: [uspace]
+      summary: The newest version of every U-space airspace
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: none
+      parameters:
+        - {name: state, in: query, schema: {$ref: "#/components/schemas/ZoneState"}}
+        - {name: after, in: query, schema: {type: string, maxLength: 7}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+      responses:
+        "200":
+          description: One page of U-space airspaces.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneVersionList"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createUSpaceAirspace
+      tags: [uspace]
+      summary: Draft a U-space airspace designation (version 1)
+      description: |
+        The feature is an ED-318 feature of type USPACE without
+        extendedProperties.uspace_requirements: this service writes that
+        block from `designation`. services_required always holds NID,
+        GEO, FA and TI (Art. 3(3)); WX and CM are optional.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: uspace_drafted, entity_type: uspace_airspace, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/USpaceDraftInput"
+      responses:
+        "201":
+          description: The new draft.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneVersion"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/uspace/publish:
+    post:
+      operationId: publishUSpaceAirspaces
+      tags: [uspace]
+      summary: Publish every designated U-space airspace version
+      description: |
+        As /v1/zones/publish, for the dataset `uspace_airspace`. Every
+        `adjacent` identifier must be a U-space airspace of the same
+        publication (cis/uspace_requirements/v1); otherwise 409, naming
+        it.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: uspace_published, entity_type: uspace_airspace, purpose: none}
+      responses:
+        "200":
+          description: The publication.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZonePublication"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/uspace/{identifier}:
+    parameters:
+      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7}}
+    get:
+      operationId: getUSpaceAirspace
+      tags: [uspace]
+      summary: The newest version of a U-space airspace
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: none
+      responses:
+        "200":
+          description: The version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneVersion"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      operationId: replaceUSpaceAirspace
+      tags: [uspace]
+      summary: Draft a new version of a U-space airspace
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: uspace_drafted, entity_type: uspace_airspace, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/USpaceDraftInput"
+      responses:
+        "201":
+          description: The new draft.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneVersion"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/uspace/{identifier}/designate:
+    parameters:
+      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7}}
+    post:
+      operationId: designateUSpaceAirspace
+      tags: [uspace]
+      summary: Designate (approve) a draft U-space airspace version
+      description: Only the identifier's newest version, and only a draft (409 otherwise).
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: uspace_designated, entity_type: uspace_airspace, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ZoneApproveInput"
+      responses:
+        "200":
+          description: The designated version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneVersion"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/uspace/{identifier}/versions:
+    parameters:
+      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7}}
+    get:
+      operationId: listUSpaceVersions
+      tags: [uspace]
+      summary: A U-space airspace's versions, newest first
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: none
+      parameters:
+        - {name: before, in: query, schema: {type: integer, minimum: 1}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+      responses:
+        "200":
+          description: One page of versions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneVersionPage"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # WP-6: the CISP client (spec 02 F1, F3). The publication outbox and
+  # the subscriber's cache for the console, and the change-notification
+  # receiver every CIS subscriber implements (M1).
+  /v1/publications:
+    get:
+      operationId: listPublications
+      tags: [cisp]
+      summary: The publication outbox and the CIS subscriber's state
+      description: |
+        The F1 outbox rows, newest first, without payloads: each with its
+        state (pending, sent, acknowledged, failed, conflict,
+        superseded), attempts, the last answer of the CISP, the CISP's
+        version once acknowledged (or the one a 412 showed), and, while
+        pending or sent, `age_s`: how long the publication has not been
+        published (spec 02 F1 failure rule). Beside them the
+        subscriber's cache per dataset (`cis_version`, `cis_age_s`,
+        `stale` beyond the policy's `cis_stale_bound_s`, a version held
+        because its publisher's signature did not verify, a refused
+        publication, the last pull error), the publisher heartbeat's
+        last answer and the subscription. Nothing here is hidden when
+        the CISP is unreachable: the ages grow.
+      security:
+        - sessionCookie: []
+      x-roles: [admin, inspector, viewer]
+      x-audit: none
+      parameters:
+        - {name: dataset, in: query, schema: {type: string, enum: [zones, uspace_airspace, ussp_list]}}
+        - {name: state, in: query, schema: {type: string, enum: [pending, sent, acknowledged, failed, conflict, superseded]}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+      responses:
+        "200":
+          description: The outbox and the subscriber's state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicationStatus"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/cis/notifications:
+    post:
+      operationId: receiveCISNotification
+      tags: [cisp]
+      summary: A CIS change notification (compact JWS from the CISP or the ANSP)
+      description: |
+        The receiver path every CIS subscriber implements (M1). The body
+        is a compact JWS (`application/jose`, at most 256 KiB) whose
+        payload is `{iss, aud, sub, iat, jti, body}` with `body` a
+        `cis/change/v1` record. There is no bearer token: the JWS is the
+        credential. It is verified by uspace-core's CompactVerifier
+        against an allow-list of two issuers, the CISP and the ANSP
+        (`AUTHORITY_CIS_NOTIFY_ISSUERS`, M5), with `aud` one of this
+        system's hosts (`AUTHORITY_AUDIENCES`, M19) and `iat` at most
+        five minutes old; the `jti` is single-use and remembered in the
+        database (a repeated delivery is acknowledged 204 and not acted
+        on). The notification is a hint, never content: reasons
+        `publication` and `restriction_*` start a pull of the dataset
+        from the configured CISP over https (`pull_url` is followed only
+        when it is https on the CISP's configured host and port; any
+        other is counted and the configured CISP is read instead);
+        `subscription_test`, `republished` and any reason this receiver
+        does not know are acknowledged 204 without a pull (M16). Served
+        outside the generated server (`x-cis-delivery`), because the
+        JWS is read from the raw body.
+      security: []
+      x-cis-delivery: true
+      x-audit: none
+      requestBody:
+        required: true
+        content:
+          application/jose:
+            schema:
+              type: string
+              maxLength: 262144
+      responses:
+        "204":
+          description: Accepted (a pull may have been started), or acknowledged without action.
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # WP-12: violations (spec 01 A7, 03 §1 violations, 04 §3.3
+  # violation/v1). detect raises and clears them on alrt.v1; api's
+  # consumer persists them (internal/violations). Reads carry no personal
+  # data: the serial and the operator registration number are as
+  # broadcast (registry records name them to viewers too).
+  /v1/violations:
+    get:
+      operationId: listViolations
+      tags: [violations]
+      summary: Violations, newest first
+      description: |
+        Every filter is optional. `from` and `to` bound `opened_at`;
+        `bbox` (`min_lon,min_lat,max_lon,max_lat`, WGS84 degrees, min
+        below max) selects by the first position of the evidence excerpt
+        (PostGIS). Pages are cut by `cursor` (the `next_cursor` of the
+        previous page). A violation is open while `closed_at` is null.
+      security:
+        - sessionCookie: []
+      x-roles: [inspector]
+      x-audit: none
+      parameters:
+        - {name: status, in: query, schema: {$ref: "#/components/schemas/ViolationStatus"}}
+        - {name: kind, in: query, schema: {$ref: "#/components/schemas/ViolationKind"}}
+        - {name: from, in: query, description: Inclusive lower bound of opened_at., schema: {type: string, format: date-time}}
+        - {name: to, in: query, description: Exclusive upper bound of opened_at., schema: {type: string, format: date-time}}
+        - {name: bbox, in: query, schema: {type: string, maxLength: 128}}
+        - {name: cursor, in: query, schema: {type: string, maxLength: 128}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+      responses:
+        "200":
+          description: One page of violations.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ViolationPage"
+        "400":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/violations/{violation_id}:
+    parameters:
+      - {name: violation_id, in: path, required: true, schema: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}}
+    get:
+      operationId: getViolation
+      tags: [violations]
+      summary: One violation with its evidence excerpt
+      security:
+        - sessionCookie: []
+      x-roles: [inspector]
+      x-audit: none
+      responses:
+        "200":
+          description: The violation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Violation"
+        "404":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/violations/{violation_id}/review:
+    parameters:
+      - {name: violation_id, in: path, required: true, schema: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}}
+    post:
+      operationId: reviewViolation
+      tags: [violations]
+      summary: Review a violation (reviewed, dismissed or escalated)
+      description: |
+        `new` or `reviewed` may become `reviewed`, `dismissed` or
+        `escalated`; `dismissed` and `escalated` are final (409
+        `violation_reviewed`). Evidence that is broadcast only
+        (`evidence_trust: broadcast`) is never escalated without a
+        note (spec 06 §2 T1; 400 naming `note`). Escalation requests an
+        incident (`incident_requested`) and opens it (`incident_opened`,
+        `GET /v1/incidents?violation_id=`). The review, the request and
+        the incident are written in the same transaction.
+      security:
+        - sessionCookie: []
+      x-roles: [inspector]
+      x-audit: {event_type: violation_reviewed, entity_type: violation, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ViolationReviewInput"
+      responses:
+        "200":
+          description: The violation as reviewed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Violation"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # WP-17: incidents and evidence packs (spec 01 A10, 02 F10, 03 §1,
+  # 05 §4, 06 §2 T6-T7, 06 §5); docs/runbooks/incidents.md is the
+  # procedure. Every change and every pack built, downloaded or verified
+  # is an events row (the chain of custody). A legal pack carries
+  # personal data and is built and downloaded only by a session holding
+  # one of the personal-data roles (inspector); an incident officer
+  # builds and downloads oversight packs.
+  /v1/incidents:
+    get:
+      operationId: listIncidents
+      tags: [incidents]
+      summary: Incidents, newest first
+      security:
+        - sessionCookie: []
+      x-roles: [inspector, incident_officer]
+      x-audit: none
+      parameters:
+        - {name: status, in: query, schema: {$ref: "#/components/schemas/IncidentStatus"}}
+        - {name: kind, in: query, schema: {$ref: "#/components/schemas/IncidentKind"}}
+        - {name: violation_id, in: query, description: The incident opened from this violation., schema: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}}
+        - {name: cursor, in: query, schema: {type: string, maxLength: 128}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+      responses:
+        "200":
+          description: One page of incidents.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentPage"
+        "400":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createIncident
+      tags: [incidents]
+      summary: Open an incident from the authority's own observation or a notice
+      description: |
+        `opened_from` is `own_observation`, `ansp_notice` or
+        `ussp_notice` (the last two with `notice_ref`); an incident is
+        opened from a violation only by escalating it (`POST
+        /v1/violations/{violation_id}/review`), never here (400 naming
+        `opened_from`). Never from an occurrence report (376/2014 Art.
+        15-16). An aircraft's `operator_reg` is stored as its public part
+        only: a secret part sent is dropped, never stored (spec 06 §5).
+      security:
+        - sessionCookie: []
+      x-roles: [inspector, incident_officer]
+      x-audit: {event_type: incident_opened, entity_type: incident, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncidentInput"
+      responses:
+        "201":
+          description: The incident opened.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Incident"
+        "400":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/incidents/{incident_id}:
+    parameters:
+      - {name: incident_id, in: path, required: true, schema: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}}
+    get:
+      operationId: getIncident
+      tags: [incidents]
+      summary: One incident with its aircraft, notes and evidence packs
+      security:
+        - sessionCookie: []
+      x-roles: [inspector, incident_officer]
+      x-audit: none
+      responses:
+        "200":
+          description: The incident.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Incident"
+        "404":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      operationId: updateIncident
+      tags: [incidents]
+      summary: Change an incident, assign or close it, add an aircraft or a note
+      description: |
+        Every member is optional; what is present is applied in one
+        transaction with one `incident_updated` events row naming each
+        change (from, to). `status` moves open -> assigned (an
+        `assignee` is required) -> closed, open -> closed, and a closed
+        incident is reopened (closed -> open or assigned), so a case is
+        never shut without a way back. Notes are append-only: `note`
+        adds one (at most 500 per incident). `add_aircraft` adds
+        aircraft (at most 32 per incident, E-10).
+      security:
+        - sessionCookie: []
+      x-roles: [inspector, incident_officer]
+      x-audit: {event_type: incident_updated, entity_type: incident, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncidentPatch"
+      responses:
+        "200":
+          description: The incident as changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Incident"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/incidents/{incident_id}/evidence-packs:
+    parameters:
+      - {name: incident_id, in: path, required: true, schema: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}}
+    post:
+      operationId: createEvidencePack
+      tags: [incidents]
+      summary: Build, seal and store an evidence pack for a window
+      description: |
+        Assembles the manifest and the archive of the incident's evidence
+        in [from, to): track excerpts cut into segments at every silence
+        longer than the active policy's `max_gap_s`, every recorded
+        writer gap and every sample without a position, each hole
+        labelled with its cause or `no recorded cause` (B-13; nothing is
+        interpolated); the raw Remote ID frames; the Display Provider's
+        rows while still held (24 h); the zone versions named and in
+        force; the policy versions; the violations; the events lines;
+        the ground dataset and spacing of every AGL number (D-05); the
+        USSP's service record of each USSP flight fetched on demand (02
+        F7, scope `ussp.records`). A source that cannot be read is in
+        the manifest as `unavailable` with the reason, never silently
+        missing. A window longer than `INCIDENTS_PACK_MAX_WINDOW_S` is
+        refused (400 `window_too_large`) and a section holding more than
+        `INCIDENTS_PACK_MAX_ROWS` rows is refused (413
+        `pack_too_large`), never thinned. The archive is deterministic
+        (sorted entries, fixed timestamps); `content_hash` is its
+        SHA-256, recorded here and in the `evidence_pack_built` events
+        row with the purpose; the seal statement (pack id, incident,
+        kind, window, hash, time) is signed as a detached JWS by the
+        publication key when one is configured. `oversight` packs carry
+        no personal data (registration public part and serial only;
+        frame payloads that may carry the remote pilot position are
+        withheld and kept by hash); `legal` packs need `case_ref` and a
+        personal-data role (403 otherwise), resolve the operators'
+        personal data from the registry (each read audited with the
+        purpose) and are sealed at rest. 503
+        `evidence_storage_unavailable` without `EVIDENCE_DIR`; 503
+        `pack_busy` past `INCIDENTS_PACK_CONCURRENCY` builds at once.
+      security:
+        - sessionCookie: []
+      x-roles: [inspector, incident_officer]
+      x-audit: {event_type: evidence_pack_built, entity_type: incident, purpose: required}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EvidencePackInput"
+      responses:
+        "201":
+          description: The pack as sealed, with its manifest.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvidencePack"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/incidents/{incident_id}/evidence-packs/{pack_id}:
+    parameters:
+      - {name: incident_id, in: path, required: true, schema: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}}
+      - {name: pack_id, in: path, required: true, schema: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}}
+    get:
+      operationId: getEvidencePack
+      tags: [incidents]
+      summary: One evidence pack's manifest, hash and signature
+      description: The manifest holds no personal data, whatever the kind.
+      security:
+        - sessionCookie: []
+      x-roles: [inspector, incident_officer]
+      x-audit: none
+      responses:
+        "200":
+          description: The pack.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvidencePack"
+        "404":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/incidents/{incident_id}/evidence-packs/{pack_id}/download:
+    parameters:
+      - {name: incident_id, in: path, required: true, schema: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}}
+      - {name: pack_id, in: path, required: true, schema: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}}
+    get:
+      operationId: downloadEvidencePack
+      tags: [incidents]
+      summary: The sealed archive (purpose required, audited)
+      description: |
+        The stored archive is read, opened when sealed at rest, and its
+        SHA-256 compared with `content_hash` before a byte is served: a
+        mismatch is refused (409 `evidence_tampered`, with an
+        `evidence_pack_verified` events row recording the failure).
+        Every download is an `evidence_pack_downloaded` events row with
+        the purpose, committed before the body is sent. A legal pack is
+        served only to a personal-data role (403).
+      security:
+        - sessionCookie: []
+      x-roles: [inspector, incident_officer]
+      x-audit: {event_type: evidence_pack_downloaded, entity_type: incident, purpose: required}
+      parameters:
+        - {name: purpose, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
+      responses:
+        "200":
+          description: The archive (a ZIP file).
+          headers:
+            X-Content-SHA256:
+              description: The archive's hash, as content_hash records it.
+              schema: {type: string}
+            X-Evidence-Signature:
+              description: The detached JWS of the seal statement; empty when the pack is unsigned.
+              schema: {type: string}
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/incidents/{incident_id}/evidence-packs/{pack_id}/verify:
+    parameters:
+      - {name: incident_id, in: path, required: true, schema: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}}
+      - {name: pack_id, in: path, required: true, schema: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}}
+    get:
+      operationId: verifyEvidencePack
+      tags: [incidents]
+      summary: Recompute the stored archive's hash and check the signature
+      description: |
+        Reads the stored archive, recomputes its SHA-256 and compares it
+        with `content_hash`, and verifies the seal statement's signature
+        against the publication key this system holds. The answer says
+        what was found, a mismatch included (200 with `hash_matches:
+        false` and the problem); every verification is an
+        `evidence_pack_verified` events row.
+      security:
+        - sessionCookie: []
+      x-roles: [inspector, incident_officer]
+      x-audit: {event_type: evidence_pack_verified, entity_type: incident, purpose: none}
+      responses:
+        "200":
+          description: What the verification found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvidencePackVerification"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # WP-16: USSP and CISP certificates (spec 01 A5, 02 F1 and F7, 03 §1;
+  # Reg. 2021/664 Art. 7(6), 14-16, 18(a)). Issuing a certificate creates
+  # its holder's client in the token service (06 §3, least privilege);
+  # suspending it suspends the client and takes the USSP off the CIS
+  # USSP list; the holder's own client records its operating status; a
+  # daily job lapses what Art. 16(2) lapses; the public register is open.
+  /v1/certificates:
+    get:
+      operationId: listCertificates
+      tags: [certificates]
+      summary: The certificates
+      description: Newest first, at most 500, optionally of one holder kind and one status.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: none
+      parameters:
+        - {name: holder, in: query, schema: {$ref: "#/components/schemas/CertificateHolder"}}
+        - {name: status, in: query, schema: {$ref: "#/components/schemas/CertificateStatus"}}
+      responses:
+        "200":
+          description: The certificates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateList"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: issueCertificate
+      tags: [certificates]
+      summary: Issue a USSP or CISP certificate and register its client
+      description: |
+        One transaction: the certificate (status `issued`), its `code`
+        (one to eight upper-case alphanumerics, unique, never changed;
+        409 when taken), the holder's client in the token service
+        (`ussp-<code>-01` or `cisp-01`, M24) with the scopes its
+        services imply (least privilege; `scopes` in the answer) and
+        the audiences of this system and the CISP, the Art. 16(2) lapse
+        periods of the active policy, and the `certificate_issued` and
+        `oauth_client_created` events rows. A `client_secret_post`
+        client's secret is in the answer once and is handed to the
+        holder out of band; a `private_key_jwt` client registers the
+        holder's public JWKS. An issued certificate is not on the USSP
+        list until its holder notifies the start of operations.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: certificate_issued, entity_type: certificate, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateInput"
+      responses:
+        "201":
+          description: The certificate and its client.
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateIssued"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/certificates/register:
+    get:
+      operationId: getCertificateRegister
+      tags: [certificates]
+      summary: The public register of certified providers (Art. 18(a))
+      description: |
+        Every certificate not revoked or lapsed, and one that was for a
+        year after: holder kind and name, code, services, status,
+        validity and limitations. No address, contact, conditions or
+        client id: the response schema has no such property and a test
+        fails if one appears. Unauthenticated, cacheable for 60 s and
+        rate-limited per client address (429 with Retry-After).
+      security: []
+      x-audit: none
+      responses:
+        "200":
+          description: The register.
+          headers:
+            Cache-Control:
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateRegister"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/certificates/publish-list:
+    post:
+      operationId: publishUSSPList
+      tags: [certificates]
+      summary: Publish the USSP list now (F1 ussp_list)
+      description: |
+        Builds `cis/ussp_list/v1` from the USSP certificates operating
+        or limited whose holder operates, within their validity
+        (`ussp_id` = `code`), holds it to the CISP's pinned schema and
+        queues it, signed, in WP-6's outbox (`publication_queued`). The
+        list is also queued after every transition that changes it, and
+        a job repairs one that was not queued (the durable
+        `certificate_list_state`). 503 when no publication key is
+        configured; 400 when the list does not pass the schema.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: publication_queued, entity_type: publication, purpose: none}
+      responses:
+        "200":
+          description: The list as queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/USSPListPublication"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/certificates/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {$ref: "#/components/schemas/CertificateID"}}
+    get:
+      operationId: getCertificate
+      tags: [certificates]
+      summary: One certificate with its operating-status notices
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: none
+      responses:
+        "200":
+          description: The certificate.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateDetail"
+        "404":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      operationId: updateCertificate
+      tags: [certificates]
+      summary: Correct a certificate's details
+      description: |
+        The holder's name, address and contact, the base URL, the
+        conditions, the limitations, the terms URL and the end of
+        validity. The holder kind, code, client and issue time never
+        change; the status changes only through its operations. One
+        `certificate_updated` events row with the fields before and
+        after; the USSP list is queued again when the certificate is on
+        it.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: certificate_updated, entity_type: certificate, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificatePatch"
+      responses:
+        "200":
+          description: The certificate as stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateChange"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/certificates/{id}/status:
+    parameters:
+      - {name: id, in: path, required: true, schema: {$ref: "#/components/schemas/CertificateID"}}
+    post:
+      operationId: postCertificateStatus
+      tags: [certificates]
+      summary: The holder's operating-status notice (02 F7, Art. 7(6))
+      description: |
+        `started` (the start of operations after certification),
+        `ceased` or `restarted`, at `at`, with the holder's `reference`.
+        Only the holder's own client: an ecosystem token of this issuer
+        with scope `certificates.status` whose `sub` is the
+        certificate's `client_id` (403 otherwise). A notice the status
+        does not admit is 409 (`started` twice, `ceased` before a start,
+        anything on a revoked or lapsed certificate, `started` or
+        `restarted` while suspended). A retried notice with the same
+        `reference` and state answers 200 with the notice recorded
+        first; the same reference for another state is 409. `at` is
+        neither before the issue nor more than 5 minutes ahead of the
+        database clock. Recorded with a `certificate_notice_recorded`
+        events row; the USSP list is queued again.
+      security:
+        - ecosystemToken: []
+      x-scope: certificates.status
+      x-audit: {event_type: certificate_notice_recorded, entity_type: certificate, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateStatusNotice"
+      responses:
+        "200":
+          description: The same notice was recorded before.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateNoticeResult"
+        "201":
+          description: The notice as recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateNoticeResult"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/certificates/{id}/status-notices:
+    parameters:
+      - {name: id, in: path, required: true, schema: {$ref: "#/components/schemas/CertificateID"}}
+    post:
+      operationId: recordCertificateStatusNotice
+      tags: [certificates]
+      summary: Enter an operating-status notice received by letter
+      description: |
+        The paper fallback of `POST .../status` (02 F7: "manual fallback
+        by letter is acceptable"): the same rules, the letter's
+        `reference` required, recorded with source `manual` and the
+        admin as the actor.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: certificate_notice_recorded, entity_type: certificate, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateStatusNotice"
+      responses:
+        "200":
+          description: The same notice was recorded before.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateNoticeResult"
+        "201":
+          description: The notice as recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateNoticeResult"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/certificates/{id}/suspend:
+    parameters:
+      - {name: id, in: path, required: true, schema: {$ref: "#/components/schemas/CertificateID"}}
+    post:
+      operationId: suspendCertificate
+      tags: [certificates]
+      summary: Suspend a certificate
+      description: |
+        One transaction: the certificate is suspended (a limitation and
+        the operating status are kept for the reinstatement), its client
+        is suspended at once, so the next token request is refused
+        (`invalid_client`), and the transition and the client change are
+        events rows with the reason. A token issued before stays valid
+        to its `exp` (at most the token TTL): `tokens_valid_until` in
+        the answer says until when. The USSP list is queued again
+        without the holder (06 §2 T9). 409 when suspended, revoked or
+        lapsed already.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: certificate_status_changed, entity_type: certificate, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateReason"
+      responses:
+        "200":
+          description: The transition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateChange"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/certificates/{id}/limit:
+    parameters:
+      - {name: id, in: path, required: true, schema: {$ref: "#/components/schemas/CertificateID"}}
+    post:
+      operationId: limitCertificate
+      tags: [certificates]
+      summary: Limit a certificate
+      description: |
+        The certificate is limited with the `limitations` given (they
+        replace the ones held and travel on the USSP list as
+        `certification_limitations`). The client stays active. 409 when
+        limited, revoked or lapsed already.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: certificate_status_changed, entity_type: certificate, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateLimit"
+      responses:
+        "200":
+          description: The transition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateChange"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/certificates/{id}/revoke:
+    parameters:
+      - {name: id, in: path, required: true, schema: {$ref: "#/components/schemas/CertificateID"}}
+    post:
+      operationId: revokeCertificate
+      tags: [certificates]
+      summary: Revoke a certificate
+      description: |
+        Final: the certificate is revoked and its client revoked, in one
+        transaction with the reason. Tokens issued before stay valid to
+        their `exp` (`tokens_valid_until`). 409 when revoked or lapsed
+        already.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: certificate_status_changed, entity_type: certificate, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateReason"
+      responses:
+        "200":
+          description: The transition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateChange"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/certificates/{id}/reinstate:
+    parameters:
+      - {name: id, in: path, required: true, schema: {$ref: "#/components/schemas/CertificateID"}}
+    post:
+      operationId: reinstateCertificate
+      tags: [certificates]
+      summary: Lift a suspension, or else a limitation
+      description: |
+        A suspended certificate is reinstated (its client active again;
+        a limitation held stays); a limited one that is not suspended
+        has its limitation lifted (the limitations cleared). 409 when
+        neither suspended nor limited, or revoked or lapsed.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: certificate_status_changed, entity_type: certificate, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CertificateReason"
+      responses:
+        "200":
+          description: The transition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CertificateChange"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # WP-13: the picture, served by picture-ws (x-picture: Caddy routes
+  # /v1/picture/* there; the operations are excluded from api's
+  # generated server and served by internal/picture, and a test holds
+  # the list to apiserver.Picture). Every frame is the common console
+  # frame of uspace-lab schemas/common (M29) with this system's extras
+  # (schemas/picture/); docs/runbooks/picture.md is the contract.
+  /v1/picture/ws:
+    get:
+      operationId: getPictureWS
+      tags: [picture]
+      summary: The live picture over a WebSocket (picture-ws)
+      description: |
+        A WebSocket upgrade, same-origin: the `Origin` header must be
+        exactly one of `PICTURE_ALLOWED_ORIGINS` (else 403 `origin`,
+        never upgraded) and the browser sends the `uspace_session`
+        cookie (M22; no ticket, nothing in the query string). The token
+        is verified by uspace-core's verifier and must be a session of
+        the console or police realm whose sessions row is live (api's
+        `GET /v1/auth/session`); otherwise the connection is closed
+        with 4401 (sign in again), and with 1013 when the check cannot
+        be made. A live connection is re-checked every
+        `PICTURE_SESSION_RECHECK_S`: a logout or a revocation closes it
+        with 4401. Frames: `console/status/v1` and `console/snapshot/v1`
+        on connect and after every `console/subscribe/v1 {bbox,
+        layers[]}`, then `track/telemetry/v1` (with `age_s` and
+        `source_state`), `track/manned/v1`, `violation/v1` and
+        `source/status/v1`, and `console/status/v1` every 2 s. Refusals
+        before the upgrade: 426 `upgrade_required`, 403 `origin`, 503
+        `picture_full` with Retry-After.
+      security:
+        - sessionCookie: []
+      x-picture: true
+      x-audit: none
+      responses:
+        "101":
+          description: Switching protocols; the console frame follows.
+        "403":
+          $ref: "#/components/responses/Problem"
+        "426":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/picture/snapshot:
+    get:
+      operationId: getPictureSnapshot
+      tags: [picture]
+      summary: The picture inside a box (picture-ws)
+      description: |
+        The `console/snapshot/v1` frame a WebSocket console receives, for
+        the box itself (`bbox` = `west,south,east,north`, WGS84 degrees;
+        west above east crosses the antimeridian) and every layer unless
+        `layers` names some. The session is the bearer the BFF forwards
+        or the `uspace_session` cookie; an `Origin`, when sent, must be
+        allowed. 400 `validation` names `bbox` (including a box of more
+        than `PICTURE_MAX_CELLS` cells) or `layers`; 401
+        `unauthenticated`; 503 `session_unavailable`.
+      security:
+        - sessionCookie: []
+      x-picture: true
+      x-audit: none
+      parameters:
+        - {name: bbox, in: query, required: true, schema: {type: string, maxLength: 128}}
+        - {name: layers, in: query, schema: {type: string, maxLength: 64}}
+      responses:
+        "200":
+          description: The snapshot frame.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PictureFrame"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/picture/sources:
+    get:
+      operationId: getPictureSources
+      tags: [picture]
+      summary: Every source with its state, the projection ages and the CIS age (picture-ws)
+      security:
+        - sessionCookie: []
+      x-picture: true
+      x-audit: none
+      responses:
+        "200":
+          description: The sources.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PictureSources"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # WP-14: the F3411 Display Provider. Administration is api's (admin);
+  # the ISA change notification and the conformance hook are served by
+  # dp-poller (`x-dp: true`), which verifies the token itself with
+  # uspace-core's verifier and never reaches api's Authorize.
+  /v1/dp/views:
+    get:
+      operationId: listDPViews
+      tags: [dp]
+      summary: The oversight areas the Display Provider shows
+      description: |
+        Every oversight area, oldest first. The Display Provider shows
+        these areas whether or not a console looks at them, beside the
+        console viewports picture-ws reports (which expire with the
+        console).
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: none
+      responses:
+        "200":
+          description: The areas.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DPViewList"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createDPView
+      tags: [dp]
+      summary: Add an oversight area
+      description: |
+        A WGS84 box `[west, south, east, north]` that never crosses the
+        antimeridian. The row and its `events` row are one transaction;
+        after the commit every area is published to KV bucket
+        `dp_oversight` (key `views`) with the table's version, never
+        replacing a higher one (two api replicas never move it back), and
+        republished periodically. dp-poller covers each area with tiles of
+        at most `dp_view_diagonal_km` (F3411 7 km). At most 256 areas
+        (E-10): one more is refused with 409.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: dp_view_created, entity_type: dp_view, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DPViewInput"
+      responses:
+        "201":
+          description: The area as stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DPView"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/dp/providers:
+    get:
+      operationId: listDPProviders
+      tags: [dp]
+      summary: The Service Providers the Display Provider has seen, with their state
+      description: |
+        Every Service Provider an ISA named (its owner is its id and the
+        source instance of its tracks), from dp-poller's last
+        `src.v1.network_rid.<uss_id>` status: live, down (`unavailable
+        since T`: its polls fail for 10 s; never removed), disabled (by
+        whom), or unknown; slow (polled at 0.5 Hz past the F3411 p99 of
+        3 s) with p95 and p99; the ISAs and tiles it is polled for; and
+        `provider_unknown` when it matches no operating certificate (it
+        is still polled and shown). `status_age_s` is the age of the
+        status itself.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: none
+      responses:
+        "200":
+          description: The providers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DPProviderList"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/dp/providers/{uss_id}/availability:
+    parameters:
+      - {name: uss_id, in: path, required: true, schema: {type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$"}}
+    put:
+      operationId: setDPProviderAvailability
+      tags: [dp]
+      summary: Arbitrate a USS's availability at the DSS (F3548)
+      description: |
+        `PUT /dss/v1/uss_availability/{uss_id}` at the DSS with scope
+        `utm.availability_arbitration` (F3548-21, through the client
+        generated from `api/clients/dss-utm.yaml` with uspace-core's
+        types). The request is recorded first (`dp_availability_requested`,
+        committed), then the DSS is called with the arbitration of this
+        USS held by an advisory lock (a concurrent arbitration of the
+        same USS is refused with 409), and the outcome is recorded
+        (`dp_availability_set` or `dp_availability_failed`). A DSS that
+        refuses or cannot be reached answers 502 with its status.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: dp_availability_set, entity_type: uss_availability, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DPAvailabilityInput"
+      responses:
+        "200":
+          description: The availability as the DSS now holds it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DPAvailabilityResult"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "502":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/dp/observations/display_data:
+    get:
+      operationId: getDPDisplayData
+      tags: [dp]
+      summary: "Conformance hook: what the Display Provider shows in a view (dp-poller)"
+      description: |
+        The InterUSS Remote ID observation interface `GET
+        {base}/display_data?view=` with base `/v1/dp/observations`, its
+        shape read from `api/clients/interuss-observation/observation.yaml`
+        at the commit `api/clients/SOURCE` records (Q-A7). A bearer
+        ecosystem token granting `dp.observe` (issued to `lab-01` only)
+        with `aud` one of this system's hosts. A view within the F3411
+        details diagonal (2 km) is answered with flights, a wider one with
+        clusters only. A conformance hook, not a product endpoint.
+      security:
+        - ecosystemToken: []
+      x-dp: true
+      x-audit: none
+      parameters:
+        - {name: view, in: query, required: true, schema: {type: string, maxLength: 256}, description: "lat1,lng1,lat2,lng2"}
+      responses:
+        "200":
+          description: The observation interface's GetDisplayDataResponse.
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/dp/observations/display_data/{id}:
+    get:
+      operationId: getDPFlightDetails
+      tags: [dp]
+      summary: "Conformance hook: a flight's details (dp-poller)"
+      description: |
+        The observation interface's `GET {base}/display_data/{id}`: the
+        operator id's public part only (the secret part of a registration
+        number never leaves), the operator location and the serial.
+        Same token as `getDPDisplayData`.
+      security:
+        - ecosystemToken: []
+      x-dp: true
+      x-audit: none
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: The observation interface's GetDetailsResponse.
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /uss/identification_service_areas/{id}:
+    post:
+      operationId: postDPISANotification
+      tags: [dp]
+      summary: F3411 ISA change notification from a Service Provider (dp-poller)
+      description: |
+        ASTM F3411-22a `postIdentificationServiceArea`
+        (`api/clients/dss-rid.yaml`), served by dp-poller through the
+        server generated from that file: the Service Provider that owns
+        an ISA posts its creation, change or deletion to every subscriber
+        the DSS named. A bearer token from an allow-listed issuer (this
+        system's, or the lab's in the lab) granting `rid.service_provider`
+        with `aud` one of `AUTHORITY_AUDIENCES` (M6, M18); the service
+        area's owner must be the token's subject (403 otherwise). Body:
+        F3411 `PutIdentificationServiceAreaNotificationParameters`, at most
+        `DP_MAX_NOTIFICATION_BYTES`. Errors are F3411 `ErrorResponse`
+        bodies.
+      security:
+        - ecosystemToken: []
+      x-dp: true
+      x-audit: none
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "204":
+          description: Applied.
+        "400":
+          description: Malformed (F3411 ErrorResponse).
+        "401":
+          description: No token, or a token refused (F3411 ErrorResponse).
+        "403":
+          description: The token does not grant rid.service_provider, or its subject does not own the ISA (F3411 ErrorResponse).
+        "413":
+          description: Larger than the bound (F3411 ErrorResponse).
+        "503":
+          description: The token cannot be verified yet (F3411 ErrorResponse).
+
 components:
   securitySchemes:
     sessionCookie:
@@ -2180,6 +4041,16 @@ components:
             validates against (uspace-core regnum, G-07; the Georgian
             format is open, spec Q5). Default the EU shape
             `^[A-Z]{3}[A-Za-z0-9]{8,16}$`.
+        certificate_lapse_unused_months:
+          type: integer
+          minimum: 1
+          maximum: 120
+          description: "Art. 16(2): a certificate not used within this many months of its issue lapses (default 6). Copied onto a certificate at issue."
+        certificate_lapse_ceased_months:
+          type: integer
+          minimum: 1
+          maximum: 120
+          description: "Art. 16(2): a certificate whose operations ceased this many months ago lapses (default 12). Copied onto a certificate at issue."
         note:
           type: string
           maxLength: 1000
@@ -2187,7 +4058,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/PolicyInput"
         - type: object
-          required: [version, active, created_at, created_by, note, registration_number_pattern]
+          required: [version, active, created_at, created_by, note, registration_number_pattern, certificate_lapse_unused_months, certificate_lapse_ceased_months]
           properties:
             version:
               type: integer
@@ -3167,3 +5038,985 @@ components:
         sources:
           type: array
           items: {$ref: "#/components/schemas/SourceView"}
+    ZoneState:
+      type: string
+      enum: [draft, approved, published, superseded]
+    ZoneDataset:
+      type: string
+      enum: [zones, uspace_airspace]
+    ED318Feature:
+      type: object
+      description: One ED-318 UASZone feature (GeoJSON Feature), validated by uspace-core ed318.Parse; kept as given.
+      x-go-type: json.RawMessage
+    ED318Collection:
+      type: object
+      description: An ED-318 FeatureCollection exactly as uspace-core ed318.Export writes it.
+      x-go-type: json.RawMessage
+    ZoneDraftInput:
+      type: object
+      required: [feature, valid_from, valid_to]
+      properties:
+        feature: {$ref: "#/components/schemas/ED318Feature"}
+        valid_from: {type: string, format: date-time, description: Start of the period of validity (947 Art. 15(3)).}
+        valid_to: {type: string, format: date-time, description: End of the period of validity; after valid_from.}
+    ZoneApproveInput:
+      type: object
+      required: [zone_version]
+      properties:
+        zone_version: {type: integer, minimum: 1, description: The version approved; it must be the newest and a draft.}
+    ZoneExtension:
+      type: object
+      description: A member that uses this project's extension of ED-318 (LESSONS Z-05).
+      required: [field, reason]
+      properties:
+        field: {type: string}
+        reason: {type: string}
+    USpaceDesignation:
+      type: object
+      description: |
+        The 03 §1 designation of a U-space airspace (2021/664 Art. 3 and
+        5); `airspace_name` is the 03 §1 `name` column (the feature's
+        ED-318 name list is the published one).
+      required: [airspace_name, services_required, uas_requirements, service_performance, operational_conditions, airspace_constraints, in_controlled_airspace]
+      properties:
+        airspace_name: {type: string, minLength: 1, maxLength: 200}
+        services_required:
+          type: array
+          minItems: 4
+          maxItems: 6
+          uniqueItems: true
+          items: {type: string, enum: [NID, GEO, FA, TI, WX, CM]}
+        uas_requirements: {type: object, additionalProperties: true, description: Art. 3(4)(a).}
+        service_performance:
+          type: object
+          description: Art. 3(4)(c); nid_update_hz, ti_update_hz and cis_latency_s are required, other members pass.
+          additionalProperties: true
+          required: [nid_update_hz, ti_update_hz, cis_latency_s]
+          properties:
+            nid_update_hz: {type: number, format: double, exclusiveMinimum: 0}
+            ti_update_hz: {type: number, format: double, exclusiveMinimum: 0}
+            cis_latency_s: {type: number, format: double, exclusiveMinimum: 0}
+        operational_conditions: {type: object, additionalProperties: true, description: Art. 3(4)(b).}
+        airspace_constraints:
+          type: object
+          description: Art. 3(4)(d), including any height ceiling.
+          additionalProperties: true
+          properties:
+            max_height_agl_m: {type: number, format: double, exclusiveMinimum: 0}
+        adjacent_ids:
+          type: array
+          maxItems: 1000
+          items: {type: string, minLength: 1, maxLength: 7}
+        risk_assessment_ref: {type: string, maxLength: 200}
+        in_controlled_airspace: {type: boolean}
+        ats_provider_id: {type: string, maxLength: 64}
+        cisp_id: {type: string, maxLength: 64}
+        designation_ref: {type: string, maxLength: 200}
+        aip_ref: {type: string, maxLength: 200}
+    USpaceDraftInput:
+      type: object
+      required: [feature, designated_from, designated_to, designation]
+      properties:
+        feature: {$ref: "#/components/schemas/ED318Feature"}
+        designated_from: {type: string, format: date-time}
+        designated_to: {type: string, format: date-time}
+        designation: {$ref: "#/components/schemas/USpaceDesignation"}
+    ZoneVersion:
+      type: object
+      required: [dataset, identifier, zone_version, state, type, country, feature, valid_from, valid_to, extensions, created_at, created_by]
+      properties:
+        dataset: {$ref: "#/components/schemas/ZoneDataset"}
+        identifier: {type: string}
+        zone_version: {type: integer}
+        state: {$ref: "#/components/schemas/ZoneState"}
+        type: {type: string, enum: [PROHIBITED, REQ_AUTHORIZATION, CONDITIONAL, NO_RESTRICTION, USPACE]}
+        country: {type: string}
+        feature: {$ref: "#/components/schemas/ED318Feature"}
+        valid_from: {type: string, format: date-time}
+        valid_to: {type: string, format: date-time}
+        extensions:
+          type: array
+          items: {$ref: "#/components/schemas/ZoneExtension"}
+        designation: {$ref: "#/components/schemas/USpaceDesignation"}
+        published_version: {type: integer, format: int64}
+        published_at: {type: string, format: date-time}
+        published_by: {type: string}
+        created_at: {type: string, format: date-time}
+        created_by: {type: string}
+        approved_at: {type: string, format: date-time}
+        approved_by: {type: string}
+    ZoneVersionList:
+      type: object
+      required: [zones]
+      properties:
+        zones:
+          type: array
+          items: {$ref: "#/components/schemas/ZoneVersion"}
+        next_after: {type: string, description: Pass as `after` for the next page; absent on the last.}
+    ZoneVersionPage:
+      type: object
+      required: [versions]
+      properties:
+        versions:
+          type: array
+          items: {$ref: "#/components/schemas/ZoneVersion"}
+        next_before: {type: integer, description: Pass as `before` for the next page; absent on the last.}
+    ZoneImportResult:
+      type: object
+      required: [format, created]
+      properties:
+        format: {type: string, enum: [ed318, ed269]}
+        created:
+          type: array
+          items: {$ref: "#/components/schemas/ZoneVersion"}
+    GovGeKindRule:
+      type: object
+      description: What the authority says one kind of airspace.gov.ge zone is; nothing has a default.
+      required: [restriction, uom, lower_reference, upper_reference, applicability]
+      properties:
+        restriction: {type: string, enum: [PROHIBITED, REQ_AUTHORISATION, CONDITIONAL, NO_RESTRICTION]}
+        uom: {type: string, enum: [M, FT]}
+        lower_reference: {type: string, enum: [AGL, AMSL, WGS84]}
+        upper_reference: {type: string, enum: [AGL, AMSL, WGS84]}
+        lower_limit: {type: number, format: double}
+        upper_limit: {type: number, format: double}
+        applicability:
+          type: array
+          minItems: 1
+          maxItems: 32
+          description: ED-269 applicability periods, as published in an ED-269 file.
+          items:
+            type: object
+            additionalProperties: true
+        reason:
+          type: array
+          maxItems: 9
+          items: {type: string}
+        message: {type: string, maxLength: 200}
+    GovGeRules:
+      type: object
+      required: [country, authority, kinds]
+      properties:
+        country: {type: string, pattern: "^[A-Z]{3}$"}
+        authority:
+          type: object
+          description: The ED-269 zoneAuthority entry every zone names (name, purpose, ...).
+          additionalProperties: {type: string}
+        kinds:
+          type: object
+          maxProperties: 64
+          additionalProperties: {$ref: "#/components/schemas/GovGeKindRule"}
+        identifiers:
+          type: object
+          maxProperties: 10000
+          description: Variable name -> ED-269 identifier, for names longer than 7 characters.
+          additionalProperties: {type: string, maxLength: 7}
+    GovGeImportInput:
+      type: object
+      required: [points_js, page_html, rules]
+      properties:
+        points_js: {type: string, description: "The saved /Airspace/leaflet/zone/points.js."}
+        page_html: {type: string, description: The saved page, for the circles' radii.}
+        rules: {$ref: "#/components/schemas/GovGeRules"}
+        valid_from: {type: string, format: date-time}
+        valid_to: {type: string, format: date-time}
+        lang: {type: string, maxLength: 5}
+    PublicationRow:
+      type: object
+      description: |
+        The F1 outbox row (dataset, version, payload hash), written
+        `pending` with the detached JWS of the payload (WP-6); the
+        sender re-signs it at every attempt. GET /v1/publications shows
+        its later states.
+      required: [id, dataset, version, payload_hash, feature_count, signature, state, created_at]
+      properties:
+        id: {type: integer, format: int64}
+        dataset: {type: string}
+        version: {type: integer, format: int64}
+        payload_hash: {type: string, description: SHA-256 of the payload bytes, lower-case hex.}
+        feature_count: {type: integer}
+        signature: {type: [string, "null"]}
+        state: {type: string, enum: [pending, sent, acknowledged, failed, conflict, superseded]}
+        created_at: {type: string, format: date-time}
+    ZonePublication:
+      type: object
+      required: [dataset, zones_version, published, publication]
+      properties:
+        dataset: {$ref: "#/components/schemas/ZoneDataset"}
+        zones_version: {type: integer, format: int64}
+        published:
+          type: array
+          items: {$ref: "#/components/schemas/ZoneVersion"}
+        publication: {$ref: "#/components/schemas/PublicationRow"}
+    ZoneApplicability:
+      type: object
+      required: [identifier, zone_version, at, applicability]
+      properties:
+        identifier: {type: string}
+        zone_version: {type: integer}
+        at: {type: string, format: date-time}
+        applicability: {type: string, enum: [applies, not_applicable, unknown]}
+        reason: {type: string}
+    # WP-6: the CISP client.
+    PublicationStatus:
+      type: object
+      required: [cisp_configured, publications, cache, heartbeat, subscription]
+      properties:
+        cisp_configured:
+          type: boolean
+          description: false when CISP_BASE_URL is unset; nothing is sent or pulled and the ages grow.
+        publications:
+          type: array
+          items: {$ref: "#/components/schemas/PublicationOutboxRow"}
+        cache:
+          type: array
+          items: {$ref: "#/components/schemas/CISCacheState"}
+        heartbeat: {$ref: "#/components/schemas/PublisherHeartbeatState"}
+        subscription: {$ref: "#/components/schemas/CISSubscriptionState"}
+    PublicationOutboxRow:
+      type: object
+      required: [id, dataset, version, payload_hash, feature_count, content_type, state, attempts, created_at, created_by, state_changed_at, age_s]
+      properties:
+        id: {type: integer, format: int64}
+        dataset: {type: string, enum: [zones, uspace_airspace, ussp_list]}
+        version: {type: integer, format: int64}
+        payload_hash: {type: string, description: SHA-256 of the payload bytes, lower-case hex.}
+        feature_count: {type: integer}
+        content_type: {type: string}
+        state: {type: string, enum: [pending, sent, acknowledged, failed, conflict, superseded]}
+        attempts: {type: integer}
+        signature_kid: {type: [string, "null"], description: The kid of the publication key that signed the last attempt.}
+        signed_at: {type: [string, "null"], format: date-time}
+        next_retry_at: {type: [string, "null"], format: date-time}
+        cisp_version: {type: [integer, "null"], format: int64, description: The CISP's version once acknowledged.}
+        conflict_version: {type: [integer, "null"], format: int64, description: The CISP's current version a 412 showed.}
+        last_attempt_at: {type: [string, "null"], format: date-time}
+        last_status: {type: [integer, "null"], description: The CISP's last HTTP status; null for a network error.}
+        last_error: {type: [string, "null"]}
+        acknowledged_at: {type: [string, "null"], format: date-time}
+        created_at: {type: string, format: date-time}
+        created_by: {type: string}
+        state_changed_at: {type: string, format: date-time}
+        age_s:
+          type: [number, "null"]
+          format: double
+          description: Seconds since the row was written while it is pending or sent (not yet published); null otherwise.
+    CISCacheState:
+      type: object
+      required: [dataset, cis_version, cis_age_s, stale]
+      properties:
+        dataset: {type: string, enum: [zones, uspace_airspace, ussp_list, restrictions]}
+        cis_version: {type: [integer, "null"], format: int64, description: The version held; null when none was ever pulled.}
+        etag: {type: [string, "null"]}
+        cis_updated_at: {type: [string, "null"], format: date-time}
+        fetched_at: {type: [string, "null"], format: date-time}
+        checked_at: {type: [string, "null"], format: date-time, description: When the CISP last confirmed the version held.}
+        cis_age_s: {type: [number, "null"], format: double, description: Seconds since checked_at; null when nothing is held.}
+        stale: {type: boolean, description: "cis_age_s beyond the policy's cis_stale_bound_s, or nothing held: the console shows cis_stale."}
+        feature_count: {type: [integer, "null"]}
+        held_version: {type: [integer, "null"], format: int64, description: A newer version not used because its publisher's signature did not verify.}
+        held_reason: {type: [string, "null"]}
+        refused_version: {type: [integer, "null"], format: int64, description: A newer version refused whole by ed318.Parse or the pinned schema (T9).}
+        refused_reason: {type: [string, "null"]}
+        last_error: {type: [string, "null"], description: The last pull failure, cleared by the next success.}
+    PublisherHeartbeatState:
+      type: object
+      required: [enabled, interval_s, consecutive_failures]
+      properties:
+        enabled: {type: boolean}
+        interval_s: {type: number, format: double}
+        last_success_at: {type: [string, "null"], format: date-time}
+        last_status: {type: [integer, "null"], description: The CISP's last HTTP status; null for a network error or before the first.}
+        last_error: {type: [string, "null"]}
+        consecutive_failures: {type: integer}
+    CISSubscriptionState:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: {type: boolean, description: false without CIS_CALLBACK_URL; the 60 s reconciliation alone keeps the cache.}
+        callback_url: {type: [string, "null"]}
+        subscription_id: {type: [string, "null"]}
+        status: {type: [string, "null"]}
+        last_error: {type: [string, "null"]}
+
+    # WP-12: violations.
+    PictureFrame:
+      type: object
+      description: |
+        A frame of the common console frame (uspace-lab
+        schemas/common/envelope/v1 with the body named by `schema`).
+      required: [schema, msg_id, producer, rx_ts, captured_at, time_source, backlog, body]
+      properties:
+        schema: {type: string}
+        msg_id: {type: string}
+        producer: {type: string}
+        ts: {type: [string, "null"]}
+        rx_ts: {type: string}
+        captured_at: {type: string}
+        time_source: {type: string}
+        backlog: {type: boolean}
+        body: {type: object, additionalProperties: true}
+    PictureSourceState:
+      type: object
+      description: The body of source/status/v1 (uspace-lab schemas/common) with lagging and lag_s.
+      required: [source, source_instance, state, since, age_s, disabled_by, counters]
+      properties:
+        source: {type: string}
+        source_instance: {type: [string, "null"]}
+        state: {type: string, enum: [live, stale, disabled, down, unknown]}
+        since: {type: string, format: date-time}
+        age_s: {type: [number, "null"]}
+        disabled_by: {type: [string, "null"], enum: [type, instance, default_deny, null]}
+        disabled_by_who: {type: [string, "null"]}
+        counters:
+          type: object
+          additionalProperties: {type: integer, minimum: 0}
+        lagging: {type: boolean}
+        lag_s: {type: [number, "null"]}
+    PictureSources:
+      type: object
+      required: [server_ts, sources, nats]
+      properties:
+        server_ts: {type: string, format: date-time}
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/PictureSourceState"
+        projection_age_s: {type: [number, "null"], description: Age of the registry projection (database clock).}
+        zones_version: {type: [string, "null"]}
+        cis_version: {type: [string, "null"]}
+        cis_age_s: {type: [number, "null"]}
+        nats: {type: string, enum: [connected, unavailable]}
+        nats_since: {type: [string, "null"], format: date-time}
+    ViolationKind:
+      type: string
+      enum: [height_120m, zone_incursion, unregistered, no_authorisation, identification_mismatch, rid_absent]
+    ViolationStatus:
+      type: string
+      enum: [new, reviewed, dismissed, escalated]
+    ViolationPeak:
+      type: object
+      required: [name, value]
+      properties:
+        name: {type: string, description: "The number the violation rested on: height_agl_m for height_120m."}
+        value: {type: number, format: double}
+    ViolationSummary:
+      type: object
+      required: [violation_id, kind, severity, track_id, detector_state, opened_at, last_captured_at, policy_version, in_uspace,
+                 evidence_trust, excerpt_samples, cell5, status]
+      properties:
+        violation_id: {type: string}
+        kind: {$ref: "#/components/schemas/ViolationKind"}
+        severity: {type: string, enum: [info, warning, critical]}
+        track_id: {type: string}
+        serial: {type: [string, "null"], description: As broadcast.}
+        operator_reg: {type: [string, "null"], description: "As broadcast; the public part only (regnum.PublicPart, G-04)."}
+        zone_id: {type: [string, "null"], description: country/identifier of the zone judged.}
+        zone_type: {type: [string, "null"]}
+        detector_state: {type: string, enum: [raised, updated, cleared]}
+        opened_at: {type: string, format: date-time}
+        closed_at: {type: [string, "null"], format: date-time}
+        clear_reason:
+          type: [string, "null"]
+          description: |
+            resolved (shown false past the hysteresis), stale, landed,
+            source_disabled, flight_ended, reconfigured (the zone set or
+            policy changed and the aircraft's last sample no longer
+            raised it) or detector_silent (detect stopped republishing
+            it, a restart: closed by api, not judged).
+        last_captured_at: {type: string, format: date-time}
+        policy_version: {type: integer, format: int64, description: 0 is the documented defaults before any policy reached detect.}
+        peak: {$ref: "#/components/schemas/ViolationPeak"}
+        in_uspace: {type: boolean}
+        evidence_trust: {type: string, enum: [authenticated, provider, surveillance, broadcast, sensor]}
+        excerpt_samples: {type: integer}
+        cell5: {type: string}
+        status: {$ref: "#/components/schemas/ViolationStatus"}
+        reviewed_at: {type: [string, "null"], format: date-time}
+    Violation:
+      allOf:
+        - $ref: "#/components/schemas/ViolationSummary"
+        - type: object
+          required: [alert_key, detail, evidence_refs, evidence_track_ids, evidence_excerpt, excerpt_truncated, incident_requested]
+          properties:
+            alert_key: {type: string}
+            registry_uas_id: {type: [string, "null"]}
+            zone_version: {type: [integer, "null"], format: int64}
+            detail: {type: object, additionalProperties: true, description: "The judgement's numbers and flags as uspace-core gave them (violation/v1 detail)."}
+            clearing_detail: {type: object, additionalProperties: true}
+            terrain_source: {type: object, additionalProperties: true, description: The DEM dataset and spacing of a height over the ground (D-05).}
+            evidence_refs:
+              type: array
+              items: {type: object, additionalProperties: true}
+            evidence_track_ids:
+              type: array
+              items: {type: string}
+            evidence_excerpt:
+              type: array
+              description: The track samples copied at detection and appended while it held (violation/v1 evidence_excerpt).
+              items: {type: object, additionalProperties: true}
+            excerpt_truncated: {type: boolean, description: Samples past the bound were left out.}
+            reviewed_by: {type: [string, "null"]}
+            review_note: {type: [string, "null"]}
+            incident_requested: {type: boolean}
+    ViolationPage:
+      type: object
+      required: [violations]
+      properties:
+        violations:
+          type: array
+          items:
+            $ref: "#/components/schemas/ViolationSummary"
+        next_cursor:
+          type: string
+          description: Pass as cursor for the next page; absent on the last page.
+    IncidentKind:
+      type: string
+      enum: [airprox, nonconformance, lost_link, emergency, violation_escalated, other]
+    IncidentStatus:
+      type: string
+      enum: [open, assigned, closed]
+    IncidentSeverity:
+      type: string
+      enum: [info, warning, critical]
+    IncidentOpenedFrom:
+      type: string
+      enum: [violation, own_observation, ansp_notice, ussp_notice]
+    IncidentIdentification:
+      type: object
+      description: The identification of the aircraft as it was judged at the time (uspace-core identify), as recorded.
+      additionalProperties: false
+      properties:
+        status: {type: string, maxLength: 64}
+        reason: {type: string, maxLength: 64}
+        basis: {type: string, maxLength: 64}
+        evidence_trust: {type: string, maxLength: 64}
+    IncidentAircraftInput:
+      type: object
+      additionalProperties: false
+      description: At least one of serial, operator_reg and track_ids.
+      properties:
+        serial: {type: string, minLength: 1, maxLength: 64}
+        operator_reg: {type: string, minLength: 1, maxLength: 64, description: The public part is stored; a secret part is dropped.}
+        track_ids:
+          type: array
+          maxItems: 16
+          items: {type: string, minLength: 1, maxLength: 256}
+        identification:
+          $ref: "#/components/schemas/IncidentIdentification"
+    IncidentAircraft:
+      type: object
+      required: [id, track_ids, identification, added_by, added_at]
+      properties:
+        id: {type: integer, format: int64}
+        serial: {type: [string, "null"]}
+        operator_reg: {type: [string, "null"], description: The registration number's public part.}
+        registry_uas_id: {type: [string, "null"]}
+        track_ids:
+          type: array
+          items: {type: string}
+        identification:
+          $ref: "#/components/schemas/IncidentIdentification"
+        added_by: {type: string}
+        added_at: {type: string, format: date-time}
+    IncidentNote:
+      type: object
+      required: [id, author, body, created_at]
+      properties:
+        id: {type: integer, format: int64}
+        author: {type: string}
+        body: {type: string}
+        created_at: {type: string, format: date-time}
+    IncidentInput:
+      type: object
+      required: [kind, occurred_at, opened_from, severity]
+      additionalProperties: false
+      properties:
+        kind: {$ref: "#/components/schemas/IncidentKind"}
+        occurred_at: {type: string, format: date-time}
+        opened_from: {$ref: "#/components/schemas/IncidentOpenedFrom"}
+        notice_ref: {type: string, minLength: 1, maxLength: 200, description: The ANSP's or USSP's reference of the notice.}
+        severity: {$ref: "#/components/schemas/IncidentSeverity"}
+        narrative: {type: string, maxLength: 20000}
+        intent_refs:
+          type: array
+          maxItems: 32
+          items: {type: string, minLength: 1, maxLength: 256}
+        aircraft:
+          type: array
+          maxItems: 32
+          items:
+            $ref: "#/components/schemas/IncidentAircraftInput"
+    IncidentPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        narrative: {type: string, maxLength: 20000}
+        severity: {$ref: "#/components/schemas/IncidentSeverity"}
+        status: {$ref: "#/components/schemas/IncidentStatus"}
+        assignee: {type: string, minLength: 1, maxLength: 128, description: The account the case is assigned to.}
+        intent_refs:
+          type: array
+          maxItems: 32
+          items: {type: string, minLength: 1, maxLength: 256}
+        add_aircraft:
+          type: array
+          maxItems: 32
+          items:
+            $ref: "#/components/schemas/IncidentAircraftInput"
+        note: {type: string, minLength: 1, maxLength: 4000}
+    IncidentSummary:
+      type: object
+      required: [incident_id, kind, occurred_at, opened_from, severity, status, created_at, updated_at]
+      properties:
+        incident_id: {type: string}
+        kind: {$ref: "#/components/schemas/IncidentKind"}
+        occurred_at: {type: string, format: date-time}
+        opened_from: {$ref: "#/components/schemas/IncidentOpenedFrom"}
+        source_violation_id: {type: [string, "null"]}
+        severity: {$ref: "#/components/schemas/IncidentSeverity"}
+        status: {$ref: "#/components/schemas/IncidentStatus"}
+        assignee: {type: [string, "null"]}
+        closed_at: {type: [string, "null"], format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    IncidentPage:
+      type: object
+      required: [incidents]
+      properties:
+        incidents:
+          type: array
+          items:
+            $ref: "#/components/schemas/IncidentSummary"
+        next_cursor:
+          type: string
+          description: Pass as cursor for the next page; absent on the last page.
+    Incident:
+      type: object
+      required: [incident_id, kind, occurred_at, opened_from, intent_refs, narrative, severity, status, opened_by, created_at,
+                 updated_at, aircraft, notes, evidence_packs]
+      properties:
+        incident_id: {type: string}
+        kind: {$ref: "#/components/schemas/IncidentKind"}
+        occurred_at: {type: string, format: date-time}
+        opened_from: {$ref: "#/components/schemas/IncidentOpenedFrom"}
+        source_violation_id: {type: [string, "null"]}
+        notice_ref: {type: [string, "null"]}
+        intent_refs:
+          type: array
+          items: {type: string}
+        narrative: {type: string}
+        severity: {$ref: "#/components/schemas/IncidentSeverity"}
+        status: {$ref: "#/components/schemas/IncidentStatus"}
+        assignee: {type: [string, "null"]}
+        closed_at: {type: [string, "null"], format: date-time}
+        opened_by: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        aircraft:
+          type: array
+          items:
+            $ref: "#/components/schemas/IncidentAircraft"
+        notes:
+          type: array
+          items:
+            $ref: "#/components/schemas/IncidentNote"
+        evidence_packs:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidencePackSummary"
+    EvidencePackKind:
+      type: string
+      enum: [oversight, legal]
+    EvidencePackInput:
+      type: object
+      required: [kind, from, to, purpose]
+      additionalProperties: false
+      properties:
+        kind: {$ref: "#/components/schemas/EvidencePackKind"}
+        from: {type: string, format: date-time, description: Inclusive start of the window.}
+        to: {type: string, format: date-time, description: Exclusive end of the window.}
+        purpose: {type: string, minLength: 1, maxLength: 200}
+        case_ref: {type: string, minLength: 1, maxLength: 200, description: Required for a legal pack.}
+    EvidencePackSummary:
+      type: object
+      required: [pack_id, kind, from, to, content_hash, size_bytes, created_by, created_at]
+      properties:
+        pack_id: {type: string}
+        kind: {$ref: "#/components/schemas/EvidencePackKind"}
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        content_hash: {type: string, description: "sha256:<64 hex> of the archive."}
+        size_bytes: {type: integer, format: int64}
+        signature_kid: {type: [string, "null"]}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+    EvidencePack:
+      type: object
+      required: [pack_id, incident_id, kind, from, to, content_hash, size_bytes, seal_statement, manifest, purpose, created_by,
+                 created_at]
+      properties:
+        pack_id: {type: string}
+        incident_id: {type: string}
+        kind: {$ref: "#/components/schemas/EvidencePackKind"}
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        content_hash: {type: string, description: "sha256:<64 hex> of the archive."}
+        size_bytes: {type: integer, format: int64}
+        signature: {type: [string, "null"], description: "Detached JWS (RFC 7797, b64 false) of the publication key over the seal statement's canonical bytes (seal_statement serialised as stored)."}
+        signature_kid: {type: [string, "null"]}
+        seal_statement:
+          type: object
+          description: What the signature covers (pack_id, incident_id, kind, window, content_hash, created_at).
+          additionalProperties: true
+        manifest:
+          type: object
+          description: What the archive holds, section by section, with what was observed, what was inferred and what was unavailable and why (docs/runbooks/incidents.md). No personal data.
+          additionalProperties: true
+        purpose: {type: string}
+        case_ref: {type: [string, "null"]}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+    EvidencePackVerification:
+      type: object
+      required: [pack_id, content_hash, hash_matches, signature, verified_at]
+      properties:
+        pack_id: {type: string}
+        content_hash: {type: string}
+        recomputed_hash: {type: [string, "null"], description: Null when the stored archive could not be read or opened.}
+        hash_matches: {type: boolean}
+        problem: {type: [string, "null"], description: What was wrong, when something was.}
+        signature:
+          type: string
+          enum: [verified, invalid, unsigned, unverifiable]
+          description: unverifiable when the signing key is not held by this system any more.
+        signature_detail: {type: [string, "null"]}
+        verified_at: {type: string, format: date-time}
+    ViolationReviewInput:
+      type: object
+      required: [decision]
+      additionalProperties: false
+      properties:
+        decision: {type: string, enum: [reviewed, dismissed, escalated]}
+        note: {type: string, maxLength: 4000}
+    DPViewInput:
+      type: object
+      required: [label, bbox]
+      properties:
+        label: {type: string, minLength: 1, maxLength: 200, description: What the area is (an airport, a city).}
+        bbox:
+          type: array
+          description: "[west, south, east, north] in WGS84 degrees; west < east (never across the antimeridian)."
+          minItems: 4
+          maxItems: 4
+          items: {type: number, format: double}
+    DPView:
+      type: object
+      required: [id, label, bbox, created_by, created_at]
+      properties:
+        id: {type: integer, format: int64}
+        label: {type: string}
+        bbox:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: {type: number, format: double}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+    DPViewList:
+      type: object
+      required: [views]
+      properties:
+        views:
+          type: array
+          items: {$ref: "#/components/schemas/DPView"}
+    DPProvider:
+      type: object
+      required: [uss_id, state, isas, tiles, flights, slow, provider_unknown, status_age_s]
+      properties:
+        uss_id: {type: string, description: "The ISA owner (its client id at the DSS); the source instance of its tracks."}
+        uss_base_url: {type: string}
+        state: {type: string, enum: [live, stale, down, disabled, unknown]}
+        since: {type: string, format: date-time}
+        age_s: {type: number, format: double, description: Seconds since its last successful poll.}
+        isas: {type: integer}
+        tiles: {type: integer}
+        flights: {type: integer}
+        p95_s: {type: number, format: double}
+        p99_s: {type: number, format: double}
+        slow: {type: boolean}
+        unavailable_since: {type: string, format: date-time}
+        provider_unknown: {type: boolean, description: It matches no operating certificate; still polled and shown.}
+        disabled_by: {type: string}
+        disabled_by_who: {type: string}
+        dss: {type: string, enum: [ok, dss_unavailable, dss_unconfigured]}
+        counters:
+          type: object
+          additionalProperties: {type: integer, format: int64}
+        status_age_s: {type: number, format: double, description: Age of dp-poller's last status of it.}
+    DPProviderList:
+      type: object
+      required: [providers]
+      properties:
+        providers:
+          type: array
+          items: {$ref: "#/components/schemas/DPProvider"}
+    DPAvailabilityInput:
+      type: object
+      required: [availability, reason]
+      properties:
+        availability: {type: string, enum: [Unknown, Normal, Down], description: "F3548 UssAvailabilityState."}
+        reason: {type: string, minLength: 1, maxLength: 500}
+    DPAvailabilityResult:
+      type: object
+      required: [uss_id, availability, version]
+      properties:
+        uss_id: {type: string}
+        availability: {type: string, enum: [Unknown, Normal, Down]}
+        version: {type: string, description: The DSS's version of the USS's availability.}
+    CertificateID:
+      type: string
+      pattern: "^[0-9a-f]{32}$"
+    CertificateHolder:
+      type: string
+      enum: [ussp, cisp]
+    CertificateStatus:
+      type: string
+      enum: [issued, operating, ceased, suspended, limited, revoked, lapsed]
+      description: |
+        Derived from the operating status, the limitation, the
+        suspension and the end: revoked or lapsed, else suspended, else
+        ceased, else limited, else operating, else issued.
+    CertificateService:
+      type: string
+      enum: [network_identification, geo_awareness, flight_authorisation, traffic_information, weather, conformance_monitoring, common_information]
+      description: |
+        The Annex VI U-space services of a USSP (the names of the CISP's
+        cis/ussp_list/v1), or the common information service of the
+        CISP (Annex V), its one service.
+    CertificateInput:
+      type: object
+      required: [holder, holder_name, code, services, valid_until, auth_method]
+      properties:
+        holder: {$ref: "#/components/schemas/CertificateHolder"}
+        holder_name: {type: string, minLength: 1, maxLength: 200}
+        holder_address: {type: string, maxLength: 500, description: "The organisation's registered address."}
+        holder_email: {type: string, maxLength: 254, description: "The organisation's published contact (the USSP list's contact.email); no person."}
+        holder_phone: {type: string, maxLength: 50}
+        holder_url: {type: string, maxLength: 2048}
+        code: {type: string, minLength: 1, maxLength: 8, pattern: "^[A-Z0-9]{1,8}$", description: "The holder's code (M8); unique, never changed."}
+        base_url: {type: string, maxLength: 2048, description: "The national API base URL (https); required of a USSP."}
+        services:
+          type: array
+          minItems: 1
+          maxItems: 7
+          items: {$ref: "#/components/schemas/CertificateService"}
+        conditions: {type: string, maxLength: 4000}
+        limitations:
+          type: array
+          maxItems: 50
+          items: {type: string, minLength: 1, maxLength: 1000}
+        terms_url: {type: string, maxLength: 2048, description: "The holder's terms and conditions (Art. 5(3), https); required of a USSP."}
+        valid_from: {type: string, format: date-time, description: "The issue time; default the database's now."}
+        valid_until: {type: string, format: date-time}
+        auth_method: {type: string, enum: [client_secret_post, private_key_jwt]}
+        jwks:
+          type: object
+          additionalProperties: true
+          description: The holder's public key set (private_key_jwt only).
+    CertificatePatch:
+      type: object
+      properties:
+        holder_name: {type: string, minLength: 1, maxLength: 200}
+        holder_address: {type: string, maxLength: 500}
+        holder_email: {type: string, maxLength: 254}
+        holder_phone: {type: string, maxLength: 50}
+        holder_url: {type: string, maxLength: 2048}
+        base_url: {type: string, maxLength: 2048}
+        conditions: {type: string, maxLength: 4000}
+        limitations:
+          type: array
+          maxItems: 50
+          items: {type: string, minLength: 1, maxLength: 1000}
+        terms_url: {type: string, maxLength: 2048}
+        valid_until: {type: string, format: date-time}
+    CertificateReason:
+      type: object
+      required: [reason]
+      properties:
+        reason: {type: string, minLength: 1, maxLength: 1000}
+    CertificateLimit:
+      type: object
+      required: [reason, limitations]
+      properties:
+        reason: {type: string, minLength: 1, maxLength: 1000}
+        limitations:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: {type: string, minLength: 1, maxLength: 1000}
+    Certificate:
+      type: object
+      required: [id, holder, holder_name, holder_address, holder_email, holder_phone, holder_url, code, client_id, base_url,
+                 services, conditions, limitations, terms_url, issued_at, valid_until, status, operations, limited, suspended,
+                 status_reason, status_changed_at, status_changed_by, lapse_unused_after_months, lapse_ceased_after_months,
+                 created_at, created_by, updated_at, updated_by]
+      properties:
+        id: {$ref: "#/components/schemas/CertificateID"}
+        holder: {$ref: "#/components/schemas/CertificateHolder"}
+        holder_name: {type: string}
+        holder_address: {type: string}
+        holder_email: {type: string}
+        holder_phone: {type: string}
+        holder_url: {type: string}
+        code: {type: string}
+        client_id: {type: string}
+        base_url: {type: string}
+        services:
+          type: array
+          items: {$ref: "#/components/schemas/CertificateService"}
+        conditions: {type: string}
+        limitations:
+          type: array
+          items: {type: string}
+        terms_url: {type: string}
+        issued_at: {type: string, format: date-time}
+        valid_until: {type: string, format: date-time}
+        status: {$ref: "#/components/schemas/CertificateStatus"}
+        operations: {type: string, enum: [not_started, operating, ceased]}
+        operations_started_at: {type: string, format: date-time}
+        operations_ceased_at: {type: string, format: date-time}
+        limited: {type: boolean}
+        suspended: {type: boolean}
+        ended_at: {type: string, format: date-time}
+        status_reason: {type: string}
+        status_changed_at: {type: string, format: date-time}
+        status_changed_by: {type: string}
+        lapse_unused_after_months: {type: integer, description: "Art. 16(2): lapses when not used within this many months of issue."}
+        lapse_ceased_after_months: {type: integer, description: "Art. 16(2): lapses when ceased for this many months."}
+        lapses_at: {type: string, format: date-time, description: "When the lapse job will lapse it unless it starts or restarts; absent while operating."}
+        created_at: {type: string, format: date-time}
+        created_by: {type: string}
+        updated_at: {type: string, format: date-time}
+        updated_by: {type: string}
+    CertificateList:
+      type: object
+      required: [certificates]
+      properties:
+        certificates:
+          type: array
+          items: {$ref: "#/components/schemas/Certificate"}
+    CertificateClient:
+      type: object
+      required: [client_id, status, scopes, audiences, auth_method]
+      properties:
+        client_id: {type: string}
+        status: {type: string, enum: [active, suspended, revoked]}
+        scopes:
+          type: array
+          items: {type: string}
+        audiences:
+          type: array
+          items: {type: string}
+        auth_method: {type: string, enum: [client_secret_post, private_key_jwt]}
+    CertificateIssued:
+      type: object
+      required: [certificate, client]
+      properties:
+        certificate: {$ref: "#/components/schemas/Certificate"}
+        client: {$ref: "#/components/schemas/CertificateClient"}
+        client_secret: {type: string, description: "client_secret_post only: shown once, handed over out of band."}
+    ListPublication:
+      type: object
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [queued, not_needed, pending]
+          description: |
+            queued: the list is in the F1 outbox; not_needed: the change
+            does not touch the list; pending: it could not be queued now
+            and the repair job will (reason says why).
+        reason: {type: string}
+        publication_id: {type: integer, format: int64}
+    CertificateChange:
+      type: object
+      required: [certificate, list_publication]
+      properties:
+        certificate: {$ref: "#/components/schemas/Certificate"}
+        client_status: {type: string, enum: [active, suspended, revoked]}
+        tokens_valid_until:
+          type: string
+          format: date-time
+          description: |
+            The client was suspended or revoked: tokens issued before
+            stay valid until this time (the token TTL), and no new one
+            is issued.
+        list_publication: {$ref: "#/components/schemas/ListPublication"}
+    CertificateStatusNotice:
+      type: object
+      required: [state, at]
+      properties:
+        state: {type: string, enum: [started, ceased, restarted]}
+        at: {type: string, format: date-time}
+        reference: {type: string, minLength: 1, maxLength: 200}
+    CertificateNotice:
+      type: object
+      required: [id, state, at, source, recorded_by, received_at]
+      properties:
+        id: {type: integer, format: int64}
+        state: {type: string, enum: [started, ceased, restarted]}
+        at: {type: string, format: date-time}
+        reference: {type: string}
+        source: {type: string, enum: [machine, manual]}
+        recorded_by: {type: string}
+        received_at: {type: string, format: date-time}
+    CertificateNoticeResult:
+      type: object
+      required: [notice, certificate, replayed, list_publication]
+      properties:
+        notice: {$ref: "#/components/schemas/CertificateNotice"}
+        certificate: {$ref: "#/components/schemas/Certificate"}
+        replayed: {type: boolean, description: The same notice had been recorded; nothing changed.}
+        list_publication: {$ref: "#/components/schemas/ListPublication"}
+    CertificateDetail:
+      type: object
+      required: [certificate, notices]
+      properties:
+        certificate: {$ref: "#/components/schemas/Certificate"}
+        client_status: {type: string, enum: [active, suspended, revoked]}
+        notices:
+          type: array
+          items: {$ref: "#/components/schemas/CertificateNotice"}
+    CertificateRegisterEntry:
+      type: object
+      required: [certificate_id, holder, holder_name, code, services, status, valid_from, valid_until, limitations]
+      properties:
+        certificate_id: {$ref: "#/components/schemas/CertificateID"}
+        holder: {$ref: "#/components/schemas/CertificateHolder"}
+        holder_name: {type: string}
+        code: {type: string}
+        services:
+          type: array
+          items: {$ref: "#/components/schemas/CertificateService"}
+        status: {$ref: "#/components/schemas/CertificateStatus"}
+        valid_from: {type: string, format: date-time}
+        valid_until: {type: string, format: date-time}
+        limitations:
+          type: array
+          items: {type: string}
+    CertificateRegister:
+      type: object
+      required: [generated_at, certificates]
+      properties:
+        generated_at: {type: string, format: date-time}
+        certificates:
+          type: array
+          items: {$ref: "#/components/schemas/CertificateRegisterEntry"}
+    USSPListPublication:
+      type: object
+      required: [publication_id, ussps, wanted]
+      properties:
+        publication_id: {type: integer, format: int64}
+        ussps: {type: integer, description: USSPs on the list.}
+        wanted: {type: integer, format: int64, description: The list version the change counter stood at.}

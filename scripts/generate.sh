@@ -18,6 +18,9 @@
 #   api/clients/authority.yaml -> internal/registry/authclient/client.gen.go
 #                       (oapi-codegen, api/oapi-codegen.authority.yaml;
 #                       the pinned copy of the authority's OpenAPI, M11)
+#   api/clients/authority.yaml -> internal/status/authclient/client.gen.go
+#                       (oapi-codegen, api/oapi-codegen.authority-status.yaml;
+#                       POST /v1/certificates/{id}/status only)
 #   api/clients/ansp.yaml -> internal/coordination/anspclient/client.gen.go
 #                       (oapi-codegen, api/oapi-codegen.ansp.yaml; the
 #                       pinned copy of the ANSP's OpenAPI, M11, staged
@@ -71,6 +74,7 @@ done
 # SOURCE commits).
 gen api/oapi-codegen.cisp.yaml internal/cis/cispclient/client.gen.go api/clients/cisp.yaml
 gen api/oapi-codegen.authority.yaml internal/registry/authclient/client.gen.go api/clients/authority.yaml
+gen api/oapi-codegen.authority-status.yaml internal/status/authclient/client.gen.go api/clients/authority.yaml
 
 # The ANSP's file references its own schema of the Annex V body as
 # ../schemas/coordination/annex_v/v1.json (M14: the ANSP owns it). The
