@@ -54,6 +54,9 @@ type labIssuer struct {
 	sub string
 }
 
+// labInstance is the ANSP instance name of the lab run.
+const labInstance = "lab"
+
 func (l labIssuer) Token(_ context.Context, baseURL string, scopes ...string) (string, error) {
 	u := strings.TrimPrefix(strings.TrimPrefix(baseURL, "http://"), "https://")
 	host, _, err := net.SplitHostPort(strings.TrimRight(u, "/"))
@@ -183,7 +186,7 @@ func TestLabANSPAcknowledgesTheNotice(t *testing.T) {
 	}
 	var logs bytes.Buffer
 	cmd := exec.Command(bin)
-	cmd.Env = append(os.Environ(), "ANSP_PROCESS=api", "ANSP_INSTANCE=lab", "ANSP_HTTP_ADDR="+addr, "ANSP_AUDIENCES="+addr+",127.0.0.1",
+	cmd.Env = append(os.Environ(), "ANSP_PROCESS=api", "ANSP_INSTANCE="+labInstance, "ANSP_HTTP_ADDR="+addr, "ANSP_AUDIENCES="+addr+",127.0.0.1",
 		"ANSP_PUBLIC_BASE_URL="+base, "ANSP_RELATIONAL_DSN="+relDSN, "ANSP_TIMESERIES_DSN="+tsDSN,
 		"ANSP_TOKEN_ISSUERS="+jwksSrv.URL+"="+jwksSrv.URL+"/.well-known/jwks.json", "ANSP_MTLS_MODE=off",
 		"ANSP_SESSION_KEY_FILE="+sessionKey, "ANSP_SECRETS_KEY_FILE="+secretsFile,
@@ -241,7 +244,7 @@ func TestLabANSPAcknowledgesTheNotice(t *testing.T) {
 	t.Logf("receipt stored %v after the conformance state was recorded", time.Since(recorded).Round(time.Millisecond))
 	ref := coordination.Ref("USSP-DEV", coordination.KindNonconformance, f.intentID, stateID)
 	var ackID string
-	if err := relApp(t).QueryRow(ctx, "SELECT ack_id FROM coordination_notices WHERE notice_ref = $1", ref).Scan(&ackID); err != nil {
+	if err := appPool(t).QueryRow(ctx, "SELECT ack_id FROM coordination_notices WHERE notice_ref = $1", ref).Scan(&ackID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -254,7 +257,7 @@ func TestLabANSPAcknowledgesTheNotice(t *testing.T) {
 	waitFor(t, 10*time.Second, "ats_ack_ref", func() bool { _, r := atsFacts(t, stateID); return r != nil && *r == ackID })
 	t.Logf("ack_id %s; acknowledgement read back %v after the supervisor acknowledged", ackID, time.Since(acked).Round(time.Millisecond))
 	var by string
-	if err := relApp(t).QueryRow(ctx, "SELECT state || ' by ' || coalesce(acknowledged_by, '?') FROM coordination_notices WHERE notice_ref = $1", ref).Scan(&by); err != nil {
+	if err := appPool(t).QueryRow(ctx, "SELECT state || ' by ' || coalesce(acknowledged_by, '?') FROM coordination_notices WHERE notice_ref = $1", ref).Scan(&by); err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("notice %s: %s", ref, by)
@@ -263,7 +266,7 @@ func TestLabANSPAcknowledgesTheNotice(t *testing.T) {
 	}
 	// A repeat of the same notice is the first receipt (the ANSP's 200).
 	var body0 []byte
-	if err := relApp(t).QueryRow(ctx, "SELECT body FROM coordination_notices WHERE notice_ref = $1", ref).Scan(&body0); err != nil {
+	if err := appPool(t).QueryRow(ctx, "SELECT body FROM coordination_notices WHERE notice_ref = $1", ref).Scan(&body0); err != nil {
 		t.Fatal(err)
 	}
 	r, err := client.Submit(ctx, body0)
@@ -282,7 +285,7 @@ func TestLabANSPAcknowledgesTheNotice(t *testing.T) {
 		ref := coordination.Ref("USSP-DEV", k, g.intentID, 0)
 		waitFor(t, 10*time.Second, string(k)+" received by the ANSP", func() bool {
 			var state string
-			err := relApp(t).QueryRow(ctx, "SELECT state FROM coordination_notices WHERE notice_ref = $1", ref).Scan(&state)
+			err := appPool(t).QueryRow(ctx, "SELECT state FROM coordination_notices WHERE notice_ref = $1", ref).Scan(&state)
 			return err == nil && state == "received"
 		})
 		t.Logf("%s received by the ANSP", k)

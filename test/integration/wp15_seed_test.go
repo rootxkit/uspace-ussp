@@ -38,7 +38,7 @@ func seedFlight(t *testing.T, localState string, airspaces []string, start time.
 		airspaces = []string{}
 	}
 	ctx := context.Background()
-	app := relApp(t)
+	app := appPool(t)
 	u := unique()
 	s := seeded{number: "GEO-TEST-" + u, serial: "TEST" + u, clientID: "client-wp15-" + u, start: start.UTC().Truncate(time.Second)}
 	digits := strings.Repeat("0", 13) + u
@@ -85,7 +85,7 @@ func seedFlight(t *testing.T, localState string, airspaces []string, start time.
 func seedState(t *testing.T, flightID, state, reason string, at time.Time, distM, heightM float64) int64 {
 	t.Helper()
 	var id int64
-	if err := relApp(t).QueryRow(context.Background(), `INSERT INTO conformance_states (flight_id, at, state, reason, distance_outside_m,
+	if err := appPool(t).QueryRow(context.Background(), `INSERT INTO conformance_states (flight_id, at, state, reason, distance_outside_m,
 		    height_over_m, policy_version, last_lat_deg, last_lng_deg)
 		VALUES ($1::uuid, $2, $3, NULLIF($4, ''), $5, $6, 1, 41.7155, 44.7955) RETURNING id`, flightID, at, state, reason, distM, heightM).Scan(&id); err != nil {
 		t.Fatal(err)
@@ -96,7 +96,7 @@ func seedState(t *testing.T, flightID, state, reason string, at time.Time, distM
 // endIntent ends the seeded intent (as the intent service would).
 func endIntent(t *testing.T, intentID string) {
 	t.Helper()
-	if _, err := relApp(t).Exec(context.Background(), "UPDATE operational_intents SET local_state = 'ended', updated_at = now() WHERE id = $1::uuid", intentID); err != nil {
+	if _, err := appPool(t).Exec(context.Background(), "UPDATE operational_intents SET local_state = 'ended', updated_at = now() WHERE id = $1::uuid", intentID); err != nil {
 		t.Fatal(err)
 	}
 }

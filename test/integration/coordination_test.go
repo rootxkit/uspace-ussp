@@ -73,7 +73,7 @@ func (g *coordRig) noticeOf(ref string) (ansp.Notice, bool) {
 
 func atsFacts(t *testing.T, stateID int64) (notified *time.Time, ackRef *string) {
 	t.Helper()
-	if err := relApp(t).QueryRow(context.Background(), "SELECT ats_notified_at, ats_ack_ref FROM conformance_states WHERE id = $1", stateID).Scan(&notified, &ackRef); err != nil {
+	if err := appPool(t).QueryRow(context.Background(), "SELECT ats_notified_at, ats_ack_ref FROM conformance_states WHERE id = $1", stateID).Scan(&notified, &ackRef); err != nil {
 		t.Fatal(err)
 	}
 	return notified, ackRef
@@ -83,7 +83,7 @@ func atsFacts(t *testing.T, stateID int64) (notified *time.Time, ackRef *string)
 // it is not queued yet.
 func noticeState(t *testing.T, ref string) (state string, attempts int, lastError *string) {
 	t.Helper()
-	err := relApp(t).QueryRow(context.Background(), "SELECT state, attempts, last_error FROM coordination_notices WHERE notice_ref = $1", ref).Scan(&state, &attempts, &lastError)
+	err := appPool(t).QueryRow(context.Background(), "SELECT state, attempts, last_error FROM coordination_notices WHERE notice_ref = $1", ref).Scan(&state, &attempts, &lastError)
 	if err != nil && !store.IsNoRows(err) {
 		t.Fatalf("notice %s: %v", ref, err)
 	}
@@ -156,11 +156,11 @@ func TestIntegrationCoordinationNonconformance(t *testing.T) {
 	if err := g.notifier.Sweep(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if n := count(t, relApp(t), "SELECT count(*) FROM coordination_notices WHERE intent_id = $1::uuid", c.intentID); n != 0 {
+	if n := count(t, appPool(t), "SELECT count(*) FROM coordination_notices WHERE intent_id = $1::uuid", c.intentID); n != 0 {
 		t.Errorf("a conforming flight queued %d notices", n)
 	}
 	// The append-only rule holds for every other column.
-	if _, err := relApp(t).Exec(ctx, "UPDATE conformance_states SET state = 'unknown' WHERE id = $1", stateA); err == nil {
+	if _, err := appPool(t).Exec(ctx, "UPDATE conformance_states SET state = 'unknown' WHERE id = $1", stateA); err == nil {
 		t.Error("conformance_states.state became updatable")
 	}
 }
@@ -219,9 +219,9 @@ func TestIntegrationCoordinationIntentNotices(t *testing.T) {
 	h := newCoordRig(t, false)
 	b := seedFlight(t, "activated", []string{"UA-WP15"}, time.Now().Add(-5*time.Minute))
 	waitFor(t, 5*time.Second, "the check", func() bool {
-		return count(t, relApp(t), "SELECT count(*) FROM coordination_checks WHERE intent_id = $1::uuid AND NOT controlled", b.intentID) == 1
+		return count(t, appPool(t), "SELECT count(*) FROM coordination_checks WHERE intent_id = $1::uuid AND NOT controlled", b.intentID) == 1
 	})
-	if n := count(t, relApp(t), "SELECT count(*) FROM coordination_notices WHERE intent_id = $1::uuid", b.intentID); n != 0 {
+	if n := count(t, appPool(t), "SELECT count(*) FROM coordination_notices WHERE intent_id = $1::uuid", b.intentID); n != 0 {
 		t.Errorf("an intent in uncontrolled airspace queued %d notices", n)
 	}
 	if len(h.fake.Notices()) != 0 {

@@ -67,7 +67,7 @@ func TestIntegrationStatusNotices(t *testing.T) {
 		t.Fatalf("while down: %+v %v", ns, err)
 	}
 	fake.Up()
-	if _, err := relApp(t).Exec(ctx, "UPDATE operating_status_notices SET next_at = now() WHERE certificate_id = $1", cert); err != nil {
+	if _, err := appPool(t).Exec(ctx, "UPDATE operating_status_notices SET next_at = now() WHERE certificate_id = $1", cert); err != nil {
 		t.Fatal(err)
 	}
 	if restarted.SendDue(ctx) != 1 {
@@ -85,7 +85,7 @@ func TestIntegrationStatusNotices(t *testing.T) {
 	if len(mine) != 3 || mine[0].State != "started" || mine[1].State != "ceased" || mine[2].State != "restarted" {
 		t.Fatalf("at the authority: %+v", mine)
 	}
-	if n := count(t, relApp(t), "SELECT count(*) FROM operating_status_notices WHERE certificate_id = $1 AND kind = 'start'", cert); n != 1 {
+	if n := count(t, appPool(t), "SELECT count(*) FROM operating_status_notices WHERE certificate_id = $1 AND kind = 'start'", cert); n != 1 {
 		t.Errorf("%d start notices stored", n)
 	}
 	if state, detail := restarted.Probe()(ctx); state != "up" {

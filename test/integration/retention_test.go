@@ -15,7 +15,7 @@ import (
 
 func positionsKept(t *testing.T, flightID string) int64 {
 	t.Helper()
-	return count(t, tsOwner(t), "SELECT count(*) FROM telemetry WHERE flight_id = $1::uuid AND operator_position IS NOT NULL", flightID)
+	return count(t, tsPool(t), "SELECT count(*) FROM telemetry WHERE flight_id = $1::uuid AND operator_position IS NOT NULL", flightID)
 }
 
 // The retention of the hypertables against TimescaleDB: telemetry's
@@ -26,7 +26,7 @@ func positionsKept(t *testing.T, flightID string) int64 {
 func TestIntegrationRetention(t *testing.T) {
 	ensureSchemas(t)
 	ctx := context.Background()
-	ret := store.TSRetention{Pool: tsOwner(t)}
+	ret := store.TSRetention{Pool: tsPool(t)}
 	before, err := ret.TelemetryRetentionDays(ctx)
 	if err != nil || before < policy.TelemetryRetentionFloorDays {
 		t.Fatalf("the migration's retention: %d %v", before, err)
@@ -47,7 +47,7 @@ func TestIntegrationRetention(t *testing.T) {
 		for i, age := range []time.Duration{100 * 24 * time.Hour, 99 * 24 * time.Hour, 10 * 24 * time.Hour} {
 			// ts is set: a row without one would refuse the time-series
 			// tree's down migration (00003), which the suite runs too.
-			if _, err := tsOwner(t).Exec(ctx, `INSERT INTO telemetry (flight_id, captured_at, ts, rx_ts, time_source, geom, cell5, msg_id, operator_position)
+			if _, err := tsPool(t).Exec(ctx, `INSERT INTO telemetry (flight_id, captured_at, ts, rx_ts, time_source, geom, cell5, msg_id, operator_position)
 				VALUES ($1::uuid, $2, $2, $2, 'operator', ST_SetSRID(ST_MakePoint(44.78, 41.71), 4326), 'c5:417:447', $3,
 				        ST_SetSRID(ST_MakePoint(44.77, 41.70), 4326))`, id, now.Add(-age), fmt.Sprintf("ret-%s-%d", k, i)); err != nil {
 				t.Fatal(err)
@@ -71,7 +71,7 @@ func TestIntegrationRetention(t *testing.T) {
 	if n := positionsKept(t, ids[held]); n != 3 {
 		t.Errorf("the held flight kept %d positions, want all 3", n)
 	}
-	if n := count(t, tsOwner(t), "SELECT count(*) FROM telemetry WHERE flight_id = $1::uuid", ids[loose]); n != 3 {
+	if n := count(t, tsPool(t), "SELECT count(*) FROM telemetry WHERE flight_id = $1::uuid", ids[loose]); n != 3 {
 		t.Errorf("rows removed with the positions: %d left", n)
 	}
 }

@@ -68,7 +68,7 @@ func seedProximity(t *testing.T, s seeded, pairID string, hM, vM any, raised tim
 	t.Helper()
 	d, _ := json.Marshal(map[string]any{"d_cpa_h_m": hM, "d_alt_m": vM, "pair_id": pairID, "peer": map[string]any{"track_id": "man:4ca1f0", "trust": "surveillance"}})
 	var id string
-	if err := relApp(t).QueryRow(context.Background(), `INSERT INTO alerts (kind, flight_id, intent_id, severity, state, raised_at, updated_at, detail, policy_version)
+	if err := appPool(t).QueryRow(context.Background(), `INSERT INTO alerts (kind, flight_id, intent_id, severity, state, raised_at, updated_at, detail, policy_version)
 		VALUES ('proximity', $1::uuid, $2::uuid, 'critical', 'raised', $3, $3, $4, 1) RETURNING id::text`, s.flightID, s.intentID, raised, d).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func seedProximity(t *testing.T, s seeded, pairID string, hM, vM any, raised tim
 
 func reportsAbout(t *testing.T, flightID string) int64 {
 	t.Helper()
-	return count(t, relApp(t), "SELECT count(*) FROM occurrence_reports WHERE $1::uuid = ANY(flight_ids)", flightID)
+	return count(t, appPool(t), "SELECT count(*) FROM occurrence_reports WHERE $1::uuid = ANY(flight_ids)", flightID)
 }
 
 // The done-when occurrence against the real database: an airprox from a
@@ -113,7 +113,7 @@ func TestIntegrationOccurrences(t *testing.T) {
 		t.Errorf("a proximity beyond the thresholds queued %d reports", n)
 	}
 	var aware, deadline time.Time
-	if err := relApp(t).QueryRow(ctx, "SELECT became_aware_at, deadline_at FROM occurrence_reports WHERE $1::uuid = ANY(flight_ids)", near.flightID).Scan(&aware, &deadline); err != nil {
+	if err := appPool(t).QueryRow(ctx, "SELECT became_aware_at, deadline_at FROM occurrence_reports WHERE $1::uuid = ANY(flight_ids)", near.flightID).Scan(&aware, &deadline); err != nil {
 		t.Fatal(err)
 	}
 	if deadline.Sub(aware) != 72*time.Hour {
@@ -149,7 +149,7 @@ func TestIntegrationOccurrences(t *testing.T) {
 		t.Fatalf("while down: %+v", mine)
 	}
 	fake.Up()
-	if _, err := relApp(t).Exec(ctx, "UPDATE occurrence_reports SET next_at = now() WHERE report_ref = $1", mine.ReportRef); err != nil {
+	if _, err := appPool(t).Exec(ctx, "UPDATE occurrence_reports SET next_at = now() WHERE report_ref = $1", mine.ReportRef); err != nil {
 		t.Fatal(err)
 	}
 	if svc.DeliverDue(ctx) < 1 {
@@ -162,7 +162,7 @@ func TestIntegrationOccurrences(t *testing.T) {
 		t.Fatalf("at the authority: %d reports, last %+v", len(got), sent)
 	}
 	var state string
-	if err := relApp(t).QueryRow(ctx, "SELECT state FROM occurrence_reports WHERE report_ref = $1", mine.ReportRef).Scan(&state); err != nil || state != "delivered" {
+	if err := appPool(t).QueryRow(ctx, "SELECT state FROM occurrence_reports WHERE report_ref = $1", mine.ReportRef).Scan(&state); err != nil || state != "delivered" {
 		t.Fatalf("state %s %v", state, err)
 	}
 
@@ -180,7 +180,7 @@ func TestIntegrationOccurrences(t *testing.T) {
 	if err != nil || !created {
 		t.Fatal(created, err)
 	}
-	if _, err := relApp(t).Exec(ctx, `UPDATE occurrence_reports SET became_aware_at = now() - interval '73 hours', deadline_at = now() - interval '1 hour',
+	if _, err := appPool(t).Exec(ctx, `UPDATE occurrence_reports SET became_aware_at = now() - interval '73 hours', deadline_at = now() - interval '1 hour',
 		next_at = now() + interval '1 hour' WHERE report_ref = $1`, lit.ReportRef); err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestIntegrationOccurrences(t *testing.T) {
 	if state, _ := occurrence.Probe(st, true)(ctx); state != "down" {
 		t.Errorf("readyz %s with a report past its deadline", state)
 	}
-	if _, err := relApp(t).Exec(ctx, "UPDATE occurrence_reports SET state = 'delivered', submitted_at = now() WHERE report_ref = $1", lit.ReportRef); err != nil {
+	if _, err := appPool(t).Exec(ctx, "UPDATE occurrence_reports SET state = 'delivered', submitted_at = now() WHERE report_ref = $1", lit.ReportRef); err != nil {
 		t.Fatal(err)
 	}
 	_, _, err = svc.Flag(ctx, "staff-1", "00000000-0000-4000-8000-000000000000", "", "")

@@ -27,7 +27,7 @@ import (
 // leaving out the seconds in skip, as tsdb-writer would.
 func seedTelemetry(t *testing.T, flightID, clientID string, start time.Time, n int, skip map[int]bool) {
 	t.Helper()
-	ts := tsOwner(t)
+	ts := tsPool(t)
 	for i := range n {
 		if skip[i] {
 			continue
@@ -44,7 +44,7 @@ func seedTelemetry(t *testing.T, flightID, clientID string, start time.Time, n i
 
 func seedAlert(t *testing.T, s seeded, kind string, raised, cleared time.Time, version int64) {
 	t.Helper()
-	if _, err := relApp(t).Exec(context.Background(), `INSERT INTO alerts (kind, flight_id, intent_id, severity, state, raised_at, updated_at, cleared_at,
+	if _, err := appPool(t).Exec(context.Background(), `INSERT INTO alerts (kind, flight_id, intent_id, severity, state, raised_at, updated_at, cleared_at,
 		    clear_reason, detail, policy_version)
 		VALUES ($1, $2::uuid, $3::uuid, 'critical', 'cleared', $4, $5, $5, 'resolved', '{"d_cpa_h_m": 41.5}', $6)`, kind, s.flightID, s.intentID, raised, cleared, version); err != nil {
 		t.Fatal(err)
@@ -107,7 +107,7 @@ func TestIntegrationFlightRecord(t *testing.T) {
 	seedAlert(t, s, "proximity", start.Add(20*time.Second), start.Add(30*time.Second), 1)
 	seedAlert(t, s, "nonconformance", start.Add(60*time.Second), start.Add(90*time.Second), 1)
 	for i := range 3 {
-		if _, err := tsOwner(t).Exec(ctx, `INSERT INTO traffic_products (client_id, at, intent_id, tracks_shown, degraded, policy_version, msg_id)
+		if _, err := tsPool(t).Exec(ctx, `INSERT INTO traffic_products (client_id, at, intent_id, tracks_shown, degraded, policy_version, msg_id)
 			VALUES ($1, $2, $3::uuid, '[{"id":"trk:peer","trust":"authenticated","age_s":1}]', '{}', 1, $4)`,
 			s.clientID, start.Add(time.Duration(10*(i+1))*time.Second), s.intentID, "p-"+unique()); err != nil {
 			t.Fatal(err)
@@ -225,7 +225,7 @@ func TestIntegrationDailyBundle(t *testing.T) {
 	if err != nil || len(missing) != 2 || !missing[0].Equal(day.AddDate(0, 0, -1)) || !missing[1].Equal(day.AddDate(0, 0, 1)) {
 		t.Fatalf("missing %v %v", missing, err)
 	}
-	if n := count(t, relApp(t), "SELECT count(*) FROM events WHERE entity_type = 'record_bundle' AND entity_id = $1", day.Format(time.DateOnly)); n != 1 {
+	if n := count(t, appPool(t), "SELECT count(*) FROM events WHERE entity_type = 'record_bundle' AND entity_id = $1", day.Format(time.DateOnly)); n != 1 {
 		t.Errorf("events rows for the bundle: %d", n)
 	}
 }
