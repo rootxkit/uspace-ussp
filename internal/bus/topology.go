@@ -59,6 +59,11 @@ const (
 	// that owns it, so a restart, a handover or a policy change carries
 	// it instead of clearing it (WP-11).
 	BucketProximityState = "proximity_state"
+	// BucketRecordHolds holds every flight whose records must outlive
+	// their retention (an occurrence report names it), by flight id,
+	// written by api after the report's commit and read by tsdb-writer,
+	// which keeps the remote pilot's position of a held flight (WP-15).
+	BucketRecordHolds = "record_holds"
 )
 
 // Bounds (E-10). The server's max_payload is 1 MiB by default, so no
@@ -149,7 +154,12 @@ const (
 	ISANotificationsMaxBytes = int64(128 << 20)
 	ConformanceStateMaxBytes = int64(512 << 20)
 	SessionsLiveMaxBytes     = int64(64 << 20)
+	RecordHoldsMaxBytes      = int64(16 << 20)
 )
+
+// RecordHoldBytes bounds one record hold (a flight id, its reasons and
+// a time).
+const RecordHoldBytes = 4 << 10
 
 // The live sessions' bounds: a session lives at most 12 h
 // (USSP_SESSION_TTL_S), so a key an hour older belongs to no live
@@ -273,6 +283,7 @@ func defaultTopology() Topology {
 			bucket(BucketConformanceState, "each tracked flight's conformance state machine, by flight id (monitor)", ConformanceStateBytes, ConformanceStateTTL, ConformanceStateMaxBytes),
 			bucket(BucketProximityState, "each active proximity alert, by pair (monitor)", ProximityStateBytes, ProximityStateTTL, ProximityStateMaxBytes),
 			bucket(BucketSessionsLive, "live sessions by jti: subject, realm, expiry and idle end (api)", SessionsLiveBytes, SessionsLiveTTL, SessionsLiveMaxBytes),
+			bucket(BucketRecordHolds, "flights whose records an occurrence holds past their retention, by flight id (api)", RecordHoldBytes, 0, RecordHoldsMaxBytes),
 		},
 	}
 }
