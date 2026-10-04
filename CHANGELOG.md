@@ -17,6 +17,9 @@ additively within `/v1`.
     at most `echo_colocation_s` ago (uspace-core `identify.JudgeFleet`;
     defaults 300 m and 5 s from spec 04 §3.2, pending GCAA); a manned
     aircraft with the same mark elsewhere is shown;
+  - a peer that failed and whose ISAs then ended is forgotten
+    `peer_unavailable_s` after its last failure, so `network_rid` is no
+    longer stale for ever over a peer nobody polls;
 - This USSP's client id at the authority keeps the case of its code
   (`ussp-ABC1-01`, not `ussp-abc1-01`). The authority's token service
   registers only `ussp-<code>-<nn>` with an upper-case code (M8), and the

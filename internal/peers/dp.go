@@ -180,9 +180,11 @@ type poller struct {
 }
 
 // peerState is what is known of one peer's answers: down since its
-// first failure after its last answer.
+// first failure after its last answer. idle is when the peer was first
+// seen unpolled with no answer and no failure to date it by.
 type peerState struct {
 	ok, failed     time.Time
+	idle           time.Time
 	down           bool
 	since          time.Time
 	lastErr        string
@@ -190,6 +192,23 @@ type peerState struct {
 	polls, refused uint64
 	published      uint64
 	echoes         uint64
+}
+
+// forgotten reports, for a peer no longer polled, whether
+// peer_unavailable_s has passed since its last answer or failure (since
+// it was first seen idle when it has neither).
+func (p *peerState) forgotten(now time.Time, unavailable time.Duration) bool {
+	last := p.ok
+	if p.failed.After(last) {
+		last = p.failed
+	}
+	if last.IsZero() {
+		if p.idle.IsZero() {
+			p.idle = now
+		}
+		last = p.idle
+	}
+	return now.Sub(last) > unavailable
 }
 
 func (p *peerState) slow() bool {
@@ -1045,17 +1064,24 @@ func (d *DP) Statuses() []sources.StatusBody {
 				break
 			}
 		}
+		disabled := b.Disabled(d.decision(&inst))
+		if !polled && !disabled && ps.forgotten(now, unavailable) {
+			// No longer polled (its ISAs ended) for peer_unavailable_s
+			// since its last answer or failure: forgotten, answering or
+			// not, so a peer nobody polls never keeps network_rid stale.
+			delete(d.peers, base)
+			continue
+		}
+		if polled {
+			ps.idle = time.Time{}
+		}
 		switch {
-		case b.Disabled(d.decision(&inst)):
+		case disabled:
 			b.Since, b.Detail = bus.Stamp{Time: now.UTC()}, "network_rid is switched off for this peer: not polled"
 		case ps.down:
 			b.State, b.Since = sources.StateDown, bus.Stamp{Time: ps.since.UTC()}
 			b.Detail = "the peer does not answer: " + ps.lastErr
 			down++
-		case !polled && !ps.ok.IsZero() && now.Sub(ps.ok) > unavailable:
-			// No longer polled (its ISAs ended): forgotten.
-			delete(d.peers, base)
-			continue
 		case ps.ok.IsZero():
 			b.State, b.Since, b.Detail = sources.StateUnknown, bus.Stamp{Time: now.UTC()}, "not answered yet"
 		default:

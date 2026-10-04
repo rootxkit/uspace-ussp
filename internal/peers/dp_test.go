@@ -371,6 +371,51 @@ func TestDPPeerDownAndBack(t *testing.T) {
 	within(t, 2*time.Second, "back", func() bool { return status(g.dp, g.peer.URL()).State == sources.StateLive })
 }
 
+// A peer that failed and whose ISAs then ended is no longer polled: it
+// stays down for peer_unavailable_s after its last failure, then it is
+// forgotten, so the aggregate is not stale for ever over a peer nobody
+// polls; a peer never answered and no longer polled likewise. The pair
+// (E-01): a peer still polled stays down however long it fails, and a
+// peer switched off stays disabled.
+func TestDPForgetsAFailedPeerWhoseISAsEnded(t *testing.T) {
+	g := newRig(t)
+	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	g.dp.Now = func() time.Time { return now }
+	g.dp.dssOK = now
+	window := time.Duration(g.dp.policy().PeerUnavailableS * float64(time.Second))
+	failed, polled, never, off := "https://failed.example", "https://polled.example", "https://never.example", "https://off.example"
+	g.dp.peers[failed] = &peerState{ok: now.Add(-time.Minute), failed: now, since: now.Add(-30 * time.Second), down: true, lastErr: "503"}
+	g.dp.peers[polled] = &peerState{failed: now, since: now.Add(-30 * time.Second), down: true, lastErr: "503"}
+	g.dp.peers[never] = &peerState{}
+	g.dp.peers[off] = &peerState{ok: now}
+	g.gate.set(SourceNetworkRID+"/"+off, true)
+	g.dp.pollers[pollKey{polled, "v"}] = &poller{}
+	if b := status(g.dp, failed); b.State != sources.StateDown {
+		t.Fatalf("within the window the failed peer is not down: %+v", b)
+	}
+	now = now.Add(window + time.Second)
+	if b := status(g.dp, failed); b.SourceInstance != nil {
+		t.Fatalf("a failed peer whose ISAs ended is kept: %+v", b)
+	}
+	if b := status(g.dp, never); b.SourceInstance != nil {
+		t.Fatalf("a peer never answered and not polled is kept: %+v", b)
+	}
+	if b := status(g.dp, polled); b.State != sources.StateDown {
+		t.Fatalf("a polled peer that fails is forgotten: %+v", b)
+	}
+	if b := status(g.dp, off); b.State != sources.StateDisabled {
+		t.Fatalf("a switched-off peer is forgotten: %+v", b)
+	}
+	if a := status(g.dp, ""); a.State != sources.StateStale || !strings.Contains(a.Detail, "1 of 2 peers do not answer") {
+		t.Fatalf("aggregate %+v", a)
+	}
+	delete(g.dp.pollers, pollKey{polled, "v"})
+	now = now.Add(window + time.Second)
+	if a := status(g.dp, ""); a.State != sources.StateLive {
+		t.Fatalf("no peer is polled or failing: the aggregate is %+v", a)
+	}
+}
+
 // Over peer_flights_max_count the answer is refused whole and counted,
 // never shown in part as if complete; at the bound it is shown (E-10).
 func TestDPRefusesAnAnswerOverTheFlightCap(t *testing.T) {
