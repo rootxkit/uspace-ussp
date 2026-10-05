@@ -54,7 +54,12 @@
 //     contingent run from it. The next live sample clears lost_link; the
 //     flight returns to conforming only after the hysteresis, counted
 //     from that sample. Silence is never evidence that a deviation
-//     ended (T-10);
+//     ended (T-10). Only the aircraft's silence counts: while the
+//     monitor's own input is down (TickFeed, Feed.Down: a bus outage,
+//     this system's fault) no lost_link is raised, and after it returns
+//     the silence counts from its return (Feed.BackAt), so a flight
+//     heard again is judged from its real samples and one still silent
+//     loses its link LostLinkS after the return (PLAN §15.2 Q35);
 //   - unknown while no judgement ran: no authorisation (intent_active has
 //     no entry), no flying sample yet, or the source switched off. It is
 //     never reported as conforming.

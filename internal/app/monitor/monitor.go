@@ -227,6 +227,12 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 		Sink: bus.NewPublisher(rt.Bus, pubCounters), Counters: engCounters, Logger: logger, Tick: o.Tick,
 		Store: KVStates{KV: bus.KVStore{JS: js, Bucket: bus.BucketConformanceState}}, InstanceID: instance,
 		Zones: zoneSrc, Env: NewEnv(und, ground),
+		// The monitor's own input is its bus link: while it is down no
+		// lost_link is judged and a monitoring outage is said (Q35).
+		Input: func() (bool, time.Time) {
+			up, since, _ := rt.Bus.Link()
+			return up, since
+		},
 	}
 	if o.Engine != nil {
 		o.Engine(eng)

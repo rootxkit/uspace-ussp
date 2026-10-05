@@ -132,8 +132,13 @@ type Engine struct {
 	// a position (nil: neither known).
 	Zones ZoneProvider
 	Env   EnvFunc
+	// Input reports the monitor's own input (its bus link, bus.Conn.Link);
+	// nil is an input that is never down. While it is down no lost_link
+	// is judged and a monitoring outage is said (PLAN §15.2 Q35).
+	Input InputFunc
 
 	once    sync.Once
+	iw      *inputWatch
 	ctx     context.Context
 	mu      sync.Mutex
 	workers map[string]*worker
@@ -183,6 +188,7 @@ func (e *Engine) init() {
 		if e.ConfHeartbeat <= 0 {
 			e.ConfHeartbeat = DefaultConfHeartbeat
 		}
+		e.iw = &inputWatch{input: e.Input, started: e.now()}
 		e.workers, e.home = map[string]*worker{}, map[string]string{}
 		e.table = &table{flights: map[string]tableEntry{}}
 		e.out = &outbox{sink: e.Sink, counters: e.Counters, logger: e.logger(), ch: make(chan outMsg, max(e.OutboxLen, DefaultOutboxLen))}
@@ -212,6 +218,7 @@ func (e *Engine) Run(ctx context.Context) {
 	e.ctx = ctx
 	e.mu.Unlock()
 	go e.sweep(ctx)
+	go e.watchInput(ctx)
 	if e.persist != nil {
 		go e.persist.run(ctx)
 		e.preload(ctx)
@@ -219,6 +226,30 @@ func (e *Engine) Run(ctx context.Context) {
 	}
 	e.seedEnd.Do(func() { close(e.seeded) })
 	e.out.run(ctx)
+}
+
+// watchInput reads the input every Tick, so a monitoring outage is said
+// when it starts even while no flight is tracked.
+func (e *Engine) watchInput(ctx context.Context) {
+	if e.Input == nil {
+		return
+	}
+	t := time.NewTicker(e.Tick)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			e.iw.feed(e, e.now(), e.policy().Values.LostLinkS)
+		}
+	}
+}
+
+// Outage is the monitor's input as the status line says it.
+func (e *Engine) Outage() Outage {
+	e.init()
+	return e.iw.outage(e.now(), e.policy().Values.LostLinkS)
 }
 
 // Seeded is closed once Run has restored the saved flights: the track
@@ -501,6 +532,8 @@ type Summary struct {
 	// the last status period (spec 05 §3: widened, never skipped).
 	EvaluationPeriodS float64 `json:"evaluation_period_s"`
 	OutboxDepth       int     `json:"outbox_depth"`
+	// Outage is the monitor's own input (Engine.Outage).
+	Outage Outage `json:"-"`
 }
 
 // Summary collects every worker's last summary.
@@ -521,6 +554,7 @@ func (e *Engine) Summary() Summary {
 		w.mu.Unlock()
 	}
 	s.OutboxDepth = len(e.out.ch)
+	s.Outage = e.Outage()
 	return s
 }
 
@@ -877,6 +911,7 @@ func (w *worker) tick(ctx context.Context) {
 	w.e.Counters.Inc(CounterTicks)
 	cfg, vals := w.config()
 	_, _, _, loaded := w.e.Intents.Intent("")
+	feed := w.e.iw.feed(w.e, now, vals.LostLinkS)
 	w.configureZones(ctx, now)
 	if zevs := w.zones.Tick(unixS(now), now); len(zevs) > 0 {
 		w.publishZones(ctx, zevs, now)
@@ -914,7 +949,7 @@ func (w *worker) tick(ctx context.Context) {
 				}
 			}
 		}
-		ev := f.tr.Tick(cfg, now)
+		ev := f.tr.TickFeed(cfg, now, feed)
 		// A link-lost flight sends no sample that would heal a dropped
 		// state, so its state is republished every tick.
 		if len(ev.Transitions) > 0 || f.tr.Snapshot().LinkLost {
@@ -932,8 +967,14 @@ func (w *worker) tick(ctx context.Context) {
 		// A flight silent past the flight end with nothing active and no
 		// lost link is forgotten (its flight ended at the ingest); one
 		// that holds an alert is kept until its intent ends.
+		// Not while the input is down, nor counted from before its
+		// return: that silence is not the flight's (Q35).
 		snap := f.tr.Snapshot()
-		if len(f.tr.Active()) == 0 && !snap.LinkLost && now.Sub(f.lastAt) > secs(vals.FlightEndAfterS) {
+		silentSince := f.lastAt
+		if feed.BackAt.After(silentSince) {
+			silentSince = feed.BackAt
+		}
+		if !feed.Down && len(f.tr.Active()) == 0 && !snap.LinkLost && now.Sub(silentSince) > secs(vals.FlightEndAfterS) {
 			w.publishZones(ctx, w.zones.Drop(id, conformance.ClearFlightEnded, unixS(now), now), now)
 			delete(w.flights, id)
 			w.e.forget(id)

@@ -43,7 +43,28 @@ additively within `/v1`.
   `USSP_OCCURRENCE_BACKOFF_MAX_S` (600), pending GCAA. The fake
   authority follows the pinned contract. Lab run against the authority
   image: `scripts/lab-authority.sh`, docs/RUNBOOKS/WP-15.md Run 3.
-
+- A NATS outage no longer raises a false `lost_link` for every flight
+  (PLAN §15.2 Q35 a, found by the WP-19 chaos run). The monitor's own
+  input is its bus link: while it is down no `lost_link` is judged, the
+  outage is logged at error level as a monitoring outage and counted
+  (`monitor_input_outages`), and the silence of each flight counts from
+  the link's return, so a flight heard again is judged from its real
+  samples and one still silent loses its link `lost_link_s` after the
+  return. A real link loss with the bus up is raised as before, and a
+  sample clears it. A `lost_link` already raised is kept through the
+  outage.
+- A process started while a token service is down verifies that
+  service's tokens again (PLAN §15.2 Q35 b): each ecosystem issuer's
+  JWKS is stored in the new `jwks_cache` bucket when it is fetched
+  (rewritten hourly while it answers) and, when a start cannot fetch
+  it, the stored one verifies for at most `USSP_JWKS_CACHE_MAX_AGE_S`
+  from its fetch (default 86400, spec 05 §6, pending GCAA; 0 turns it
+  off). `/readyz` says `jwks` degraded with the stored keys' age rather
+  than down. New: `USSP_JWKS_CACHE_BUCKET_MAX_BYTES` (1 MiB).
+- `GET /v1/admin/inputs` (additive): each monitor instance may carry
+  `input_down_since`, `input_back_at` and `lost_link_suspended_until`;
+  the monitor's state is `down` with a "monitoring outage" detail while
+  an instance reports its input down.
 - A request without a credential is `401`, whatever else is wrong with
   it, on every route (finding C6): the WebSocket routes are now guarded
   by the mux (`GuardedMux.WebSockets`, `WSAuth.Require`) before the

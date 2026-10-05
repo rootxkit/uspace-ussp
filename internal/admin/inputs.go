@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -454,6 +455,28 @@ func (in *Inputs) monitor(ctx context.Context, now time.Time, missingS float64) 
 	default:
 		out.State = "up"
 		out.Detail = fmt.Sprintf("%d monitor instance(s) writing their status", len(out.Instances))
+	}
+	// A monitoring outage an instance reports (PLAN §15.2 Q35): its own
+	// input is down, so it judges no lost_link; or it is back and a
+	// flight still silent is not judged lost before the grace ends.
+	var down, suspended []string
+	for i := range out.Instances {
+		st := &out.Instances[i].MonitorStatus
+		switch {
+		case st.InputDownSince != nil:
+			down = append(down, st.Instance+" since "+st.InputDownSince.UTC().Format(time.RFC3339))
+		case st.LostLinkSuspendedUntil != nil && now.Before(*st.LostLinkSuspendedUntil):
+			suspended = append(suspended, st.Instance+" until "+st.LostLinkSuspendedUntil.UTC().Format(time.RFC3339))
+		}
+	}
+	if len(down) > 0 && out.State == "up" {
+		out.State = "down"
+		out.Detail = "monitoring outage: the monitor's input is down (" + strings.Join(down, "; ") +
+			"): no lost_link is judged and samples are not received"
+	}
+	if len(suspended) > 0 && out.State == "up" {
+		out.Detail += "; after a monitoring outage, lost_link is judged again from the input's return plus lost_link_s (" +
+			strings.Join(suspended, "; ") + ")"
 	}
 	return out
 }

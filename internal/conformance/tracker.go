@@ -650,11 +650,32 @@ func (t *Tracker) disable(ev *Events, wall time.Time) {
 	})
 }
 
+// Feed is the state of the monitor's own input (its bus link and track
+// consumers) as Tick judges silence by it (PLAN §15.2 Q35). While Down
+// the monitor cannot receive a sample, so no silence is the aircraft's:
+// lost_link is not raised. BackAt is when the input last came back
+// (zero: it has not been down while this tracker was held); a silence
+// is counted from it, so lost_link is raised no earlier than LostLinkS
+// after the input returned, and only when no live sample came since.
+type Feed struct {
+	Down   bool
+	BackAt time.Time
+}
+
 // Tick runs what the absence of samples decides at wall: lost_link after
 // LostLinkS without a live sample from a flying aircraft with an
 // authorisation, and contingent after MaxRecoverableS nonconforming.
 // The lost_link alert is refreshed with the current silence (C-08).
-func (t *Tracker) Tick(cfg Config, wall time.Time) Events {
+// It is TickFeed with an input that was never down.
+func (t *Tracker) Tick(cfg Config, wall time.Time) Events { return t.TickFeed(cfg, wall, Feed{}) }
+
+// TickFeed is Tick judged by the state of the monitor's own input: a
+// bus outage is this system's fault, not the aircraft's, so it raises no
+// lost_link (Q35: before, a 60 s NATS outage raised one for every
+// flight). A lost_link already raised is kept and refreshed (nothing
+// unjudged clears an alert), and a deviation already judged runs on to
+// contingent: silence is never evidence that it ended (T-10).
+func (t *Tracker) TickFeed(cfg Config, wall time.Time, feed Feed) Events {
 	var ev Events
 	if err := cfg.Validate(); err != nil {
 		t.Counters.Inc(CounterConfigInvalid)
@@ -665,7 +686,11 @@ func (t *Tracker) Tick(cfg Config, wall time.Time) Events {
 		t.ll.UpdatedAt, t.ll.PolicyVersion = wall, cfg.PolicyVersion
 		t.lastOutside = wall
 	}
-	if !t.disabled && t.authorised && t.hasLive && t.lastFlying && !t.linkLost && wall.Sub(t.lastLive) >= secs(cfg.LostLinkS) {
+	silentSince := t.lastLive
+	if feed.BackAt.After(silentSince) {
+		silentSince = feed.BackAt
+	}
+	if !feed.Down && !t.disabled && t.authorised && t.hasLive && t.lastFlying && !t.linkLost && wall.Sub(silentSince) >= secs(cfg.LostLinkS) {
 		t.change(&ev, wall, func() {
 			t.linkLost, t.lostAt = true, wall
 			t.lastOutside = wall

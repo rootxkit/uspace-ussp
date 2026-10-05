@@ -75,6 +75,11 @@ const (
 	// console (WP-18): a monitor not heard for the policy's
 	// monitor_status_missing_s means alerts stopped.
 	BucketMonitorStatus = "monitor_status"
+	// BucketJWKSCache holds each ecosystem issuer's last fetched JWKS, by
+	// issuer hash, written by every process that verifies tokens and read
+	// by one that starts while that issuer cannot be fetched (PLAN §15.2
+	// Q35 b; spec 05 §6 "JWKS cached 24 h").
+	BucketJWKSCache = "jwks_cache"
 )
 
 // Bounds (E-10). The server's max_payload is 1 MiB by default, so no
@@ -129,6 +134,12 @@ const (
 	MonitorStatusTTL = 24 * time.Hour
 	// MonitorStatusBytes bounds one instance's status.
 	MonitorStatusBytes = 16 << 10
+	// JWKSCacheTTL is jwks_cache's TTL: spec 05 §6's 24 h, the most
+	// USSP_JWKS_CACHE_MAX_AGE_S may be; a process that verifies rewrites
+	// its issuers' keys every hour while they answer.
+	JWKSCacheTTL = 24 * time.Hour
+	// JWKSCacheBytes bounds one stored JWKS.
+	JWKSCacheBytes = 64 << 10
 )
 
 // ALRT's and TRAFFIC's bounds (every stream bounded in age and size):
@@ -180,6 +191,7 @@ const (
 	RecordHoldsMaxBytes      = int64(16 << 20)
 	RIDSubscriptionsMaxBytes = int64(4 << 20)
 	MonitorStatusMaxBytes    = int64(4 << 20)
+	JWKSCacheMaxBytes        = int64(1 << 20)
 )
 
 // RecordHoldBytes bounds one record hold (a flight id, its reasons and
@@ -311,6 +323,7 @@ func defaultTopology() Topology {
 			bucket(BucketRecordHolds, "flights whose records an occurrence holds past their retention, by flight id (api)", RecordHoldBytes, 0, RecordHoldsMaxBytes),
 			bucket(BucketRIDSubscriptions, "the peer Display Provider's DSS subscriptions, by subscription id (monitor)", RIDSubscriptionBytes, RIDSubscriptionsTTL, RIDSubscriptionsMaxBytes),
 			bucket(BucketMonitorStatus, "each monitor instance's status line, by instance (monitor)", MonitorStatusBytes, MonitorStatusTTL, MonitorStatusMaxBytes),
+			bucket(BucketJWKSCache, "each ecosystem issuer's last fetched JWKS, by issuer hash (every process that verifies tokens)", JWKSCacheBytes, JWKSCacheTTL, JWKSCacheMaxBytes),
 		},
 	}
 }

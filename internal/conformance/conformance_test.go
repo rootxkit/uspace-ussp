@@ -665,3 +665,74 @@ func TestFreshTrackerTakesTheIntentState(t *testing.T) {
 		t.Fatalf("%+v", ev)
 	}
 }
+
+// Q35: while the monitor's own input is down no silence is the
+// aircraft's, so no lost_link; after the input is back the silence
+// counts from its return, so lost_link comes LostLinkS later when no
+// live sample came, and never when one did. Its twin with the input up
+// is TestLostLinkBoundAndDrop.
+func TestNoLostLinkWhileTheInputIsDown(t *testing.T) {
+	cfg := testConfig()
+	a := circleAuth()
+	tr := NewTracker(flightA, intentA, "", nil)
+	tr.Observe(input(origin, 0, &a), cfg, at(0))
+	for s := 1.0; s <= 60; s++ {
+		if ev := tr.TickFeed(cfg, at(s), Feed{Down: true}); len(ev.Alerts) != 0 || len(ev.Transitions) != 0 {
+			t.Fatalf("at %v s with the input down: %+v", s, ev)
+		}
+	}
+	if tr.Snapshot().State != StateConforming {
+		t.Fatalf("state %s after the outage, want conforming", tr.Snapshot().State)
+	}
+	back := Feed{BackAt: at(60)}
+	if ev := tr.TickFeed(cfg, at(74.9), back); len(ev.Alerts) != 0 {
+		t.Fatalf("lost before lost_link_s after the input came back: %+v", ev)
+	}
+	ev := tr.TickFeed(cfg, at(75), back)
+	if len(ev.Alerts) != 1 || ev.Alerts[0].Alert.Kind != KindLostLink || tr.Snapshot().State != StateLostLink {
+		t.Fatalf("no lost_link lost_link_s after the input came back without a sample: %+v", ev)
+	}
+	// The aircraft is heard again: the lost_link clears on its sample.
+	ev = tr.Observe(input(origin, 76, &a), cfg, at(76))
+	if len(ev.Alerts) != 1 || ev.Alerts[0].State != AlertCleared || ev.Alerts[0].ClearReason != ClearResolved {
+		t.Fatalf("the sample after the return did not clear lost_link: %+v", ev)
+	}
+}
+
+// A flight heard live after the input came back is judged from those
+// samples: no lost_link while they come.
+func TestSamplesAfterTheInputReturnsKeepTheLink(t *testing.T) {
+	cfg := testConfig()
+	a := circleAuth()
+	tr := NewTracker(flightA, intentA, "", nil)
+	tr.Observe(input(origin, 0, &a), cfg, at(0))
+	tr.TickFeed(cfg, at(30), Feed{Down: true})
+	back := Feed{BackAt: at(40)}
+	for s := 41.0; s <= 100; s += 5 {
+		tr.Observe(input(origin, s, &a), cfg, at(s))
+		if ev := tr.TickFeed(cfg, at(s+1), back); len(ev.Alerts) != 0 {
+			t.Fatalf("at %v s: %+v", s+1, ev)
+		}
+	}
+	if ev := tr.TickFeed(cfg, at(111), back); len(ev.Alerts) != 1 || ev.Alerts[0].Alert.Kind != KindLostLink {
+		t.Fatalf("a real silence after the return raised nothing: %+v", ev)
+	}
+}
+
+// A lost_link raised before the input went down is held through the
+// outage and refreshed: nothing unjudged clears an alert.
+func TestALostLinkIsHeldThroughAnOutage(t *testing.T) {
+	cfg := testConfig()
+	a := circleAuth()
+	tr := NewTracker(flightA, intentA, "", nil)
+	tr.Observe(input(origin, 0, &a), cfg, at(0))
+	if ev := tr.Tick(cfg, at(15)); len(ev.Alerts) != 1 {
+		t.Fatalf("%+v", ev)
+	}
+	if ev := tr.TickFeed(cfg, at(20), Feed{Down: true}); len(ev.Alerts) != 0 || !tr.Snapshot().LinkLost {
+		t.Fatalf("the outage changed a raised lost_link: %+v", ev)
+	}
+	if got := tr.Active(); len(got) != 1 || got[0].Detail["silence_s"] != 20.0 {
+		t.Fatalf("active %+v", got)
+	}
+}

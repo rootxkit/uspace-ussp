@@ -1641,11 +1641,11 @@ type AdminMonitor struct {
 	Instances   []AdminMonitorInstance `json:"instances"`
 	LastHeardAt *time.Time             `json:"last_heard_at,omitempty"`
 
-	// State down when no instance was heard for monitor_status_missing_s; unknown while the bucket cannot be read.
+	// State down when no instance was heard for monitor_status_missing_s, or when an instance reports its input down (a monitoring outage, input_down_since); unknown while the bucket cannot be read.
 	State AdminMonitorState `json:"state"`
 }
 
-// AdminMonitorState down when no instance was heard for monitor_status_missing_s; unknown while the bucket cannot be read.
+// AdminMonitorState down when no instance was heard for monitor_status_missing_s, or when an instance reports its input down (a monitoring outage, input_down_since); unknown while the bucket cannot be read.
 type AdminMonitorState string
 
 // AdminMonitorInstance defines model for AdminMonitorInstance.
@@ -1665,15 +1665,24 @@ type AdminMonitorInstance struct {
 	EvaluationPeriodS float64 `json:"evaluation_period_s"`
 	FlightsTracked    int     `json:"flights_tracked"`
 	Geoid             bool    `json:"geoid"`
-	Instance          string  `json:"instance"`
+
+	// InputBackAt When the instance's input last came back after a monitoring outage; absent if it has not been down since the instance started.
+	InputBackAt *time.Time `json:"input_back_at,omitempty"`
+
+	// InputDownSince Present while the instance's own input (its bus link) is down, a monitoring outage, since when; no lost_link is judged meanwhile (PLAN §15.2 Q35). The monitor's state is then down.
+	InputDownSince *time.Time `json:"input_down_since,omitempty"`
+	Instance       string     `json:"instance"`
 
 	// IntentActiveAgeS Absent while intent_active was never read (every flight unknown).
-	IntentActiveAgeS *float64        `json:"intent_active_age_s,omitempty"`
-	OutboxDepth      int             `json:"outbox_depth"`
-	PolicyVersion    int64           `json:"policy_version"`
-	States           *map[string]int `json:"states,omitempty"`
-	Terrain          bool            `json:"terrain"`
-	Workers          int             `json:"workers"`
+	IntentActiveAgeS *float64 `json:"intent_active_age_s,omitempty"`
+
+	// LostLinkSuspendedUntil Present within lost_link_s of the input's return; a flight still silent is not judged lost before it.
+	LostLinkSuspendedUntil *time.Time      `json:"lost_link_suspended_until,omitempty"`
+	OutboxDepth            int             `json:"outbox_depth"`
+	PolicyVersion          int64           `json:"policy_version"`
+	States                 *map[string]int `json:"states,omitempty"`
+	Terrain                bool            `json:"terrain"`
+	Workers                int             `json:"workers"`
 }
 
 // AdminOutbox defines model for AdminOutbox.
