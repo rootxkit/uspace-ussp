@@ -75,6 +75,11 @@ const (
 	// console (WP-18): a monitor not heard for the policy's
 	// monitor_status_missing_s means alerts stopped.
 	BucketMonitorStatus = "monitor_status"
+	// BucketFlightBinding holds each aircraft's running flight, by a
+	// hash of the ingest's aircraft key, written by telemetry-ingest's
+	// flight binder and read back when it starts, so a restart keeps
+	// every flight's id (WP-19 restart row).
+	BucketFlightBinding = "flight_binding"
 )
 
 // Bounds (E-10). The server's max_payload is 1 MiB by default, so no
@@ -129,6 +134,13 @@ const (
 	MonitorStatusTTL = 24 * time.Hour
 	// MonitorStatusBytes bounds one instance's status.
 	MonitorStatusBytes = 16 << 10
+	// FlightBindingTTL is flight_binding's TTL: the binder rewrites a
+	// running flight at least every flights.SaveEvery and deletes it at
+	// its end, so a key a day old belongs to no flight; a restart within
+	// the day still ends what it finds silent.
+	FlightBindingTTL = 24 * time.Hour
+	// FlightBindingBytes bounds one saved flight.
+	FlightBindingBytes = 4 << 10
 )
 
 // ALRT's and TRAFFIC's bounds (every stream bounded in age and size):
@@ -180,6 +192,9 @@ const (
 	RecordHoldsMaxBytes      = int64(16 << 20)
 	RIDSubscriptionsMaxBytes = int64(4 << 20)
 	MonitorStatusMaxBytes    = int64(4 << 20)
+	// FlightBindingMaxBytes: one saved flight for each of the binder's
+	// 10 000 aircraft (flights.MaxFlights), with room.
+	FlightBindingMaxBytes = int64(64 << 20)
 )
 
 // RecordHoldBytes bounds one record hold (a flight id, its reasons and
@@ -311,6 +326,7 @@ func defaultTopology() Topology {
 			bucket(BucketRecordHolds, "flights whose records an occurrence holds past their retention, by flight id (api)", RecordHoldBytes, 0, RecordHoldsMaxBytes),
 			bucket(BucketRIDSubscriptions, "the peer Display Provider's DSS subscriptions, by subscription id (monitor)", RIDSubscriptionBytes, RIDSubscriptionsTTL, RIDSubscriptionsMaxBytes),
 			bucket(BucketMonitorStatus, "each monitor instance's status line, by instance (monitor)", MonitorStatusBytes, MonitorStatusTTL, MonitorStatusMaxBytes),
+			bucket(BucketFlightBinding, "each aircraft's running flight, by aircraft key hash (telemetry-ingest)", FlightBindingBytes, FlightBindingTTL, FlightBindingMaxBytes),
 		},
 	}
 }

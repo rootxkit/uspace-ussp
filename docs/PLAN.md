@@ -494,7 +494,14 @@ subscriptions at the DSS, by subscription id, with the base URL, area,
 version and end, written by the monitor as each is put or deleted and
 read at its start, so that the subscription of an area dropped while it
 was down is deleted at the DSS instead of being notified until its 24 h
-end (WP-14 review); unread, the status of `network_rid` says so. Every
+end (WP-14 review); unread, the status of `network_rid` says so. A
+sixth is `flight_binding` (TTL 24 h, 64 MiB, rewritten at most every
+10 s per flying aircraft, deleted at the flight's end): telemetry-ingest's
+running flight of each aircraft (id, intent, times, lost state), read at
+its start before the first sample is bound, so a restart goes on with
+every flight in the air instead of starting new ones and leaving the old
+raising `lost_link` (WP-19 restart row); unread, `/readyz` says so and
+aircraft start new flights. Every
 follower logs the
 projection age in its status line and refuses nothing when the bucket is
 missing (everything enabled, identification `registry_unavailable`,

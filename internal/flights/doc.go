@@ -22,7 +22,10 @@
 //     intent_active (ended, withdrawn) ends its flight (intent_ended); the
 //     operator's end sample ends it (operator_ended). Every fact is a
 //     flight/event/v1 message on flight.v1.<event>.<flight_id> (JetStream,
-//     FLIGHT): started, telemetry_lost, telemetry_resumed, ended.
+//     FLIGHT): started, telemetry_lost, telemetry_resumed, ended. The
+//     running flights are saved in the flight_binding bucket (KVSaver)
+//     and taken back when telemetry-ingest starts (Restore), so a
+//     restart goes on with every flight in the air (WP-19).
 //   - Recorder (api): consumes FLIGHT and records each fact in the
 //     flights table with its audit row in one transaction (pgstore),
 //     then acknowledges it (B-05); a fact that cannot be recorded stays

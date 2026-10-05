@@ -46,7 +46,13 @@ const (
 	DepCIS            = "cis_current"
 	DepPolicy         = "policy"
 	DepSourceControl  = "source_control"
+	// DepFlightBinding is the flight_binding bucket: whether the running
+	// flights were taken back at start, and what waits to be saved.
+	DepFlightBinding = "flight_binding"
 )
+
+// RestoreTimeout bounds the read of the saved flights at start.
+const RestoreTimeout = 5 * time.Second
 
 // DrainConsumer is the durable consumer of the INGEST work queue, shared
 // by every instance (a work queue takes one consumer).
@@ -230,6 +236,21 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 		},
 		Counters: flightCounters, Logger: logger,
 	}
+	// The running flights outlive the process (WP-19 restart row): saved
+	// in flight_binding, taken back here before the first sample is
+	// bound.
+	saver := &flights.KVSaver{KV: bus.KVStore{JS: js, Bucket: bus.BucketFlightBinding}, Counters: flightCounters, Logger: logger}
+	binder.Save, binder.Forget = saver.Save, saver.Forget
+	restored := restoreFlights(ctx, saver, binder, flightCounters, logger)
+	rt.Health.Register(DepFlightBinding, false, func(context.Context) (obs.State, string) {
+		if restored != "" {
+			return obs.StateDegraded, restored
+		}
+		if n := saver.Pending(); n > flights.MaxFlights/2 {
+			return obs.StateDegraded, fmt.Sprintf("%d flights wait to be saved", n)
+		}
+		return obs.StateUp, ""
+	})
 	ingCounters := &core.Counters{}
 	proc.Publish(rt, "telemetry", ingCounters)
 	seenCounters := &core.Counters{}
@@ -272,7 +293,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 
 	for _, run := range []func(context.Context){
 		pol.Run, src.Run, bindings.Run, intents.Run, reg.Run, cisM.Run,
-		outbox.Run, outbox.RunSpill, events.Run, drain.Run, seen.Run,
+		outbox.Run, outbox.RunSpill, events.Run, drain.Run, seen.Run, saver.Run,
 		func(ctx context.Context) { status.Run(ctx, every) },
 		func(ctx context.Context) { tick(ctx, time.Second, func() { binder.Tick() }) },
 		func(ctx context.Context) {
@@ -285,6 +306,25 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 		rt.Go(ctx, run)
 	}
 	return nil
+}
+
+// restoreFlights takes back the flights the previous process saved, within
+// RestoreTimeout. It returns "" when they were read (none or some), or
+// why they were not: every aircraft then starts a new flight, as before
+// WP-19, and /readyz says so for the life of the process.
+func restoreFlights(ctx context.Context, saver *flights.KVSaver, binder *flights.Binder, c *core.Counters, logger *slog.Logger) string {
+	rctx, cancel := context.WithTimeout(ctx, RestoreTimeout)
+	defer cancel()
+	snaps, err := saver.Load(rctx)
+	if err != nil {
+		c.Inc(flights.CounterRestoreFailed)
+		logger.LogAttrs(ctx, slog.LevelError, "running flights not restored: every aircraft in the air starts a new flight",
+			slog.String("bucket", bus.BucketFlightBinding), obs.Err(err))
+		return "the running flights were not restored at start (" + err.Error() + "): aircraft in the air started new flights"
+	}
+	n := binder.Restore(snaps)
+	logger.LogAttrs(ctx, slog.LevelInfo, "running flights restored", slog.Int("restored", n), slog.Int("saved", len(snaps)))
+	return ""
 }
 
 // ingestMaxAge is how old a work-queue sample may be before it is shed

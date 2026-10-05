@@ -328,8 +328,8 @@ func TestTopologyShape(t *testing.T) {
 		}
 		if (b.TTL != 0) != (b.Bucket == BucketRegistryValidity || b.Bucket == BucketTelemetrySeen || b.Bucket == BucketISANotifications ||
 			b.Bucket == BucketConformanceState || b.Bucket == BucketProximityState || b.Bucket == BucketSessionsLive ||
-			b.Bucket == BucketRIDSubscriptions || b.Bucket == BucketMonitorStatus) {
-			t.Errorf("%s TTL %v: only registry_validity, telemetry_seen, rid_isa_notifications, conformance_state, proximity_state, sessions_live, rid_dp_subscriptions and monitor_status have one", b.Bucket, b.TTL)
+			b.Bucket == BucketRIDSubscriptions || b.Bucket == BucketMonitorStatus || b.Bucket == BucketFlightBinding) {
+			t.Errorf("%s TTL %v: only registry_validity, telemetry_seen, rid_isa_notifications, conformance_state, proximity_state, sessions_live, rid_dp_subscriptions, monitor_status and flight_binding have one", b.Bucket, b.TTL)
 		}
 	}
 	// The streams and the bucket WP-11 owns are bounded in size too.
@@ -337,6 +337,9 @@ func TestTopologyShape(t *testing.T) {
 		if s, _ := top.Stream(name); s.MaxBytes != want || s.MaxAge <= 0 {
 			t.Errorf("%s: max_bytes %d, max_age %v", name, s.MaxBytes, s.MaxAge)
 		}
+	}
+	if b, _ := top.Bucket(BucketFlightBinding); b.MaxBytes != FlightBindingMaxBytes || b.TTL != FlightBindingTTL || b.MaxValueSize != FlightBindingBytes {
+		t.Errorf("flight_binding %+v", b)
 	}
 	if b, _ := top.Bucket(BucketProximityState); b.MaxBytes != ProximityStateMaxBytes || b.TTL != ProximityStateTTL {
 		t.Errorf("proximity_state %+v", b)
