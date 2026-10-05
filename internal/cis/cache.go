@@ -154,6 +154,12 @@ type Cache struct {
 	subErr      string
 	warmErr     string
 	unpersisted map[Dataset]int64
+	// ends is the CISP's ended and cancelled heads for the restrictions
+	// version held, read when a restriction is absent from it;
+	// inconsistent the restrictions found gone from it
+	// (restrictionend.go).
+	ends         *restrictionEnds
+	inconsistent *inconsistency
 }
 
 // NewCache builds a Cache.
@@ -723,6 +729,7 @@ func (c *Cache) Outdated() []string {
 
 // Probe is the readiness of the cache (the /readyz entry cis, also on
 // the E-09 status line): unknown with no version loaded, degraded when
+// a restriction is gone from the set without an end (cis_inconsistency),
 // a publication was refused, a version is held untrusted (or no
 // publisher keys are configured), a dataset is stale, a notification is not pulled yet, the
 // projection or the subscription failed; up otherwise, with the
@@ -797,6 +804,11 @@ func (c *Cache) Probe(context.Context) (obs.State, string) {
 	}
 	if c.projErr != "" {
 		problems = append(problems, "projection: "+c.projErr)
+	}
+	if v := c.cfg.Evaluator.Snapshot().Version(Restrictions); v != nil {
+		if p := c.inconsistencyProblem(v.Number); p != "" {
+			problems = append(problems, p)
+		}
 	}
 	switch {
 	case c.cfg.CallbackURL == "":

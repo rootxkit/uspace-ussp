@@ -19,6 +19,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/rootxkit/uspace-ussp/internal/bus"
+	"github.com/rootxkit/uspace-ussp/internal/cis"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
 )
 
@@ -83,6 +84,7 @@ type memStore struct {
 	deliveries map[string]time.Time
 	fail       error
 	acked      map[string]time.Time
+	pages      int
 }
 
 func newMem() *memStore {
@@ -178,6 +180,27 @@ func (m *memStore) OpenNotices(ctx context.Context, maxRows int) ([]Stored, erro
 		out = out[:maxRows]
 	}
 	return out, err
+}
+
+// OpenNoticesAfter are the open notices after the cursor, by
+// (raised_at, alert id), at most maxRows. It counts the pages read.
+func (m *memStore) OpenNoticesAfter(ctx context.Context, after NoticeCursor, maxRows int) ([]Stored, error) {
+	all, err := m.EndedNotices(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	key := func(at time.Time, id string) string { return at.UTC().Format(time.RFC3339Nano) + " " + id }
+	slices.SortFunc(all, func(a, b Stored) int { return strings.Compare(key(a.RaisedAt, a.AlertID), key(b.RaisedAt, b.AlertID)) })
+	var out []Stored
+	for i := range all {
+		if (after == NoticeCursor{} || key(all[i].RaisedAt, all[i].AlertID) > key(after.RaisedAt, after.AlertID)) && len(out) < maxRows {
+			out = append(out, all[i])
+		}
+	}
+	m.mu.Lock()
+	m.pages++
+	m.mu.Unlock()
+	return out, nil
 }
 
 func (m *memStore) EndedNotices(context.Context, int) ([]Stored, error) {
@@ -681,18 +704,24 @@ func TestAckForOperatorRecordsTheActor(t *testing.T) {
 	}
 }
 
-// lifter answers RestrictionLifted from a map of restriction ids to
-// lifted; judged is false for every id while stale.
+// lifter answers RestrictionLift from a map of restriction ids to what
+// the CIS says (in force when not in the map); unjudged for every id
+// while stale. It counts the questions.
 type lifter struct {
-	lifted map[string]bool
-	stale  bool
+	lifts map[string]cis.Lift
+	stale bool
+	asked int
 }
 
-func (l *lifter) RestrictionLifted(id string) (bool, bool) {
+func (l *lifter) RestrictionLift(_ context.Context, id string) cis.Lift {
+	l.asked++
 	if l.stale {
-		return false, false
+		return cis.LiftUnjudged
 	}
-	return l.lifted[id], true
+	if v, ok := l.lifts[id]; ok {
+		return v
+	}
+	return cis.LiftInForce
 }
 
 // noticeOf is an open restriction_activated notice caused by restriction
@@ -740,7 +769,7 @@ func TestClearLiftedNotices(t *testing.T) {
 		st.rows[r.AlertID] = r
 	}
 	st.rows[alertA] = Record{Body: body(StateRaised, t0), Cell5: cellA}
-	l := &lifter{lifted: map[string]bool{"DARENDD": true}, stale: true}
+	l := &lifter{lifts: map[string]cis.Lift{"DARENDD": cis.LiftEnded}, stale: true}
 	bus := &pub{}
 	svc := &Service{Store: st, Bus: bus, Restrictions: l, Now: func() time.Time { return t0.Add(time.Minute) }}
 
@@ -787,5 +816,123 @@ func TestClearLiftedNotices(t *testing.T) {
 	st.fail = errors.New("down")
 	if _, err := svc.ClearLiftedNotices(t.Context()); err == nil {
 		t.Fatal("a failed store not reported")
+	}
+}
+
+// A notice whose restriction is gone from the CIS without an end (a CIS
+// inconsistency) stays raised: not cleared, republished raised, counted
+// at every pass; an absence from a lifter that does not ask the CISP is
+// taken the same way. Its twin, an ended restriction, clears (E-01). The
+// policy's restriction_gone_clear_enabled (default false, pending GCAA)
+// clears it, with cause restriction_gone.
+func TestGoneRestrictionKeepsTheAlertRaised(t *testing.T) {
+	st := newMem()
+	gone := noticeOf("4d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7ea1", "restriction", "DARGONE")
+	absent := noticeOf("4d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7ea2", "restriction", "DARABST")
+	ended := noticeOf("4d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7ea3", "restriction", "DARENDD")
+	for _, r := range []Record{gone, absent, ended} {
+		st.rows[r.AlertID] = r
+	}
+	l := &lifter{lifts: map[string]cis.Lift{"DARGONE": cis.LiftGone, "DARABST": cis.LiftAbsent, "DARENDD": cis.LiftEnded}}
+	bus := &pub{}
+	pol := policy.Defaults()
+	svc := &Service{Store: st, Bus: bus, Restrictions: l, Policy: func() policy.Values { return pol }, Now: func() time.Time { return t0.Add(time.Minute) }}
+	if pol.RestrictionGoneClearEnabled {
+		t.Fatal("the default clears a gone restriction's alert")
+	}
+	n, err := svc.ClearLiftedNotices(t.Context())
+	if err != nil || n != 1 {
+		t.Fatalf("cleared %d %v", n, err)
+	}
+	ms := published(t, bus)
+	if len(ms) != 1 || ms[0].AlertID != ended.AlertID || ms[0].State != StateCleared {
+		t.Fatalf("published %+v", ms)
+	}
+	if svc.counters().Get(CounterNoticesKeptGone) != 2 || svc.counters().Get(CounterNoticesGoneCleared) != 0 {
+		t.Fatalf("counters %v", svc.counters().Snapshot())
+	}
+	delete(st.rows, ended.AlertID)
+	bus.msgs = nil
+	if n, err := svc.RepublishOpenNotices(t.Context()); err != nil || n != 2 {
+		t.Fatalf("republished %d %v", n, err)
+	}
+	for _, b := range published(t, bus) {
+		if b.State != StateRaised {
+			t.Fatalf("republished %+v", b)
+		}
+	}
+	if n, err := svc.ClearLiftedNotices(t.Context()); err != nil || n != 0 || svc.counters().Get(CounterNoticesKeptGone) != 4 {
+		t.Fatalf("second pass: %d %v %d", n, err, svc.counters().Get(CounterNoticesKeptGone))
+	}
+
+	pol.RestrictionGoneClearEnabled = true
+	bus.msgs = nil
+	if n, err := svc.ClearLiftedNotices(t.Context()); err != nil || n != 2 {
+		t.Fatalf("policy clears: %d %v", n, err)
+	}
+	for _, b := range published(t, bus) {
+		var cd map[string]string
+		if b.State != StateCleared || json.Unmarshal(b.ClearingDetail, &cd) != nil || cd["cause"] != "restriction_gone" {
+			t.Fatalf("cleared %+v %s", b, b.ClearingDetail)
+		}
+	}
+	if svc.counters().Get(CounterNoticesGoneCleared) != 2 {
+		t.Fatalf("gone cleared %d", svc.counters().Get(CounterNoticesGoneCleared))
+	}
+}
+
+// The lifted pass judges every open notice, a page of
+// MaxNoticeRepublish at a time: one lifted notice beyond the first page
+// is cleared too (E-10: the bound exceeded), and the extra page is
+// counted; with one page, none is (E-01).
+func TestClearLiftedNoticesPagesThroughEveryNotice(t *testing.T) {
+	st := newMem()
+	for i := range MaxNoticeRepublish {
+		r := noticeOf(fmt.Sprintf("6d6f0f7e-8d7c-4c1a-9e2b-%012d", i), "restriction", "DARLIVE")
+		st.rows[r.AlertID] = r
+	}
+	late := noticeOf("7d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7eb1", "restriction", "DARENDD")
+	late.RaisedAt = t0.Add(time.Second)
+	st.rows[late.AlertID] = late
+	bus := &pub{}
+	svc := &Service{Store: st, Bus: bus, Restrictions: &lifter{lifts: map[string]cis.Lift{"DARENDD": cis.LiftEnded}},
+		Now: func() time.Time { return t0.Add(time.Minute) }}
+	n, err := svc.ClearLiftedNotices(t.Context())
+	if err != nil || n != 1 {
+		t.Fatalf("cleared %d %v", n, err)
+	}
+	if ms := published(t, bus); len(ms) != 1 || ms[0].AlertID != late.AlertID || ms[0].State != StateCleared {
+		t.Fatalf("published %+v", ms)
+	}
+	if st.pages != 2 || svc.counters().Get(CounterNoticeLiftPages) != 1 {
+		t.Fatalf("pages %d, counted %d", st.pages, svc.counters().Get(CounterNoticeLiftPages))
+	}
+	delete(st.rows, late.AlertID)
+	delete(st.rows, fmt.Sprintf("6d6f0f7e-8d7c-4c1a-9e2b-%012d", 0))
+	st.pages = 0
+	if n, err := svc.ClearLiftedNotices(t.Context()); err != nil || n != 0 || st.pages != 1 || svc.counters().Get(CounterNoticeLiftPages) != 1 {
+		t.Fatalf("one page: %d %v %d", n, err, st.pages)
+	}
+}
+
+// One pass asks the CIS once per restriction, however many notices name
+// it: the clear and the republish index the answers by identifier. Two
+// restrictions are two questions (E-01: the index does not merge them).
+func TestLiftedPassAsksOncePerRestriction(t *testing.T) {
+	st := newMem()
+	for i := range 3 {
+		r := noticeOf(fmt.Sprintf("8d6f0f7e-8d7c-4c1a-9e2b-%012d", i), "restriction", "DARLIVE")
+		st.rows[r.AlertID] = r
+	}
+	other := noticeOf("8d6f0f7e-8d7c-4c1a-9e2b-3a4b5c6d7ec1", "restriction", "DARENDD")
+	st.rows[other.AlertID] = other
+	l := &lifter{lifts: map[string]cis.Lift{"DARENDD": cis.LiftEnded}}
+	svc := &Service{Store: st, Bus: &pub{}, Restrictions: l, Now: func() time.Time { return t0.Add(time.Minute) }}
+	if n, err := svc.ClearLiftedNotices(t.Context()); err != nil || n != 1 || l.asked != 2 {
+		t.Fatalf("clear: %d %v, asked %d", n, err, l.asked)
+	}
+	l.asked = 0
+	if n, err := svc.RepublishOpenNotices(t.Context()); err != nil || n != 3 || l.asked != 2 {
+		t.Fatalf("republish: %d %v, asked %d", n, err, l.asked)
 	}
 }

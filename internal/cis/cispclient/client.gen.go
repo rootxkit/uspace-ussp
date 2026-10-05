@@ -1289,6 +1289,30 @@ func (e ListChangesParamsDataset) Valid() bool {
 	}
 }
 
+// Defines values for ListRestrictionsParamsState.
+const (
+	ListRestrictionsParamsStateActive    ListRestrictionsParamsState = "active"
+	ListRestrictionsParamsStateCancelled ListRestrictionsParamsState = "cancelled"
+	ListRestrictionsParamsStateEnded     ListRestrictionsParamsState = "ended"
+	ListRestrictionsParamsStatePlanned   ListRestrictionsParamsState = "planned"
+)
+
+// Valid indicates whether the value is a known member of the ListRestrictionsParamsState enum.
+func (e ListRestrictionsParamsState) Valid() bool {
+	switch e {
+	case ListRestrictionsParamsStateActive:
+		return true
+	case ListRestrictionsParamsStateCancelled:
+		return true
+	case ListRestrictionsParamsStateEnded:
+		return true
+	case ListRestrictionsParamsStatePlanned:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetDatasetParamsDataset.
 const (
 	GetDatasetParamsDatasetRestrictions   GetDatasetParamsDataset = "restrictions"
@@ -2719,6 +2743,21 @@ type ListChangesParams struct {
 // ListChangesParamsDataset defines parameters for ListChanges.
 type ListChangesParamsDataset string
 
+// ListRestrictionsParams defines parameters for ListRestrictions.
+type ListRestrictionsParams struct {
+	State *ListRestrictionsParamsState `form:"state,omitempty" json:"state,omitempty"`
+
+	// Airspace The uspace_airspace_id.
+	Airspace *string `form:"airspace,omitempty" json:"airspace,omitempty"`
+
+	// At RFC 3339 instant with an offset inside the window.
+	At    *string `form:"at,omitempty" json:"at,omitempty"`
+	Limit *int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListRestrictionsParamsState defines parameters for ListRestrictions.
+type ListRestrictionsParamsState string
+
 // ListDeliveriesParams defines parameters for ListDeliveries.
 type ListDeliveriesParams struct {
 	// Since RFC 3339 instant with an offset.
@@ -3026,6 +3065,26 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /v1/changes (the `ListChanges` operationId).
 	ListChanges(ctx context.Context, params *ListChangesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListRestrictions The restriction heads, with their events
+	//
+	// The lifecycle heads, newest window first, each with its events;
+	// the restrictions dataset (GET /v1/restrictions) is the ED-318
+	// view of the same rows. Token scope cis.read. state keeps one
+	// state; airspace keeps the restrictions of one U-space airspace;
+	// at keeps the heads whose window [starts_at, ends_at) holds that
+	// instant, whatever their state. While the ANSP is stale (no
+	// heartbeat for its stale_after_s, 60 s) the list carries
+	// cis_publisher_stale_since; nothing is ended or hidden because the
+	// ANSP is silent: active restrictions stay active until their
+	// ends_at (spec 02 F2).
+	//
+	// This list is at /v1/restrictions/heads, not at /v1/restrictions,
+	// because GET /v1/restrictions is the dataset read every consumer
+	// already runs for zones (docs/PLAN.md section 15 Q35).
+	//
+	// Corresponds with GET /v1/restrictions/heads (the `ListRestrictions` operationId).
+	ListRestrictions(ctx context.Context, params *ListRestrictionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListSubscriptions The caller's subscriptions
 	//
@@ -3351,6 +3410,36 @@ func (c *Client) HeadPublicDataset(ctx context.Context, dataset HeadPublicDatase
 // Corresponds with GET /v1/changes (the `ListChanges` operationId).
 func (c *Client) ListChanges(ctx context.Context, params *ListChangesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListChangesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListRestrictions The restriction heads, with their events
+//
+// The lifecycle heads, newest window first, each with its events;
+// the restrictions dataset (GET /v1/restrictions) is the ED-318
+// view of the same rows. Token scope cis.read. state keeps one
+// state; airspace keeps the restrictions of one U-space airspace;
+// at keeps the heads whose window [starts_at, ends_at) holds that
+// instant, whatever their state. While the ANSP is stale (no
+// heartbeat for its stale_after_s, 60 s) the list carries
+// cis_publisher_stale_since; nothing is ended or hidden because the
+// ANSP is silent: active restrictions stay active until their
+// ends_at (spec 02 F2).
+//
+// This list is at /v1/restrictions/heads, not at /v1/restrictions,
+// because GET /v1/restrictions is the dataset read every consumer
+// already runs for zones (docs/PLAN.md section 15 Q35).
+//
+// Corresponds with GET /v1/restrictions/heads (the `ListRestrictions` operationId).
+func (c *Client) ListRestrictions(ctx context.Context, params *ListRestrictionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListRestrictionsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3966,6 +4055,96 @@ func NewListChangesRequest(server string, params *ListChangesParams) (*http.Requ
 		if params.Dataset != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "dataset", *params.Dataset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListRestrictionsRequest constructs an http.Request for the ListRestrictions method
+func NewListRestrictionsRequest(server string, params *ListRestrictionsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/restrictions/heads")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.State != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "state", *params.State, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Airspace != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "airspace", *params.Airspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.At != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "at", *params.At, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -4731,6 +4910,28 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /v1/changes (the `ListChanges` operationId).
 	ListChangesWithResponse(ctx context.Context, params *ListChangesParams, reqEditors ...RequestEditorFn) (*ListChangesResponse, error)
 
+	// ListRestrictionsWithResponse The restriction heads, with their events
+	//
+	// The lifecycle heads, newest window first, each with its events;
+	// the restrictions dataset (GET /v1/restrictions) is the ED-318
+	// view of the same rows. Token scope cis.read. state keeps one
+	// state; airspace keeps the restrictions of one U-space airspace;
+	// at keeps the heads whose window [starts_at, ends_at) holds that
+	// instant, whatever their state. While the ANSP is stale (no
+	// heartbeat for its stale_after_s, 60 s) the list carries
+	// cis_publisher_stale_since; nothing is ended or hidden because the
+	// ANSP is silent: active restrictions stay active until their
+	// ends_at (spec 02 F2).
+	//
+	// This list is at /v1/restrictions/heads, not at /v1/restrictions,
+	// because GET /v1/restrictions is the dataset read every consumer
+	// already runs for zones (docs/PLAN.md section 15 Q35).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/restrictions/heads (the `ListRestrictions` operationId).
+	ListRestrictionsWithResponse(ctx context.Context, params *ListRestrictionsParams, reqEditors ...RequestEditorFn) (*ListRestrictionsResponse, error)
+
 	// ListSubscriptionsWithResponse The caller's subscriptions
 	//
 	// The caller's subscriptions that are not deleted, oldest first.
@@ -5299,6 +5500,82 @@ func (r ListChangesResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ListChangesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListRestrictionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *RestrictionList
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListRestrictionsResponse) GetJSON200() *RestrictionList {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r ListRestrictionsResponse) GetApplicationproblemJSON400() *Problem {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ListRestrictionsResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ListRestrictionsResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ListRestrictionsResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListRestrictionsResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListRestrictionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListRestrictionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListRestrictionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListRestrictionsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -6382,6 +6659,34 @@ func (c *ClientWithResponses) ListChangesWithResponse(ctx context.Context, param
 	return ParseListChangesResponse(rsp)
 }
 
+// ListRestrictionsWithResponse The restriction heads, with their events
+//
+// The lifecycle heads, newest window first, each with its events;
+// the restrictions dataset (GET /v1/restrictions) is the ED-318
+// view of the same rows. Token scope cis.read. state keeps one
+// state; airspace keeps the restrictions of one U-space airspace;
+// at keeps the heads whose window [starts_at, ends_at) holds that
+// instant, whatever their state. While the ANSP is stale (no
+// heartbeat for its stale_after_s, 60 s) the list carries
+// cis_publisher_stale_since; nothing is ended or hidden because the
+// ANSP is silent: active restrictions stay active until their
+// ends_at (spec 02 F2).
+//
+// This list is at /v1/restrictions/heads, not at /v1/restrictions,
+// because GET /v1/restrictions is the dataset read every consumer
+// already runs for zones (docs/PLAN.md section 15 Q35).
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/restrictions/heads (the `ListRestrictions` operationId).
+func (c *ClientWithResponses) ListRestrictionsWithResponse(ctx context.Context, params *ListRestrictionsParams, reqEditors ...RequestEditorFn) (*ListRestrictionsResponse, error) {
+	rsp, err := c.ListRestrictions(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListRestrictionsResponse(rsp)
+}
+
 // ListSubscriptionsWithResponse The caller's subscriptions
 //
 // The caller's subscriptions that are not deleted, oldest first.
@@ -7146,6 +7451,67 @@ func ParseListChangesResponse(rsp *http.Response) (*ListChangesResponse, error) 
 			headers.RetryAfter = &value
 		}
 		response.Headers503 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseListRestrictionsResponse parses an HTTP response from a ListRestrictionsWithResponse call
+func ParseListRestrictionsResponse(rsp *http.Response) (*ListRestrictionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListRestrictionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RestrictionList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
 	}
 
 	return response, nil

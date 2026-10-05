@@ -46,25 +46,29 @@ func TestRestrictionInForce(t *testing.T) {
 	}
 }
 
-// A restriction is lifted when it is no longer in force or no longer in
-// the dataset; an active one is not (E-01 pair); a stale cache judges
-// nothing.
-func TestRestrictionLifted(t *testing.T) {
+// An ended, cancelled or planned restriction is ended; an active one is
+// in force (E-01 pair); one the dataset no longer holds is absent, not
+// ended (the Cache asks the CISP why); a stale cache judges nothing.
+func TestRestrictionLift(t *testing.T) {
 	clk := newClock()
 	e := loaded(t, clk, mustVersion(t, Zones, 1), mustVersion(t, USpaceAirspace, 1),
 		mustVersion(t, Restrictions, 4, restrictionIn("DARACT1", "active").json(), restrictionIn("DAREND1", "ended").json(),
-			restrictionIn("DARCAN1", "cancelled").json()))
-	for id, want := range map[string]bool{"DARACT1": false, "DAREND1": true, "DARCAN1": true, "DARGONE": true} {
-		lifted, judged := e.RestrictionLifted(id)
-		if !judged || lifted != want {
-			t.Errorf("%s: lifted %v judged %v, want %v", id, lifted, judged, want)
+			restrictionIn("DARCAN1", "cancelled").json(), restrictionIn("DARPLN1", "planned").json()))
+	for id, want := range map[string]Lift{"DARACT1": LiftInForce, "DAREND1": LiftEnded, "DARCAN1": LiftEnded, "DARPLN1": LiftEnded, "DARGONE": LiftAbsent} {
+		if got := e.RestrictionLift(id); got != want {
+			t.Errorf("%s: %v, want %v", id, got, want)
 		}
 	}
 	clk.advance(301 * time.Second)
-	if lifted, judged := e.RestrictionLifted("DARGONE"); lifted || judged {
-		t.Fatalf("stale: lifted %v judged %v", lifted, judged)
+	if got := e.RestrictionLift("DARGONE"); got != LiftUnjudged {
+		t.Fatalf("stale: %v", got)
 	}
-	if lifted, judged := NewEvaluator(EvaluatorConfig{StaleS: func() float64 { return 300 }, Now: clk.Now}).RestrictionLifted("DARGONE"); lifted || judged {
-		t.Fatalf("nothing loaded: lifted %v judged %v", lifted, judged)
+	if got := NewEvaluator(EvaluatorConfig{StaleS: func() float64 { return 300 }, Now: clk.Now}).RestrictionLift("DARGONE"); got != LiftUnjudged {
+		t.Fatalf("nothing loaded: %v", got)
+	}
+	for l, want := range map[Lift]string{LiftUnjudged: "unjudged", LiftInForce: "in_force", LiftEnded: "ended", LiftAbsent: "absent", LiftGone: "gone"} {
+		if l.String() != want {
+			t.Errorf("%d: %s", l, l)
+		}
 	}
 }

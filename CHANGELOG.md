@@ -110,6 +110,28 @@ additively within `/v1`.
   CIS is stale). Until now it stayed open until the intent ended. The
   intent keeps its state and `change_reason`. Counted as
   `alerts_notices_lifted`.
+- A restriction gone from the CIS's current set no longer counts as
+  lifted (PLAN §15.2 Q31). The CISP takes an ended or cancelled
+  restriction out of the set and records the end on its head, so the
+  CIS cache now reads the ended and cancelled heads
+  (`GET /v1/restrictions/heads`, once per restrictions version) for a
+  restriction it no longer holds: with its head ended or cancelled the
+  alert clears as before; with no such head the restriction is gone, a
+  CIS inconsistency, and its alert stays raised. The cache counts
+  `cis_inconsistency`, logs it as an alarm and names the restriction on
+  `/readyz` (degraded) until the next version; api counts
+  `alerts_notices_kept_restriction_gone`. The policy value
+  `restriction_gone_clear_enabled` (default false, pending GCAA) would
+  clear such an alert (`clearing_detail.cause` `restriction_gone`).
+- The lifted-notice pass reads every open `restriction_activated`
+  alert, 500 a page by (`raised_at`, id), where it read the oldest 500
+  only: a lifted restriction's alert past them never cleared. The pages
+  past the first are counted (`alerts_notices_lift_pages`).
+- The portal's intent page names each decision condition in the
+  reader's language (`portal.decision.condition.<code>`, `ka` and `en`,
+  `restriction_planned` among them) beside its code, where it showed
+  the code alone. `pnpm check:i18n` fails when a condition code of
+  `internal/intent` has no key.
 - WP-17 review follow-ups:
   - a portal session's use whose portal user cannot be read keeps the
     earlier `sessions_live` projection (operator and idle end) instead

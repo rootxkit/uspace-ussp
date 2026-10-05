@@ -17,7 +17,7 @@ import { Form, NumberField, TextField, UTCDateTimeField } from "@rootxkit/uspace
 import type { FieldError } from "@rootxkit/uspace-ui/model";
 import { Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@rootxkit/uspace-ui/ui";
 import { ProblemNotice } from "@/components/ProblemNotice";
-import type { AppKey } from "@/i18n/catalogues";
+import { catalogueOf, type AppKey } from "@/i18n/catalogues";
 import { useAppT } from "@/i18n/t";
 import { useApi, type Schemas } from "@/lib/api";
 import { Fact, Num, PageHeading, RequireSession, Utc } from "../common";
@@ -34,6 +34,17 @@ const ENDABLE = new Set(["pending_validation", "pending_dss", "pending_authority
 function itemName(t: (k: AppKey) => string, item: number | null): string {
   if (item === null) return t("portal.decision.no_item");
   return item >= 1 && item <= 10 ? `${item}. ${t(`portal.item.${item}` as AppKey)}` : String(item);
+}
+
+/**
+ * A condition in the reader's language (portal.decision.condition.<code>;
+ * scripts/check-i18n.mjs fails when a code of internal/intent has no
+ * key). A code the catalogues do not name (the list is open) is shown as
+ * sent.
+ */
+function conditionName(t: (k: AppKey) => string, code: string): string {
+  const key = `portal.decision.condition.${code}`;
+  return key in catalogueOf("en") ? t(key as AppKey) : code;
 }
 
 function Conflicts({ d }: { d: Decision }) {
@@ -157,8 +168,8 @@ function DecisionView({ d }: { d: Decision }) {
         </h2>
         <ul className="m-0 flex flex-col gap-1 pl-5" data-testid="conditions">
           {d.conditions.map((c, i) => (
-            <li key={`${c.code}-${i}`}>
-              <span className="font-mono text-xs">{c.code}</span>
+            <li key={`${c.code}-${i}`} data-testid="condition" data-code={c.code}>
+              <span>{conditionName(t, c.code)}</span> <span className="font-mono text-xs">{c.code}</span>
               {c.ref !== undefined && <span className="font-mono text-xs"> ({c.ref})</span>}: {c.detail}
             </li>
           ))}
