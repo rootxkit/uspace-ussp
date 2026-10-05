@@ -402,3 +402,124 @@ func TestKVSaverRunRetries(t *testing.T) {
 	cancel()
 	<-done
 }
+
+// flightStream is the FLIGHT stream as Ended reads it: the ended facts
+// that were published.
+type flightStream struct {
+	mu    sync.Mutex
+	ended map[string]bool
+	err   error
+}
+
+func (f *flightStream) publish(events []*Event) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.ended == nil {
+		f.ended = map[string]bool{}
+	}
+	for _, e := range events {
+		if e.Body.Event == EventEnded {
+			f.ended[e.Body.FlightID] = true
+		}
+	}
+}
+
+func (f *flightStream) Ended(_ context.Context, id string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.ended[id], f.err
+}
+
+// outageThenEnd is the review's case: a flight saved, then a bus outage
+// longer than flight_end_after_s during which the flight ends (its
+// ended fact published, as the events queue does once the bus is back)
+// and the deletion of its key fails, then the process stops before the
+// deletion is retried. It returns the bucket and the ended flight.
+func outageThenEnd(t *testing.T, clk *clock, fs *flightStream) (*memKV, string) {
+	t.Helper()
+	kv := newMemKV()
+	r, s := persistedRig(kv, clk)
+	id := r.b.Bind("a", "c1", "S1", nil, nil, nil, p0, clk.now(), true)
+	s.Flush(context.Background())
+	kv.setDown(true)
+	clk.add(time.Duration(policy.Defaults().FlightEndAfterS*float64(time.Second)) + time.Second)
+	if r.b.Tick() != 1 {
+		t.Fatal("the silent flight did not end")
+	}
+	if fs != nil {
+		fs.publish(r.events)
+	}
+	if s.Flush(context.Background()) != 1 || !kv.has(BindingKey("a")) {
+		t.Fatal("the deletion did not fail")
+	}
+	kv.setDown(false) // the bus is back; the process stops before the retry
+	return kv, id
+}
+
+// After that restart no ended flight comes back: no second ended fact,
+// its key deleted, and the aircraft's next launch is a new flight.
+func TestAnEndedFlightIsNotResurrectedAfterAnOutage(t *testing.T) {
+	clk, fs := &clock{at: t0}, &flightStream{}
+	kv, id := outageThenEnd(t, clk, fs)
+
+	clk.add(30 * time.Second)
+	r2, s2 := persistedRig(kv, clk)
+	s2.Ended = fs.Ended
+	snaps, err := s2.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := r2.b.Restore(snaps); n != 0 || r2.b.Len() != 0 {
+		t.Fatalf("restored %d flights (holds %d), want none: the flight had ended", n, r2.b.Len())
+	}
+	if s2.Counters.Get(CounterRestoreEnded) != 1 {
+		t.Fatalf("restore_ended %d", s2.Counters.Get(CounterRestoreEnded))
+	}
+	s2.Flush(context.Background())
+	if kv.has(BindingKey("a")) {
+		t.Fatal("the ended flight's key is still in the bucket")
+	}
+	r2.b.Tick()
+	got := r2.b.Bind("a", "c1", "S1", nil, nil, nil, p0, clk.now(), true)
+	if got == id {
+		t.Fatal("the aircraft's next launch bound to its ended flight")
+	}
+	if k := r2.kinds(); len(k) != 1 || k[0] != EventStarted {
+		t.Fatalf("facts after the restart: %v, want one start (no second ended)", k)
+	}
+}
+
+// Its twin: when the ended fact never reached the stream (lost with the
+// process), the flight is taken back and ends there, once.
+func TestAFlightWhoseEndWasNotPublishedIsRestoredAndEndsOnce(t *testing.T) {
+	clk, fs := &clock{at: t0}, &flightStream{}
+	kv, id := outageThenEnd(t, clk, nil)
+
+	r2, s2 := persistedRig(kv, clk)
+	s2.Ended = fs.Ended
+	snaps, err := s2.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := r2.b.Restore(snaps); n != 1 {
+		t.Fatalf("restored %d, want the flight whose end was never published", n)
+	}
+	clk.add(time.Duration(policy.Defaults().FlightEndAfterS*float64(time.Second)) + time.Second)
+	r2.b.Tick()
+	if len(r2.events) != 1 || r2.events[0].Body.Event != EventEnded || r2.events[0].Body.FlightID != id {
+		t.Fatalf("facts: %v, want the flight's one ended", r2.kinds())
+	}
+}
+
+// When the stream cannot say whether a flight ended, nothing is taken
+// back (restore fails, as an unreadable bucket does): a flight that may
+// have ended is not resumed.
+func TestRestoreFailsWhenEndedCannotAnswer(t *testing.T) {
+	clk := &clock{at: t0}
+	kv, _ := outageThenEnd(t, clk, nil)
+	_, s2 := persistedRig(kv, clk)
+	s2.Ended = (&flightStream{err: errors.New("nats: timeout")}).Ended
+	if snaps, err := s2.Load(context.Background()); err == nil || len(snaps) != 0 {
+		t.Fatalf("loaded %d flights, err %v: want a failed restore", len(snaps), err)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -36,6 +37,9 @@ const (
 	// CounterRestoreUnreadable counts saved flights that could not be
 	// decoded (skipped).
 	CounterRestoreUnreadable = "flights_restore_unreadable"
+	// CounterRestoreEnded counts saved flights whose ended fact was
+	// already published (Ended): not taken back, their key deleted.
+	CounterRestoreEnded = "flights_restore_ended"
 )
 
 // KVStorer is the part of bus.KVStore a KVSaver uses.
@@ -68,6 +72,10 @@ type KVSaver struct {
 	Counters   *core.Counters
 	Logger     *slog.Logger
 	MaxPending int
+	// Ended, when set, says whether a flight's ended fact was published
+	// (the FLIGHT stream holds flight.v1.ended.<flight_id>); Load takes
+	// back no flight it says ended. An error from it fails Load.
+	Ended func(ctx context.Context, flightID string) (bool, error)
 	// Retry is the first wait before a failed write is retried
 	// (RetryEvery).
 	Retry time.Duration
@@ -219,7 +227,13 @@ func (s *KVSaver) write(ctx context.Context, key string, sn *Snapshot) error {
 }
 
 // Load reads every saved flight (at most MaxPending). A bucket that does
-// not exist yet holds none: the first start of a deployment.
+// not exist yet holds none: the first start of a deployment. A flight
+// whose ended fact was published (Ended) is not returned and its key's
+// deletion is queued: the previous process ended it and could not
+// delete the key (WP-19 review: taken back, it raised a second ended
+// fact, and its aircraft's next launch bound to the ended flight id).
+// When Ended cannot answer for a flight, Load fails: nothing is taken
+// back rather than a flight that may have ended.
 func (s *KVSaver) Load(ctx context.Context) ([]Snapshot, error) {
 	s.init()
 	entries, err := s.KV.All(ctx, s.MaxPending)
@@ -235,6 +249,17 @@ func (s *KVSaver) Load(ctx context.Context) ([]Snapshot, error) {
 		if json.Unmarshal(e.Value, &sn) != nil || sn.Key == "" || BindingKey(sn.Key) != e.Key {
 			s.Counters.Inc(CounterRestoreUnreadable)
 			continue
+		}
+		if s.Ended != nil {
+			ended, err := s.Ended(ctx, sn.FlightID)
+			if err != nil {
+				return nil, fmt.Errorf("whether flight %s ended: %w", sn.FlightID, err)
+			}
+			if ended {
+				s.Counters.Inc(CounterRestoreEnded)
+				s.Forget(sn.Key)
+				continue
+			}
 		}
 		out = append(out, sn)
 	}

@@ -239,7 +239,17 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 	// The running flights outlive the process (WP-19 restart row): saved
 	// in flight_binding, taken back here before the first sample is
 	// bound.
-	saver := &flights.KVSaver{KV: bus.KVStore{JS: js, Bucket: bus.BucketFlightBinding}, Counters: flightCounters, Logger: logger}
+	// A saved flight whose ended fact is in FLIGHT is not taken back: its
+	// key outlived an outage (WP-19 review).
+	endedFacts := &bus.StreamHas{JS: js, Stream: bus.StreamFLIGHT}
+	saver := &flights.KVSaver{KV: bus.KVStore{JS: js, Bucket: bus.BucketFlightBinding}, Counters: flightCounters, Logger: logger,
+		Ended: func(ctx context.Context, flightID string) (bool, error) {
+			subject, err := bus.Flight(flights.EventEnded, flightID)
+			if err != nil {
+				return false, err
+			}
+			return endedFacts.Has(ctx, subject)
+		}}
 	binder.Save, binder.Forget = saver.Save, saver.Forget
 	restored := restoreFlights(ctx, saver, binder, flightCounters, logger)
 	rt.Health.Register(DepFlightBinding, false, func(context.Context) (obs.State, string) {

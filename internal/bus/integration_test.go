@@ -688,3 +688,31 @@ func TestIntegrationHoleUndercountedBeyondTheDeletedBound(t *testing.T) {
 		}
 	}
 }
+
+// StreamHas finds a message on its subject and answers no for a subject
+// the stream does not hold; a stream that does not exist is an error,
+// never a no.
+func TestIntegrationStreamHas(t *testing.T) {
+	c := connect(t)
+	js := c.JetStream()
+	name := unique("HAS")
+	prefix := strings.ToLower(name) + "."
+	t.Cleanup(func() { _ = js.DeleteStream(context.Background(), name) })
+	if _, err := js.CreateStream(ctx(t), jetstream.StreamConfig{Name: name, Subjects: []string{prefix + ">"}, Storage: jetstream.FileStorage}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := js.Publish(ctx(t), prefix+"ended.f1", []byte("{}")); err != nil {
+		t.Fatal(err)
+	}
+	h := &StreamHas{JS: js, Stream: name}
+	if has, err := h.Has(ctx(t), prefix+"ended.f1"); err != nil || !has {
+		t.Fatalf("a published subject: %v %v", has, err)
+	}
+	if has, err := h.Has(ctx(t), prefix+"ended.f2"); err != nil || has {
+		t.Fatalf("a subject never published: %v %v", has, err)
+	}
+	missing := &StreamHas{JS: js, Stream: unique("NONE")}
+	if _, err := missing.Has(ctx(t), prefix+"ended.f1"); err == nil {
+		t.Fatal("a stream that does not exist answered")
+	}
+}
