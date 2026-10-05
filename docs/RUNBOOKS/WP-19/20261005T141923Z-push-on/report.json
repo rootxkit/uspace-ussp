@@ -1,6 +1,6 @@
 {
   "format": "conformance-report/v1",
-  "run": "20261005T062950Z-ussp-conformance",
+  "run": "20261005T141923Z-ussp-conformance",
   "wording": "Proposed format (docs/PLAN.md §7.1 L-Q12, pending GCAA): this report states what the suite observed; it certifies nothing.",
   "target": {
     "system": "ussp",
@@ -8,8 +8,8 @@
     "role": "own",
     "base_url": "https://ussp.uspace.test:9543"
   },
-  "started_at": "2026-10-05T06:29:50.7888006Z",
-  "ended_at": "2026-10-05T06:29:52.6140598Z",
+  "started_at": "2026-10-05T14:19:23.321581449Z",
+  "ended_at": "2026-10-05T14:19:23.488152052Z",
   "commits": {
     "lab": "7fb2d45693c8a93c7485dd0aa0699e8359296aa5",
     "lab_dirty": false,
@@ -17,7 +17,7 @@
     "go": "go1.27.1"
   },
   "images": {
-    "ussp": "uspace-ussp:conformance-9716a90bb81f@sha256:918f6847f48383f835acf433b71b73dd5786391a9664f85df3dfa75f236c93d6"
+    "ussp": "uspace-ussp:conformance-5e5cdf5f0bb6@sha256:58cd9c29764a58df5717ab221cb9e8dfb801f97196473879f23d7c6fab2c4f00"
   },
   "interuss": {
     "repo": "https://github.com/interuss/monitoring.git",
@@ -27,7 +27,7 @@
     "image_digest": "sha256:a771c82cda62b83be707e650ddd2550bbabf6790120c4a57f76153a8f5504bb7"
   },
   "contract": {
-    "file": "C:/Users/LBEROZASHVILI/Desktop/projects/uspace/uspace-ussp-wt/WP-19/api/openapi.yaml",
+    "file": "/home/runner/work/uspace-ussp/uspace-ussp/api/openapi.yaml",
     "sha256": "sha256:066791c7c61ba8a164724187a80708ed17d44e2e1a49c63a2649d745cbde0c99",
     "title": "uspace-ussp national USSP API",
     "version": "0.1.0"

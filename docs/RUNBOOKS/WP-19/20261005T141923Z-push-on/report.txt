@@ -1,4 +1,4 @@
-conformance 20261005T062950Z-ussp-conformance: ussp-conformance (ussp) at https://ussp.uspace.test:9543: incomplete, 5 pass, 0 fail, 6 not applicable
+conformance 20261005T141923Z-ussp-conformance: ussp-conformance (ussp) at https://ussp.uspace.test:9543: incomplete, 5 pass, 0 fail, 6 not applicable
   not_applicable NAT-PRECONDITION     0/0/0  no check of this run applied (decided by national.stale_precondition)
   not_applicable REG-NOPII            0/0/1  the target file supplies no operator token (the contract states no scope)
   not_applicable F3411-SP             0/0/1  the target exposes no InterUSS rid_injection interface (target file interfaces)
