@@ -4304,8 +4304,18 @@ type ClientInterface interface {
 	// client; or for an operator portal user (a session of realm portal,
 	// any role; brief WP-17) on a same-origin upgrade with the
 	// uspace_session cookie from an Origin on USSP_WS_ALLOWED_ORIGINS,
-	// intent_id an intent of the session's operator. Server to client,
-	// in the common envelope:
+	// intent_id an intent of the session's operator. The upgrade is
+	// authenticated before its parameters are read (a request without
+	// credential is 401 whatever else is wrong with it, conformance
+	// C6) and
+	// refused before the upgrade: no credential or a refused token is
+	// 401, an Origin that is not allowed (or the cookie without an
+	// Origin) or a token without the scope is 403, each with the
+	// problem body and never 101 (conformance C8); only a browser's
+	// session cookie from an allowed Origin that is refused is
+	// accepted and closed with 4401 (sign in again, M22), which a
+	// browser can read.
+	// Server to client, in the common envelope:
 	// console/status/v1 on connect and every 2 s, every alert/v1 of the
 	// intent's flight as it comes (conformance and proximity alerts,
 	// raised, updated and cleared, with the peer's track id and trust),
@@ -4342,7 +4352,10 @@ type ClientInterface interface {
 	// Provider path (GET /uss/flights), which works with it off.
 	//
 	// A WebSocket upgrade with an ecosystem bearer token granting
-	// rid.display_provider (aud this host). Server to client only, the
+	// rid.display_provider (aud this host), judged before the upgrade:
+	// no token or a refused one is 401, another scope 403, with the
+	// problem body and never 101 (conformance C8). Server to client
+	// only, the
 	// console frame (M29): console/status/v1 on connect and every 2 s,
 	// and one authority/flight/v1 frame (schemas/authority/flight/v1:
 	// the common envelope with an ASTM F3411-22a RIDFlight as body,
@@ -4530,9 +4543,16 @@ type ClientInterface interface {
 	// operator machine client with a bearer token granting
 	// ussp.telemetry (issued by this USSP); the client id is the token's
 	// sub. A browser upgrade must come from an Origin on
-	// USSP_WS_ALLOWED_ORIGINS with the uspace_session cookie, and a
-	// refused upgrade is accepted and closed with 4401 (M22); no session
-	// realm streams telemetry. A client whose operator_ws source is
+	// USSP_WS_ALLOWED_ORIGINS with the uspace_session cookie; no
+	// session realm streams telemetry. The upgrade is authenticated and
+	// refused before the upgrade: no credential or a refused token is
+	// 401, an Origin that is not allowed (or the cookie without an
+	// Origin) or a token without the scope is 403, each with the
+	// problem body and never 101 (conformance C8); only a browser's
+	// session cookie from an allowed Origin that is refused is
+	// accepted and closed with 4401 (sign in again, M22), which a
+	// browser can read.
+	// A client whose operator_ws source is
 	// switched off is refused before the upgrade with 503 and
 	// Retry-After (B-10), and an open socket is closed with 1013 when
 	// the switch goes off.
@@ -4618,8 +4638,15 @@ type ClientInterface interface {
 	// with a staff session (realm console) subscribes with bbox, or
 	// with console/subscribe/v1 frames, on a same-origin upgrade with
 	// the uspace_session cookie from an Origin on
-	// USSP_WS_ALLOWED_ORIGINS. A refused upgrade is accepted and closed
-	// with 4401 (sign in again, M22).
+	// USSP_WS_ALLOWED_ORIGINS. The upgrade is authenticated before its
+	// parameters are read (conformance C6) and
+	// refused before the upgrade: no credential or a refused token is
+	// 401, an Origin that is not allowed (or the cookie without an
+	// Origin) or a token without the scope is 403, each with the
+	// problem body and never 101 (conformance C8); only a browser's
+	// session cookie from an allowed Origin that is refused is
+	// accepted and closed with 4401 (sign in again, M22), which a
+	// browser can read.
 	//
 	// Server to client, every frame in the common envelope with a body
 	// named by schema (M29): console/status/v1 on connect and every
@@ -5930,8 +5957,18 @@ func (c *Client) RequestStatusNotice(ctx context.Context, body RequestStatusNoti
 // client; or for an operator portal user (a session of realm portal,
 // any role; brief WP-17) on a same-origin upgrade with the
 // uspace_session cookie from an Origin on USSP_WS_ALLOWED_ORIGINS,
-// intent_id an intent of the session's operator. Server to client,
-// in the common envelope:
+// intent_id an intent of the session's operator. The upgrade is
+// authenticated before its parameters are read (a request without
+// credential is 401 whatever else is wrong with it, conformance
+// C6) and
+// refused before the upgrade: no credential or a refused token is
+// 401, an Origin that is not allowed (or the cookie without an
+// Origin) or a token without the scope is 403, each with the
+// problem body and never 101 (conformance C8); only a browser's
+// session cookie from an allowed Origin that is refused is
+// accepted and closed with 4401 (sign in again, M22), which a
+// browser can read.
+// Server to client, in the common envelope:
 // console/status/v1 on connect and every 2 s, every alert/v1 of the
 // intent's flight as it comes (conformance and proximity alerts,
 // raised, updated and cleared, with the peer's track id and trust),
@@ -5988,7 +6025,10 @@ func (c *Client) AckAlert(ctx context.Context, alertId AlertID, reqEditors ...Re
 // Provider path (GET /uss/flights), which works with it off.
 //
 // A WebSocket upgrade with an ecosystem bearer token granting
-// rid.display_provider (aud this host). Server to client only, the
+// rid.display_provider (aud this host), judged before the upgrade:
+// no token or a refused one is 401, another scope 403, with the
+// problem body and never 101 (conformance C8). Server to client
+// only, the
 // console frame (M29): console/status/v1 on connect and every 2 s,
 // and one authority/flight/v1 frame (schemas/authority/flight/v1:
 // the common envelope with an ASTM F3411-22a RIDFlight as body,
@@ -6306,9 +6346,16 @@ func (c *Client) ValidateRegistry(ctx context.Context, params *ValidateRegistryP
 // operator machine client with a bearer token granting
 // ussp.telemetry (issued by this USSP); the client id is the token's
 // sub. A browser upgrade must come from an Origin on
-// USSP_WS_ALLOWED_ORIGINS with the uspace_session cookie, and a
-// refused upgrade is accepted and closed with 4401 (M22); no session
-// realm streams telemetry. A client whose operator_ws source is
+// USSP_WS_ALLOWED_ORIGINS with the uspace_session cookie; no
+// session realm streams telemetry. The upgrade is authenticated and
+// refused before the upgrade: no credential or a refused token is
+// 401, an Origin that is not allowed (or the cookie without an
+// Origin) or a token without the scope is 403, each with the
+// problem body and never 101 (conformance C8); only a browser's
+// session cookie from an allowed Origin that is refused is
+// accepted and closed with 4401 (sign in again, M22), which a
+// browser can read.
+// A client whose operator_ws source is
 // switched off is refused before the upgrade with 503 and
 // Retry-After (B-10), and an open socket is closed with 1013 when
 // the switch goes off.
@@ -6424,8 +6471,15 @@ func (c *Client) PostTelemetryBatch(ctx context.Context, body PostTelemetryBatch
 // with a staff session (realm console) subscribes with bbox, or
 // with console/subscribe/v1 frames, on a same-origin upgrade with
 // the uspace_session cookie from an Origin on
-// USSP_WS_ALLOWED_ORIGINS. A refused upgrade is accepted and closed
-// with 4401 (sign in again, M22).
+// USSP_WS_ALLOWED_ORIGINS. The upgrade is authenticated before its
+// parameters are read (conformance C6) and
+// refused before the upgrade: no credential or a refused token is
+// 401, an Origin that is not allowed (or the cookie without an
+// Origin) or a token without the scope is 403, each with the
+// problem body and never 101 (conformance C8); only a browser's
+// session cookie from an allowed Origin that is refused is
+// accepted and closed with 4401 (sign in again, M22), which a
+// browser can read.
 //
 // Server to client, every frame in the common envelope with a body
 // named by schema (M29): console/status/v1 on connect and every
@@ -9563,8 +9617,18 @@ type ClientWithResponsesInterface interface {
 	// client; or for an operator portal user (a session of realm portal,
 	// any role; brief WP-17) on a same-origin upgrade with the
 	// uspace_session cookie from an Origin on USSP_WS_ALLOWED_ORIGINS,
-	// intent_id an intent of the session's operator. Server to client,
-	// in the common envelope:
+	// intent_id an intent of the session's operator. The upgrade is
+	// authenticated before its parameters are read (a request without
+	// credential is 401 whatever else is wrong with it, conformance
+	// C6) and
+	// refused before the upgrade: no credential or a refused token is
+	// 401, an Origin that is not allowed (or the cookie without an
+	// Origin) or a token without the scope is 403, each with the
+	// problem body and never 101 (conformance C8); only a browser's
+	// session cookie from an allowed Origin that is refused is
+	// accepted and closed with 4401 (sign in again, M22), which a
+	// browser can read.
+	// Server to client, in the common envelope:
 	// console/status/v1 on connect and every 2 s, every alert/v1 of the
 	// intent's flight as it comes (conformance and proximity alerts,
 	// raised, updated and cleared, with the peer's track id and trust),
@@ -9605,7 +9669,10 @@ type ClientWithResponsesInterface interface {
 	// Provider path (GET /uss/flights), which works with it off.
 	//
 	// A WebSocket upgrade with an ecosystem bearer token granting
-	// rid.display_provider (aud this host). Server to client only, the
+	// rid.display_provider (aud this host), judged before the upgrade:
+	// no token or a refused one is 401, another scope 403, with the
+	// problem body and never 101 (conformance C8). Server to client
+	// only, the
 	// console frame (M29): console/status/v1 on connect and every 2 s,
 	// and one authority/flight/v1 frame (schemas/authority/flight/v1:
 	// the common envelope with an ASTM F3411-22a RIDFlight as body,
@@ -9809,9 +9876,16 @@ type ClientWithResponsesInterface interface {
 	// operator machine client with a bearer token granting
 	// ussp.telemetry (issued by this USSP); the client id is the token's
 	// sub. A browser upgrade must come from an Origin on
-	// USSP_WS_ALLOWED_ORIGINS with the uspace_session cookie, and a
-	// refused upgrade is accepted and closed with 4401 (M22); no session
-	// realm streams telemetry. A client whose operator_ws source is
+	// USSP_WS_ALLOWED_ORIGINS with the uspace_session cookie; no
+	// session realm streams telemetry. The upgrade is authenticated and
+	// refused before the upgrade: no credential or a refused token is
+	// 401, an Origin that is not allowed (or the cookie without an
+	// Origin) or a token without the scope is 403, each with the
+	// problem body and never 101 (conformance C8); only a browser's
+	// session cookie from an allowed Origin that is refused is
+	// accepted and closed with 4401 (sign in again, M22), which a
+	// browser can read.
+	// A client whose operator_ws source is
 	// switched off is refused before the upgrade with 503 and
 	// Retry-After (B-10), and an open socket is closed with 1013 when
 	// the switch goes off.
@@ -9899,8 +9973,15 @@ type ClientWithResponsesInterface interface {
 	// with a staff session (realm console) subscribes with bbox, or
 	// with console/subscribe/v1 frames, on a same-origin upgrade with
 	// the uspace_session cookie from an Origin on
-	// USSP_WS_ALLOWED_ORIGINS. A refused upgrade is accepted and closed
-	// with 4401 (sign in again, M22).
+	// USSP_WS_ALLOWED_ORIGINS. The upgrade is authenticated before its
+	// parameters are read (conformance C6) and
+	// refused before the upgrade: no credential or a refused token is
+	// 401, an Origin that is not allowed (or the cookie without an
+	// Origin) or a token without the scope is 403, each with the
+	// problem body and never 101 (conformance C8); only a browser's
+	// session cookie from an allowed Origin that is refused is
+	// accepted and closed with 4401 (sign in again, M22), which a
+	// browser can read.
 	//
 	// Server to client, every frame in the common envelope with a body
 	// named by schema (M29): console/status/v1 on connect and every
@@ -12710,6 +12791,10 @@ type OpenAlertStreamResponse struct {
 	HTTPResponse *http.Response
 	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
 	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
 	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
 	ApplicationproblemJSON404 *Problem
 	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
@@ -12721,6 +12806,16 @@ type OpenAlertStreamResponse struct {
 // GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
 func (r OpenAlertStreamResponse) GetApplicationproblemJSON400() *Problem {
 	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r OpenAlertStreamResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r OpenAlertStreamResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
 }
 
 // GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
@@ -12853,10 +12948,24 @@ func (r AckAlertResponse) ContentType() string {
 type OpenAuthorityFlightsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
 	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
 	ApplicationproblemJSON404 *Problem
 	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
 	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r OpenAuthorityFlightsResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r OpenAuthorityFlightsResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
 }
 
 // GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
@@ -13746,6 +13855,10 @@ type OpenTelemetryStreamResponse struct {
 	HTTPResponse *http.Response
 	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
 	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
 	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
 	ApplicationproblemJSON503 *Problem
 	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
@@ -13757,6 +13870,16 @@ type OpenTelemetryStreamResponse struct {
 // GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
 func (r OpenTelemetryStreamResponse) GetApplicationproblemJSON400() *Problem {
 	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r OpenTelemetryStreamResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r OpenTelemetryStreamResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
 }
 
 // GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
@@ -13886,6 +14009,10 @@ type OpenTrafficStreamResponse struct {
 	HTTPResponse *http.Response
 	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
 	ApplicationproblemJSON400 *Problem
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
 	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
 	ApplicationproblemJSON404 *Problem
 	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
@@ -13897,6 +14024,16 @@ type OpenTrafficStreamResponse struct {
 // GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
 func (r OpenTrafficStreamResponse) GetApplicationproblemJSON400() *Problem {
 	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r OpenTrafficStreamResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r OpenTrafficStreamResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
 }
 
 // GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
@@ -15184,8 +15321,18 @@ func (c *ClientWithResponses) RequestStatusNoticeWithResponse(ctx context.Contex
 // client; or for an operator portal user (a session of realm portal,
 // any role; brief WP-17) on a same-origin upgrade with the
 // uspace_session cookie from an Origin on USSP_WS_ALLOWED_ORIGINS,
-// intent_id an intent of the session's operator. Server to client,
-// in the common envelope:
+// intent_id an intent of the session's operator. The upgrade is
+// authenticated before its parameters are read (a request without
+// credential is 401 whatever else is wrong with it, conformance
+// C6) and
+// refused before the upgrade: no credential or a refused token is
+// 401, an Origin that is not allowed (or the cookie without an
+// Origin) or a token without the scope is 403, each with the
+// problem body and never 101 (conformance C8); only a browser's
+// session cookie from an allowed Origin that is refused is
+// accepted and closed with 4401 (sign in again, M22), which a
+// browser can read.
+// Server to client, in the common envelope:
 // console/status/v1 on connect and every 2 s, every alert/v1 of the
 // intent's flight as it comes (conformance and proximity alerts,
 // raised, updated and cleared, with the peer's track id and trust),
@@ -15238,7 +15385,10 @@ func (c *ClientWithResponses) AckAlertWithResponse(ctx context.Context, alertId 
 // Provider path (GET /uss/flights), which works with it off.
 //
 // A WebSocket upgrade with an ecosystem bearer token granting
-// rid.display_provider (aud this host). Server to client only, the
+// rid.display_provider (aud this host), judged before the upgrade:
+// no token or a refused one is 401, another scope 403, with the
+// problem body and never 101 (conformance C8). Server to client
+// only, the
 // console frame (M29): console/status/v1 on connect and every 2 s,
 // and one authority/flight/v1 frame (schemas/authority/flight/v1:
 // the common envelope with an ASTM F3411-22a RIDFlight as body,
@@ -15520,9 +15670,16 @@ func (c *ClientWithResponses) ValidateRegistryWithResponse(ctx context.Context, 
 // operator machine client with a bearer token granting
 // ussp.telemetry (issued by this USSP); the client id is the token's
 // sub. A browser upgrade must come from an Origin on
-// USSP_WS_ALLOWED_ORIGINS with the uspace_session cookie, and a
-// refused upgrade is accepted and closed with 4401 (M22); no session
-// realm streams telemetry. A client whose operator_ws source is
+// USSP_WS_ALLOWED_ORIGINS with the uspace_session cookie; no
+// session realm streams telemetry. The upgrade is authenticated and
+// refused before the upgrade: no credential or a refused token is
+// 401, an Origin that is not allowed (or the cookie without an
+// Origin) or a token without the scope is 403, each with the
+// problem body and never 101 (conformance C8); only a browser's
+// session cookie from an allowed Origin that is refused is
+// accepted and closed with 4401 (sign in again, M22), which a
+// browser can read.
+// A client whose operator_ws source is
 // switched off is refused before the upgrade with 503 and
 // Retry-After (B-10), and an open socket is closed with 1013 when
 // the switch goes off.
@@ -15628,8 +15785,15 @@ func (c *ClientWithResponses) PostTelemetryBatchWithResponse(ctx context.Context
 // with a staff session (realm console) subscribes with bbox, or
 // with console/subscribe/v1 frames, on a same-origin upgrade with
 // the uspace_session cookie from an Origin on
-// USSP_WS_ALLOWED_ORIGINS. A refused upgrade is accepted and closed
-// with 4401 (sign in again, M22).
+// USSP_WS_ALLOWED_ORIGINS. The upgrade is authenticated before its
+// parameters are read (conformance C6) and
+// refused before the upgrade: no credential or a refused token is
+// 401, an Origin that is not allowed (or the cookie without an
+// Origin) or a token without the scope is 403, each with the
+// problem body and never 101 (conformance C8); only a browser's
+// session cookie from an allowed Origin that is refused is
+// accepted and closed with 4401 (sign in again, M22), which a
+// browser can read.
 //
 // Server to client, every frame in the common envelope with a body
 // named by schema (M29): console/status/v1 on connect and every
@@ -17977,6 +18141,20 @@ func ParseOpenAlertStreamResponse(rsp *http.Response) (*OpenAlertStreamResponse,
 		}
 		response.ApplicationproblemJSON400 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest Problem
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -18087,6 +18265,20 @@ func ParseOpenAuthorityFlightsResponse(rsp *http.Response) (*OpenAuthorityFlight
 	switch {
 	case rsp.StatusCode == 101:
 		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest Problem
@@ -18834,6 +19026,20 @@ func ParseOpenTelemetryStreamResponse(rsp *http.Response) (*OpenTelemetryStreamR
 		}
 		response.ApplicationproblemJSON400 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Problem
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -18957,6 +19163,20 @@ func ParseOpenTrafficStreamResponse(rsp *http.Response) (*OpenTrafficStreamRespo
 			return nil, err
 		}
 		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest Problem

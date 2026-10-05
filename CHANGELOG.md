@@ -7,6 +7,31 @@ additively within `/v1`.
 
 ## [Unreleased]
 
+### Security
+
+- The telemetry, traffic, alert and authority-flight streams judge the
+  upgrade before anything is upgraded (uspace-lab conformance finding
+  C8): a handshake without a credential or with a refused token is
+  answered `401` with the problem body, another scope or an Origin that
+  is not allowed `403`, and never `101`. Before, `/v1/telemetry` and
+  `/v1/traffic` answered such a handshake `101` and then closed it with
+  4401. The browser's case of M22 stays: a session cookie from an
+  allowed Origin whose session is refused is upgraded and closed with
+  4401, which the kit reads as "sign in again" (PLAN §15.1 Q32).
+
+### Fixed
+
+- A request without a credential is `401`, whatever else is wrong with
+  it, on every route (finding C6): the WebSocket routes are now guarded
+  by the mux (`GuardedMux.WebSockets`, `WSAuth.Require`) before the
+  generated router reads their parameters, so `GET /v1/alerts` without
+  a credential and without `intent_id` is `401`, not `400` `validation`.
+  A WebSocket entry without a WebSocket guard is not served (the start
+  fails), as a plain entry without an access entry is not.
+- Contract (additive): `openTelemetryStream`, `openTrafficStream`,
+  `openAlertStream` and `openAuthorityFlights` declare `401` and `403`,
+  and their descriptions say a refusal comes before the upgrade.
+
 ### Added
 
 - WP-18, the USSP console (`web/` under `/console`, on `@rootxkit/uspace-ui`

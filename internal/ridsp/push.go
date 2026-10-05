@@ -430,7 +430,7 @@ func (p *Push) sendStatus(ctx context.Context, conn *websocket.Conn, s *session)
 // RegisterPush serves WS /v1/authority/flights on mux behind guard; the
 // error lists a route without an entry or an entry without a route.
 func RegisterPush(mux *http.ServeMux, p *Push, guard httpx.Guard) error {
-	g := httpx.NewGuardedMux(mux, PushAccessTable(), guard, auth.ValidateAccess)
+	g := httpx.NewGuardedMux(mux, PushAccessTable(), guard, auth.ValidateAccess).WebSockets(p.WS.Guarded())
 	gen.HandlerWithOptions(p, gen.StdHTTPServerOptions{BaseRouter: g})
 	return g.Err()
 }

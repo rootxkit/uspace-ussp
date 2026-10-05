@@ -192,22 +192,51 @@ func TestWebSocketDisabledSource(t *testing.T) {
 	}
 }
 
-// A refused upgrade (no token, a token without the scope) is closed with
-// 4401 (M22).
-func TestWebSocketRefusedUpgrade(t *testing.T) {
+// Conformance C8 as a presence/absence pair: an upgrade without a
+// credential, with a refused token, or with a token without the scope is
+// answered with its status and problem body before any upgrade (401,
+// 401, 403), never 101, and no session is opened; the same upgrade with
+// a token granting ussp.telemetry is 101 and streams.
+func TestWebSocketRefusedBeforeTheUpgrade(t *testing.T) {
 	r := newRig(t, rigOpts{})
 	srv, _ := server(t, r)
-	for _, tok := range []string{"", "geo:" + clientA, "bad token"} {
-		c, _, err := dialWS(t, srv, tok)
-		if err != nil {
-			t.Fatal(err)
+	for _, c := range []struct {
+		tok    string
+		status int
+		slug   string
+	}{
+		{"", http.StatusUnauthorized, httpx.SlugUnauthenticated},
+		{"bad token", http.StatusUnauthorized, "rejected_signature"},
+		{"geo:" + clientA, http.StatusForbidden, httpx.SlugForbidden},
+	} {
+		conn, resp, err := dialWS(t, srv, c.tok)
+		if err == nil {
+			_ = conn.CloseNow()
+			t.Fatalf("%q: upgraded", c.tok)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_, _, err = c.Read(ctx)
-		cancel()
-		if websocket.CloseStatus(err) != auth.CloseRelogin {
-			t.Errorf("%q: %v", tok, err)
+		if resp == nil || resp.StatusCode != c.status {
+			t.Fatalf("%q: %v %v, want %d", c.tok, resp, err, c.status)
 		}
+		var p struct{ Type string }
+		if err := json.NewDecoder(resp.Body).Decode(&p); err != nil || p.Type != httpx.ProblemTypeBase+c.slug ||
+			!strings.HasPrefix(resp.Header.Get("Content-Type"), "application/problem+json") {
+			t.Errorf("%q: %s %q %v", c.tok, resp.Header.Get("Content-Type"), p.Type, err)
+		}
+		if c.status == http.StatusUnauthorized && resp.Header.Get("WWW-Authenticate") == "" {
+			t.Errorf("%q: 401 without WWW-Authenticate", c.tok)
+		}
+	}
+	if n := r.counters.Get(CounterSessions); n != 0 {
+		t.Fatalf("%d sessions opened by refused upgrades", n)
+	}
+	conn, resp, err := dialWS(t, srv, clientA)
+	if err != nil || resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("valid token: %v %v", resp, err)
+	}
+	defer func() { _ = conn.CloseNow() }()
+	readStatus(t, conn, func(ConsoleStatus) bool { return true })
+	if n := r.counters.Get(CounterSessions); n != 1 {
+		t.Fatalf("%d sessions, want 1", n)
 	}
 }
 
