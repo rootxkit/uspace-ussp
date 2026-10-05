@@ -1,0 +1,31 @@
+# Overlay of the `conformance` profile (docs/PLAN.md §11, WP-19) on the
+# lab's systems stack: uspace-lab deploy/compose.yaml (the InterUSS DSS
+# and its CockroachDB by digest, the lab issuer) and deploy/systems/
+# compose.yaml (the lab Caddy with its own CA in front of every system;
+# this USSP's seven processes as the lab runs them), at the lab commit
+# deploy/conformance/SOURCE names. scripts/conformance.sh composes the
+# three files as one project; nothing here is used on its own:
+#
+#   docker compose -p uspace-ussp-conf \
+#     -f $LAB_DIR/deploy/compose.yaml -f $LAB_DIR/deploy/systems/compose.yaml \
+#     -f deploy/conformance/compose.yaml --env-file <stack.env> ...
+#
+# Relative paths would resolve against the lab's deploy/ (the first
+# file's directory), so this file names none. The image under test is
+# USSP_GO_IMAGE in the generated stack.env (built from this checkout,
+# or USSP_CONFORMANCE_IMAGE).
+#
+# The one thing the overlay changes: USSP_AUTHORITY_PUSH on rid-sp
+# (off unless USSP_CONFORMANCE_AUTHORITY_PUSH=on, the product default).
+# The target's declaration of WS /v1/authority/flights follows it
+# (deploy/conformance/authority-push-off.yaml), and scripts/conformance.sh
+# checks the declaration against what rid-sp answers before the suite
+# runs.
+#
+# Nothing in this stack reaches an aircraft: the operators are the lab's
+# simulators, and no USSP process has a send path towards a vehicle.
+
+services:
+  ussp-rid-sp:
+    environment:
+      USSP_AUTHORITY_PUSH: ${USSP_CONFORMANCE_AUTHORITY_PUSH:?set by scripts/conformance.sh}
