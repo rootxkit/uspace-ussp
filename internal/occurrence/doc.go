@@ -18,12 +18,25 @@
 // event is reported once, whoever flags it first: an alert by its id, a
 // proximity conflict by its pair (both flights' alerts are one report).
 //
-// What is sent. occurrence/v1 as spec 04 §3.3 names its fields. The
-// authority owns that schema (M14) and has published neither it nor POST
-// /v1/occurrences in the OpenAPI api/clients/authority.yaml pins (a spec
-// gap, recorded in docs/RUNBOOKS/WP-15.md): no client is written by hand
-// (CLAUDE.md rule 9), so without a Deliverer the reports stay queued,
-// undelivered and visible, and /readyz says why. reporter.person_ref is
+// What is sent. occurrence/v1 as the authority owns it (M14): the
+// OccurrenceReport of the pinned api/clients/authority.yaml, posted to
+// its POST /v1/occurrences through the client generated from that copy
+// (Client; scope occurrences.write, aud the authority's host). The
+// queued body names the class category; one queued before the contract
+// was pinned names it kind and is mapped (WireOf), a function of the
+// bytes, so every try of a report is the same report. Delivery runs
+// after the report's commit, from the queue (state, attempts, next_at,
+// the lease of a claim), so a restart resumes it. The authority is
+// idempotent on (token sub, report_ref): a try after an answer that was
+// lost, or a 5xx it answered after its commit, is its replay (200, the
+// first id), never a refusal. Retried: a timeout, 408, 429, 5xx, at most
+// USSP_OCCURRENCE_MAX_ATTEMPTS tries with a doubling wait up to
+// USSP_OCCURRENCE_BACKOFF_MAX_S (defaults pending GCAA). Permanent: 409
+// report_ref_conflict (failed on the first answer, counted as a
+// conflict, an alarm), another 4xx, and a body that does not map
+// (refused before a token is asked for). Without an authority
+// configured nothing is claimed: the reports stay queued, undelivered
+// and visible, and /readyz says why. reporter.person_ref is
 // an opaque reference (a staff account id, or "system") sent in clear
 // over TLS (reconciliation M13). Registration numbers are their public
 // part. Occurrence data is for safety only (376/2014 Art. 15(2)):
