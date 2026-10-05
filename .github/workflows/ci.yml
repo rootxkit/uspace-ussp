@@ -120,6 +120,10 @@ jobs:
         run: make check-deps
       - name: no staging hostname outside deploy/staging/
         run: make check-hostnames
+      # scripts/conformance.sh in each state against a fake lab, suite
+      # and target (WP-19); the suite itself runs in conformance.yml.
+      - name: conformance hook self-test
+        run: make conformance-selftest
 
   test-race:
     name: test with the race detector

@@ -43,7 +43,25 @@ additively within `/v1`.
   `USSP_OCCURRENCE_BACKOFF_MAX_S` (600), pending GCAA. The fake
   authority follows the pinned contract. Lab run against the authority
   image: `scripts/lab-authority.sh`, docs/RUNBOOKS/WP-15.md Run 3.
-
+- A restart of telemetry-ingest goes on with every flight in the air
+  (WP-19, found by the chaos procedure's restart row): the running
+  flights are saved in the new `flight_binding` bucket
+  (`USSP_FLIGHT_BINDING_BUCKET_MAX_BYTES`) and taken back before the
+  first sample is bound. Before, each aircraft started a new flight,
+  the old flight raised `lost_link` 15 s later and kept it until it
+  was ended, and the new flight was told `nonconformance_nearby` about
+  its own aircraft at 0 m. `/readyz` names `flight_binding` when the
+  saved flights could not be read.
+- Each ecosystem token issuer (`USSP_TOKEN_ISSUERS`) is verified with
+  its own keys, built from its own JWKS (WP-19, found by the lab
+  conformance suite): one issuer whose JWKS does not answer when a
+  process starts (the authority down) holds back only its own tokens
+  (`jwks_unavailable`), where before the one verifier of every issuer
+  was never built and the lab issuer's tokens were refused `503
+  auth_unavailable` too. The `jwks` readiness check fetches every JWKS
+  at once and names an issuer whose JWKS does not answer, instead of
+  overrunning its bound. Each issuer's counter set is published when it
+  is built (`auth_ecosystem`, `auth_ecosystem_2`, ...).
 - A request without a credential is `401`, whatever else is wrong with
   it, on every route (finding C6): the WebSocket routes are now guarded
   by the mux (`GuardedMux.WebSockets`, `WSAuth.Require`) before the
@@ -57,6 +75,23 @@ additively within `/v1`.
 
 ### Added
 
+- WP-19, the conformance profile (`deploy/conformance/`): this USSP's
+  target for uspace-lab's conformance suite (lab WP-L7) and an overlay
+  of the lab's systems stack with the InterUSS DSS. `make conformance`
+  builds this checkout's image, runs it in that stack (or against
+  `USSP_CONFORMANCE_BASE_URL`), checks the declared
+  `USSP_AUTHORITY_PUSH` against what rid-sp answers, runs the lab's
+  `cmd/conformance` and returns its verdict (0 pass, 1 fail, 2
+  configuration, 3 incomplete), the signed report under
+  `local/conformance/reports/`. A target whose `USSP_SYSTEM_ID`
+  contains neither `TEST` nor `DEV` is refused. `openAuthorityFlights`
+  is declared not applicable while the push is off (PLAN §15 Q33).
+  `make conformance-selftest` (in CI) runs the hook in each state;
+  the `conformance` workflow runs the suite on a dispatch and on
+  release tags; `deploy/conformance/chaos.sh` and
+  `docs/RUNBOOKS/chaos.md` are the chaos procedure of spec `05 §6` with
+  its first runs. F3411-SP and F3548-SCD stay not applicable: the
+  InterUSS test interfaces are not built (PLAN §15.2 Q34).
 - WP-18, the USSP console (`web/` under `/console`, on `@rootxkit/uspace-ui`
   0.1.0) and its API (`internal/admin`, `/v1/admin/*`): the live map by
   viewport over traffic-ws with the staff session, the persistent

@@ -1,0 +1,7 @@
+uspace-ussp 5e5cdf5f0bb66c90bc2745ea644bdddad8cfdcb9
+uspace-lab 7fb2d45693c8a93c7485dd0aa0699e8359296aa5
+target the stack uspace-ussp-conf (ussp)
+image uspace-ussp:conformance-5e5cdf5f0bb6 sha256:58cd9c29764a58df5717ab221cb9e8dfb801f97196473879f23d7c6fab2c4f00
+USSP_AUTHORITY_PUSH on
+system id USSP-DEV
+suite exit 0

@@ -1,0 +1,47 @@
+{
+  "format": "conformance-baseline/v1",
+  "target": "ussp-conformance",
+  "from_run": "20261005T141923Z-ussp-conformance",
+  "from_digest": "sha256:cdd6ff5911325499a7d02bb0c9d515ad516d89012e0f8ebd64d48e8ec27980ee",
+  "requirements": {
+    "A11Y-PUBLIC": {
+      "status": "not_applicable",
+      "note": "informative: the target names no public page"
+    },
+    "F3411-SP": {
+      "status": "not_applicable",
+      "note": "BLOCKED by owner decision Q34 (docs/PLAN.md §15.2): this USSP exposes no InterUSS rid_injection interface; not checked, not a pass"
+    },
+    "F3548-CP": {
+      "status": "not_applicable",
+      "note": "not checkable upstream: uss_qualifier v0.36.0 (the lab's pin) has no constraint processing requirement set; not a pass"
+    },
+    "F3548-SCD": {
+      "status": "not_applicable",
+      "note": "BLOCKED by owner decision Q34 (docs/PLAN.md §15.2): this USSP exposes no InterUSS flight_planning interface; not checked, not a pass"
+    },
+    "NAT-INVALID": {
+      "status": "pass"
+    },
+    "NAT-NOTFOUND": {
+      "status": "pass"
+    },
+    "NAT-PRECONDITION": {
+      "status": "not_applicable",
+      "note": "no check of the USSP contract applies (lab national.stale_precondition); open in docs/RUNBOOKS/conformance.md; not a pass"
+    },
+    "NAT-SCOPE": {
+      "status": "pass"
+    },
+    "NAT-SUCCESS": {
+      "status": "pass"
+    },
+    "NAT-UNAUTH": {
+      "status": "pass"
+    },
+    "REG-NOPII": {
+      "status": "not_applicable",
+      "note": "the target file supplies no operator token (fixture open in docs/RUNBOOKS/conformance.md); not checked, not a pass"
+    }
+  }
+}
