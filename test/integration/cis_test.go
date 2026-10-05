@@ -54,7 +54,7 @@ func cleanCIS(t *testing.T) {
 	t.Helper()
 	ensureSchemas(t)
 	if _, err := relOwner(t).Exec(context.Background(),
-		"DELETE FROM cis_notification_jtis; DELETE FROM cis_notifications; DELETE FROM cis_datasets"); err != nil {
+		"DELETE FROM cis_notification_jtis; DELETE FROM cis_notifications; DELETE FROM cis_datasets; DELETE FROM cis_direct_restrictions"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -135,6 +135,7 @@ func newCISRig(t *testing.T, reconcile time.Duration) *cisRig {
 	}
 	g.cache = cis.NewCache(cis.CacheConfig{Client: client, Publishers: pubs, Store: g.store, Evaluator: g.eval, Projector: g.proj, Counters: g.counters,
 		Logger: logger, CallbackURL: g.callback, ReconcileInterval: reconcile,
+		Direct: cis.DirectConfig{Client: &http.Client{Timeout: 5 * time.Second}, Store: g.store},
 		OnChange: func(ctx context.Context, c cis.Change) {
 			if h := g.hook.Load(); h != nil {
 				(*h)(ctx, c)
@@ -176,7 +177,8 @@ func (g *cisRig) receiverHandler() http.Handler {
 
 func (g *cisRig) newReceiver() *cis.Receiver {
 	return cis.NewReceiver(cis.ReceiverConfig{Verifier: g.verifier, Senders: g.senders, Store: g.store,
-		Trigger: func(d cis.Dataset, h cis.Hint) { g.cache.Trigger(d, h) }, Counters: g.counters})
+		Trigger: func(d cis.Dataset, h cis.Hint) { g.cache.Trigger(d, h) }, TriggerDirect: func(h cis.DirectHint) bool { return g.cache.TriggerDirect(h) },
+		Counters: g.counters})
 }
 
 func (g *cisRig) waitFor(what string, within time.Duration, cond func() bool) time.Duration {
@@ -419,16 +421,17 @@ func TestIntegrationCISReceiverPairs(t *testing.T) {
 		t.Fatalf("publication made %d reads, want 1", n)
 	}
 
-	// The same restriction signed by the ANSP (degraded direct path): a
-	// pull of the restrictions dataset from the CISP.
-	ch = g.fake.Publish("restrictions", zone("DAR0001", 120))
+	// A restriction signed by the ANSP (degraded direct path, M5, H-2):
+	// its version is the restriction's ansp_version, not a CIS version,
+	// and it is pulled from the ANSP's pull_url, never from the CISP
+	// (direct_test.go applies one and raises its alert).
 	before = g.fake.Requests("GET /v1/restrictions")
-	if code, err := g.ansp.Notify(ctx, g.callback, "r-1", json.RawMessage(change("restrictions", "restriction_activated", ch.Version,
-		g.ansp.URL()+"/v1/restrictions/r-1"))); err != nil || code != http.StatusNoContent {
+	if code, err := g.ansp.Notify(ctx, g.callback, "r-1", json.RawMessage(change("restrictions", "restriction_activated", 1,
+		g.ansp.URL()+"/v1/restrictions/r-1/direct"))); err != nil || code != http.StatusNoContent {
 		t.Fatalf("ANSP: %d %v", code, err)
 	}
-	g.waitFor("the ANSP-signed pull", 5*time.Second, func() bool { return g.version(cis.Restrictions) == 1 })
-	if g.fake.Requests("GET /v1/restrictions")-before != 1 || g.counters.Get(cis.CounterANSPDirect) != 1 {
+	g.waitFor("the ANSP-signed pull", 5*time.Second, func() bool { n, _ := g.ansp.DirectPulls(); return n == 1 })
+	if g.fake.Requests("GET /v1/restrictions")-before != 0 || g.counters.Get(cis.CounterANSPDirect) != 1 {
 		t.Fatalf("ANSP pull: %v", g.counters.Snapshot())
 	}
 	if n := g.dbCount("SELECT count(*) FROM cis_notifications WHERE issuer = $1 AND subscription = 'r-1'", g.ansp.Signer.Issuer); n != 1 {

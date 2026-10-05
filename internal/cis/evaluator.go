@@ -161,6 +161,15 @@ func (e *Evaluator) install(v *Version, es []*Entry, at time.Time) {
 	delete(e.empty, v.Dataset)
 }
 
+// replace makes v and es current for d without touching when the CISP
+// last confirmed it (the ANSP's direct path changed the restrictions,
+// not the CISP's version); v nil leaves d unloaded, its entries served.
+func (e *Evaluator) replace(d Dataset, v *Version, es []*Entry) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.snap.Store(e.snap.Load().with(d, v, es))
+}
+
 // confirm records that the CISP confirmed d's current version at at.
 // empty is true when the CISP says the dataset has no version yet: an
 // empty dataset that is known to be empty.

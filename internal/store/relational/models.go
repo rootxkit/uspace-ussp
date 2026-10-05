@@ -49,6 +49,18 @@ type CisDataset struct {
 	SignatureOk bool      `json:"signature_ok"`
 }
 
+type CisDirectRestriction struct {
+	Identifier    string    `json:"identifier"`
+	RestrictionID string    `json:"restriction_id"`
+	AnspRef       string    `json:"ansp_ref"`
+	AnspVersion   int64     `json:"ansp_version"`
+	State         string    `json:"state"`
+	Body          []byte    `json:"body"`
+	Signature     string    `json:"signature"`
+	Issuer        string    `json:"issuer"`
+	StoredAt      time.Time `json:"stored_at"`
+}
+
 type CisFeature struct {
 	Dataset   string `json:"dataset"`
 	Version   int64  `json:"version"`

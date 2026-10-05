@@ -122,6 +122,11 @@ func startCIS(ctx context.Context, rt *proc.Runtime, current func() policy.Value
 		RetentionDays: func() int { return current().RecordRetentionDays },
 		Projector:     &cis.BusProjector{KV: kv},
 		OnChange:      out.changed,
+		// The ANSP's degraded direct path: its pull_url is public and
+		// signed, so the client carries no credential (never the CISP's
+		// token).
+		Direct: cis.DirectConfig{Client: &http.Client{Timeout: cis.DefaultDirectTimeout}, Store: directStore(st),
+			Max: cfg.CISDirectMax, Keep: time.Duration(cfg.CISDirectKeepS) * time.Second},
 	})
 	rt.Health.Register(DepCIS, false, cache.Probe)
 	out.Cache = cache
@@ -143,11 +148,19 @@ func startCIS(ctx context.Context, rt *proc.Runtime, current func() policy.Value
 			}
 		})
 		out.Receiver = cis.NewReceiver(cis.ReceiverConfig{
-			Verifier: keys, Senders: senders, Store: st, Trigger: cache.Trigger, Counters: counters,
+			Verifier: keys, Senders: senders, Store: st, Trigger: cache.Trigger, TriggerDirect: cache.TriggerDirect, Counters: counters,
 			Logger: rt.Logger.With("component", "cis_receiver"),
 		})
 	}
 	return out, nil
+}
+
+// directStore is st's direct restrictions, nil without a database.
+func directStore(st cis.Store) cis.DirectStore {
+	if ds, ok := st.(cis.DirectStore); ok {
+		return ds
+	}
+	return nil
 }
 
 // notifySenders says who each USSP_CIS_NOTIFY_ISSUERS entry is, from the

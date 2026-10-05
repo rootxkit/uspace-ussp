@@ -126,6 +126,8 @@ type CacheConfig struct {
 	// OnChange is told every version installed, after its projection and
 	// its store (nil: nobody is told).
 	OnChange ChangeHook
+	// Direct is the ANSP's degraded direct path (direct.go).
+	Direct DirectConfig
 }
 
 // Cache is the writer of the CIS cache: pulls, notifications,
@@ -160,6 +162,19 @@ type Cache struct {
 	// (restrictionend.go).
 	ends         *restrictionEnds
 	inconsistent *inconsistency
+
+	// restrBase and restrBaseEntries are the CISP's restrictions
+	// version as accepted, without the direct overlay: what is pulled
+	// against, merged with a delta, stored and confirmed. The Evaluator
+	// holds it merged with direct (mergedRestrictions).
+	restrBase        *Version
+	restrBaseEntries []*Entry
+	// direct are the restrictions in force from the ANSP's direct path,
+	// by identifier; directPending the notifications not pulled yet, by
+	// restriction id (direct.go).
+	direct        map[string]*directHeld
+	directPending map[string]*DirectHint
+	directKick    chan struct{}
 }
 
 // NewCache builds a Cache.
@@ -189,6 +204,7 @@ func NewCache(cfg CacheConfig) *Cache {
 		cfg: cfg, locks: map[Dataset]*sync.Mutex{}, kick: map[Dataset]chan struct{}{},
 		hints: map[Dataset]*Hint{}, pending: map[Dataset]*Hint{}, refused: map[Dataset]*RefusalError{}, held: map[Dataset]*UntrustedError{},
 		pullErr: map[Dataset]string{}, notFound: map[Dataset]int64{}, unpersisted: map[Dataset]int64{},
+		direct: map[string]*directHeld{}, directPending: map[string]*DirectHint{}, directKick: make(chan struct{}, 1),
 	}
 	for _, d := range AllDatasets {
 		c.locks[d] = &sync.Mutex{}
@@ -213,6 +229,7 @@ func (c *Cache) Run(ctx context.Context) {
 	}
 	wg.Go(func() { c.subscribeLoop(ctx) })
 	wg.Go(func() { c.sweepLoop(ctx) })
+	wg.Go(func() { c.directWorker(ctx) })
 	wg.Wait()
 }
 
@@ -223,6 +240,7 @@ func (c *Cache) Warm(ctx context.Context) {
 	if c.cfg.Store == nil {
 		return
 	}
+	c.warmDirect(ctx)
 	stored, err := c.cfg.Store.LoadCurrent(ctx)
 	if err != nil {
 		c.mu.Lock()
@@ -249,8 +267,7 @@ func (c *Cache) Warm(ctx context.Context) {
 			}
 		}
 		age := time.Duration(math.Max(0, sv.AgeS) * float64(time.Second))
-		c.cfg.Evaluator.install(v, es, now.Add(-age))
-		installed = append(installed, warmed{v, es})
+		installed = append(installed, warmed{v, c.installVersion(v, es, now.Add(-age))})
 		c.cfg.Logger.Info("CIS version loaded from the database", slog.String("dataset", string(v.Dataset)),
 			slog.Int64("version", v.Number), slog.Float64("age_s", sv.AgeS))
 	}
@@ -390,7 +407,7 @@ func (c *Cache) pullDelta(ctx context.Context, d Dataset, cur *Version, h *Hint)
 		c.cfg.Logger.Warn("CIS delta not read; reading the dataset whole", slog.String("dataset", string(d)), obs.Err(err))
 		return nil, false
 	}
-	body, to, err := mergeDelta(cur, c.cfg.Evaluator.Snapshot().Entries(d), f.Body)
+	body, to, err := mergeDelta(cur, c.baseEntries(d), f.Body)
 	if err != nil {
 		c.cfg.Counters.Inc(CounterDeltaUnusable)
 		c.cfg.Logger.Warn("CIS delta not applied; reading the dataset whole", slog.String("dataset", string(d)), obs.Err(err))
@@ -450,7 +467,7 @@ func (c *Cache) accept(ctx context.Context, v, cur *Version, reconcile bool) err
 	if cur != nil {
 		prevNumber = cur.Number
 	}
-	c.cfg.Evaluator.install(v, es, now)
+	merged := c.installVersion(v, es, now)
 	c.mu.Lock()
 	delete(c.refused, v.Dataset)
 	delete(c.pullErr, v.Dataset)
@@ -466,8 +483,40 @@ func (c *Cache) accept(ctx context.Context, v, cur *Version, reconcile bool) err
 	c.project(ctx)
 	c.clearPending(v.Dataset, v.Number)
 	c.persist(ctx, v, es)
-	c.notify(ctx, v, prevNumber, prevEntries, es, ChangeInstalled)
+	c.notify(ctx, v, prevNumber, prevEntries, merged, ChangeInstalled)
+	if v.Dataset == Restrictions && c.dropDirect(ctx) {
+		// The CISP now holds what came directly: the overlay is gone.
+		c.reinstall(ctx)
+	}
 	return nil
+}
+
+// installVersion makes v current in the Evaluator, confirmed at at, and
+// returns the entries installed: es, or for the restrictions es with the
+// direct restrictions laid over them (v itself, unmerged, is what is
+// kept as the CISP's version).
+func (c *Cache) installVersion(v *Version, es []*Entry, at time.Time) []*Entry {
+	if v.Dataset != Restrictions {
+		c.cfg.Evaluator.install(v, es, at)
+		return es
+	}
+	c.mu.Lock()
+	c.restrBase, c.restrBaseEntries = v, es
+	mv, merged := c.mergedRestrictions()
+	c.mu.Unlock()
+	c.cfg.Evaluator.install(mv, merged, at)
+	return merged
+}
+
+// baseEntries are d's entries as the CISP published them: for the
+// restrictions, without the direct overlay.
+func (c *Cache) baseEntries(d Dataset) []*Entry {
+	if d != Restrictions {
+		return c.cfg.Evaluator.Snapshot().Entries(d)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.restrBaseEntries
 }
 
 func (c *Cache) persist(ctx context.Context, v *Version, es []*Entry) {
@@ -500,8 +549,14 @@ func (c *Cache) persistTouch(ctx context.Context, d Dataset, version int64) {
 	_, missing := c.unpersisted[d]
 	c.mu.Unlock()
 	if missing {
-		if v := c.cfg.Evaluator.Snapshot().Version(d); v != nil {
-			c.persist(ctx, v, c.cfg.Evaluator.Snapshot().Entries(d))
+		v := c.cfg.Evaluator.Snapshot().Version(d)
+		if d == Restrictions {
+			c.mu.Lock()
+			v = c.restrBase
+			c.mu.Unlock()
+		}
+		if v != nil {
+			c.persist(ctx, v, c.baseEntries(d))
 		}
 		return
 	}
@@ -724,7 +779,8 @@ func (c *Cache) Outdated() []string {
 	if v := snap.Version(Restrictions); v != nil && len(v.Meta.PublisherStaleSince) > 0 {
 		out = append(out, "the restrictions are published while their publisher (the ANSP) is stale since "+string(v.Meta.PublisherStaleSince))
 	}
-	return out
+	pending, _ := c.directProblems()
+	return append(out, pending...)
 }
 
 // Probe is the readiness of the cache (the /readyz entry cis, also on
@@ -805,6 +861,8 @@ func (c *Cache) Probe(context.Context) (obs.State, string) {
 	if c.projErr != "" {
 		problems = append(problems, "projection: "+c.projErr)
 	}
+	pending, applied := c.directProblems()
+	problems = append(append(problems, pending...), applied...)
 	if v := c.cfg.Evaluator.Snapshot().Version(Restrictions); v != nil {
 		if p := c.inconsistencyProblem(v.Number); p != "" {
 			problems = append(problems, p)

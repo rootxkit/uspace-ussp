@@ -128,20 +128,47 @@ func TestReceiverCISPNotificationPulls(t *testing.T) {
 	}
 }
 
-// M5: the ANSP's degraded direct path is accepted and pulls (from the
-// configured CISP: no pull_url is followed to the ANSP).
+// M5, H-2: the ANSP's degraded direct path is accepted and its
+// restriction is pulled from its own pull_url, by its ansp_version (the
+// record's version member): the CISP is not asked, and a version below
+// the CISP's never reads as a replay. Without a direct trigger (no
+// cache) the CISP is read, with no version to skip on. A full queue is
+// 503 and records nothing, so the ANSP's retry is taken.
 func TestReceiverANSPNotificationPulls(t *testing.T) {
 	g := newReceiverRig(t)
-	w := g.send(g.ansp, ourHost, "a1", changeBody("restrictions", "restriction_activated", 9, "https://ansp.test/v1/restrictions/r1"))
+	var direct []DirectHint
+	room := true
+	g.rc.cfg.TriggerDirect = func(h DirectHint) bool {
+		if room {
+			direct = append(direct, h)
+		}
+		return room
+	}
+	w := g.send(g.ansp, ourHost, "a1", changeBody("restrictions", "restriction_activated", 9, "https://ansp.test/v1/restrictions/r1/direct"))
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status %d: %s", w.Code, w.Body)
 	}
-	h := g.triggered()
-	if len(h) != 1 || h[0].PullURL != "" || h[0].Issuer != g.ansp.Issuer {
-		t.Fatalf("trigger: %+v", h)
+	if len(g.triggered()) != 0 || len(direct) != 1 || direct[0].AnspVersion != 9 || direct[0].RestrictionID != "sub-1" ||
+		direct[0].PullURL != "https://ansp.test/v1/restrictions/r1/direct" || direct[0].FeatureIDs[0] != "TZP001" || direct[0].Issuer != g.ansp.Issuer {
+		t.Fatalf("direct %+v, CISP %+v", direct, g.triggered())
 	}
 	if g.count(CounterANSPDirect) != 1 || g.count(CounterPullURLMismatch) != 0 {
 		t.Fatalf("counters: %v", g.rc.cfg.Counters.Snapshot())
+	}
+	room = false
+	if w := g.send(g.ansp, ourHost, "a2", changeBody("restrictions", "restriction_ended", 10, "https://ansp.test/v1/restrictions/r1/direct")); w.Code != http.StatusServiceUnavailable || g.store.jtis[g.ansp.Issuer+" a2"] {
+		t.Fatalf("full: %d", w.Code)
+	}
+	room = true
+	if w := g.send(g.ansp, ourHost, "a2", changeBody("restrictions", "restriction_ended", 10, "https://ansp.test/v1/restrictions/r1/direct")); w.Code != http.StatusNoContent || len(direct) != 2 {
+		t.Fatalf("the retry: %d", w.Code)
+	}
+	g.rc.cfg.TriggerDirect = nil
+	if w := g.send(g.ansp, ourHost, "a3", changeBody("restrictions", "restriction_activated", 9, "https://ansp.test/v1/restrictions/r1/direct")); w.Code != http.StatusNoContent {
+		t.Fatalf("status %d", w.Code)
+	}
+	if h := g.triggered(); len(h) != 1 || h[0].Version != 0 || h[0].PullURL != "" {
+		t.Fatalf("without a direct trigger: %+v", h)
 	}
 }
 
