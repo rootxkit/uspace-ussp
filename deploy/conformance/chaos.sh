@@ -74,7 +74,11 @@ sample() {
     MSYS_NO_PATHCONV=1 docker run --rm --network "${project}_lab" alpine:latest sh -c '
       for p in api:8080 telemetry-ingest:8081 rid-sp:8082 monitor:8083 traffic-ws:8084 dss-sync:8085 tsdb-writer:8086; do
         echo "== ussp-$p /readyz"
-        wget -T 5 -qO- "http://ussp-$p/readyz" || echo "(no answer)"
+        # A not-ready process answers 503, which wget reports as an
+        # error without the body: the status line is kept apart.
+        wget -S -T 5 -O /tmp/body "http://ussp-$p/readyz" 2>/tmp/hdr; rc=$?
+        if [ -s /tmp/body ]; then cat /tmp/body; else echo "(no body, wget exit $rc: $(grep -m1 "HTTP/" /tmp/hdr | tr -s " " || echo no answer))"; fi
+        rm -f /tmp/body /tmp/hdr
         echo
         echo "== ussp-$p /metrics (selected)"
         wget -T 5 -qO- "http://ussp-$p/metrics" 2>/dev/null |
@@ -91,7 +95,7 @@ if [ "$row" = kill ]; then
     note "SIGKILL $s"
     docker kill -s KILL "${project}-${s}-1" >/dev/null
     t0="$(date +%s)"
-    dc up -d --wait --wait-timeout 120 "$s" >/dev/null 2>&1 || die "$s did not become healthy again within 120 s"
+    dc up -d --no-deps --wait --wait-timeout 120 "$s" >/dev/null 2>&1 || die "$s did not become healthy again within 120 s"
     note "$s healthy again after $(($(date +%s) - t0)) s"
     sample "after-$s.txt" "after $s restarted"
     # The gap lets the restarted process take up its work before the next
@@ -110,7 +114,9 @@ else
   note "end of outage sampled; starting $svcs"
   t0="$(date +%s)"
   # shellcheck disable=SC2086 # one argument per service
-  dc up -d --wait --wait-timeout 300 $svcs >/dev/null 2>&1 || die "$svcs did not become healthy again within 300 s"
+  # --no-deps: bring back what was stopped, nothing else (a dependency
+  # recreated here would be a second failure of the row).
+  dc up -d --no-deps --wait --wait-timeout 300 $svcs >/dev/null 2>&1 || die "$svcs did not become healthy again within 300 s"
   note "$svcs back after $(($(date +%s) - t0)) s"
   sleep "$sample_s"
   sample after.txt "after, ${sample_s} s after the restore"

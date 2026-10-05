@@ -398,7 +398,12 @@ case "$cmd" in
     # (deploy/conformance/chaos.sh drives the outages through it).
     [ -f "$stack_env" ] || usage "no stack: $stack_env is missing (CONFORMANCE_KEEP=1 make conformance starts one)"
     shift
-    export MSYS_NO_PATHCONV=1
+    # The issuer runs as the invoking user (it reads its state through a
+    # bind mount); without these compose would recreate it as another
+    # user that cannot read its key.
+    LAB_UID="$(id -u)"
+    LAB_GID="$(id -g)"
+    export LAB_UID LAB_GID MSYS_NO_PATHCONV=1
     dc "$@"
     exit $?
     ;;
