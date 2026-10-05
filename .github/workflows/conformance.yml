@@ -1,23 +1,94 @@
 name: conformance
 
-# The InterUSS DSS and uss_qualifier against this USSP (docs/PLAN.md
-# §10, WP-19). Manual only: it pulls external images, and it fails
-# until WP-19 fills `make conformance`. Not a required check.
+# uspace-lab's conformance suite (WP-L7) against this USSP (docs/PLAN.md
+# §10, §14 job 7; WP-19): `make conformance` with this commit's image in
+# the lab's systems stack, the InterUSS DSS beside it, the lab at the
+# commit deploy/conformance/SOURCE pins. On a manual dispatch and on
+# release tags only: it pulls external images and the lab. Not a
+# required check. The reports are uploaded whatever the verdict.
+#
+# The job's status is the suite's verdict: an incomplete run (exit 3: a
+# gate requirement not checked, such as F3411-SP while this USSP exposes
+# no InterUSS injection interface) fails it unless the dispatch says
+# allow_incomplete. Nothing here writes anywhere but the runner.
 on:
   workflow_dispatch:
+    inputs:
+      allow_incomplete:
+        description: "Accept an incomplete run (gate requirements not applicable) as a pass"
+        type: boolean
+        default: false
+      authority_push:
+        description: "USSP_AUTHORITY_PUSH of the stack (off is the product default)"
+        type: choice
+        options: ["off", "on"]
+        default: "off"
+  push:
+    tags: ["v*"]
 
 permissions:
   contents: read
 
+concurrency:
+  group: conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GOTOOLCHAIN: local
+
 jobs:
   conformance:
-    name: uss_qualifier
+    name: lab conformance suite
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: read deploy/conformance/SOURCE
+        id: src
+        run: |
+          src() { sed -n "s/^$1 = //p" deploy/conformance/SOURCE; }
+          for k in lab_commit geoid_url geoid_archive_sha256 geoid_pgm_sha256; do
+            v="$(src "$k")"
+            [ -n "$v" ] || { echo "deploy/conformance/SOURCE has no $k" >&2; exit 1; }
+            echo "$k=$v" >> "$GITHUB_OUTPUT"
+          done
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: rootxkit/uspace-lab
+          ref: ${{ steps.src.outputs.lab_commit }}
+          path: lab
+          persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
           cache: true
-      - run: make conformance
+      - name: the geoid grid (both digests checked)
+        env:
+          GEOID_URL: ${{ steps.src.outputs.geoid_url }}
+          GEOID_ARCHIVE_SHA256: ${{ steps.src.outputs.geoid_archive_sha256 }}
+          GEOID_PGM_SHA256: ${{ steps.src.outputs.geoid_pgm_sha256 }}
+        run: |
+          mkdir -p local/conformance/ground "$RUNNER_TEMP/geoid"
+          curl -fsSL --max-time 300 -o "$RUNNER_TEMP/geoid/egm2008-2_5.tar.bz2" "$GEOID_URL"
+          echo "$GEOID_ARCHIVE_SHA256  $RUNNER_TEMP/geoid/egm2008-2_5.tar.bz2" | sha256sum -c -
+          tar -xjf "$RUNNER_TEMP/geoid/egm2008-2_5.tar.bz2" -C "$RUNNER_TEMP/geoid" geoids/egm2008-2_5.pgm
+          mv "$RUNNER_TEMP/geoid/geoids/egm2008-2_5.pgm" local/conformance/ground/
+          echo "$GEOID_PGM_SHA256  local/conformance/ground/egm2008-2_5.pgm" | sha256sum -c -
+      - name: make conformance
+        env:
+          LAB_DIR: ${{ github.workspace }}/lab
+          USSP_CONFORMANCE_AUTHORITY_PUSH: ${{ inputs.authority_push || 'off' }}
+          CONFORMANCE_ALLOW_INCOMPLETE: ${{ inputs.allow_incomplete && '1' || '' }}
+        run: make conformance
+      - name: reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: conformance-reports
+          path: local/conformance/reports/
+          if-no-files-found: warn
+          retention-days: 90
