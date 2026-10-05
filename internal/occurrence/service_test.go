@@ -290,7 +290,7 @@ func (f *fakeAuthority) Submit(_ context.Context, body []byte) (string, error) {
 	defer f.mu.Unlock()
 	switch {
 	case f.refuse:
-		return "", &PermanentError{Detail: "409 report_ref_reused"}
+		return "", &PermanentError{Status: 409, Detail: "409 report_ref_conflict"}
 	case f.down:
 		return "", errors.New("503 from the authority")
 	}
@@ -447,8 +447,11 @@ func TestDelivery(t *testing.T) {
 	s2, _ := newService(st2, &fakeAuthority{refuse: true})
 	_ = s2.Detect(context.Background())
 	s2.DeliverDue(context.Background())
-	if r := st2.report("alert", "pair:pair-1@1"); r.state != "failed" || !strings.Contains(r.lastError, "409") {
+	if r := st2.report("alert", "pair:pair-1@1"); r.state != "failed" || r.attempts != 1 || !strings.Contains(r.lastError, "409") {
 		t.Fatalf("refusal %+v", r)
+	}
+	if s2.Counters.Get(CounterConflict) != 1 || s2.Counters.Get(CounterFailed) != 1 {
+		t.Errorf("a 409 is not counted as a conflict: %v", s2.Counters.Snapshot())
 	}
 
 	st3 := newMem()
@@ -472,7 +475,7 @@ func TestPastDeadlineIsCritical(t *testing.T) {
 	st.events = []AlertEvent{proximity("a1", "", 10.0, 2.0)}
 	s, _ := newService(st, nil)
 	_ = s.Detect(context.Background())
-	if state, detail := Probe(st, false)(context.Background()); state != obs.StateDegraded || !strings.Contains(detail, "spec gap") {
+	if state, detail := Probe(st, false)(context.Background()); state != obs.StateDegraded || !strings.Contains(detail, "no authority configured") {
 		t.Fatalf("pending: %s %s", state, detail)
 	}
 	st.now = t0.Add(Deadline + time.Second)
@@ -512,10 +515,10 @@ func TestNoDeliverer(t *testing.T) {
 	if s.DeliverDue(context.Background()) != 0 || st.reports[0].attempts != 0 {
 		t.Fatal("claimed without a deliverer")
 	}
-	if !strings.Contains(NotDelivering(), "POST /v1/occurrences") {
+	if !strings.Contains(NotDelivering(), "USSP_AUTHORITY_BASE_URL") {
 		t.Error(NotDelivering())
 	}
-	if state, detail := Probe(newMem(), false)(context.Background()); state != obs.StateUp || !strings.Contains(detail, "spec gap") {
+	if state, detail := Probe(newMem(), false)(context.Background()); state != obs.StateUp || !strings.Contains(detail, "no authority configured") {
 		t.Errorf("no report, no deliverer: %s %s", state, detail)
 	}
 }

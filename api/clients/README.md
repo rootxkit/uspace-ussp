@@ -26,7 +26,10 @@ with `api/oapi-codegen.authority.yaml` (the `registry-f8` tag only: the
 F8 lookups and the change feed) and, with
 `api/oapi-codegen.authority-status.yaml`, into `internal/status/authclient`
 (the one operation `postCertificateStatus`: Art. 7(6) start, cease and
-restart notices, WP-15).; `ansp.yaml` (WP-15, the Annex V coordination
+restart notices, WP-15) and, with
+`api/oapi-codegen.authority-occurrence.yaml`, into
+`internal/occurrence/authclient` (the one operation `createOccurrence`:
+the occurrence reports of 376/2014 Art. 4, H-1); `ansp.yaml` (WP-15, the Annex V coordination
 inbox), generated into `internal/coordination/anspclient` with
 `api/oapi-codegen.ansp.yaml` (the `coordination` tag only). The ANSP's
 file references its own body schema as
