@@ -15,8 +15,9 @@
 # USSP_GO_IMAGE in the generated stack.env (built from this checkout,
 # or USSP_CONFORMANCE_IMAGE).
 #
-# The one thing the overlay changes: USSP_AUTHORITY_PUSH on rid-sp
-# (off unless USSP_CONFORMANCE_AUTHORITY_PUSH=on, the product default).
+# What the overlay changes: USSP_AUTHORITY_PUSH on rid-sp (off unless
+# USSP_CONFORMANCE_AUTHORITY_PUSH=on, the product default), and the user
+# the USSP's containers run as (below).
 # The target's declaration of WS /v1/authority/flights follows it
 # (deploy/conformance/authority-push-off.yaml), and scripts/conformance.sh
 # checks the declaration against what rid-sp answers before the suite
@@ -25,7 +26,24 @@
 # Nothing in this stack reaches an aircraft: the operators are the lab's
 # simulators, and no USSP process has a send path towards a vehicle.
 
+# The USSP's containers run as the invoking user, as the lab issuer
+# does: the lab's gen-secrets.sh writes every key 0600 in the state
+# directory, which a container of another user (the image's nonroot)
+# cannot read through the bind mount on Linux. Docker Desktop on Windows
+# does not enforce it, so the hook ran there before CI showed it.
+x-user: &user
+  user: "${LAB_UID:?set by scripts/conformance.sh}:${LAB_GID:?set by scripts/conformance.sh}"
+
 services:
+  ussp-migrate: *user
+  ussp-migrate-timeseries: *user
+  ussp-api: *user
+  ussp-telemetry-ingest: *user
   ussp-rid-sp:
+    <<: *user
     environment:
       USSP_AUTHORITY_PUSH: ${USSP_CONFORMANCE_AUTHORITY_PUSH:?set by scripts/conformance.sh}
+  ussp-monitor: *user
+  ussp-traffic-ws: *user
+  ussp-dss-sync: *user
+  ussp-tsdb-writer: *user

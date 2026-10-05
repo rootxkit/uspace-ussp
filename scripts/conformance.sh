@@ -262,7 +262,17 @@ PY
   [ -n "$svcs" ] || die "the lab's systems stack names no ussp-* service"
   t0="$(date +%s)"
   # shellcheck disable=SC2086 # one argument per service
-  dc up -d --wait --wait-timeout 600 caddy $svcs >/dev/null || die "the USSP did not become healthy: docker compose -p $project ps; logs ussp-api"
+  if ! dc up -d --wait --wait-timeout 600 caddy $svcs >/dev/null; then
+    # What CI cannot be asked afterwards: the state and the last lines of
+    # every USSP service (the processes log their configuration with
+    # every password and secret file redacted).
+    dc ps -a >&2 || true
+    for s in $svcs; do
+      echo "conformance: --- last lines of $s ---" >&2
+      dc logs --no-color --tail 15 "$s" >&2 || true
+    done
+    die "the USSP did not become healthy"
+  fi
   for m in ussp-migrate ussp-migrate-timeseries; do
     local code
     code="$(docker inspect -f '{{.State.ExitCode}}' "$(dc ps -a -q "$m")")"
