@@ -1,0 +1,7 @@
+uspace-ussp 9716a90bb81fc9ca51bdc63667c865a4a1cdd9bb (dirty)
+uspace-lab unknown (dirty)
+target the stack uspace-ussp-conf (ussp)
+image uspace-ussp:conformance-9716a90bb81f sha256:918f6847f48383f835acf433b71b73dd5786391a9664f85df3dfa75f236c93d6
+USSP_AUTHORITY_PUSH on
+system id USSP-DEV
+suite exit 3

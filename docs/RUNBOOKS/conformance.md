@@ -1,0 +1,82 @@
+# Conformance runs (WP-19, S-M6)
+
+Every run of uspace-lab's conformance suite against this USSP, through
+`make conformance` (`deploy/conformance/README.md`), with what was
+observed: the date, the commits of both repositories, the image under
+test, the push setting, the verdict and each requirement's status. The
+suite decides; a run is never described from what it should have
+said (E-04, E-05). The lab keeps its own records of its runs against the
+systems stack (`uspace-lab/conformance/report/records/`).
+
+Tool versions of every run below: uspace-lab `7fb2d45`
+(`cmd/conformance` built from it by the hook), its pinned InterUSS
+images (`deploy/conformance/SOURCE`: DSS v0.23.0, CockroachDB v24.1.3;
+`uss_qualifier` v0.36.0 is not run, F3411-SP and F3548-SCD being not
+applicable), Go 1.27.1, Docker Desktop 28.5.1 on Windows 11.
+
+## What the runs say, in short
+
+- **Nothing fails.** NAT-UNAUTH, NAT-SCOPE, NAT-NOTFOUND, NAT-INVALID and
+  NAT-SUCCESS pass; C6 and C8 of the lab's findings (uspace-ussp#37)
+  are gone, and `openAuthorityFlights` no longer fails with the push
+  off.
+- **The verdict is `incomplete` (exit 3), not pass**, for five gate
+  requirements the suite could not check:
+  - F3411-SP, F3548-SCD: this USSP exposes no InterUSS automated-testing
+    interface (PLAN §15.2 Q34, open);
+  - F3548-CP: no requirement set in `uss_qualifier` v0.36.0;
+  - NAT-PRECONDITION, REG-NOPII: the stack names no existing resource
+    with its ETag and no operator token (fixtures the lab owns).
+
+## Runs
+
+### 2026-10-05, the declaration of the authority push, both ways
+
+The two runs that pin PLAN §15 Q33, on the stack (`CONFORMANCE_SYSTEMS=ussp`).
+
+| | push off | push on |
+|---|---|---|
+| run | `20261005T062446Z-ussp-conformance` | `20261005T062950Z-ussp-conformance` |
+| uspace-ussp | `b0123dd` (clean) | `9716a90` (code clean; this runbook and the chaos runbook uncommitted, `run-info.txt` says "dirty") |
+| image | `uspace-ussp:conformance-b0123dd84d6b`, `sha256:3128cfae9f7f...` | `uspace-ussp:conformance-9716a90bb81f`, `sha256:918f6847f483...` |
+| declaration check | `/v1/authority/flights` without a credential answered 404 | answered 401 |
+| verdict | incomplete: 5 pass, 0 fail, 6 not applicable | incomplete: 5 pass, 0 fail, 6 not applicable |
+| NAT-UNAUTH | pass 46/0/1 (the one not applicable: `openAuthorityFlights`, "skipped by the overrides: USSP_AUTHORITY_PUSH=off on this target ... (PLAN D12, Q33)") | pass **47/0/0** |
+| NAT-SCOPE | pass 2/0/15 | pass **3/0/14** |
+| NAT-NOTFOUND | pass 2/0/5 | pass 2/0/5 |
+| NAT-INVALID | pass 3/0/15 | pass 3/0/15 |
+| NAT-SUCCESS | pass 3/0/30 | pass **4/0/29** (the stream's handshake answered 101 with a `rid.display_provider` token) |
+| report | signed `sha256:74717768...` (the run's report directory was removed before the next run; its output is quoted here from the hook's log) | `WP-19/20261005T062950Z-push-on/`: `report.json`, its JWS and digest (`sha256:17c3af42...`), `run-info.txt`, and the stack issuer's `issuer-jwks.json` that verifies it (`conformance verify --report report.json --jwks issuer-jwks.json` in the lab: verified, kid `20261005-1`) |
+
+The three checks of `openAuthorityFlights` that are not applicable with
+the push off pass with it on: the declaration hides nothing that runs.
+
+### 2026-10-05, earlier runs on this branch
+
+- On `9696f38` (main, before this branch), push off: incomplete, 3
+  pass, 0 fail, 8 not applicable. NAT-SCOPE and NAT-NOTFOUND were not
+  applicable on every operation: the lab issuer's tokens were answered
+  `503 auth_unavailable`, because the authority (not in this stack) was
+  on `USSP_TOKEN_ISSUERS` and one verifier held every issuer. Fixed in
+  this branch (`fix(auth): verify each ecosystem issuer with its own
+  keys`); the runs above show both requirements pass.
+- On `9696f38` with that fix uncommitted, push off and push on: the
+  same requirement statuses as the two runs above.
+- Two runs of the hook failed before the suite, both observed and
+  both fixed in this branch: the push probe met a refused connection
+  just after Caddy was healthy (`fix(conformance): wait for the published
+  port before the probe`), and, later the same day, Docker Desktop on
+  the authoring machine stopped publishing ports of containers on user
+  networks at all (a test container on a fresh network got no port
+  either; the default bridge still did). That host state is not this
+  repository's; the hook says "answered no answer (want 404)" and stops,
+  exit 1, with the stack removed.
+
+## How to add a run
+
+`make conformance` (or the workflow `conformance`, on a dispatch or a
+tag, which uploads the report directory as an artifact). Add a row
+above with the run id, both commits, the image, the declaration
+check's answer, the verdict and each requirement's status as the
+report prints them; keep the report directory under `WP-19/` when it is
+evidence for a decision.

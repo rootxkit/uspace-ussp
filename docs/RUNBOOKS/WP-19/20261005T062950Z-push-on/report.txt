@@ -1,0 +1,12 @@
+conformance 20261005T062950Z-ussp-conformance: ussp-conformance (ussp) at https://ussp.uspace.test:9543: incomplete, 5 pass, 0 fail, 6 not applicable
+  not_applicable NAT-PRECONDITION     0/0/0  no check of this run applied (decided by national.stale_precondition)
+  not_applicable REG-NOPII            0/0/1  the target file supplies no operator token (the contract states no scope)
+  not_applicable F3411-SP             0/0/1  the target exposes no InterUSS rid_injection interface (target file interfaces)
+  not_applicable F3548-SCD            0/0/1  the target exposes no InterUSS flight_planning interface (target file interfaces)
+  not_applicable F3548-CP             0/0/1  uss_qualifier v0.36.0 has no constraint processing requirement set (requirements/astm/f3548/v21 holds dss_provider and scd only)
+  not_applicable A11Y-PUBLIC          (informative) 0/0/1  the target file names no public page
+  pass           NAT-UNAUTH           47/0/0
+  pass           NAT-SCOPE            3/0/14
+  pass           NAT-NOTFOUND         2/0/5
+  pass           NAT-INVALID          3/0/15
+  pass           NAT-SUCCESS          4/0/29

@@ -70,13 +70,14 @@ reaches an aircraft.
 
 | | `ussp` | `all` |
 |---|---|---|
-| time, clean checkout with the images present (build, start, suite, stop) | 70 to 90 s | about 4 min to the suite |
-| memory, idle, one `docker stats` sample | about 0.7 GiB (CockroachDB 0.3, the USSP's database 0.1, each Go process 25 to 50 MiB) | about 2.6 GiB |
-| disk, images pulled the first time | about 2.5 GB (`timescaledb-ha` 1.1, CockroachDB 0.4, the DSS, NATS, Caddy, the Go build image for this checkout's image) | about 3 GB with the three other systems' images |
+| time, with the images present (build, start, suite, stop) | 65 to 120 s | not measured end to end: the first start reached the USSP healthy in about 1 min and then failed the CISP and ANSP wait (they wait for each other's JWKS; the hook now waits a second time), and the chaos stack was completed by hand from there |
+| memory, one `docker stats` sample | about 0.7 GiB (CockroachDB 0.3 to 0.4, the USSP's database 0.1, each Go process 25 to 50 MiB) | about 1.4 GiB after the chaos runs |
+| disk, images pulled or built the first time | about 6.5 GB: `timescaledb-ha:pg16` 4.4, `golang:1.27` (the image build) 1.2, CockroachDB 0.6, the DSS 0.17, this checkout's image 0.25, NATS, Caddy, the lab issuer; plus the Go build cache | about 7 GB, with the authority's, the CISP's and the ANSP's images (0.5) |
 
-The demo profile's budget (4 vCPU, 7.6 GB, about 18 GB free on the
-droplet) holds both; the profile runs on a laptop or in CI and never on
-the droplet.
+The profile runs on a laptop or in CI, never on the droplet. It would
+fit the demo profile's budget (4 vCPU, 7.6 GB, about 18 GB free) in
+memory; on disk the `timescaledb-ha` image alone is 4.4 GB, which the
+droplet already holds for its own stacks.
 
 ## Geoid
 
