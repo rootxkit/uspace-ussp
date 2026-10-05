@@ -57,11 +57,11 @@ func dial(t *testing.T, url string, h http.Header) (string, int, websocket.Statu
 // E-01 (M22, conformance C4 and C8): the cookie on an upgrade from an
 // allowed Origin is 101 and served, and so is a machine client's bearer
 // without an Origin. Every other refusal is answered before any upgrade
-// with its status, never 101: no credential (with or without an allowed
-// Origin) and a refused bearer 401, another Origin or a cookie without
-// one 403. Only a browser's session from an allowed Origin that the
-// guard refuses is upgraded and closed with 4401, which a browser can
-// read.
+// with its status, never 101: no credential and no Origin, and a refused
+// bearer, 401; another Origin or a cookie without one 403. Only the
+// browser, an upgrade from an allowed Origin with a session the guard
+// refuses or with no credential at all (its session cookie expired), is
+// upgraded and closed with 4401, which a browser can read.
 func TestWSUpgradePairs(t *testing.T) {
 	f := newGuardFixture(t)
 	srv := wsServer(t, f)
@@ -77,7 +77,6 @@ func TestWSUpgradePairs(t *testing.T) {
 		status int
 	}{
 		"nothing":         {http.Header{}, http.StatusUnauthorized},
-		"no cookie":       {http.Header{"Origin": {consoleOrigin}}, http.StatusUnauthorized},
 		"bad bearer":      {http.Header{"Authorization": {"Bearer not-a-token"}}, http.StatusUnauthorized},
 		"another origin":  {http.Header{"Cookie": {cookie}, "Origin": {"https://evil.test"}}, http.StatusForbidden},
 		"no origin":       {http.Header{"Cookie": {cookie}}, http.StatusForbidden},
@@ -91,6 +90,12 @@ func TestWSUpgradePairs(t *testing.T) {
 	_, status, code = dial(t, srv.URL, http.Header{"Cookie": {CookieSession + "=" + f.session(t, RealmPortal, RoleViewer, "s-p")}, "Origin": {consoleOrigin}})
 	if status != http.StatusSwitchingProtocols || code != CloseRelogin {
 		t.Errorf("portal session from an allowed origin: status %d close %d, want 101 and 4401", status, code)
+	}
+	// The browser whose session cookie expired sends no cookie: it must
+	// be told to sign in again, which it cannot read from a 401.
+	_, status, code = dial(t, srv.URL, http.Header{"Origin": {consoleOrigin}})
+	if status != http.StatusSwitchingProtocols || code != CloseRelogin {
+		t.Errorf("no credential from an allowed origin: status %d close %d, want 101 and 4401", status, code)
 	}
 	if f.counters.Get(CounterWSRefused) != 7 || f.counters.Get(CounterWSAccepted) != 1 || f.counters.Get(CounterWSOriginRefused) != 3 {
 		t.Fatalf("counters %v", f.counters.Snapshot())

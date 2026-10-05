@@ -27,8 +27,9 @@
 //     plus an Origin on USSP_WS_ALLOWED_ORIGINS, or a bearer token,
 //     judged before the parameters are read (Require, the mux's
 //     WebSocket guard) and before any upgrade: a refusal is its status
-//     and problem body, never 101, except a browser's refused session
-//     from an allowed Origin, which is upgraded and closed with 4401.
+//     and problem body, never 101, except a browser from an allowed
+//     Origin, with a refused session or no credential at all, which is
+//     upgraded and closed with 4401.
 //   - Outgoing: the client-credentials client for the calls this USSP
 //     makes, one token per (audience, scope set) until 60 s before exp.
 //   - Bindings: the client_bindings projection (client_id -> serial

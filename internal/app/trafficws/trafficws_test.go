@@ -493,9 +493,9 @@ func TestStreamsAuthenticateBeforeTheUpgradeAndTheParameters(t *testing.T) {
 
 // M22 kept for the browser: a session cookie from an allowed Origin whose
 // session is not live is upgraded and closed with 4401 (sign in again,
-// which the browser can read); the same browser with no cookie at all has
-// no session to renew and is 401 before any upgrade, and from another
-// Origin 403 before any upgrade.
+// which the browser can read), and so is the same browser with no cookie
+// at all (its session cookie expired), or it would retry a 1006 for ever;
+// a handshake with no credential and no Origin is 401 before any upgrade.
 func TestBrowserRefusalsKeepTheReloginClose(t *testing.T) {
 	r := newRig(t)
 	c, resp, err := r.dial("/v1/traffic", "staff-unknown", "https://console.test")
@@ -507,14 +507,21 @@ func TestBrowserRefusalsKeepTheReloginClose(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	c2, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(r.http.URL, "http")+"/v1/traffic",
-		&websocket.DialOptions{HTTPHeader: http.Header{"Origin": {"https://console.test"}}})
+	url := "ws" + strings.TrimPrefix(r.http.URL, "http") + "/v1/traffic"
+	c2, resp, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": {"https://console.test"}}})
+	if err != nil || resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("browser without cookie: %v %v, want 101", resp, err)
+	}
+	if _, _, err := c2.Read(ctx); websocket.CloseStatus(err) != auth.CloseRelogin {
+		t.Fatalf("browser without cookie: %v, want 4401", err)
+	}
+	c3, resp, err := websocket.Dial(ctx, url, nil)
 	if err == nil {
-		_ = c2.CloseNow()
-		t.Fatal("a browser without a cookie was upgraded")
+		_ = c3.CloseNow()
+		t.Fatal("a handshake with no credential and no Origin was upgraded")
 	}
 	if resp == nil || resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("browser without cookie: %v %v, want 401", resp, err)
+		t.Fatalf("no credential, no Origin: %v %v, want 401", resp, err)
 	}
 }
 

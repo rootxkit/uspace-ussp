@@ -42,13 +42,14 @@ var ErrWSRefused = errors.New("websocket upgrade refused")
 // refused token is 401, an Origin that is not allowed or a cookie
 // without an Origin 403, a scope or realm the operation does not admit
 // 403, keys or a session store that cannot be read now 503. The one
-// exception is the browser of M22: an upgrade that carries the session
-// cookie from an allowed Origin, whose session is refused, is accepted
-// and closed at once with 4401 (1013 when it cannot be checked now),
-// because a browser cannot read the status of a failed handshake and
-// must be told to sign in again. A browser that sends no cookie at all
-// has no session to renew and gets the 401. The CSRF double submit does
-// not apply: the Origin allow-list is what keeps another site from
+// exception is the browser of M22: an upgrade from an allowed Origin
+// that carries the session cookie, whose session is refused, or no
+// credential at all (the cookie of an ended session has expired), is
+// accepted and closed at once with 4401 (1013 when it cannot be checked
+// now), because a browser cannot read the status of a failed handshake
+// and must be told to sign in again. An upgrade with no credential and
+// no Origin is not a browser's and gets the 401. The CSRF double submit
+// does not apply: the Origin allow-list is what keeps another site from
 // opening the socket with the cookie.
 type WSAuth struct {
 	Guard *Guard
@@ -72,11 +73,11 @@ func (a *WSAuth) originAllowed(origin string) bool {
 }
 
 // judge decides an upgrade before anything is upgraded. browser is true
-// when a refusal is to be told as a close (M22): the session cookie
-// from an allowed Origin.
+// when a refusal is to be told as a close (M22): an allowed Origin with
+// the session cookie or with no credential at all.
 func (a *WSAuth) judge(r *http.Request, access httpx.Access) (p Principal, ref *refusal, browser bool) {
 	origin := r.Header.Get("Origin")
-	_, viaCookie, _ := credential(r)
+	token, viaCookie, malformed := credential(r)
 	originRefused := func(detail string) *refusal {
 		return &refusal{status: http.StatusForbidden, slug: httpx.SlugForbidden, counter: CounterWSOriginRefused,
 			detail: detail, field: &core.FieldError{Field: "Origin", Reason: "not an allowed origin"},
@@ -93,11 +94,15 @@ func (a *WSAuth) judge(r *http.Request, access httpx.Access) (p Principal, ref *
 	}
 	// A WebSocket upgrade is a GET, so the guard asks no CSRF token.
 	p, ref = a.Guard.authenticate(r, access)
-	return p, ref, viaCookie
+	// Past the switch an Origin is an allowed one. A browser whose
+	// session cookie expired sends none, and must still be told to sign
+	// in again; a bearer is a machine client's and is answered.
+	noCredential := token == "" && !malformed
+	return p, ref, viaCookie || (origin != "" && noCredential)
 }
 
 // refuse answers a refused upgrade: the problem before any upgrade, or,
-// for a browser's session, the upgrade closed with 4401 (1013 when the
+// for a browser, the upgrade closed with 4401 (1013 when the
 // session cannot be checked now).
 func (a *WSAuth) refuse(w http.ResponseWriter, r *http.Request, ref *refusal, browser bool) {
 	g := a.Guard

@@ -15,9 +15,13 @@ additively within `/v1`.
   answered `401` with the problem body, another scope or an Origin that
   is not allowed `403`, and never `101`. Before, `/v1/telemetry` and
   `/v1/traffic` answered such a handshake `101` and then closed it with
-  4401. The browser's case of M22 stays: a session cookie from an
-  allowed Origin whose session is refused is upgraded and closed with
-  4401, which the kit reads as "sign in again" (PLAN §15.1 Q32).
+  4401. The browser's case of M22 stays: an upgrade from an allowed
+  Origin with a session cookie that is refused, or with no credential
+  at all (the cookie of an ended session expires with it), is upgraded
+  and closed with 4401, which the kit reads as "sign in again"; a
+  `401` there would reach the browser as 1006 and the kit would retry
+  for ever (PLAN §15.1 Q32). An upgrade with neither credential nor
+  Origin is `401`.
 
 ### Fixed
 

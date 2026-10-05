@@ -4311,10 +4311,10 @@ type ClientInterface interface {
 	// refused before the upgrade: no credential or a refused token is
 	// 401, an Origin that is not allowed (or the cookie without an
 	// Origin) or a token without the scope is 403, each with the
-	// problem body and never 101 (conformance C8); only a browser's
-	// session cookie from an allowed Origin that is refused is
-	// accepted and closed with 4401 (sign in again, M22), which a
-	// browser can read.
+	// problem body and never 101 (conformance C8); only a browser, an
+	// upgrade from an allowed Origin with a session cookie that is
+	// refused or with no credential at all, is accepted and closed
+	// with 4401 (sign in again, M22), which a browser can read.
 	// Server to client, in the common envelope:
 	// console/status/v1 on connect and every 2 s, every alert/v1 of the
 	// intent's flight as it comes (conformance and proximity alerts,
@@ -4548,10 +4548,10 @@ type ClientInterface interface {
 	// refused before the upgrade: no credential or a refused token is
 	// 401, an Origin that is not allowed (or the cookie without an
 	// Origin) or a token without the scope is 403, each with the
-	// problem body and never 101 (conformance C8); only a browser's
-	// session cookie from an allowed Origin that is refused is
-	// accepted and closed with 4401 (sign in again, M22), which a
-	// browser can read.
+	// problem body and never 101 (conformance C8); only a browser, an
+	// upgrade from an allowed Origin with a session cookie that is
+	// refused or with no credential at all, is accepted and closed
+	// with 4401 (sign in again, M22), which a browser can read.
 	// A client whose operator_ws source is
 	// switched off is refused before the upgrade with 503 and
 	// Retry-After (B-10), and an open socket is closed with 1013 when
@@ -4643,10 +4643,10 @@ type ClientInterface interface {
 	// refused before the upgrade: no credential or a refused token is
 	// 401, an Origin that is not allowed (or the cookie without an
 	// Origin) or a token without the scope is 403, each with the
-	// problem body and never 101 (conformance C8); only a browser's
-	// session cookie from an allowed Origin that is refused is
-	// accepted and closed with 4401 (sign in again, M22), which a
-	// browser can read.
+	// problem body and never 101 (conformance C8); only a browser, an
+	// upgrade from an allowed Origin with a session cookie that is
+	// refused or with no credential at all, is accepted and closed
+	// with 4401 (sign in again, M22), which a browser can read.
 	//
 	// Server to client, every frame in the common envelope with a body
 	// named by schema (M29): console/status/v1 on connect and every
@@ -5964,10 +5964,10 @@ func (c *Client) RequestStatusNotice(ctx context.Context, body RequestStatusNoti
 // refused before the upgrade: no credential or a refused token is
 // 401, an Origin that is not allowed (or the cookie without an
 // Origin) or a token without the scope is 403, each with the
-// problem body and never 101 (conformance C8); only a browser's
-// session cookie from an allowed Origin that is refused is
-// accepted and closed with 4401 (sign in again, M22), which a
-// browser can read.
+// problem body and never 101 (conformance C8); only a browser, an
+// upgrade from an allowed Origin with a session cookie that is
+// refused or with no credential at all, is accepted and closed
+// with 4401 (sign in again, M22), which a browser can read.
 // Server to client, in the common envelope:
 // console/status/v1 on connect and every 2 s, every alert/v1 of the
 // intent's flight as it comes (conformance and proximity alerts,
@@ -6351,10 +6351,10 @@ func (c *Client) ValidateRegistry(ctx context.Context, params *ValidateRegistryP
 // refused before the upgrade: no credential or a refused token is
 // 401, an Origin that is not allowed (or the cookie without an
 // Origin) or a token without the scope is 403, each with the
-// problem body and never 101 (conformance C8); only a browser's
-// session cookie from an allowed Origin that is refused is
-// accepted and closed with 4401 (sign in again, M22), which a
-// browser can read.
+// problem body and never 101 (conformance C8); only a browser, an
+// upgrade from an allowed Origin with a session cookie that is
+// refused or with no credential at all, is accepted and closed
+// with 4401 (sign in again, M22), which a browser can read.
 // A client whose operator_ws source is
 // switched off is refused before the upgrade with 503 and
 // Retry-After (B-10), and an open socket is closed with 1013 when
@@ -6476,10 +6476,10 @@ func (c *Client) PostTelemetryBatch(ctx context.Context, body PostTelemetryBatch
 // refused before the upgrade: no credential or a refused token is
 // 401, an Origin that is not allowed (or the cookie without an
 // Origin) or a token without the scope is 403, each with the
-// problem body and never 101 (conformance C8); only a browser's
-// session cookie from an allowed Origin that is refused is
-// accepted and closed with 4401 (sign in again, M22), which a
-// browser can read.
+// problem body and never 101 (conformance C8); only a browser, an
+// upgrade from an allowed Origin with a session cookie that is
+// refused or with no credential at all, is accepted and closed
+// with 4401 (sign in again, M22), which a browser can read.
 //
 // Server to client, every frame in the common envelope with a body
 // named by schema (M29): console/status/v1 on connect and every
@@ -9624,10 +9624,10 @@ type ClientWithResponsesInterface interface {
 	// refused before the upgrade: no credential or a refused token is
 	// 401, an Origin that is not allowed (or the cookie without an
 	// Origin) or a token without the scope is 403, each with the
-	// problem body and never 101 (conformance C8); only a browser's
-	// session cookie from an allowed Origin that is refused is
-	// accepted and closed with 4401 (sign in again, M22), which a
-	// browser can read.
+	// problem body and never 101 (conformance C8); only a browser, an
+	// upgrade from an allowed Origin with a session cookie that is
+	// refused or with no credential at all, is accepted and closed
+	// with 4401 (sign in again, M22), which a browser can read.
 	// Server to client, in the common envelope:
 	// console/status/v1 on connect and every 2 s, every alert/v1 of the
 	// intent's flight as it comes (conformance and proximity alerts,
@@ -9881,10 +9881,10 @@ type ClientWithResponsesInterface interface {
 	// refused before the upgrade: no credential or a refused token is
 	// 401, an Origin that is not allowed (or the cookie without an
 	// Origin) or a token without the scope is 403, each with the
-	// problem body and never 101 (conformance C8); only a browser's
-	// session cookie from an allowed Origin that is refused is
-	// accepted and closed with 4401 (sign in again, M22), which a
-	// browser can read.
+	// problem body and never 101 (conformance C8); only a browser, an
+	// upgrade from an allowed Origin with a session cookie that is
+	// refused or with no credential at all, is accepted and closed
+	// with 4401 (sign in again, M22), which a browser can read.
 	// A client whose operator_ws source is
 	// switched off is refused before the upgrade with 503 and
 	// Retry-After (B-10), and an open socket is closed with 1013 when
@@ -9978,10 +9978,10 @@ type ClientWithResponsesInterface interface {
 	// refused before the upgrade: no credential or a refused token is
 	// 401, an Origin that is not allowed (or the cookie without an
 	// Origin) or a token without the scope is 403, each with the
-	// problem body and never 101 (conformance C8); only a browser's
-	// session cookie from an allowed Origin that is refused is
-	// accepted and closed with 4401 (sign in again, M22), which a
-	// browser can read.
+	// problem body and never 101 (conformance C8); only a browser, an
+	// upgrade from an allowed Origin with a session cookie that is
+	// refused or with no credential at all, is accepted and closed
+	// with 4401 (sign in again, M22), which a browser can read.
 	//
 	// Server to client, every frame in the common envelope with a body
 	// named by schema (M29): console/status/v1 on connect and every
@@ -15328,10 +15328,10 @@ func (c *ClientWithResponses) RequestStatusNoticeWithResponse(ctx context.Contex
 // refused before the upgrade: no credential or a refused token is
 // 401, an Origin that is not allowed (or the cookie without an
 // Origin) or a token without the scope is 403, each with the
-// problem body and never 101 (conformance C8); only a browser's
-// session cookie from an allowed Origin that is refused is
-// accepted and closed with 4401 (sign in again, M22), which a
-// browser can read.
+// problem body and never 101 (conformance C8); only a browser, an
+// upgrade from an allowed Origin with a session cookie that is
+// refused or with no credential at all, is accepted and closed
+// with 4401 (sign in again, M22), which a browser can read.
 // Server to client, in the common envelope:
 // console/status/v1 on connect and every 2 s, every alert/v1 of the
 // intent's flight as it comes (conformance and proximity alerts,
@@ -15675,10 +15675,10 @@ func (c *ClientWithResponses) ValidateRegistryWithResponse(ctx context.Context, 
 // refused before the upgrade: no credential or a refused token is
 // 401, an Origin that is not allowed (or the cookie without an
 // Origin) or a token without the scope is 403, each with the
-// problem body and never 101 (conformance C8); only a browser's
-// session cookie from an allowed Origin that is refused is
-// accepted and closed with 4401 (sign in again, M22), which a
-// browser can read.
+// problem body and never 101 (conformance C8); only a browser, an
+// upgrade from an allowed Origin with a session cookie that is
+// refused or with no credential at all, is accepted and closed
+// with 4401 (sign in again, M22), which a browser can read.
 // A client whose operator_ws source is
 // switched off is refused before the upgrade with 503 and
 // Retry-After (B-10), and an open socket is closed with 1013 when
@@ -15790,10 +15790,10 @@ func (c *ClientWithResponses) PostTelemetryBatchWithResponse(ctx context.Context
 // refused before the upgrade: no credential or a refused token is
 // 401, an Origin that is not allowed (or the cookie without an
 // Origin) or a token without the scope is 403, each with the
-// problem body and never 101 (conformance C8); only a browser's
-// session cookie from an allowed Origin that is refused is
-// accepted and closed with 4401 (sign in again, M22), which a
-// browser can read.
+// problem body and never 101 (conformance C8); only a browser, an
+// upgrade from an allowed Origin with a session cookie that is
+// refused or with no credential at all, is accepted and closed
+// with 4401 (sign in again, M22), which a browser can read.
 //
 // Server to client, every frame in the common envelope with a body
 // named by schema (M29): console/status/v1 on connect and every
