@@ -455,7 +455,7 @@ run_dir="$(find "$out" -mindepth 1 -maxdepth 1 -type d -newermt "@$started" 2>/d
 if [ -n "$run_dir" ] && [ -f "$run_dir/report.json" ]; then
   {
     echo "uspace-ussp $(git rev-parse HEAD)$(git diff --quiet HEAD || echo ' (dirty)')"
-    echo "uspace-lab $(git -C "$LAB_DIR" rev-parse HEAD 2>/dev/null || echo unknown)$(git -C "$LAB_DIR" diff --quiet HEAD 2>/dev/null || echo ' (dirty)')"
+    echo "uspace-lab $(git -C "$(winpath "$LAB_DIR")" rev-parse HEAD 2>/dev/null || echo unknown)$(git -C "$(winpath "$LAB_DIR")" diff --quiet HEAD 2>/dev/null || echo ' (dirty)')"
     echo "target ${external:-the stack $project ($systems)}"
     echo "image ${image:-not built here}${image_id:+ $image_id}"
     echo "USSP_AUTHORITY_PUSH $push"
