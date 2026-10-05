@@ -154,26 +154,73 @@ func TestWithoutTheRestoreARestartStartsANewFlight(t *testing.T) {
 }
 
 // A flight saved before a restart that lasted longer than
-// flight_end_after_s ends at the first tick after it, telemetry_lost, as
-// it would have without the restart; its key leaves the bucket.
-func TestARestoredSilentFlightEndsAtTheNextTick(t *testing.T) {
+// flight_end_after_s is not ended at the first tick after it: the
+// silence clock starts at the restore (WP-19 review). It is marked lost
+// telemetry_lost_s after the restore and ends flight_end_after_s after
+// it, telemetry_lost, when no sample comes; its key leaves the bucket.
+func TestARestoredFlightIsJudgedFromTheRestore(t *testing.T) {
 	kv, clk := newMemKV(), &clock{at: t0}
 	r, s := persistedRig(kv, clk)
 	id := r.b.Bind("a", "c1", "S1", nil, nil, nil, p0, t0, true)
 	s.Flush(context.Background())
+	pol := policy.Defaults()
+	lostAfter := time.Duration(pol.TelemetryLostS * float64(time.Second))
+	endAfter := time.Duration(pol.FlightEndAfterS * float64(time.Second))
 
-	clk.add(time.Duration(policy.Defaults().FlightEndAfterS*float64(time.Second)) + time.Second)
+	clk.add(endAfter + time.Second) // the process is gone that long
 	r2, s2 := restart(t, kv, clk, true)
-	if n := r2.b.Tick(); n != 1 {
-		t.Fatalf("Tick ended %d flights, want 1", n)
+	if n := r2.b.Tick(); n != 0 || len(r2.events) != 0 {
+		t.Fatalf("the first tick after the restore ended %d flights, facts %v: want none", n, r2.kinds())
 	}
-	if len(r2.events) != 1 || r2.events[0].Body.Event != EventEnded || r2.events[0].Body.FlightID != id ||
-		*r2.events[0].Body.EndReason != EndTelemetryLost {
-		t.Fatalf("facts: %+v", r2.events)
+	clk.add(lostAfter - time.Second)
+	if r2.b.Tick(); len(r2.events) != 0 {
+		t.Fatalf("lost before telemetry_lost_s after the restore: %v", r2.kinds())
+	}
+	clk.add(time.Second)
+	if r2.b.Tick(); len(r2.events) != 1 || r2.events[0].Body.Event != EventTelemetryLost {
+		t.Fatalf("telemetry_lost_s after the restore: %v, want telemetry_lost", r2.kinds())
+	}
+	clk.add(endAfter - lostAfter - time.Second)
+	if n := r2.b.Tick(); n != 0 {
+		t.Fatal("ended before flight_end_after_s after the restore")
+	}
+	clk.add(time.Second)
+	if n := r2.b.Tick(); n != 1 {
+		t.Fatalf("Tick ended %d flights flight_end_after_s after the restore, want 1", n)
+	}
+	last := r2.events[len(r2.events)-1]
+	if last.Body.Event != EventEnded || last.Body.FlightID != id || *last.Body.EndReason != EndTelemetryLost {
+		t.Fatalf("facts: %v", r2.kinds())
 	}
 	s2.Flush(context.Background())
 	if kv.len() != 0 {
 		t.Fatalf("the ended flight is still saved (%d keys)", kv.len())
+	}
+}
+
+// Its twin: a sample after the restore keeps the flight running, and
+// the restored flight is then judged from that sample as any other.
+func TestARestoredFlightWithSamplesIsNotLost(t *testing.T) {
+	kv, clk := newMemKV(), &clock{at: t0}
+	r, s := persistedRig(kv, clk)
+	id := r.b.Bind("a", "c1", "S1", nil, nil, nil, p0, t0, true)
+	s.Flush(context.Background())
+	lostAfter := time.Duration(policy.Defaults().TelemetryLostS * float64(time.Second))
+	clk.add(2 * lostAfter)
+	r2, _ := restart(t, kv, clk, true)
+	for i := 0; i < 4; i++ {
+		clk.add(lostAfter / 2)
+		if got := r2.b.Bind("a", "c1", "S1", nil, nil, nil, p0, clk.now(), true); got != id {
+			t.Fatalf("bound to %s, want %s", got, id)
+		}
+		r2.b.Tick()
+	}
+	if len(r2.events) != 0 {
+		t.Fatalf("facts: %v, want none", r2.kinds())
+	}
+	clk.add(lostAfter)
+	if r2.b.Tick(); len(r2.events) != 1 || r2.events[0].Body.Event != EventTelemetryLost {
+		t.Fatalf("silent after its samples: %v, want telemetry_lost", r2.kinds())
 	}
 }
 

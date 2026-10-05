@@ -104,7 +104,8 @@ const SaveEvery = 10 * time.Second
 // same flight id (WP-19 restart row; before, every restart started a
 // new flight for every aircraft in the air and left the old one raising
 // lost_link until it was ended). LastSeen is the receipt of the newest
-// sample when it was saved, at most SaveEvery old.
+// sample when it was saved, at most SaveEvery old; it is kept for the
+// record, and Restore starts the silence clock at the restore instead.
 type Snapshot struct {
 	Key                 string    `json:"key"`
 	FlightID            string    `json:"flight_id"`
@@ -135,6 +136,9 @@ type flight struct {
 	hasPos bool
 	// savedAt is when the flight was last handed to Save (zero: due).
 	savedAt time.Time
+	// restoredAt is when Restore took the flight back (zero: started
+	// here): liveness is not judged from before it.
+	restoredAt time.Time
 }
 
 // Binder holds the running flight of each aircraft (keyed by the
@@ -355,6 +359,11 @@ func (b *Binder) Tick() int {
 		if last.IsZero() {
 			last = f.lastS
 		}
+		if last.Before(f.restoredAt) {
+			// The time the process was down is not the aircraft's
+			// silence: it is judged from the restore.
+			last = f.restoredAt
+		}
 		if last.After(now) {
 			last = now
 		}
@@ -374,9 +383,14 @@ func (b *Binder) Tick() int {
 
 // Restore takes back the running flights a previous process saved,
 // before the first sample is bound: each aircraft goes on with its
-// flight id, its intent, its lost state and its times, and Tick ends the
-// ones silent for flight_end_after_s as it would have (end_reason
-// telemetry_lost). A saved flight whose aircraft already flies another
+// flight id, its intent, its lost state and its times. The silence
+// clock starts at the restore: while the process was down no sample
+// could be received, so that time is not the aircraft's silence (WP-19
+// review: counted, a restart longer than telemetry_lost_s marked every
+// restored flight lost at the first tick, and one longer than
+// flight_end_after_s ended them all). Tick marks a restored flight lost
+// telemetry_lost_s after the restore and ends it flight_end_after_s
+// after, unless a sample comes (end_reason telemetry_lost). A saved flight whose aircraft already flies another
 // flight here, or that finds the binder full, is ended at once
 // (counted), so it is not left open. It returns how many it took back.
 func (b *Binder) Restore(snaps []Snapshot) int {
@@ -398,7 +412,7 @@ func (b *Binder) Restore(snaps []Snapshot) int {
 		}
 		f := &flight{id: sn.FlightID, key: sn.Key, clientID: sn.ClientID, serial: sn.UASSerial,
 			intentID: clone(sn.IntentID), authNo: clone(sn.AuthorisationNumber), opReg: clone(sn.OperatorReg),
-			startedAt: sn.StartedAt, lastLive: sn.LastLive, lastS: sn.LastSeen, lost: sn.Lost, savedAt: now}
+			startedAt: sn.StartedAt, lastLive: sn.LastLive, lastS: now, lost: sn.Lost, savedAt: now, restoredAt: now}
 		if sn.Position != nil {
 			f.pos, f.hasPos = sn.Position.LatLon(), true
 		}
