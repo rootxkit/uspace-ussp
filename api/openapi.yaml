@@ -4343,7 +4343,7 @@ components:
         state:
           type: string
           enum: [up, down, unknown]
-          description: down when no instance was heard for monitor_status_missing_s; unknown while the bucket cannot be read.
+          description: down when no instance was heard for monitor_status_missing_s, or when an instance reports its input down (a monitoring outage, input_down_since); unknown while the bucket cannot be read.
         last_heard_at: {type: string, format: date-time}
         detail: {type: string}
         instances:
@@ -4386,6 +4386,18 @@ components:
         cis_stale: {type: boolean}
         terrain: {type: boolean}
         geoid: {type: boolean}
+        input_down_since:
+          type: string
+          format: date-time
+          description: Present while the instance's own input (its bus link) is down, a monitoring outage, since when; no lost_link is judged meanwhile (PLAN §15.2 Q35). The monitor's state is then down.
+        input_back_at:
+          type: string
+          format: date-time
+          description: When the instance's input last came back after a monitoring outage; absent if it has not been down since the instance started.
+        lost_link_suspended_until:
+          type: string
+          format: date-time
+          description: Present within lost_link_s of the input's return; a flight still silent is not judged lost before it.
 
     AdminPolicy:
       type: object

@@ -32,6 +32,7 @@ func StatusOf(instance string, now time.Time, s Summary, c traffic.Summary, zs *
 		EvaluationPeriodS: s.EvaluationPeriodS, CPAEvaluationPeriodS: c.EvaluationPeriodS, OutboxDepth: s.OutboxDepth,
 		PolicyVersion: policyVersion, CISVersion: f.CISVersion, CISAgeS: f.CISAgeS, CISStale: f.Stale,
 		Terrain: terrainKnown, Geoid: geoidKnown,
+		InputDownSince: s.Outage.DownSince, InputBackAt: s.Outage.BackAt, LostLinkSuspendedUntil: s.Outage.SuspendedUntil,
 	}
 	if st.States == nil {
 		st.States = map[string]int{}

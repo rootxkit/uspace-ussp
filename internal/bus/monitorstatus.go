@@ -42,6 +42,14 @@ type MonitorStatus struct {
 	CISStale         bool     `json:"cis_stale"`
 	Terrain          bool     `json:"terrain"`
 	Geoid            bool     `json:"geoid"`
+	// InputDownSince is set while the instance's own input (its bus
+	// link) is down: a monitoring outage, no lost_link judged (PLAN
+	// §15.2 Q35). InputBackAt is when it last came back, and
+	// LostLinkSuspendedUntil, while set, the end of the grace after that
+	// return (lost_link_s) before a flight still silent loses its link.
+	InputDownSince         *time.Time `json:"input_down_since,omitempty"`
+	InputBackAt            *time.Time `json:"input_back_at,omitempty"`
+	LostLinkSuspendedUntil *time.Time `json:"lost_link_suspended_until,omitempty"`
 }
 
 // EncodeMonitorStatus is s as the bucket holds it.

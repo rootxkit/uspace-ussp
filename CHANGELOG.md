@@ -25,6 +25,20 @@ additively within `/v1`.
 
 ### Fixed
 
+- A NATS outage no longer raises a false `lost_link` for every flight
+  (PLAN §15.2 Q35 a, found by the WP-19 chaos run). The monitor's own
+  input is its bus link: while it is down no `lost_link` is judged, the
+  outage is logged at error level as a monitoring outage and counted
+  (`monitor_input_outages`), and the silence of each flight counts from
+  the link's return, so a flight heard again is judged from its real
+  samples and one still silent loses its link `lost_link_s` after the
+  return. A real link loss with the bus up is raised as before, and a
+  sample clears it. A `lost_link` already raised is kept through the
+  outage.
+- `GET /v1/admin/inputs` (additive): each monitor instance may carry
+  `input_down_since`, `input_back_at` and `lost_link_suspended_until`;
+  the monitor's state is `down` with a "monitoring outage" detail while
+  an instance reports its input down.
 - A request without a credential is `401`, whatever else is wrong with
   it, on every route (finding C6): the WebSocket routes are now guarded
   by the mux (`GuardedMux.WebSockets`, `WSAuth.Require`) before the
