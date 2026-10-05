@@ -106,6 +106,8 @@ type Verifier struct {
 	lastErr  map[string]string
 	savedAt  map[string]time.Time // issuer -> last write to Cache
 	savedSum map[string][]byte
+	saving   map[string]bool // issuer -> a write in flight
+	saves    sync.WaitGroup
 }
 
 // NewVerifier builds the own-issuer verifier at once; the ecosystem one
@@ -121,7 +123,7 @@ func NewVerifier(ctx context.Context, cfg VerifierConfig) (*Verifier, error) {
 		}
 	}
 	v := &Verifier{cfg: cfg, now: cfg.Ecosystem.Now, fetched: map[string]time.Time{}, lastErr: map[string]string{},
-		savedAt: map[string]time.Time{}, savedSum: map[string][]byte{}}
+		savedAt: map[string]time.Time{}, savedSum: map[string][]byte{}, saving: map[string]bool{}}
 	if v.now == nil {
 		v.now = time.Now
 	}

@@ -98,9 +98,14 @@ func (v *Verifier) maxAge() time.Duration {
 	return DefaultJWKSCacheMaxAge
 }
 
-// persist writes iss's JWKS doc (fetched at now) to the store when it
-// changed or was last written jwksSaveEvery ago. A doc that does not
-// parse as a JWKS is not written.
+// jwksSaveTimeout bounds one write to the store.
+const jwksSaveTimeout = 2 * time.Second
+
+// persist hands iss's JWKS doc (fetched at now) to the store when it
+// changed or was last written jwksSaveEvery ago. The write runs in the
+// background, at most one per issuer at a time and bounded by
+// jwksSaveTimeout, so neither the readiness probe nor the build ever
+// waits on the bus (a bus outage made /readyz miss its 2 s bound).
 func (v *Verifier) persist(ctx context.Context, iss string, doc []byte, now time.Time) {
 	if v.cfg.Cache == nil {
 		return
@@ -109,22 +114,35 @@ func (v *Verifier) persist(ctx context.Context, iss string, doc []byte, now time
 	v.mu.Lock()
 	last, saved := v.savedAt[iss]
 	same := bytes.Equal(v.savedSum[iss], sum[:])
-	v.mu.Unlock()
-	if saved && same && now.Sub(last) < jwksSaveEvery {
+	if (saved && same && now.Sub(last) < jwksSaveEvery) || v.saving[iss] {
+		v.mu.Unlock()
 		return
 	}
+	v.saving[iss] = true
+	v.mu.Unlock()
 	data, err := json.Marshal(CachedJWKS{Issuer: iss, FetchedAt: now.UTC(), JWKS: doc})
-	if err == nil {
-		err = v.cfg.Cache.Put(ctx, JWKSCacheKey(iss), data)
-	}
 	if err != nil {
 		v.counters.Inc(CounterJWKSCacheSaveFailed)
+		v.mu.Lock()
+		delete(v.saving, iss)
+		v.mu.Unlock()
 		return
 	}
-	v.counters.Inc(CounterJWKSCacheSaved)
-	v.mu.Lock()
-	v.savedAt[iss], v.savedSum[iss] = now, sum[:]
-	v.mu.Unlock()
+	wctx := context.WithoutCancel(ctx)
+	v.saves.Go(func() {
+		wctx, cancel := context.WithTimeout(wctx, jwksSaveTimeout)
+		defer cancel()
+		err := v.cfg.Cache.Put(wctx, JWKSCacheKey(iss), data)
+		v.mu.Lock()
+		defer v.mu.Unlock()
+		delete(v.saving, iss)
+		if err != nil {
+			v.counters.Inc(CounterJWKSCacheSaveFailed)
+			return
+		}
+		v.counters.Inc(CounterJWKSCacheSaved)
+		v.savedAt[iss], v.savedSum[iss] = now, sum[:]
+	})
 }
 
 // restore builds the verifier of the stored JWKS of every ecosystem
