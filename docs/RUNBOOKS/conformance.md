@@ -30,6 +30,18 @@ applicable), Go 1.27.1, Docker Desktop 28.5.1 on Windows 11.
 
 ## Runs
 
+### 2026-10-05, a release tag's run, gated on the reviewed baseline
+
+Workflow run 37325524348, dispatched on `8f5b9b0` with
+`allow_incomplete` off and the push off, as a `v*` tag runs: **green**.
+The suite gated on `deploy/conformance/baseline.json` ("gate: every
+requirement as in" it), and the hook printed, and annotated as
+warnings, each gate requirement not checked: `F3411-SP` and
+`F3548-SCD` "BLOCKED by owner decision Q34", `F3548-CP`,
+`NAT-PRECONDITION` and `REG-NOPII` with their notes, each "not a
+pass". The report's verdict is still incomplete. Before the baseline,
+the same run exited 3 and every tag's check stayed red.
+
 ### 2026-10-05, the evidence regenerated after the provenance fix
 
 The signed push-on report first kept under `WP-19/` came from a run
