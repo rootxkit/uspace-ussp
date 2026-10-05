@@ -167,20 +167,31 @@ func TestPushBufferAndGap(t *testing.T) {
 	p.mu.Unlock()
 }
 
-// The upgrade needs rid.display_provider: another scope or no token is
-// closed with 4401 and gets no frame.
+// The upgrade needs rid.display_provider (C8 pair): no token, a refused
+// token and another scope are answered 401, 401 and 403 before any
+// upgrade, never 101; the token with the scope is upgraded and served.
 func TestPushNeedsTheDisplayProviderScope(t *testing.T) {
 	c := &clock{at: t0}
 	w := newWindow(c)
 	_, url := newPush(t, c, w)
-	for _, tok := range []string{"other", "nope"} {
-		conn := dial(t, url, tok)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_, _, err := conn.Read(ctx)
-		cancel()
-		if websocket.CloseStatus(err) != auth.CloseRelogin {
-			t.Errorf("%s: %v", tok, err)
+	for tok, want := range map[string]int{"": http.StatusUnauthorized, "nope": http.StatusUnauthorized, "other": http.StatusForbidden} {
+		h := http.Header{}
+		if tok != "" {
+			h.Set("Authorization", "Bearer "+tok)
 		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		conn, resp, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: h})
+		cancel()
+		if err == nil {
+			_ = conn.CloseNow()
+			t.Fatalf("%q: upgraded", tok)
+		}
+		if resp == nil || resp.StatusCode != want {
+			t.Errorf("%q: %v %v, want %d", tok, resp, err, want)
+		}
+	}
+	if f := read(t, dial(t, url, "dp")); f.Schema != SchemaConsoleStatus {
+		t.Fatalf("dp: first frame %s", f.Schema)
 	}
 }
 

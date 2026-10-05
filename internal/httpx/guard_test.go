@@ -113,23 +113,40 @@ func TestAccessString(t *testing.T) {
 	}
 }
 
-// E-01 pair: a WebSocket entry is served without the mux's guard (its
-// upgrade authenticates itself, M22), a plain entry of the same scope
-// behind it.
-func TestGuardedMuxLeavesWebSocketsToTheirUpgrade(t *testing.T) {
-	g := NewGuardedMux(http.NewServeMux(), map[string]Access{
+// E-01 pair: a WebSocket entry is served behind the mux's WebSocket
+// guard, not the plain one, and a plain entry of the same scope behind
+// the plain one; without a WebSocket guard the WebSocket entry is an
+// error and not served (fail closed).
+func TestGuardedMuxPutsTheWebSocketGuardInFront(t *testing.T) {
+	table := map[string]Access{
 		"GET /ws":    {WebSocket: true, Scopes: []string{"ussp.telemetry"}},
 		"POST /data": {Scopes: []string{"ussp.telemetry"}},
-	}, refuseAll, nil)
+	}
+	wsRefuses := func(Access) func(http.Handler) http.Handler {
+		return func(http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
+		}
+	}
+	g := NewGuardedMux(http.NewServeMux(), table, refuseAll, nil).WebSockets(wsRefuses)
 	g.HandleFunc("GET /ws", ok204)
 	g.HandleFunc("POST /data", ok204)
 	if err := g.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if status(g, http.MethodGet, "/ws") != 204 {
-		t.Fatal("the WebSocket route was guarded by the mux")
+	if status(g, http.MethodGet, "/ws") != http.StatusTeapot {
+		t.Fatal("the WebSocket route was not behind the WebSocket guard")
 	}
 	if status(g, http.MethodPost, "/data") != 401 {
 		t.Fatal("the plain route was served without its guard")
+	}
+
+	bare := NewGuardedMux(http.NewServeMux(), table, refuseAll, nil)
+	bare.HandleFunc("GET /ws", ok204)
+	bare.HandleFunc("POST /data", ok204)
+	if err := bare.Err(); err == nil || !strings.Contains(err.Error(), "GET /ws") {
+		t.Fatalf("no WebSocket guard: %v", err)
+	}
+	if status(bare, http.MethodGet, "/ws") != http.StatusNotFound {
+		t.Fatal("the WebSocket route was served without a WebSocket guard")
 	}
 }

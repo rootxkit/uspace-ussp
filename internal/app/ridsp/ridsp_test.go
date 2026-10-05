@@ -13,7 +13,6 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/rootxkit/uspace-ussp/internal/app/proc"
-	"github.com/rootxkit/uspace-ussp/internal/auth"
 	"github.com/rootxkit/uspace-ussp/internal/config"
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
@@ -147,7 +146,7 @@ func startRIDSP(t *testing.T, push string) string {
 // D12 both ways: with USSP_AUTHORITY_PUSH off (the default) WS
 // /v1/authority/flights does not exist (404) and the Service Provider
 // path is served; with it on the upgrade is served (an unauthenticated
-// one is accepted and closed with 4401, M22) and the Service Provider
+// one is refused 401 before any upgrade, C8) and the Service Provider
 // path is served all the same.
 func TestAuthorityPushOffAndOn(t *testing.T) {
 	for _, push := range []string{"off", "on"} {
@@ -162,15 +161,14 @@ func TestAuthorityPushOffAndOn(t *testing.T) {
 		}
 		if push == "on" {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			conn, _, err := websocket.Dial(ctx, "ws://"+addr+"/v1/authority/flights", nil)
-			if err != nil {
-				cancel()
-				t.Fatalf("push on: %v", err)
-			}
-			_, _, err = conn.Read(ctx)
+			conn, resp, err := websocket.Dial(ctx, "ws://"+addr+"/v1/authority/flights", nil)
 			cancel()
-			if websocket.CloseStatus(err) != auth.CloseRelogin {
-				t.Errorf("push on, no token: %v", err)
+			if err == nil {
+				_ = conn.CloseNow()
+				t.Fatal("push on, no token: upgraded")
+			}
+			if resp == nil || resp.StatusCode != http.StatusUnauthorized {
+				t.Errorf("push on, no token: %v %v, want 401", resp, err)
 			}
 		}
 		res, err = http.Get("http://" + addr + "/uss/flights?view=41.7,44.8,41.71,44.81")

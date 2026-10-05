@@ -528,9 +528,16 @@ paths:
         operator machine client with a bearer token granting
         ussp.telemetry (issued by this USSP); the client id is the token's
         sub. A browser upgrade must come from an Origin on
-        USSP_WS_ALLOWED_ORIGINS with the uspace_session cookie, and a
-        refused upgrade is accepted and closed with 4401 (M22); no session
-        realm streams telemetry. A client whose operator_ws source is
+        USSP_WS_ALLOWED_ORIGINS with the uspace_session cookie; no
+        session realm streams telemetry. The upgrade is authenticated and
+        refused before the upgrade: no credential or a refused token is
+        401, an Origin that is not allowed (or the cookie without an
+        Origin) or a token without the scope is 403, each with the
+        problem body and never 101 (conformance C8); only a browser, an
+        upgrade from an allowed Origin with a session cookie that is
+        refused or with no credential at all, is accepted and closed
+        with 4401 (sign in again, M22), which a browser can read.
+        A client whose operator_ws source is
         switched off is refused before the upgrade with 503 and
         Retry-After (B-10), and an open socket is closed with 1013 when
         the switch goes off.
@@ -566,6 +573,10 @@ paths:
           description: Switching protocols; the stream described above follows.
         "400":
           $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
         "503":
           description: The client's operator_ws source is switched off; retry after the Retry-After seconds.
           headers:
@@ -589,7 +600,10 @@ paths:
         Provider path (GET /uss/flights), which works with it off.
 
         A WebSocket upgrade with an ecosystem bearer token granting
-        rid.display_provider (aud this host). Server to client only, the
+        rid.display_provider (aud this host), judged before the upgrade:
+        no token or a refused one is 401, another scope 403, with the
+        problem body and never 101 (conformance C8). Server to client
+        only, the
         console frame (M29): console/status/v1 on connect and every 2 s,
         and one authority/flight/v1 frame (schemas/authority/flight/v1:
         the common envelope with an ASTM F3411-22a RIDFlight as body,
@@ -604,6 +618,10 @@ paths:
       responses:
         "101":
           description: Switching protocols; the stream described above follows.
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
         "404":
           $ref: "#/components/responses/Problem"
         default:
@@ -671,8 +689,15 @@ paths:
         with a staff session (realm console) subscribes with bbox, or
         with console/subscribe/v1 frames, on a same-origin upgrade with
         the uspace_session cookie from an Origin on
-        USSP_WS_ALLOWED_ORIGINS. A refused upgrade is accepted and closed
-        with 4401 (sign in again, M22).
+        USSP_WS_ALLOWED_ORIGINS. The upgrade is authenticated before its
+        parameters are read (conformance C6) and
+        refused before the upgrade: no credential or a refused token is
+        401, an Origin that is not allowed (or the cookie without an
+        Origin) or a token without the scope is 403, each with the
+        problem body and never 101 (conformance C8); only a browser, an
+        upgrade from an allowed Origin with a session cookie that is
+        refused or with no credential at all, is accepted and closed
+        with 4401 (sign in again, M22), which a browser can read.
 
         Server to client, every frame in the common envelope with a body
         named by schema (M29): console/status/v1 on connect and every
@@ -712,6 +737,10 @@ paths:
         "101":
           description: Switching protocols; the stream described above follows.
         "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
           $ref: "#/components/responses/Problem"
         "404":
           $ref: "#/components/responses/Problem"
@@ -776,8 +805,18 @@ paths:
         client; or for an operator portal user (a session of realm portal,
         any role; brief WP-17) on a same-origin upgrade with the
         uspace_session cookie from an Origin on USSP_WS_ALLOWED_ORIGINS,
-        intent_id an intent of the session's operator. Server to client,
-        in the common envelope:
+        intent_id an intent of the session's operator. The upgrade is
+        authenticated before its parameters are read (a request without
+        credential is 401 whatever else is wrong with it, conformance
+        C6) and
+        refused before the upgrade: no credential or a refused token is
+        401, an Origin that is not allowed (or the cookie without an
+        Origin) or a token without the scope is 403, each with the
+        problem body and never 101 (conformance C8); only a browser, an
+        upgrade from an allowed Origin with a session cookie that is
+        refused or with no credential at all, is accepted and closed
+        with 4401 (sign in again, M22), which a browser can read.
+        Server to client, in the common envelope:
         console/status/v1 on connect and every 2 s, every alert/v1 of the
         intent's flight as it comes (conformance and proximity alerts,
         raised, updated and cleared, with the peer's track id and trust),
@@ -798,6 +837,10 @@ paths:
         "101":
           description: Switching protocols; the stream described above follows.
         "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
           $ref: "#/components/responses/Problem"
         "404":
           $ref: "#/components/responses/Problem"

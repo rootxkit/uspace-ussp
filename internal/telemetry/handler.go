@@ -30,7 +30,8 @@ type Health interface {
 
 // The access of the two operations: an operator machine token of this
 // USSP granting ussp.telemetry (06 §3). No session realm streams
-// telemetry; the WebSocket authenticates its own upgrade (M22).
+// telemetry; the WebSocket's upgrade is judged by s.WS before any
+// upgrade (M22, conformance C8).
 var (
 	StreamAccess = httpx.Access{WebSocket: true, Scopes: []string{auth.ScopeTelemetry}}
 	BatchAccess  = httpx.Access{Scopes: []string{auth.ScopeTelemetry}}
@@ -136,11 +137,12 @@ func (s *Server) refuseDisabled(w http.ResponseWriter, r *http.Request, why stri
 		"the operator_ws source of this client is "+why+"; retry later").Write(w, r)
 }
 
-// Register registers every operation on mux behind guard (the batch;
-// the WebSocket authenticates its own upgrade); the error lists every
-// route without a valid access entry and every entry without a route.
+// Register registers every operation on mux behind guard (the batch)
+// or s.WS (the WebSocket, judged before its parameters are read and
+// before any upgrade); the error lists every route without a valid
+// access entry or guard and every entry without a route.
 func Register(mux *http.ServeMux, s *Server, guard httpx.Guard) error {
-	g := httpx.NewGuardedMux(mux, AccessTable(), guard, auth.ValidateAccess)
+	g := httpx.NewGuardedMux(mux, AccessTable(), guard, auth.ValidateAccess).WebSockets(s.WS.Guarded())
 	gen.HandlerWithOptions(s, gen.StdHTTPServerOptions{BaseRouter: g})
 	return g.Err()
 }

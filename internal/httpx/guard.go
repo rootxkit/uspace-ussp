@@ -20,10 +20,10 @@ type Access struct {
 	Scopes    []string
 	AllScopes []string
 	Sessions  []SessionAccess
-	// WebSocket marks an upgrade that authenticates itself against this
-	// same entry (internal/auth.WSAuth, M22): a refused upgrade must be
-	// accepted and closed with 4401, which a browser can read, so the
-	// mux puts no guard in front of it. It is never public.
+	// WebSocket marks an upgrade (internal/auth.WSAuth, M22): the mux
+	// puts its WebSocket guard in front of it instead of the plain one,
+	// because a browser's refused session is told as a close with 4401,
+	// which a browser can read. It is never public.
 	WebSocket bool
 }
 
@@ -93,6 +93,7 @@ type GuardedMux struct {
 	mux      *http.ServeMux
 	table    map[string]Access
 	guard    Guard
+	ws       Guard
 	validate func(Access) error
 	used     map[string]bool
 	errs     []error
@@ -103,6 +104,18 @@ type GuardedMux struct {
 // (may be nil) refuses an Access the caller's catalogue does not know.
 func NewGuardedMux(mux *http.ServeMux, table map[string]Access, guard Guard, validate func(Access) error) *GuardedMux {
 	return &GuardedMux{mux: mux, table: table, guard: guard, validate: validate, used: map[string]bool{}}
+}
+
+// WebSockets sets the guard of the WebSocket entries
+// (internal/auth.WSAuth.Require). It runs before the operation's
+// parameters are read, like the plain guard, so a request without
+// credential is refused as such whatever else is wrong with it
+// (conformance C6). Without it a WebSocket entry is not served (an
+// error): an upgrade is never left unguarded. Call it before the first
+// registration.
+func (g *GuardedMux) WebSockets(ws Guard) *GuardedMux {
+	g.ws = ws
+	return g
 }
 
 // HandleFunc registers h under pattern behind its table entry, or
@@ -125,7 +138,14 @@ func (g *GuardedMux) HandleFunc(pattern string, h func(http.ResponseWriter, *htt
 		}
 	}
 	var handler http.Handler = http.HandlerFunc(h)
-	if !a.Public && !a.WebSocket {
+	switch {
+	case a.WebSocket:
+		if g.ws == nil {
+			g.errs = append(g.errs, fmt.Errorf("%s is a WebSocket and the mux has no WebSocket guard; the route is not served", pattern))
+			return
+		}
+		handler = g.ws(a)(handler)
+	case !a.Public:
 		handler = g.guard(a)(handler)
 	}
 	g.mux.Handle(pattern, handler)

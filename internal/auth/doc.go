@@ -24,8 +24,12 @@
 //     (aud = this host, at most one hour), and the portal and console
 //     session tokens of M20 with the same key.
 //   - WSAuth: the WebSocket upgrade of M22: the uspace_session cookie
-//     plus an Origin on USSP_WS_ALLOWED_ORIGINS, or a bearer token; a
-//     refusal is closed with 4401.
+//     plus an Origin on USSP_WS_ALLOWED_ORIGINS, or a bearer token,
+//     judged before the parameters are read (Require, the mux's
+//     WebSocket guard) and before any upgrade: a refusal is its status
+//     and problem body, never 101, except a browser from an allowed
+//     Origin, with a refused session or no credential at all, which is
+//     upgraded and closed with 4401.
 //   - Outgoing: the client-credentials client for the calls this USSP
 //     makes, one token per (audience, scope set) until 60 s before exp.
 //   - Bindings: the client_bindings projection (client_id -> serial

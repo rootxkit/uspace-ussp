@@ -145,7 +145,7 @@ func (s *Server) logger() *slog.Logger {
 // lists every route without a valid access entry and every entry
 // without a route.
 func Register(mux *http.ServeMux, s *Server, guard httpx.Guard) error {
-	g := httpx.NewGuardedMux(mux, AccessTable(), guard, auth.ValidateAccess)
+	g := httpx.NewGuardedMux(mux, AccessTable(), guard, auth.ValidateAccess).WebSockets(s.WS.Guarded())
 	gen.HandlerWithOptions(s, gen.StdHTTPServerOptions{BaseRouter: g, ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, _ error) {
 		httpx.NewProblem(http.StatusBadRequest, httpx.SlugValidation, "Invalid request", "", core.Fieldf("parameter", "malformed")).Write(w, r)
 	}})

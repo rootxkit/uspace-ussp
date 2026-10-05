@@ -255,3 +255,75 @@ func FuzzDecode(f *testing.F) {
 		}
 	})
 }
+
+// Conformance C6 on every route: a request without a credential is 401
+// unauthenticated whatever else is wrong with it (every path parameter
+// malformed, no query, a body that is not JSON), on every operation of
+// the access table that is not public. The pair: the same malformed
+// requests with a credential the operation admits reach validation and
+// are 400, so the 401 is the guard's and not a router's that refuses
+// everything.
+func TestEveryRouteAuthenticatesBeforeItValidates(t *testing.T) {
+	h, iss := router(t)
+	malformed := func(pattern string) (string, string) {
+		method, path, _ := strings.Cut(pattern, " ")
+		for {
+			i := strings.Index(path, "{")
+			if i < 0 {
+				break
+			}
+			j := strings.Index(path[i:], "}")
+			path = path[:i] + "not-valid" + path[i+j+1:]
+		}
+		return method, path
+	}
+	send := func(method, path, authz string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader("{"))
+		r.Header.Set("Content-Type", "application/json")
+		if authz != "" {
+			r.Header.Set("Authorization", authz)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+		return rec
+	}
+	n := 0
+	for pattern, a := range AccessTable() {
+		if a.Public {
+			continue
+		}
+		n++
+		method, path := malformed(pattern)
+		rec := send(method, path, "")
+		var p struct{ Type string }
+		_ = json.Unmarshal(rec.Body.Bytes(), &p)
+		if rec.Code != http.StatusUnauthorized || p.Type != httpx.ProblemTypeBase+httpx.SlugUnauthenticated {
+			t.Errorf("%s as %s %s without credential: %d %s, want 401 unauthenticated", pattern, method, path, rec.Code, p.Type)
+		}
+	}
+	if n < 40 {
+		t.Fatalf("only %d guarded routes judged", n)
+	}
+	op, err := iss.IssueOperator("op-1", []string{auth.ScopeIntents, auth.ScopeGeo}, time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, _, err := iss.IssueSession("acc-1", auth.RealmPortal, "s-c6", []string{auth.RoleOperatorAdmin}, time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ pattern, token string }{
+		{"GET /v1/intents/{intent_id}", op.Token},
+		{"PATCH /v1/intents/{intent_id}", op.Token},
+		{"GET /v1/geo/intents/{intent_id}", op.Token},
+		{"GET /v1/accounts/operators/{operator_id}", admin},
+	} {
+		method, path := malformed(c.pattern)
+		if rec := send(method, path, ""); rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s without credential: %d", c.pattern, rec.Code)
+		}
+		if rec := send(method, path, "Bearer "+c.token); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s with credential: %d %s, want 400", c.pattern, rec.Code, rec.Body.String())
+		}
+	}
+}

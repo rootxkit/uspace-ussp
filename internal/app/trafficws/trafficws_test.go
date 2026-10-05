@@ -415,8 +415,8 @@ func TestOperatorStreamFramesValidate(t *testing.T) {
 }
 
 // Another operator's intent and an unknown one are 404 before any
-// upgrade; an unread projection is 503 with Retry-After; no credential
-// is a 4401 close.
+// upgrade; an unread projection is 503 with Retry-After; a refused token
+// is 401 before any upgrade (C8).
 func TestSubscriptionRefusals(t *testing.T) {
 	r := newRig(t)
 	for _, c := range []struct {
@@ -438,13 +438,90 @@ func TestSubscriptionRefusals(t *testing.T) {
 	if err == nil || resp.StatusCode != 503 || resp.Header.Get("Retry-After") == "" {
 		t.Fatalf("unread projection: %v %v", resp, err)
 	}
-	c, _, err := r.dial("/v1/traffic?intent_id="+intentA, "nope", "")
-	if err != nil {
-		t.Fatal(err)
+	c, resp, err := r.dial("/v1/traffic?intent_id="+intentA, "nope", "")
+	if err == nil {
+		_ = c.CloseNow()
+		t.Fatal("a refused token was upgraded")
 	}
-	_, _, err = c.Read(context.Background())
-	if websocket.CloseStatus(err) != auth.CloseRelogin {
-		t.Fatalf("close %v", err)
+	if resp == nil || resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("refused token: %v %v, want 401", resp, err)
+	}
+}
+
+// Conformance C8 and C6 as presence/absence pairs on both streams: an
+// upgrade without a credential is 401 with the problem body before any
+// upgrade, and before its parameters are read (a missing or malformed
+// intent_id is 401 to it, not 400); the same requests with a credential
+// reach validation (400), and a valid one is upgraded (101).
+func TestStreamsAuthenticateBeforeTheUpgradeAndTheParameters(t *testing.T) {
+	r := newRig(t)
+	for _, c := range []struct {
+		path, token string
+		status      int
+		slug        string
+	}{
+		{"/v1/traffic?intent_id=" + intentA, "", 401, httpx.SlugUnauthenticated},
+		{"/v1/traffic?intent_id=not-a-uuid", "", 401, httpx.SlugUnauthenticated},
+		{"/v1/alerts?intent_id=" + intentA, "", 401, httpx.SlugUnauthenticated},
+		{"/v1/alerts", "", 401, httpx.SlugUnauthenticated},
+		{"/v1/alerts?intent_id=not-a-uuid", "", 401, httpx.SlugUnauthenticated},
+		{"/v1/traffic?intent_id=not-a-uuid", "op-a", 400, httpx.SlugValidation},
+		{"/v1/alerts", "op-a", 400, httpx.SlugValidation},
+		{"/v1/alerts?intent_id=not-a-uuid", "op-a", 400, httpx.SlugValidation},
+	} {
+		conn, resp, err := r.dial(c.path, c.token, "")
+		if err == nil {
+			_ = conn.CloseNow()
+			t.Fatalf("%s with %q: upgraded", c.path, c.token)
+		}
+		if resp == nil || resp.StatusCode != c.status {
+			t.Fatalf("%s with %q: %v %v, want %d", c.path, c.token, resp, err, c.status)
+		}
+		var p struct{ Type string }
+		if err := json.NewDecoder(resp.Body).Decode(&p); err != nil || p.Type != httpx.ProblemTypeBase+c.slug {
+			t.Errorf("%s with %q: type %q %v, want %s", c.path, c.token, p.Type, err, c.slug)
+		}
+	}
+	for _, path := range []string{"/v1/traffic?intent_id=" + intentA, "/v1/alerts?intent_id=" + intentA} {
+		conn, resp, err := r.dial(path, "op-a", "")
+		if err != nil || resp.StatusCode != http.StatusSwitchingProtocols {
+			t.Fatalf("%s with a credential: %v %v", path, resp, err)
+		}
+		_ = conn.CloseNow()
+	}
+}
+
+// M22 kept for the browser: a session cookie from an allowed Origin whose
+// session is not live is upgraded and closed with 4401 (sign in again,
+// which the browser can read), and so is the same browser with no cookie
+// at all (its session cookie expired), or it would retry a 1006 for ever;
+// a handshake with no credential and no Origin is 401 before any upgrade.
+func TestBrowserRefusalsKeepTheReloginClose(t *testing.T) {
+	r := newRig(t)
+	c, resp, err := r.dial("/v1/traffic", "staff-unknown", "https://console.test")
+	if err != nil || resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("cookie, allowed origin: %v %v", resp, err)
+	}
+	if _, _, err := c.Read(context.Background()); websocket.CloseStatus(err) != auth.CloseRelogin {
+		t.Fatalf("session not live: %v, want 4401", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	url := "ws" + strings.TrimPrefix(r.http.URL, "http") + "/v1/traffic"
+	c2, resp, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": {"https://console.test"}}})
+	if err != nil || resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("browser without cookie: %v %v, want 101", resp, err)
+	}
+	if _, _, err := c2.Read(ctx); websocket.CloseStatus(err) != auth.CloseRelogin {
+		t.Fatalf("browser without cookie: %v, want 4401", err)
+	}
+	c3, resp, err := websocket.Dial(ctx, url, nil)
+	if err == nil {
+		_ = c3.CloseNow()
+		t.Fatal("a handshake with no credential and no Origin was upgraded")
+	}
+	if resp == nil || resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("no credential, no Origin: %v %v, want 401", resp, err)
 	}
 }
 
@@ -476,13 +553,14 @@ func TestStaffSubscribeAnswersWithASnapshot(t *testing.T) {
 	if p.Tracks[0].Trust != core.TrustBroadcast || p.Tracks[0].Source != traffic.SourceAdsbRx {
 		t.Fatalf("track %+v", p.Tracks[0])
 	}
-	// A browser from another origin is refused (M22).
-	c2, _, err := r.dial("/v1/traffic", "staff", "https://evil.test")
-	if err != nil {
-		t.Fatal(err)
+	// A browser from another origin is refused before any upgrade (M22).
+	c2, resp, err := r.dial("/v1/traffic", "staff", "https://evil.test")
+	if err == nil {
+		_ = c2.CloseNow()
+		t.Fatal("another origin was upgraded")
 	}
-	if _, _, err := c2.Read(context.Background()); websocket.CloseStatus(err) != auth.CloseRelogin {
-		t.Fatalf("other origin: %v", err)
+	if resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("other origin: %v %v, want 403", resp, err)
 	}
 }
 
