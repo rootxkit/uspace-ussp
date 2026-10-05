@@ -10,7 +10,10 @@
 // - any string, in either language, tells a pilot to manoeuvre: the USSP
 //   informs and never resolves (CLAUDE.md rule 2, LESSONS X-15). The word
 //   list is the brief's (climb, descend, hold, turn, avoid) in both
-//   languages, matched as words and their inflections.
+//   languages, matched as words and their inflections;
+// - a condition code a decision can carry (the Cond* constants of
+//   internal/intent/model.go) has no portal.decision.condition.<code>
+//   key: the intent page names every condition in the reader's language.
 //
 // `node scripts/check-i18n.mjs --self-test` runs the checks on built-in
 // catalogues that break each rule (and one that breaks none) and fails
@@ -70,6 +73,16 @@ export function check(en, ka) {
   return problems;
 }
 
+/** The condition codes of internal/intent/model.go (its Cond* constants). */
+export function conditionCodes(goSource) {
+  return [...goSource.matchAll(/^\s*Cond\w+\s*=\s*"([a-z0-9_]+)"/gm)].map((m) => m[1]);
+}
+
+/** The condition codes en lacks a portal.decision.condition.<code> key for. */
+export function conditionProblems(codes, en) {
+  return codes.filter((c) => !(`portal.decision.condition.${c}` in en)).map((c) => `en.json lacks portal.decision.condition.${c} (a condition code)`);
+}
+
 function selfTest() {
   let failedDup = 0;
   for (const [name, text, want] of [
@@ -102,6 +115,21 @@ function selfTest() {
     ["climb noun in ka", ok, { ...okKa, "a.c": "ასვლა 100 მ-მდე" }, 1],
     ["sign-out is not a climb", ok, { ...okKa, "a.c": "გასვლა" }, 0],
   ];
+  const goSource = ["const (", '\tCondA = "zone_a"', "\t// CondB: a comment.", '\tCondB = "weather_b"', '\tReasonC = "c"', ")"].join("\n");
+  const codes = conditionCodes(goSource);
+  if (codes.join(",") !== "zone_a,weather_b") {
+    console.error(`self-test condition codes: ${codes.join(",")}, want zone_a,weather_b`);
+    failedDup++;
+  }
+  for (const [name, en, want] of [
+    ["every condition named", { "portal.decision.condition.zone_a": "A", "portal.decision.condition.weather_b": "B" }, 0],
+    ["a condition unnamed", { "portal.decision.condition.zone_a": "A" }, 1],
+  ]) {
+    if (conditionProblems(codes, en).length !== want) {
+      console.error(`self-test ${name}: ${conditionProblems(codes, en).length} problems, want ${want}`);
+      failedDup++;
+    }
+  }
   let failed = 0;
   for (const [name, en, ka, want] of cases) {
     const got = check(en, ka).length;
@@ -124,11 +152,12 @@ if (process.argv.includes("--self-test")) {
     ...duplicates(text("en.json")).map((k) => `en.json writes ${k} twice`),
     ...duplicates(text("ka.json")).map((k) => `ka.json writes ${k} twice`),
     ...check(en, ka),
+    ...conditionProblems(conditionCodes(readFileSync(new URL("../../internal/intent/model.go", import.meta.url), "utf8")), en),
   ];
   if (problems.length > 0) {
     for (const p of problems) console.error(p);
     console.error(`check-i18n: ${problems.length} problems`);
     process.exit(1);
   }
-  console.log(`check-i18n: ${Object.keys(en).length} keys in en and ka, placeholders equal, no manoeuvre advice in either`);
+  console.log(`check-i18n: ${Object.keys(en).length} keys in en and ka, placeholders equal, no manoeuvre advice in either, every condition code named`);
 }

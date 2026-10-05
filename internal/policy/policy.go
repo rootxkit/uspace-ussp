@@ -213,6 +213,13 @@ type Values struct {
 	ZoneClearAfterS         float64 `json:"zone_clear_after_s"`
 	ZoneStaleAfterS         float64 `json:"zone_stale_after_s"`
 	ZoneConditionalSeverity string  `json:"zone_conditional_severity"`
+	// RestrictionGoneClearEnabled says whether a restriction_activated
+	// alert clears when its restriction is gone from the CIS's current
+	// set while the CISP holds it neither ended nor cancelled (a CIS
+	// inconsistency, alarmed as cis_inconsistency either way). Default
+	// false, pending GCAA: the spec names no rule, and an alert that a
+	// restriction is in force is not cleared on an absence.
+	RestrictionGoneClearEnabled bool `json:"restriction_gone_clear_enabled"`
 
 	// F3548 strategic coordination through the DSS (WP-13).
 	// PeerSubscriptionMarginM widens each U-space airspace's box by this
@@ -513,6 +520,8 @@ func Defaults() Values {
 		ZoneClearAfterS:         lc.ClearAfterS,
 		ZoneStaleAfterS:         lc.StaleAfterS,
 		ZoneConditionalSeverity: string(zones.DefaultPolicy().ConditionalSeverity),
+		// Pending GCAA (WP-12 review): a gone restriction keeps its alert.
+		RestrictionGoneClearEnabled: false,
 
 		PeerSubscriptionMarginM:  2000,
 		DSSExchangeRetentionDays: 7,

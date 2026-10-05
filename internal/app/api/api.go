@@ -221,7 +221,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 		return err
 	}
 	intents := startIntents(ctx, rt, pol, cisState, reg.Cache, kv, coord.gate, weatherCheck{wx})
-	alertSvc := startAlerts(ctx, rt, current, cisState.Evaluator)
+	alertSvc := startAlerts(ctx, rt, current, cisState.Cache)
 	geoState, rechecker := startGeo(ctx, rt, cisState, intents)
 	notices, err := startCoordination(ctx, rt, current, tokens, cisState)
 	if err != nil {

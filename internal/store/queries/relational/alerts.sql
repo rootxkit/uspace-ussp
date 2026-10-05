@@ -169,3 +169,17 @@ WHERE a.kind = 'restriction_activated' AND a.cleared_at IS NULL
   AND oi.local_state <> 'ended' AND oi.time_end >= now()
 ORDER BY a.raised_at
 LIMIT sqlc.arg(max_rows);
+
+-- name: OpenIntentNoticesAfter :many
+-- The open restriction_activated alerts of OpenIntentNotices, a page at
+-- a time: those after the cursor (raised_at, id), in that order, at
+-- most max_rows. The lifted pass of api reads every page (WP-12).
+SELECT a.id, a.kind, a.flight_id, a.intent_id, a.authorisation_number, a.severity, a.state, a.raised_at, a.updated_at,
+       a.cleared_at, a.clear_reason, a.detail, a.captured_at, a.policy_version, a.acked_at, a.acked_by, a.escalated_at, a.cell5
+FROM alerts a
+JOIN operational_intents oi ON oi.id = a.intent_id
+WHERE a.kind = 'restriction_activated' AND a.cleared_at IS NULL
+  AND oi.local_state <> 'ended' AND oi.time_end >= now()
+  AND (a.raised_at, a.id) > (sqlc.arg(after_raised_at)::timestamptz, sqlc.arg(after_id)::uuid)
+ORDER BY a.raised_at, a.id
+LIMIT sqlc.arg(max_rows);

@@ -112,6 +112,16 @@ type Fake struct {
 	// Deliveries records every delivery: callback, status (0 on a
 	// transport error).
 	deliveries []Delivery
+	// heads are the restriction heads GET /v1/restrictions/heads
+	// serves, in the order they were set.
+	heads []Head
+}
+
+// Head is one restriction head as GET /v1/restrictions/heads serves it
+// (the members a consumer reads; the rest are filled in).
+type Head struct {
+	FeatureID string
+	State     string
 }
 
 // Delivery is one notification POSTed by the fake.
@@ -148,6 +158,54 @@ func start(serve func(http.Handler) *httptest.Server) (*Fake, error) {
 		}
 	}
 	return f, nil
+}
+
+// SetRestrictionHead sets the state of the head of the restriction
+// featureID (added when new), as GET /v1/restrictions/heads serves it.
+// The fake does not tie heads to the restrictions dataset: a test sets
+// the head that goes with what it publishes.
+func (f *Fake) SetRestrictionHead(featureID, state string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := range f.heads {
+		if f.heads[i].FeatureID == featureID {
+			f.heads[i].State = state
+			return
+		}
+	}
+	f.heads = append(f.heads, Head{FeatureID: featureID, State: state})
+}
+
+// listHeads is GET /v1/restrictions/heads?state=&limit=.
+func (f *Fake) listHeads(w http.ResponseWriter, r *http.Request) {
+	state := r.URL.Query().Get("state")
+	limit := 100
+	if l := r.URL.Query().Get("limit"); l != "" {
+		n, err := strconv.Atoi(l)
+		if err != nil || n < 1 || n > 500 {
+			problem(w, http.StatusBadRequest, "validation", "limit")
+			return
+		}
+		limit = n
+	}
+	f.mu.Lock()
+	out := []map[string]any{}
+	for i, h := range f.heads {
+		if state != "" && h.State != state {
+			continue
+		}
+		if len(out) == limit {
+			break
+		}
+		at := "2026-10-02T08:00:00Z"
+		out = append(out, map[string]any{
+			"id": fmt.Sprintf("r-%d", i+1), "ansp_ref": "A-" + h.FeatureID, "ansp_version": 1, "uspace_airspace_id": "TSA001",
+			"feature_id": h.FeatureID, "state": h.State, "starts_at": at, "ends_at": "2026-10-02T12:00:00Z",
+			"created_at": at, "updated_at": at, "events": []any{},
+		})
+	}
+	f.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{"restrictions": out})
 }
 
 // Close stops the server.
@@ -438,6 +496,8 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 		f.patchSubscription(w, r, strings.TrimPrefix(path, "/v1/subscriptions/"))
 	case path == "/v1/changes" && r.Method == http.MethodGet:
 		f.listChanges(w, r)
+	case path == "/v1/restrictions/heads" && r.Method == http.MethodGet:
+		f.listHeads(w, r)
 	case strings.HasPrefix(path, "/v1/"):
 		parts := strings.Split(strings.TrimPrefix(path, "/v1/"), "/")
 		switch {

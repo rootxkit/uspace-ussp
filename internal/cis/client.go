@@ -310,6 +310,21 @@ func (c *Client) Changes(ctx context.Context, since int64, d Dataset) (cispclien
 	return out, err
 }
 
+// RestrictionHeads is GET /v1/restrictions/heads?state=&limit=: the
+// lifecycle heads the CISP holds in state, at most limit.
+func (c *Client) RestrictionHeads(ctx context.Context, state string, limit int) (cispclient.RestrictionList, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.cfg.Timeout)
+	defer cancel()
+	st := cispclient.ListRestrictionsParamsState(state)
+	resp, err := c.gen.ListRestrictions(ctx, &cispclient.ListRestrictionsParams{State: &st, Limit: &limit})
+	if err != nil {
+		return cispclient.RestrictionList{}, err
+	}
+	var out cispclient.RestrictionList
+	err = c.decode(resp, http.StatusOK, &out)
+	return out, err
+}
+
 func (c *Client) decode(resp *http.Response, want int, v any) error {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != want {
