@@ -35,6 +35,14 @@ additively within `/v1`.
   return. A real link loss with the bus up is raised as before, and a
   sample clears it. A `lost_link` already raised is kept through the
   outage.
+- A process started while a token service is down verifies that
+  service's tokens again (PLAN §15.2 Q35 b): each ecosystem issuer's
+  JWKS is stored in the new `jwks_cache` bucket when it is fetched
+  (rewritten hourly while it answers) and, when a start cannot fetch
+  it, the stored one verifies for at most `USSP_JWKS_CACHE_MAX_AGE_S`
+  from its fetch (default 86400, spec 05 §6, pending GCAA; 0 turns it
+  off). `/readyz` says `jwks` degraded with the stored keys' age rather
+  than down. New: `USSP_JWKS_CACHE_BUCKET_MAX_BYTES` (1 MiB).
 - `GET /v1/admin/inputs` (additive): each monitor instance may carry
   `input_down_since`, `input_back_at` and `lost_link_suspended_until`;
   the monitor's state is `down` with a "monitoring outage" detail while
