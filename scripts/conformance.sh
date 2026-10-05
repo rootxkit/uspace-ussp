@@ -477,7 +477,13 @@ else
   say "no report directory of this run under $out: no run-info.txt written"
 fi
 case "$suite_rc" in
-  0) say "the suite passed after $(($(date +%s) - started)) s; report under $out" ;;
+  0)
+    if [ "${CONFORMANCE_ALLOW_INCOMPLETE:-}" = 1 ]; then
+      say "the suite exited 0 after $(($(date +%s) - started)) s: a pass, or an incomplete run accepted by CONFORMANCE_ALLOW_INCOMPLETE=1 (the report says which); report under $out"
+    else
+      say "the suite passed after $(($(date +%s) - started)) s; report under $out"
+    fi
+    ;;
   3) say "the suite's run is incomplete (exit 3): gate requirements were not checked; the report under $out says which and why" ;;
   *) say "the suite exited $suite_rc after $(($(date +%s) - started)) s; report under $out" ;;
 esac

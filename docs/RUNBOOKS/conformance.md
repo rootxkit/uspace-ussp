@@ -51,6 +51,30 @@ The two runs that pin PLAN §15 Q33, on the stack (`CONFORMANCE_SYSTEMS=ussp`).
 The three checks of `openAuthorityFlights` that are not applicable with
 the push off pass with it on: the declaration hides nothing that runs.
 
+### 2026-10-05, the `conformance` workflow on this branch (ubuntu-latest)
+
+Dispatched on `5d45fa9` with `allow_incomplete` (so the job is green on
+an incomplete verdict and red on any failure), the lab at `7fb2d45`
+from `SOURCE`, the geoid's digests checked. The reports are the runs'
+`conformance-reports` artifacts.
+
+| | push off | push on |
+|---|---|---|
+| workflow run | 37276543259 | 37276931176 |
+| run | `20261005T071619Z-ussp-conformance` | `20261005T072053Z-ussp-conformance` |
+| image | `sha256:347fed5b9dc6...` (built in the job) | `sha256:50e8f4c4b44a...` |
+| declaration check | 404 | 401 |
+| verdict | incomplete: 5 pass, 0 fail, 6 not applicable; signed `sha256:ddf7cfc3...` | incomplete: 5 pass, 0 fail, 6 not applicable; signed `sha256:28d603eb...` |
+| NAT-UNAUTH, SCOPE, NOTFOUND, INVALID, SUCCESS | 46/0/1, 2/0/15, 2/0/5, 3/0/15, 3/0/30 | 47/0/0, 3/0/14, 2/0/5, 3/0/15, 4/0/29 |
+| time from the start of `make conformance` (the hook's own count) | 147 s | 167 s |
+
+The same statuses as on the authoring machine. The first dispatches of
+the day failed before the suite, both observed and fixed in this
+branch: the scripts lacked their executable bit (126), and ussp-api
+could not read its key, which gen-secrets.sh writes 0600, as the
+image's nonroot user on Linux (`fix(conformance): run the USSP as the
+invoking user`).
+
 ### 2026-10-05, earlier runs on this branch
 
 - On `9696f38` (main, before this branch), push off: incomplete, 3
