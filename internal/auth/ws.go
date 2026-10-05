@@ -137,8 +137,9 @@ type judgedKey struct{}
 // Require is the guard of the WebSocket entries of a GuardedMux
 // (httpx.GuardedMux.WebSockets): it judges the upgrade against a before
 // the generated router reads the operation's parameters, so a request
-// without credential is 401 whatever else is wrong with it (C6), and
-// hands the admitted caller to AcceptWS.
+// without credential is 401 whatever else is wrong with it (C6),
+// counts an admitted caller as Guard.Require does, and hands it to
+// AcceptWS.
 func (a *WSAuth) Require(access httpx.Access) func(http.Handler) http.Handler {
 	key := access.String()
 	return func(next http.Handler) http.Handler {
@@ -148,6 +149,7 @@ func (a *WSAuth) Require(access httpx.Access) func(http.Handler) http.Handler {
 				a.refuse(w, r, ref, browser)
 				return
 			}
+			a.Guard.count(CounterAccepted)
 			ctx := context.WithValue(WithPrincipal(r.Context(), p), judgedKey{}, judged{access: key, p: p})
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

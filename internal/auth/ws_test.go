@@ -112,7 +112,7 @@ func TestWSUpgradePairs(t *testing.T) {
 
 // Require judges the upgrade before the handler behind it runs (C6):
 // without a credential the handler is never reached and the answer is
-// 401; with one the handler gets the caller.
+// 401; with one the handler gets the caller, counted as accepted.
 func TestWSRequireRunsBeforeTheHandler(t *testing.T) {
 	f := newGuardFixture(t)
 	ws := &WSAuth{Guard: f.guard, AllowedOrigins: []string{consoleOrigin}}
@@ -135,6 +135,10 @@ func TestWSRequireRunsBeforeTheHandler(t *testing.T) {
 	h.ServeHTTP(rec, r)
 	if rec.Code != http.StatusBadRequest || reached != 1 {
 		t.Fatalf("credential: %d, handler reached %d times", rec.Code, reached)
+	}
+	// Counted as the guard of a plain route counts an admitted caller.
+	if f.counters.Get(CounterAccepted) != 1 || f.counters.Get(CounterWSRefused) != 1 {
+		t.Fatalf("counters %v", f.counters.Snapshot())
 	}
 }
 
