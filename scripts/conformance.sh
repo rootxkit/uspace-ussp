@@ -323,7 +323,10 @@ PY
 check_push_declaration() {
   local code want
   if [ "$push" = off ]; then want=404; else want=401; fi
-  code="$(curl -sS -o "$(winpath "$state/push-probe.body")" -w '%{http_code}' --max-time 10 "${curl_tls[@]}" \
+  # A GET, bounded, and retried only on a refused connection: the
+  # published port can take a moment to answer after Caddy is healthy.
+  code="$(curl -sS -o "$(winpath "$state/push-probe.body")" -w '%{http_code}' --max-time 10 \
+    --retry 10 --retry-delay 1 --retry-connrefused "${curl_tls[@]}" \
     -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
     -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "$1/v1/authority/flights")" || code="no answer"
   if [ "$code" != "$want" ]; then
