@@ -319,7 +319,7 @@ func (h *memHolds) Hold(_ context.Context, id string, reasons []string, _ time.T
 }
 
 func flight(id string) FlightRef {
-	return FlightRef{FlightID: id, Serial: "TEST" + id[:4], OperatorReg: ptr("GEO87astrdge12k8-xyz"), AuthorisationNumber: ptr("GE-USSP-DEV-1"),
+	return FlightRef{FlightID: id, Serial: "TEST" + id[:4], OperatorReg: ptr("GEO87astrdge12k8-xyz"), AuthorisationNumber: ptr("GE-DEV01-1"),
 		IntentID: ptr(intentA), InUSpace: true, StartedAt: t0.Add(-time.Hour)}
 }
 
@@ -330,7 +330,7 @@ func proximity(id, peer string, h, v any) AlertEvent {
 
 func newService(st *memStore, d Deliverer) (*Service, *memHolds) {
 	h := &memHolds{}
-	return &Service{Store: st, Deliverer: d, Holds: h, SystemID: "USSP-DEV", RecordsURL: "https://ussp.test/", Counters: &core.Counters{}}, h
+	return &Service{Store: st, Deliverer: d, Holds: h, SystemID: "DEV01", RecordsURL: "https://ussp.test/", Counters: &core.Counters{}}, h
 }
 
 // The done-when airprox: the proximity alert becomes a report queued
@@ -359,7 +359,7 @@ func TestAirproxQueuedOnceWithItsDeadline(t *testing.T) {
 	if err := json.Unmarshal(r.Body, &p); err != nil {
 		t.Fatal(err)
 	}
-	if p.Schema != Schema || p.ReportRef != "USSP-DEV:occurrence:alert:pair:pair-1@1" || len(p.Aircraft) != 2 || *p.Aircraft[0].OperatorReg != "GEO87astrdge12k8" ||
+	if p.Schema != Schema || p.ReportRef != "DEV01:occurrence:alert:pair:pair-1@1" || len(p.Aircraft) != 2 || *p.Aircraft[0].OperatorReg != "GEO87astrdge12k8" ||
 		p.MinSeparation == nil || *p.MinSeparation.HM != 41.5 || *p.MinSeparation.VM != 9 || p.Reporter.PersonRef != ReporterSystem ||
 		len(p.EvidenceURLs) != 2 || p.EvidenceURLs[0] != "https://ussp.test/v1/records/flights/"+flightA || strings.Contains(string(r.Body), "xyz") {
 		t.Fatalf("payload %s", r.Body)
@@ -622,7 +622,7 @@ func TestFlagDoesNotWaitForTheProjection(t *testing.T) {
 	st := newMem()
 	st.events = []AlertEvent{proximity("a1", "", 10.0, 2.0)}
 	h := &gatedHolds{blocked: make(chan struct{}), release: make(chan struct{})}
-	s := &Service{Store: st, Holds: h, SystemID: "USSP-DEV", Counters: &core.Counters{}}
+	s := &Service{Store: st, Holds: h, SystemID: "DEV01", Counters: &core.Counters{}}
 	if err := s.Detect(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -678,7 +678,7 @@ func TestBuildRefusals(t *testing.T) {
 			c.mutate(r)
 		}
 		var be *BuildError
-		if err := Build(r, "USSP-DEV", c.air, nil, c.sep, "", nil); !errors.As(err, &be) {
+		if err := Build(r, "DEV01", c.air, nil, c.sep, "", nil); !errors.As(err, &be) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
@@ -687,7 +687,7 @@ func TestBuildRefusals(t *testing.T) {
 	for i := range many {
 		many[i] = Aircraft{Serial: "TEST", FlightID: flightA}
 	}
-	if err := Build(r, "USSP-DEV", many, nil, nil, strings.Repeat("n", MaxNarrative+10), nil); err != nil || len(r.Payload.Aircraft) != MaxAircraft ||
+	if err := Build(r, "DEV01", many, nil, nil, strings.Repeat("n", MaxNarrative+10), nil); err != nil || len(r.Payload.Aircraft) != MaxAircraft ||
 		len(r.Payload.Narrative) != MaxNarrative {
 		t.Fatalf("bounds: %v %d %d", err, len(r.Payload.Aircraft), len(r.Payload.Narrative))
 	}

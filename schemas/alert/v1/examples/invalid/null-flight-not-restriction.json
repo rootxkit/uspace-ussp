@@ -15,7 +15,7 @@
     "clear_reason": null,
     "flight_id": null,
     "intent_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-    "authorisation_number": "USSP-DEV-20261003-0001",
+    "authorisation_number": "DEV01-20261003-0001",
     "captured_at": "2026-10-03T12:00:04.812345678Z",
     "raised_at": "2026-10-03T12:00:04.812345678Z",
     "updated_at": "2026-10-03T12:00:04.812345678Z",

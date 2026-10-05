@@ -33,7 +33,7 @@ const (
 	testOperator = "GEOTESTOP0001"
 	testSerial   = "TEST0001"
 	testClient   = "client-test-1"
-	testSystem   = "USSP-DEV"
+	testSystem   = "DEV01"
 )
 
 // fakeGeoid is a constant undulation, or an error.

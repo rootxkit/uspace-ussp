@@ -102,7 +102,7 @@ func TestIntegrationOccurrences(t *testing.T) {
 	fake.Down()
 	st := occstore.Store{S: appStore(t)}
 	svc := &occurrence.Service{Store: st, Deliverer: fakeDeliverer{url: fake.URL()}, Holds: kvHolds{bus.NewProjector(conn, nil)},
-		Policy: func() policy.Values { return policy.Defaults() }, SystemID: "USSP-DEV", Counters: &core.Counters{}, Logger: quiet()}
+		Policy: func() policy.Values { return policy.Defaults() }, SystemID: "DEV01", Counters: &core.Counters{}, Logger: quiet()}
 	if err := svc.Detect(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestIntegrationOccurrenceHeldPages(t *testing.T) {
 		seedProximity(t, f, "pair-"+unique(), 20.0, 5.0, time.Now().Add(-time.Minute))
 	}
 	st := occstore.Store{S: appStore(t)}
-	svc := &occurrence.Service{Store: st, Policy: policy.Defaults, SystemID: "USSP-DEV",
+	svc := &occurrence.Service{Store: st, Policy: policy.Defaults, SystemID: "DEV01",
 		Counters: &core.Counters{}, Logger: quiet()}
 	if err := svc.Detect(ctx); err != nil {
 		t.Fatal(err)

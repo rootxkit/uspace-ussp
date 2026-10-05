@@ -15,6 +15,9 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
+// testSystem is the code in the ANSP's examples this test compares
+// against (schemas/examples/consumed, uspace-ansp's copy): they still
+// carry the lab's former code, which the authority refuses (audit M-2).
 const testSystem = "USSP-DEV"
 
 var testIntentID = "6f1c0d2e-3b4a-4c5d-8e6f-7a8b9c0d1e2f"

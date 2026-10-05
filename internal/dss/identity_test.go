@@ -14,8 +14,8 @@ import (
 
 // recordedSub is the sub the token service puts in our tokens, which the
 // DSS records as the manager of what we write; ourManager, the client id
-// the configuration derives, differs from it in case and format (the
-// lab: ussp-USSP-DEV-01 against ussp-ussp-dev-01).
+// the configuration derives, may differ from it in case and format (a
+// lab issuer listing ussp-dev01-01 for the code DEV01).
 const recordedSub = "ussp-USSP-TEST-01"
 
 // Our identity is the one the DSS records, not the configured client

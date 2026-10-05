@@ -32,7 +32,7 @@ func TestDetailsMapArticle8(t *testing.T) {
 	w.Add(withIntent)
 	w.Add(sample(2, origin, t0))
 	cls, reg := "C2", "GEO-TEST-UA-0001"
-	auth := "USSP-DEV-GEOTESTOP0001-01"
+	auth := "DEV01-GEOTESTOP0001-01"
 	s := &Server{Window: w, Now: c.now, Counters: &core.Counters{}, Intents: fakeIntents{intentID: {
 		IntentID: intentID, AuthorisationNumber: &auth, OperatorReg: "GEOTESTOP0001-xyz", UASSerial: "TEST0001",
 		Category: "specific", ClassLabel: &cls, UARegistration: &reg,

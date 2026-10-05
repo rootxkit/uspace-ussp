@@ -32,7 +32,7 @@ const (
 
 func circleAuth() Authorisation {
 	return Authorisation{
-		IntentID: intentA, AuthorisationNumber: "USSP-DEV-1",
+		IntentID: intentA, AuthorisationNumber: "DEV01-1",
 		Volumes: []Volume{{Shape: deconflict.Shape{Circle: &geodesy.Circle{Center: origin, RadiusM: 500}},
 			LowerAMSLM: 500, UpperAMSLM: 600, Start: tt0.Add(-time.Hour), End: tt0.Add(time.Hour)}},
 		Thresholds: Thresholds{HM: 50, VM: 15, TS: 60},
@@ -149,7 +149,7 @@ func TestFlyingOf(t *testing.T) {
 func stateBodyOf(t *testing.T) intent.StateBody {
 	t.Helper()
 	var b intent.StateBody
-	raw := `{"intent_id":"` + intentA + `","authorisation_number":"USSP-DEV-1","deviation_thresholds":{"h_m":50,"v_m":15,"t_s":60},
+	raw := `{"intent_id":"` + intentA + `","authorisation_number":"DEV01-1","deviation_thresholds":{"h_m":50,"v_m":15,"t_s":60},
 	"volumes":[{"volume":{"outline_circle":{"center":{"lat":41.7151,"lng":44.8271},"radius":{"value":500,"units":"M"}},
 	"altitude_lower":{"value":520,"reference":"W84","units":"M"},"altitude_upper":{"value":620,"reference":"W84","units":"M"}},
 	"time_start":{"value":"2026-11-01T11:00:00Z","format":"RFC3339"},"time_end":{"value":"2026-11-01T13:00:00Z","format":"RFC3339"}}],
@@ -162,7 +162,7 @@ func stateBodyOf(t *testing.T) intent.StateBody {
 
 func TestAuthorisationOf(t *testing.T) {
 	a, err := AuthorisationOf(stateBodyOf(t))
-	if err != nil || a.AuthorisationNumber != "USSP-DEV-1" || len(a.Volumes) != 1 || a.Volumes[0].UpperAMSLM != 600 ||
+	if err != nil || a.AuthorisationNumber != "DEV01-1" || len(a.Volumes) != 1 || a.Volumes[0].UpperAMSLM != 600 ||
 		a.Volumes[0].Shape.Circle == nil || a.Thresholds.TS != 60 {
 		t.Fatalf("%+v %v", a, err)
 	}
@@ -251,7 +251,7 @@ func TestNearbyBound(t *testing.T) {
 }
 
 func TestStateMessageRoundTrip(t *testing.T) {
-	tr := NewTracker(flightA, intentA, "USSP-DEV-1", nil)
+	tr := NewTracker(flightA, intentA, "DEV01-1", nil)
 	a := circleAuth()
 	ev := tr.Observe(input(geodesy.Destination(origin, 90, 600), 0, &a), testConfig(), at(0))
 	if len(ev.Transitions) != 1 || ev.Transitions[0].To != StateNonconforming {
@@ -269,7 +269,7 @@ func TestStateMessageRoundTrip(t *testing.T) {
 	b := back.Body
 	if b.State != StateNonconforming || !b.Transition || b.PreviousState == nil || *b.PreviousState != StateUnknown ||
 		!b.Judged || b.DistanceOutsideM == nil || math.Abs(*b.DistanceOutsideM-100) > 0.02 || *b.Reason != ReasonThresholdExceeded ||
-		b.PolicyVersion != 3 || *b.AuthorisationNumber != "USSP-DEV-1" || b.Position == nil {
+		b.PolicyVersion != 3 || *b.AuthorisationNumber != "DEV01-1" || b.Position == nil {
 		t.Fatalf("%+v", b)
 	}
 	// A sample whose vertical did not run carries no height, never 0.

@@ -58,7 +58,7 @@ func newTokenService(t *testing.T) *tokenService {
 
 func newOutgoing(t *testing.T, s *tokenService, c *clock) *Outgoing {
 	t.Helper()
-	o, err := NewOutgoing(OutgoingConfig{TokenURL: s.srv.URL + "/oauth/token", ClientID: ClientIDFor("USSP-DEV"), ClientSecret: "s3cret", Now: c.fn(), MaxEntries: 2})
+	o, err := NewOutgoing(OutgoingConfig{TokenURL: s.srv.URL + "/oauth/token", ClientID: ClientIDFor("DEV01"), ClientSecret: "s3cret", Now: c.fn(), MaxEntries: 2})
 	mustNoErr(t, err)
 	return o
 }
@@ -74,7 +74,7 @@ func TestOutgoingCachesUntilSixtySecondsBeforeExp(t *testing.T) {
 	if err != nil || tok != "tok-1" {
 		t.Fatalf("%q %v", tok, err)
 	}
-	if s.last["audience"] != "uspace-cisp.test" || s.last["client_id"] != "ussp-USSP-DEV-01" || s.last["scope"] != "cis.read" || s.last["grant_type"] != "client_credentials" {
+	if s.last["audience"] != "uspace-cisp.test" || s.last["client_id"] != "ussp-DEV01-01" || s.last["scope"] != "cis.read" || s.last["grant_type"] != "client_credentials" {
 		t.Fatalf("form %v", s.last)
 	}
 	// Same key, scope order and duplicates aside: cached.
@@ -240,8 +240,8 @@ func TestAudienceOfAndClientID(t *testing.T) {
 		}
 	}
 	// The code keeps its case: the authority registers ussp-<CODE>-<nn>
-	// with an upper-case code only, and the lab issuer ussp-USSP-DEV-01.
-	for code, want := range map[string]string{"ABC1": "ussp-ABC1-01", "USSP-DEV": "ussp-USSP-DEV-01"} {
+	// with an upper-case code only, and the lab issuer ussp-DEV01-01.
+	for code, want := range map[string]string{"ABC1": "ussp-ABC1-01", "DEV01": "ussp-DEV01-01"} {
 		if got := ClientIDFor(code); got != want {
 			t.Errorf("ClientIDFor(%q) = %q, want %q", code, got, want)
 		}

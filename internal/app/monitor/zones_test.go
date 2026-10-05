@@ -118,7 +118,7 @@ func TestEngineZoneIncursionLifecycleAndReload(t *testing.T) {
 	waitFor(t, "raised", func() bool { return len(r.sink.alerts(geo.KindZoneIncursion, "raised", flightA)) == 1 })
 	raised := r.sink.alerts(geo.KindZoneIncursion, "raised", flightA)[0]
 	if raised.Severity != core.SeverityCritical || raised.IntentID == nil || *raised.IntentID != intentA ||
-		raised.AuthorisationNumber == nil || *raised.AuthorisationNumber != "USSP-DEV-1" || raised.Detail["zone_id"] != "TZP001" {
+		raised.AuthorisationNumber == nil || *raised.AuthorisationNumber != "DEV01-1" || raised.Detail["zone_id"] != "TZP001" {
 		t.Fatalf("raised %+v", raised)
 	}
 	waitFor(t, "republished", func() bool { return len(r.sink.alerts(geo.KindZoneIncursion, "updated", flightA)) >= 2 })

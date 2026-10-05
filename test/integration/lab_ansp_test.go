@@ -220,7 +220,7 @@ func TestLabANSPAcknowledgesTheNotice(t *testing.T) {
 	supervisor := signIn(t, base, "labsup", supPass)
 
 	// This USSP: a nonconforming transition of a seeded flight.
-	client, err := coordination.NewClient(base, labIssuer{iss: iss, url: jwksSrv.URL, sub: "ussp-USSP-DEV-01"}, nil)
+	client, err := coordination.NewClient(base, labIssuer{iss: iss, url: jwksSrv.URL, sub: "ussp-DEV01-01"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestLabANSPAcknowledgesTheNotice(t *testing.T) {
 	n := &coordination.Notifier{Store: st, Airspaces: func() (coordination.Airspaces, bool) {
 		return coordination.Airspaces{Version: "1", Controlled: map[string]*bool{"UA-LAB": &yes}}, true
 	},
-		SystemID: "USSP-DEV", Counters: &core.Counters{}, Logger: quiet()}
+		SystemID: "DEV01", Counters: &core.Counters{}, Logger: quiet()}
 	s := &coordination.Sender{Store: st, ANSP: client, Policy: func() policy.Values { return pol }, Counters: &core.Counters{}, Logger: quiet()}
 	go n.Run(rctx, 200*time.Millisecond)
 	go s.Run(rctx, 200*time.Millisecond)
@@ -242,7 +242,7 @@ func TestLabANSPAcknowledgesTheNotice(t *testing.T) {
 	recorded := time.Now()
 	waitFor(t, 10*time.Second, "the ANSP's receipt", func() bool { n, _ := atsFacts(t, stateID); return n != nil })
 	t.Logf("receipt stored %v after the conformance state was recorded", time.Since(recorded).Round(time.Millisecond))
-	ref := coordination.Ref("USSP-DEV", coordination.KindNonconformance, f.intentID, stateID)
+	ref := coordination.Ref("DEV01", coordination.KindNonconformance, f.intentID, stateID)
 	var ackID string
 	if err := appPool(t).QueryRow(ctx, "SELECT ack_id FROM coordination_notices WHERE notice_ref = $1", ref).Scan(&ackID); err != nil {
 		t.Fatal(err)
@@ -282,7 +282,7 @@ func TestLabANSPAcknowledgesTheNotice(t *testing.T) {
 		if k == coordination.KindEnded {
 			endIntent(t, g.intentID)
 		}
-		ref := coordination.Ref("USSP-DEV", k, g.intentID, 0)
+		ref := coordination.Ref("DEV01", k, g.intentID, 0)
 		waitFor(t, 10*time.Second, string(k)+" received by the ANSP", func() bool {
 			var state string
 			err := appPool(t).QueryRow(ctx, "SELECT state FROM coordination_notices WHERE notice_ref = $1", ref).Scan(&state)

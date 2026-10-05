@@ -28,7 +28,7 @@
  "fixtures": {
   "authorisations": {
    "circle": {
-    "authorisation_number": "USSP-DEV-20261101-000001",
+    "authorisation_number": "DEV01-20261101-000001",
     "cell_set": [],
     "change_reason": null,
     "class_label": null,
@@ -97,7 +97,7 @@
     ]
    },
    "corridor": {
-    "authorisation_number": "USSP-DEV-20261101-000001",
+    "authorisation_number": "DEV01-20261101-000001",
     "cell_set": [],
     "change_reason": null,
     "class_label": null,
@@ -205,7 +205,7 @@
     ]
    },
    "square": {
-    "authorisation_number": "USSP-DEV-20261101-000001",
+    "authorisation_number": "DEV01-20261101-000001",
     "cell_set": [],
     "change_reason": null,
     "class_label": null,
