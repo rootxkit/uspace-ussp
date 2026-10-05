@@ -68,12 +68,12 @@ func TestVerifyTOTPAcceptsOnceWithinSkew(t *testing.T) {
 }
 
 func TestNewTOTPSecretAndURI(t *testing.T) {
-	s, uri, err := NewTOTPSecret("USSP-DEV", "admin")
+	s, uri, err := NewTOTPSecret("DEV01", "admin")
 	if err != nil || len(s) != 32 {
 		t.Fatalf("%q %v", s, err)
 	}
 	u, err := url.Parse(uri)
-	if err != nil || u.Scheme != "otpauth" || u.Host != "totp" || u.Query().Get("secret") != s || u.Query().Get("issuer") != "USSP-DEV" {
+	if err != nil || u.Scheme != "otpauth" || u.Host != "totp" || u.Query().Get("secret") != s || u.Query().Get("issuer") != "DEV01" {
 		t.Fatalf("uri %s", uri)
 	}
 	s2, _, _ := NewTOTPSecret("x", "y")

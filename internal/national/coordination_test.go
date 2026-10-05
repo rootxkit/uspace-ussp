@@ -44,9 +44,9 @@ func TestListCoordinationNotices(t *testing.T) {
 	intent := mustUUID(t, "6f1c0d2e-3b4a-4c5d-8e6f-7a8b9c0d1e2f")
 	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
 	l := lister{out: gen.CoordinationNotices{Truncated: true, Notices: []gen.CoordinationNoticeItem{
-		{Id: 1, NoticeRef: "USSP-DEV:i:nonconformance:5", Kind: "nonconformance", IntentId: intent, FlightId: &flight,
+		{Id: 1, NoticeRef: "DEV01:i:nonconformance:5", Kind: "nonconformance", IntentId: intent, FlightId: &flight,
 			State: "pending", CreatedAt: now, AgeS: 12.5, Attempts: 3, LastError: &errText, NextAt: &now},
-		{Id: 2, NoticeRef: "USSP-DEV:i:intent_notice", Kind: "intent_notice", IntentId: intent, State: "failed", CreatedAt: now, FailedAt: &now},
+		{Id: 2, NoticeRef: "DEV01:i:intent_notice", Kind: "intent_notice", IntentId: intent, State: "failed", CreatedAt: now, FailedAt: &now},
 	}}}
 	rec := call(&Server{Coordination: l})
 	var body struct {

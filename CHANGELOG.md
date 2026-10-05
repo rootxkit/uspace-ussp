@@ -25,6 +25,16 @@ additively within `/v1`.
 
 ### Fixed
 
+- `USSP_SYSTEM_ID` is the authority's certificate code (audit M-2): one
+  to eight upper-case letters and digits, refused at start otherwise,
+  since the authority's `certificates.code` and `ussp-<code>-<nn>`
+  client id accept nothing else. The development and lab default is
+  `DEV01` (client `ussp-DEV01-01`), not `USSP-DEV`, which the authority
+  refuses; the compose default, `deploy/ENV.md`, fixtures and this
+  repository's examples follow. Contract: the configuration narrows; no
+  wire change. uspace-lab renames its issuer client and fixtures to
+  match. The ANSP's consumed Annex V examples still carry `USSP-DEV`
+  and are compared as they are.
 - A request without a credential is `401`, whatever else is wrong with
   it, on every route (finding C6): the WebSocket routes are now guarded
   by the mux (`GuardedMux.WebSockets`, `WSAuth.Require`) before the

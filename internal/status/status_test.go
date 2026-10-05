@@ -146,7 +146,7 @@ func (m *memStore) Fail(_ context.Context, id, cause string) error {
 }
 
 func newService(st *memStore, a Authority) *Service {
-	return &Service{Store: st, Authority: a, CertificateID: certID, SystemID: "USSP-DEV", Counters: &core.Counters{}}
+	return &Service{Store: st, Authority: a, CertificateID: certID, SystemID: "DEV01", Counters: &core.Counters{}}
 }
 
 func fakeClient(t *testing.T) (*authority.Fake, *Client) {

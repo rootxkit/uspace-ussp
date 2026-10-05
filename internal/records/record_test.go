@@ -33,7 +33,7 @@ func ptr[T any](v T) *T { return &v }
 func fixture() (*memReader, *memSeries) {
 	m := newMemReader(t0.Add(26 * time.Hour))
 	end := t0.Add(20 * time.Minute)
-	m.flights[flightID] = FlightRow{ID: flightID, IntentID: ptr(intentID), AuthorisationNumber: ptr("GE-USSP-DEV-1"), UASSerial: "TEST0001",
+	m.flights[flightID] = FlightRow{ID: flightID, IntentID: ptr(intentID), AuthorisationNumber: ptr("GE-DEV01-1"), UASSerial: "TEST0001",
 		OperatorReg: ptr("GEO87astrdge12k8-xyz"), ClientID: ptr(clientID), StartedAt: t0, EndedAt: &end, EndReason: ptr("landed")}
 	m.intents[intentID] = IntentRow{IntentView: IntentView{IntentID: intentID, Version: 2, LocalState: "ended", Decision: ptr("authorised"),
 		TimeStart: t0, TimeEnd: t0.Add(time.Hour), Volumes: rawJSON(`[]`), DeviationThresholds: rawJSON(`{"h_m":50,"v_m":15,"t_s":60}`),
@@ -50,7 +50,7 @@ func fixture() (*memReader, *memSeries) {
 	m.states = []ConformanceState{{At: t0, State: "conforming", PolicyVersion: 3},
 		{At: t0.Add(8 * time.Minute), State: "nonconforming", Reason: ptr("above_upper"), HeightOverM: ptr(21.0), PolicyVersion: 4, ATSNotifiedAt: ptr(t0.Add(8 * time.Minute)), ATSAckRef: ptr("ACK1")},
 		{At: t0.Add(10 * time.Minute), State: "conforming", PolicyVersion: 4}}
-	m.notices = []Notice{{NoticeRef: "USSP-DEV:" + intentID + ":nonconformance:2", Kind: "nonconformance", State: "acknowledged", CreatedAt: t0.Add(8 * time.Minute)}}
+	m.notices = []Notice{{NoticeRef: "DEV01:" + intentID + ":nonconformance:2", Kind: "nonconformance", State: "acknowledged", CreatedAt: t0.Add(8 * time.Minute)}}
 	m.gaps = []IngestGap{{Cause: "ingest_queue_age", Started: t0.Add(12*time.Minute + 2*time.Second), Ended: t0.Add(12*time.Minute + 8*time.Second), Dropped: 7}}
 	m.policies = []PolicyVersion{{PolicyVersion: 3, CreatedAt: t0.Add(-48 * time.Hour), Values: rawJSON(`{"record_gap_s":3}`)},
 		{PolicyVersion: 4, CreatedAt: t0.Add(-time.Hour), Values: rawJSON(`{"record_gap_s":3}`)}}
@@ -63,7 +63,7 @@ func fixture() (*memReader, *memSeries) {
 }
 
 func builder(m *memReader, s Series) *Builder {
-	return &Builder{Reader: m, Series: s, USSPID: "USSP-DEV", Policy: func() policy.Record { return policy.Record{Version: 4, Values: policy.Defaults()} }}
+	return &Builder{Reader: m, Series: s, USSPID: "DEV01", Policy: func() policy.Record { return policy.Record{Version: 4, Values: policy.Defaults()} }}
 }
 
 // flightRecordSchema compiles FlightRecord of api/openapi.yaml.

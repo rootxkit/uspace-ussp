@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	dssOurManager  = "ussp-ussp-dev-01"
+	dssOurManager  = "ussp-DEV01-01"
 	dssPeerManager = "peer-uss-01"
 )
 

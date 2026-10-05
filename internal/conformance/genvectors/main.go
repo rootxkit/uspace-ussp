@@ -91,7 +91,7 @@ func state(id string, vols ...m) m {
 	}
 	return m{
 		"intent_id": id, "version": 2, "local_state": "activated", "dss_state": "Activated", "priority": 0,
-		"exempt_art_1_3": false, "authorisation_number": "USSP-DEV-20261101-000001", "operator_reg": "GEO-TEST-0001",
+		"exempt_art_1_3": false, "authorisation_number": "DEV01-20261101-000001", "operator_reg": "GEO-TEST-0001",
 		"uas_serial": "TEST0001", "volumes": vols, "volumes_amsl": bands,
 		"deviation_thresholds": m{"h_m": 50, "v_m": 15, "t_s": 60}, "flight_id": nil, "cell_set": []string{},
 		"time_start": ts(t0.Add(-10 * time.Minute)), "time_end": ts(t0.Add(30 * time.Minute)),

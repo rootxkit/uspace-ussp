@@ -151,7 +151,7 @@ func stateBody(t *testing.T, now time.Time) *intent.StateBody {
 		t.Fatal(err)
 	}
 	v.TimeStart, v.TimeEnd = tm(-time.Hour), tm(time.Hour)
-	no := "USSP-DEV-1"
+	no := "DEV01-1"
 	return &intent.StateBody{IntentID: intentA, LocalState: "activated", AuthorisationNumber: &no, Volumes: []f3548.Volume4D{v},
 		VolumesAMSL:         []intent.VolumeAMSL{{LowerAMSLM: 500, UpperAMSLM: 600, UndulationM: 20, LowerW84M: 520, UpperW84M: 620}},
 		DeviationThresholds: &intent.Thresholds{HM: 50, VM: 15, TS: 60}}
@@ -231,7 +231,7 @@ func TestEngineConformanceLifecycle(t *testing.T) {
 	waitFor(t, "nonconformance raised", func() bool { return len(g.sink.alerts("nonconformance", "raised", flightA)) == 1 })
 	raised := g.sink.alerts("nonconformance", "raised", flightA)[0]
 	if !raised.CapturedAt.Equal(captured) || raised.Severity != core.SeverityCritical || raised.PolicyVersion != 9 ||
-		raised.AuthorisationNumber == nil || *raised.AuthorisationNumber != "USSP-DEV-1" {
+		raised.AuthorisationNumber == nil || *raised.AuthorisationNumber != "DEV01-1" {
 		t.Fatalf("%+v", raised)
 	}
 	t.Logf("nonconformance published %v after the sample was offered", time.Since(sentAt))

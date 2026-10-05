@@ -668,8 +668,9 @@ func (c *control) intruder(ctx context.Context, in map[string]any) (any, error) 
 	start := time.Now().UTC().Add(time.Minute).Truncate(time.Second)
 	d := 0.002
 	var dec struct {
-		IntentID string `json:"intent_id"`
-		Decision string `json:"decision"`
+		IntentID  string          `json:"intent_id"`
+		Decision  string          `json:"decision"`
+		Conflicts json.RawMessage `json:"conflicts"`
 	}
 	if err := c.call(ctx, http.MethodPost, "/v1/intents", tok, map[string]any{
 		"client_ref": "intruder-" + u, "uas_serial": serial, "mode": "VLOS", "flight_type": "normal", "category": "specific",
@@ -691,7 +692,7 @@ func (c *control) intruder(ctx context.Context, in map[string]any) (any, error) 
 		return nil, err
 	}
 	if dec.Decision != "authorised" {
-		return nil, fmt.Errorf("the intruder's intent is %s", dec.Decision)
+		return nil, fmt.Errorf("the intruder's intent is %s: %s", dec.Decision, dec.Conflicts)
 	}
 	if err := c.call(ctx, http.MethodPatch, "/v1/intents/"+dec.IntentID, tok, map[string]any{"action": "activate"}, nil); err != nil {
 		return nil, err
