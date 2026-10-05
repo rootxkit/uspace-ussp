@@ -49,6 +49,8 @@ tags:
     description: The versioned authority policy (INV-03); thresholds are data.
   - name: audit
     description: The append-only audit log with its monthly hash chain.
+  - name: retention
+    description: Retention periods, legal holds and the archive (WP-27); the periods are the spec's defaults pending GCAA.
   - name: tokens
     description: |
       The ecosystem OAuth2 token service (WP-2): client credentials,
@@ -69,6 +71,12 @@ tags:
       has its own purpose-logged operations.
   - name: registry-f8
     description: Status-only validity lookups and the change feed for USSPs (F8, scope registry.validate).
+  - name: registry-portal
+    description: |
+      The public registration portal (WP-20, plan Q-A11, Q-A17):
+      applications verified by an e-mailed link, the registrars' review
+      and approval (the number issued through the registry), and an
+      operator's occurrence-report link. Off unless configured.
   - name: rid-receivers
     description: |
       The Remote ID receiver registry (WP-7, spec 02 F9): keys shown
@@ -107,6 +115,13 @@ tags:
       authority's own case files, opened from escalated violations, its
       own observations and notices, and hash-sealed evidence packs
       whose creation and every download are audited with the purpose.
+  - name: occurrences
+    description: |
+      Occurrence reports under Reg. (EU) 376/2014 (WP-18, spec 01 A8):
+      intake from USSPs and the ANSP, independent handling by incident
+      officers (classification, analysis), the reporter's identity for
+      them only, and the de-identified export; segregated from
+      violations and incidents (376 Art. 15-16).
   - name: certificates
     description: |
       USSP and CISP certificates (WP-16, spec 01 A5, 02 F1 and F7):
@@ -121,6 +136,12 @@ tags:
       availability arbitration (F3548), the ISA change notification a
       Service Provider posts, and the conformance observation hook
       (Q-A7).
+  - name: police
+    description: |
+      The police realm (WP-19, spec 02 F10): purpose-logged aircraft,
+      operator and serial queries and legal evidence exports, for police
+      accounts of an agency signed in with MFA from its allow-listed
+      addresses. Occurrence reports are never reachable here.
   - name: picture
     description: |
       The console picture (WP-13, served by picture-ws, not api): the
@@ -305,6 +326,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuditEventPage"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/audit/dpo-report:
+    get:
+      operationId: getDPOReport
+      tags: [audit]
+      summary: The month's personal-data views and exports, for the data protection officer
+      description: |
+        WP-19 (spec 06 §5, accountability). Every police query, export
+        and download of the month (police_queries: user, agency,
+        purpose, case reference, what was asked, how many results,
+        whether personal data was released) and every events row of a
+        personal-data read of the month (the audit catalogue's PII view
+        types: registry personal data, raw frames, evidence packs built
+        and downloaded, occurrence reporters), with the actor, the
+        purpose, the entity and, for a police read, the case reference.
+        `month` is a UTC calendar month (YYYY-MM). At most
+        `DPO_REPORT_MAX_ROWS` rows per list, `truncated` beyond. The read
+        is itself a `dpo_report_viewed` events row.
+      security:
+        - sessionCookie: []
+      x-roles: [admin, auditor]
+      x-audit: {event_type: dpo_report_viewed, entity_type: events, purpose: none}
+      parameters:
+        - {name: month, in: query, required: true, schema: {type: string, pattern: "^[0-9]{4}-[0-9]{2}$"}}
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DPOReport"
+        "400":
+          $ref: "#/components/responses/Problem"
         default:
           $ref: "#/components/responses/Problem"
 
@@ -622,6 +678,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Revoked"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/users/{user_id}/police-access:
+    parameters:
+      - {name: user_id, in: path, required: true, schema: {type: string, maxLength: 32}}
+    put:
+      operationId: setUserPoliceAccess
+      tags: [users]
+      summary: Replace the agency and the IP allow-list of a police account
+      description: |
+        WP-19. Police realm accounts only (409 for a console account).
+        Revokes the account's sessions, so the new allow-list applies at
+        once; every police query checks the address again.
+      security:
+        - sessionCookie: []
+      x-roles: [admin]
+      x-audit: {event_type: user_police_access_changed, entity_type: user, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PoliceAccessInput"
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
         default:
           $ref: "#/components/responses/Problem"
 
@@ -1503,6 +1590,449 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
 
+  # WP-20: the uas.gov.ge import under a rules file, the public status
+  # check, the registration applications of the public portal (behind
+  # REGISTRY_APPLICATIONS=on; plan Q-A11, Q-A17) and an operator's
+  # occurrence report through an e-mailed link (behind
+  # REGISTRY_OPERATOR_REPORTS=on). The portal operations have
+  # `security: []`: the applicant and the operator hold no account
+  # (Q-A17); a link token (X-Application-Token, X-Operator-Token),
+  # signed with REGISTRY_PORTAL_KEY_FILE and mailed to the address given,
+  # is their credential, checked by internal/regportal. With its flag off
+  # every portal operation is 404. docs/runbooks/registry-import.md and
+  # docs/runbooks/registry-portal.md are the procedures.
+  /v1/registry/import:
+    post:
+      operationId: importRegistry
+      tags: [registry]
+      summary: Import a uas.gov.ge export under the rules file, all or nothing
+      description: |
+        The body is one export file of one `kind` (operators first, then
+        uas): CSV (`text/csv`, UTF-8, a header row) or a JSON array of
+        flat objects (`application/json`). The rules file
+        (`REGISTRY_IMPORT_RULES_FILE`, configuration, never in the
+        repository) maps its columns and values onto the registry's
+        fields, names its date formats and the registration-number
+        pattern its numbers follow. Idempotent on the record's source
+        id: a record imported before is updated where it differs and
+        left alone where it matches; rows are marked `source =
+        uas_gov_ge_import`. All or nothing: with any problem nothing is
+        written and the answer is 422 listing every problem by record
+        and field (`records[<n>].<field>`, n counting from 1 after the
+        header), at most 100 with `truncated`. `dry_run=true` runs the
+        same checks inside a transaction that is rolled back and
+        answers the report (200, problems listed, nothing written but
+        its events row). The file is at most `REGISTRY_IMPORT_MAX_BYTES`
+        (413 beyond) and `REGISTRY_IMPORT_MAX_ROWS` records (400 beyond).
+        503 `import_not_configured` without a rules file. Every import,
+        refused and dry run included, is an events row with the counts.
+      security:
+        - sessionCookie: []
+      x-roles: [registrar]
+      x-audit: {event_type: registry_imported, entity_type: registry_import, purpose: none}
+      parameters:
+        - {name: kind, in: query, required: true, schema: {$ref: "#/components/schemas/RegistryImportKind"}}
+        - {name: dry_run, in: query, schema: {type: boolean, default: false}}
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema: {type: string}
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryImportJSON"
+      responses:
+        "200":
+          description: The import applied, or the dry run's report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryImportReport"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "415":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/check:
+    get:
+      operationId: checkRegistration
+      tags: [registry]
+      summary: Public check of an operator registration number, status only
+      description: |
+        `valid`, `suspended`, `revoked` or `unknown`, and the end of
+        validity of a registered number; nothing else (no name, type or
+        id: the response schema has no such property, and a test fails
+        if one appears). The number is compared on its public part
+        ignoring case (G-04); a secret part sent with it is removed and
+        never echoed. An expired registration answers `revoked` with its
+        `valid_until`. Unauthenticated and rate-limited per client
+        address behind the trusted proxies (429 with Retry-After).
+      security: []
+      x-audit: none
+      parameters:
+        - {name: number, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 64}}
+      responses:
+        "200":
+          description: The status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryCheck"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/applications:
+    post:
+      operationId: submitRegistryApplication
+      tags: [registry-portal]
+      summary: Apply for an operator registration (public portal)
+      description: |
+        The 2019/947 Art. 14(2) field set, as a registrar enters it,
+        without a number (the authority issues it). Checked whole before
+        anything is stored (400 naming every field); stored sealed; an
+        e-mail with the verification link is queued to `contact_email`
+        and sent after the commit. The application waits for the link
+        (`unverified`) for `REGISTRY_APPLICATION_VERIFY_TTL_S`. At most
+        `REGISTRY_APPLICATIONS_PER_IP` applications per client address
+        per `REGISTRY_APPLICATIONS_WINDOW_S`, counted in the database
+        (429 with Retry-After). 404 when `REGISTRY_APPLICATIONS` is off.
+      security: []
+      x-audit: {event_type: registry_application_submitted, entity_type: registry_application, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryApplicationInput"
+      responses:
+        "202":
+          description: Received; follow the e-mailed link to submit it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryApplicationStatus"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    get:
+      operationId: listRegistryApplications
+      tags: [registry-portal]
+      summary: Applications, oldest first, without personal data (registrars)
+      security:
+        - sessionCookie: []
+      x-roles: [registrar]
+      x-audit: none
+      parameters:
+        - {name: state, in: query, schema: {$ref: "#/components/schemas/RegistryApplicationState"}}
+        - {name: cursor, in: query, schema: {type: string, maxLength: 128}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+      responses:
+        "200":
+          description: One page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryApplicationPage"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/applications/{application_id}:
+    get:
+      operationId: getRegistryApplicationStatus
+      tags: [registry-portal]
+      summary: An application's state, by its e-mailed link (applicant)
+      description: |
+        The token of the application's link in `X-Application-Token`
+        (any link of this application that has not expired). Answers the
+        state, the decision and, once approved, the public part of the
+        number issued; never the application's content. An unknown id
+        and a token that does not verify are both 404.
+      security: []
+      x-audit: none
+      parameters:
+        - {name: application_id, in: path, required: true, schema: {type: string, pattern: "^[0-9a-f]{32}$"}}
+        - {name: X-Application-Token, in: header, description: "The link's token; without it the answer is 404.", schema: {type: string, maxLength: 512}}
+      responses:
+        "200":
+          description: The state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryApplicationStatus"
+        "404":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/applications/{application_id}/verify:
+    post:
+      operationId: verifyRegistryApplication
+      tags: [registry-portal]
+      summary: Follow the e-mailed verification link (applicant)
+      description: |
+        The verification link's token in `X-Application-Token`, within
+        its lifetime by the database clock: `unverified` becomes
+        `submitted` and reaches the registrars. Again on a submitted
+        application it answers its state unchanged. An expired link is
+        409 `link_expired` (apply again); an unknown id or a token that
+        does not verify is 404.
+      security: []
+      x-audit: {event_type: registry_application_verified, entity_type: registry_application, purpose: none}
+      parameters:
+        - {name: application_id, in: path, required: true, schema: {type: string, pattern: "^[0-9a-f]{32}$"}}
+        - {name: X-Application-Token, in: header, description: "The link's token; without it the answer is 404.", schema: {type: string, maxLength: 512}}
+      responses:
+        "200":
+          description: Submitted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryApplicationStatus"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/applications/{application_id}/personal-data:
+    get:
+      operationId: getRegistryApplicationPersonalData
+      tags: [registry-portal]
+      summary: An application's content, with a purpose (registrars)
+      description: |
+        Recorded as registry_application_pii_viewed with the purpose,
+        committed before anything is opened; no purpose, no read.
+      security:
+        - sessionCookie: []
+      x-roles: [registrar]
+      x-audit: {event_type: registry_application_pii_viewed, entity_type: registry_application, purpose: required}
+      parameters:
+        - {name: application_id, in: path, required: true, schema: {type: string, pattern: "^[0-9a-f]{32}$"}}
+        - {name: purpose, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
+      responses:
+        "200":
+          description: The content.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryApplicationPersonalData"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/applications/{application_id}/review:
+    post:
+      operationId: startRegistryApplicationReview
+      tags: [registry-portal]
+      summary: Take a submitted application for review (registrars)
+      description: "`submitted` becomes `under_review` under the registrar; 409 from any other state."
+      security:
+        - sessionCookie: []
+      x-roles: [registrar]
+      x-audit: {event_type: registry_application_review_started, entity_type: registry_application, purpose: none}
+      parameters:
+        - {name: application_id, in: path, required: true, schema: {type: string, pattern: "^[0-9a-f]{32}$"}}
+      responses:
+        "200":
+          description: Under review.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryApplication"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/applications/{application_id}/approve:
+    post:
+      operationId: approveRegistryApplication
+      tags: [registry-portal]
+      summary: "Approve an application under review: register the operator (registrars)"
+      description: |
+        Issues the registration number (the policy's
+        `registration_number_pattern`; the public part from
+        `REGISTRY_ISSUE_PREFIX` and `REGISTRY_ISSUE_RANDOM_LEN` random
+        letters and digits, never repeating; plan Q-A10, pending GCAA)
+        and a three-character secret part, registers the operator
+        through the registry (`source = portal`, valid until
+        `valid_until`, default `REGISTRY_APPLICATION_VALIDITY_S` from
+        now) and queues the approval e-mail, which carries the secret
+        part once: it is stored only as the registry's keyed hash and is
+        in no response. A retried approval registers nobody twice and
+        approves what the first attempt chose: 409 when it names another
+        `valid_until`. 409 unless `under_review`; 409
+        `issuance_pattern_mismatch` when the issued shape does not match
+        the policy's pattern.
+      security:
+        - sessionCookie: []
+      x-roles: [registrar]
+      x-audit: {event_type: registry_application_approved, entity_type: registry_application, purpose: none}
+      parameters:
+        - {name: application_id, in: path, required: true, schema: {type: string, pattern: "^[0-9a-f]{32}$"}}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryApplicationApproval"
+      responses:
+        "200":
+          description: Approved; the operator is registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryApplication"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/applications/{application_id}/refuse:
+    post:
+      operationId: refuseRegistryApplication
+      tags: [registry-portal]
+      summary: Refuse a submitted application with a reason (registrars)
+      description: The reason is mailed to the applicant; 409 unless submitted or under review.
+      security:
+        - sessionCookie: []
+      x-roles: [registrar]
+      x-audit: {event_type: registry_application_refused, entity_type: registry_application, purpose: none}
+      parameters:
+        - {name: application_id, in: path, required: true, schema: {type: string, pattern: "^[0-9a-f]{32}$"}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistryApplicationRefusal"
+      responses:
+        "200":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryApplication"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/registry/operator-links:
+    post:
+      operationId: requestOperatorLink
+      tags: [registry-portal]
+      summary: Ask for an occurrence-report link, mailed to the operator's registered address
+      description: |
+        For a registration in good standing a single-use link (lifetime
+        `REGISTRY_OPERATOR_LINK_TTL_S`) is mailed to the e-mail address
+        the registry holds for it; the answer is 202 whatever the number,
+        so it tells nobody whether a number is registered or where its
+        mail goes. Budgets per client address and per operator, counted
+        in the database (429 with Retry-After). 404 when
+        `REGISTRY_OPERATOR_REPORTS` is off.
+      security: []
+      x-audit: {event_type: registry_operator_link_requested, entity_type: uas_operator, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OperatorLinkRequest"
+      responses:
+        "202":
+          description: Accepted.
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/occurrences/operator:
+    post:
+      operationId: createOperatorOccurrence
+      tags: [occurrences]
+      summary: An operator's occurrence report through its e-mailed link (2019/947 Art. 19(2))
+      description: |
+        WP-18's intake (POST /v1/occurrences, the same `occurrence/v1`
+        body and checks) for an operator: the link's token in
+        `X-Operator-Token`, single use, within its lifetime by the
+        database clock. Recorded with `reporter_org =
+        operator:<registration public part>` on the mandatory channel.
+        The body is checked before the link is spent; a link spent
+        already or expired is 401 `link_spent`; a token that does not
+        verify is 401. 404 when `REGISTRY_OPERATOR_REPORTS` is off.
+      security: []
+      x-audit: {event_type: occurrence_received, entity_type: occurrence, purpose: none}
+      parameters:
+        - {name: X-Operator-Token, in: header, description: "The link's token; without it the answer is 401.", schema: {type: string, maxLength: 512}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OccurrenceReport"
+      responses:
+        "200":
+          description: The same report was received before; the id given then.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccurrenceReceipt"
+        "201":
+          description: The report as received.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccurrenceReceipt"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
   # WP-7: the Remote ID receiver registry (admin), the two receiver
   # endpoints (config and heartbeat, served by api), the observation
   # ingest (served by rid-ingest) and the raw frames (spec 02 F9, 06 §2
@@ -1796,7 +2326,10 @@ paths:
         `unauthenticated` (no or unknown bearer key), 401 `signature`
         (unsigned, unknown receiver, wrong signature), 401 `skew`
         (sent_at_ms more than 30 s from the ingest's clock), 409
-        `replay` (nonce seen before), 400 `validation`, 413
+        `replay` (nonce seen before), 400 `validation`, 400
+        `lab_header` (the batch carries `X-Lab-Scenario`, which only the
+        lab's simulated receivers set, and this ingest runs with
+        `LAB_HEADERS_ALLOWED=false`, the default: spec 06 T11), 413
         `body_too_large`, 503 `source_disabled`, `queue_full` or
         `queue_unavailable` with Retry-After. Never 403.
       security:
@@ -2270,7 +2803,7 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/zones/{identifier}:
     parameters:
-      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7}}
+      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7, pattern: "^[A-Za-z0-9_-]{1,7}$"}}
     get:
       operationId: getZone
       tags: [zones]
@@ -2318,7 +2851,7 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/zones/{identifier}/approve:
     parameters:
-      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7}}
+      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7, pattern: "^[A-Za-z0-9_-]{1,7}$"}}
     post:
       operationId: approveZone
       tags: [zones]
@@ -2345,7 +2878,7 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/zones/{identifier}/versions:
     parameters:
-      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7}}
+      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7, pattern: "^[A-Za-z0-9_-]{1,7}$"}}
     get:
       operationId: listZoneVersions
       tags: [zones]
@@ -2368,7 +2901,7 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/zones/{identifier}/applies:
     parameters:
-      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7}}
+      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7, pattern: "^[A-Za-z0-9_-]{1,7}$"}}
     get:
       operationId: getZoneApplicability
       tags: [zones]
@@ -2484,7 +3017,7 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/uspace/{identifier}:
     parameters:
-      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7}}
+      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7, pattern: "^[A-Za-z0-9_-]{1,7}$"}}
     get:
       operationId: getUSpaceAirspace
       tags: [uspace]
@@ -2527,7 +3060,7 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/uspace/{identifier}/designate:
     parameters:
-      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7}}
+      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7, pattern: "^[A-Za-z0-9_-]{1,7}$"}}
     post:
       operationId: designateUSpaceAirspace
       tags: [uspace]
@@ -2554,7 +3087,7 @@ paths:
           $ref: "#/components/responses/Problem"
   /v1/uspace/{identifier}/versions:
     parameters:
-      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7}}
+      - {name: identifier, in: path, required: true, schema: {type: string, maxLength: 7, pattern: "^[A-Za-z0-9_-]{1,7}$"}}
     get:
       operationId: listUSpaceVersions
       tags: [uspace]
@@ -3064,6 +3597,277 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
 
+  # WP-18: occurrence reports under Reg. (EU) 376/2014 (spec 01 A8, 02
+  # F7 and F11, 03 §1 occurrence_reports, 04 §3.3 occurrence/v1, 06 §2
+  # T6, 06 §5, 09 §1.7); docs/runbooks/occurrences.md is the procedure.
+  # The reports live in their own schema and role and are never joined
+  # to violations or incidents (376 Art. 15-16). The reporter's identity
+  # is its own operation, for incident officers only, purpose-logged;
+  # an inspector reads reports without it (403 there). The
+  # de-identified export carries no reporter, name or address.
+  /v1/occurrences:
+    post:
+      operationId: createOccurrence
+      tags: [occurrences]
+      summary: Report an occurrence (occurrence/v1; USSPs, the ANSP)
+      description: |
+        The body is `occurrence/v1` (schemas/occurrence/v1.json, owned
+        here, M14). The sender is the token's `sub`, recorded as
+        `reporter_org` (a `reporter.org` that differs is ignored and
+        counted). Idempotent on (`reporter_org`, `report_ref`): the same
+        report again answers 200 with the id given first; another
+        report under the same reference is 409 `report_ref_conflict`.
+        A report received more than the reporting deadline (72 h,
+        `OCCURRENCES_REPORT_DEADLINE_S`) after `became_aware_at` is
+        accepted with `within_72h: false`, never refused. A
+        `became_aware_at` ahead of the database clock by more than the
+        allowed skew, or before `occurred_at`, is 400. A
+        `reporter.person_ref` is stored sealed under the occurrence key;
+        without that key configured such a report is 503
+        `occurrence_key_unavailable` (retry later), never stored in
+        clear. Operator aircraft keep the registration number's public
+        part only. Recorded with an `occurrence_received` events row
+        that holds no reporter identity.
+      security:
+        - ecosystemToken: []
+      x-scope: occurrences.write
+      x-audit: {event_type: occurrence_received, entity_type: occurrence, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OccurrenceReport"
+      responses:
+        "200":
+          description: The same report was received before; the id given then.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccurrenceReceipt"
+        "201":
+          description: The report as received.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccurrenceReceipt"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    get:
+      operationId: listOccurrences
+      tags: [occurrences]
+      summary: Occurrence reports, newest received first (no reporter identity)
+      security:
+        - sessionCookie: []
+      x-roles: [incident_officer, inspector]
+      x-audit: none
+      parameters:
+        - {name: state, in: query, schema: {$ref: "#/components/schemas/OccurrenceState"}}
+        - {name: category, in: query, schema: {$ref: "#/components/schemas/OccurrenceCategory"}}
+        - {name: channel, in: query, schema: {$ref: "#/components/schemas/OccurrenceChannel"}}
+        - {name: from, in: query, description: Received at or after., schema: {type: string, format: date-time}}
+        - {name: to, in: query, description: Received before., schema: {type: string, format: date-time}}
+        - {name: cursor, in: query, schema: {type: string, maxLength: 128}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+      responses:
+        "200":
+          description: One page of reports.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccurrencePage"
+        "400":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/occurrences/export:
+    post:
+      operationId: exportOccurrences
+      tags: [occurrences]
+      summary: A de-identified export of the reports received in a window (hash-sealed, audited)
+      description: |
+        Builds the de-identified record set of the reports received in
+        [`from`, `to`) in `format` (default `eccairs-compatible-draft`,
+        the only format of this build; the E5X writer is open question
+        Q-A12). No reporter organisation, reporter reference, person,
+        name or address; aircraft by serial and the registration
+        number's public part; the narrative as the reporter wrote it
+        (the officer redacts it before filing). `content` is the exact
+        document; `content_hash` is the SHA-256 of its UTF-8 bytes,
+        recorded in `deidentified_exports` and in the
+        `occurrence_export_created` events row. A window holding more
+        reports than `OCCURRENCES_EXPORT_MAX_RECORDS` is refused
+        (`export_too_large`), never thinned.
+      security:
+        - sessionCookie: []
+      x-roles: [incident_officer]
+      x-audit: {event_type: occurrence_export_created, entity_type: occurrence_export, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OccurrenceExportInput"
+      responses:
+        "201":
+          description: The sealed export.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccurrenceExport"
+        "400":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/occurrences/{occurrence_id}:
+    parameters:
+      - {name: occurrence_id, in: path, required: true, schema: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}}
+    get:
+      operationId: getOccurrence
+      tags: [occurrences]
+      summary: One occurrence report (no reporter identity)
+      security:
+        - sessionCookie: []
+      x-roles: [incident_officer, inspector]
+      x-audit: none
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Occurrence"
+        "404":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/occurrences/{occurrence_id}/reporter:
+    parameters:
+      - {name: occurrence_id, in: path, required: true, schema: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}}
+    get:
+      operationId: getOccurrenceReporter
+      tags: [occurrences]
+      summary: The reporter of an occurrence (incident officers only; purpose required, audited)
+      description: |
+        The reporting organisation, its reference and the reporter's
+        person reference opened from the occurrence key. Refused without
+        `purpose`; every read is an `occurrence_reporter_viewed` events
+        row with the purpose, written before the identity is returned
+        (376 Art. 16(1)). An inspector, whatever else it may read, is
+        403 here. Without the occurrence key a sealed person reference
+        is 503 `occurrence_key_unavailable`.
+      security:
+        - sessionCookie: []
+      x-roles: [incident_officer]
+      x-audit: {event_type: occurrence_reporter_viewed, entity_type: occurrence, purpose: required}
+      parameters:
+        - {name: purpose, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
+      responses:
+        "200":
+          description: The reporter.
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccurrenceReporter"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/occurrences/{occurrence_id}/classify:
+    parameters:
+      - {name: occurrence_id, in: path, required: true, schema: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}}
+    post:
+      operationId: classifyOccurrence
+      tags: [occurrences]
+      summary: Classify the safety risk of an occurrence (376 Art. 7(2))
+      description: |
+        `risk_classification` is one class of the configured scheme
+        (`OCCURRENCES_RISK_CLASSES`; another value is 400 naming the
+        scheme). A received report becomes `classified`; a classified or
+        analysed one keeps its state with the new class; a closed one
+        is 409 `occurrence_closed`. Recorded with an
+        `occurrence_classified` events row (from, to).
+      security:
+        - sessionCookie: []
+      x-roles: [incident_officer]
+      x-audit: {event_type: occurrence_classified, entity_type: occurrence, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OccurrenceClassification"
+      responses:
+        "200":
+          description: The report as classified.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Occurrence"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/occurrences/{occurrence_id}/analysis:
+    parameters:
+      - {name: occurrence_id, in: path, required: true, schema: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}}
+    patch:
+      operationId: updateOccurrenceAnalysis
+      tags: [occurrences]
+      summary: Record the analysis and follow-up of an occurrence, mark it analysed or closed
+      description: |
+        Every member is optional; what is present is applied in one
+        transaction with one `occurrence_analysis_updated` events row
+        naming what changed (never the text). `state` moves a classified
+        report to `analysed` (an analysis is required) and an analysed
+        one to `closed`; a report not yet classified cannot be analysed
+        (409 `occurrence_not_classified`) and a closed one cannot change
+        (409 `occurrence_closed`).
+      security:
+        - sessionCookie: []
+      x-roles: [incident_officer]
+      x-audit: {event_type: occurrence_analysis_updated, entity_type: occurrence, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OccurrenceAnalysisPatch"
+      responses:
+        "200":
+          description: The report as changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Occurrence"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
   # WP-16: USSP and CISP certificates (spec 01 A5, 02 F1 and F7, 03 §1;
   # Reg. 2021/664 Art. 7(6), 14-16, 18(a)). Issuing a certificate creates
   # its holder's client in the token service (06 §3, least privilege);
@@ -3514,10 +4318,12 @@ paths:
       tags: [picture]
       summary: The live picture over a WebSocket (picture-ws)
       description: |
-        A WebSocket upgrade, same-origin: the `Origin` header must be
-        exactly one of `PICTURE_ALLOWED_ORIGINS` (else 403 `origin`,
-        never upgraded) and the browser sends the `uspace_session`
-        cookie (M22; no ticket, nothing in the query string). The token
+        A WebSocket upgrade, same-origin: the browser sends the
+        `uspace_session` cookie (M22; no ticket, nothing in the query
+        string; without it 401 `unauthenticated`, never upgraded,
+        whatever the Origin) and the `Origin` header must be exactly one
+        of `PICTURE_ALLOWED_ORIGINS` (else 403 `origin`, never
+        upgraded). The token
         is verified by uspace-core's verifier and must be a session of
         the console or police realm whose sessions row is live (api's
         `GET /v1/auth/session`); otherwise the connection is closed
@@ -3529,8 +4335,9 @@ paths:
         layers[]}`, then `track/telemetry/v1` (with `age_s` and
         `source_state`), `track/manned/v1`, `violation/v1` and
         `source/status/v1`, and `console/status/v1` every 2 s. Refusals
-        before the upgrade: 426 `upgrade_required`, 403 `origin`, 503
-        `picture_full` with Retry-After.
+        before the upgrade, in this order: 401 `unauthenticated` (no
+        `uspace_session` cookie), 426 `upgrade_required`, 403 `origin`,
+        503 `picture_full` with Retry-After.
       security:
         - sessionCookie: []
       x-picture: true
@@ -3538,6 +4345,8 @@ paths:
       responses:
         "101":
           description: Switching protocols; the console frame follows.
+        "401":
+          $ref: "#/components/responses/Problem"
         "403":
           $ref: "#/components/responses/Problem"
         "426":
@@ -3823,8 +4632,10 @@ paths:
         with `aud` one of `AUTHORITY_AUDIENCES` (M6, M18); the service
         area's owner must be the token's subject (403 otherwise). Body:
         F3411 `PutIdentificationServiceAreaNotificationParameters`, at most
-        `DP_MAX_NOTIFICATION_BYTES`. Errors are F3411 `ErrorResponse`
-        bodies.
+        `DP_MAX_NOTIFICATION_BYTES`. Every refusal is the problem/v1 body
+        (`application/problem+json`) with the F3411 `ErrorResponse`
+        member `message` beside it, equal to `detail`
+        (`DPNotificationProblem`).
       security:
         - ecosystemToken: []
       x-dp: true
@@ -3841,15 +4652,429 @@ paths:
         "204":
           description: Applied.
         "400":
-          description: Malformed (F3411 ErrorResponse).
+          description: Malformed (`validation`, the field in `errors`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/DPNotificationProblem"
         "401":
-          description: No token, or a token refused (F3411 ErrorResponse).
+          description: No token, or a token refused (`unauthenticated`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/DPNotificationProblem"
         "403":
-          description: The token does not grant rid.service_provider, or its subject does not own the ISA (F3411 ErrorResponse).
+          description: The token does not grant rid.service_provider, or its subject does not own the ISA (`forbidden`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/DPNotificationProblem"
         "413":
-          description: Larger than the bound (F3411 ErrorResponse).
+          description: Larger than the bound (`body_too_large`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/DPNotificationProblem"
         "503":
-          description: The token cannot be verified yet (F3411 ErrorResponse).
+          description: The token cannot be verified yet (`unavailable`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/DPNotificationProblem"
+
+  # WP-19: the police realm (spec 02 F10). A session of the police realm
+  # holding police.query, signed in with MFA from an address of the
+  # account's allow-list; every query names a purpose from the
+  # configured list and a case reference, is one police_queries row and
+  # one police_query events row, and is rate-limited per user and per
+  # agency. Personal data only where the purpose allows it.
+  /v1/police/aircraft:
+    get:
+      operationId: queryPoliceAircraft
+      tags: [police]
+      summary: Who is flying in a box now, or was at an instant
+      description: |
+        Without `at`: the tracks of the authority's picture last seen
+        within `POLICE_LIVE_WINDOW_S` of now (the telemetry database's
+        clock). With `at`: the tracks seen within `POLICE_AT_WINDOW_S`
+        either side of it; an `at` older than `POLICE_HISTORY_MAX_AGE_S`
+        (the online retention) or in the future is refused. Each
+        aircraft: its serial and the operator registration's public part
+        as identified, the identification status, the trust, the first
+        and last time seen and its positions in the box (the newest
+        `POLICE_MAX_POSITIONS`, `positions_truncated` beyond). The remote
+        pilot position is never returned. The operator's identity is
+        added only when `purpose` is one of `POLICE_PII_PURPOSES`, each
+        read a `registry_pii_viewed` events row carrying the case
+        reference. `sources` says how fresh the picture is and which
+        recorded writer gaps fall in the window: an empty answer from a
+        stale or gapped picture is not an empty sky.
+      security:
+        - sessionCookie: []
+      x-roles: [police.query]
+      x-realm: police
+      x-audit: {event_type: police_query, entity_type: police_query, purpose: required}
+      parameters:
+        - {name: bbox, in: query, required: true, description: "min_lon,min_lat,max_lon,max_lat (WGS84 degrees), each side at most POLICE_MAX_BBOX_DEG.", schema: {type: string, maxLength: 128}}
+        - {name: at, in: query, schema: {type: string, format: date-time}}
+        - {name: purpose, in: query, required: true, schema: {type: string, maxLength: 64}}
+        - {name: case_ref, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 100}}
+      responses:
+        "200":
+          description: The aircraft.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoliceAircraftAnswer"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/police/operators/{reg}:
+    parameters:
+      - {name: reg, in: path, required: true, description: "The operator registration number (its public part; a secret part sent with it is dropped).", schema: {type: string, minLength: 1, maxLength: 64}}
+    get:
+      operationId: queryPoliceOperator
+      tags: [police]
+      summary: An operator's registry status and fleet
+      description: |
+        The registration as the registry holds it (status, validity),
+        its fleet (at most `POLICE_MAX_FLEET`, `fleet_truncated`
+        beyond), and the operator's identity only when `purpose` allows
+        personal data. An unknown number is a 404 after the query is
+        recorded with `result_count` 0.
+      security:
+        - sessionCookie: []
+      x-roles: [police.query]
+      x-realm: police
+      x-audit: {event_type: police_query, entity_type: police_query, purpose: required}
+      parameters:
+        - {name: purpose, in: query, required: true, schema: {type: string, maxLength: 64}}
+        - {name: case_ref, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 100}}
+      responses:
+        "200":
+          description: The operator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoliceOperatorAnswer"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/police/serials/{serial}:
+    parameters:
+      - {name: serial, in: path, required: true, schema: {type: string, minLength: 1, maxLength: 64}}
+    get:
+      operationId: queryPoliceSerial
+      tags: [police]
+      summary: An aircraft's registry status and its operator
+      description: |
+        The aircraft the serial names under uspace-core's matching
+        (exact, else a unique folded match), its status and its
+        operator's registration; the operator's identity only when
+        `purpose` allows personal data. An unknown serial is a 404 after
+        the query is recorded with `result_count` 0.
+      security:
+        - sessionCookie: []
+      x-roles: [police.query]
+      x-realm: police
+      x-audit: {event_type: police_query, entity_type: police_query, purpose: required}
+      parameters:
+        - {name: purpose, in: query, required: true, schema: {type: string, maxLength: 64}}
+        - {name: case_ref, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 100}}
+      responses:
+        "200":
+          description: The aircraft.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoliceSerialAnswer"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/police/exports:
+    post:
+      operationId: createPoliceExport
+      tags: [police]
+      summary: A legal evidence pack for an incident or for an area and a window
+      description: |
+        Builds a `legal` evidence pack through WP-17's builder (hash
+        sealed, the seal statement signed by the publication key, stored
+        sealed at rest) for [from, to): of `incident_id`, or of the
+        aircraft the picture held in `query.bbox` over the window, for
+        which an incident `opened_from: police_request` is opened (at
+        most 32 aircraft, 413 beyond: narrow the query; 422 when there is
+        none). A legal pack carries personal data, so `purpose` must be
+        one of `POLICE_PII_PURPOSES` (403 otherwise). The export is a
+        police_queries row before the build, and the pack's
+        `evidence_pack_built` row carries the purpose and the case
+        reference. Only the requesting agency downloads it.
+      security:
+        - sessionCookie: []
+      x-roles: [police.query]
+      x-realm: police
+      x-audit: {event_type: police_query, entity_type: police_query, purpose: required}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PoliceExportInput"
+      responses:
+        "201":
+          description: The sealed pack.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoliceExport"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/police/exports/{pack_id}/download:
+    parameters:
+      - {name: pack_id, in: path, required: true, schema: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}}
+    get:
+      operationId: downloadPoliceExport
+      tags: [police]
+      summary: The sealed archive of an export of this agency (audited)
+      description: |
+        Only a pack exported for the caller's agency (404 otherwise).
+        The download is a police_queries row, and WP-17's download
+        checks the hash before a byte is served and records
+        `evidence_pack_downloaded` with the purpose and the case
+        reference. `purpose` must be one of `POLICE_PII_PURPOSES`.
+      security:
+        - sessionCookie: []
+      x-roles: [police.query]
+      x-realm: police
+      x-audit: {event_type: police_query, entity_type: police_query, purpose: required}
+      parameters:
+        - {name: purpose, in: query, required: true, schema: {type: string, maxLength: 64}}
+        - {name: case_ref, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 100}}
+      responses:
+        "200":
+          description: The archive (a ZIP file).
+          headers:
+            X-Content-SHA256:
+              description: The archive's hash, as content_hash records it.
+              schema: {type: string}
+            X-Evidence-Signature:
+              description: The detached JWS of the seal statement; empty when the pack is unsigned.
+              schema: {type: string}
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  # WP-27: retention, legal holds and the verification of the records
+  # (spec 05 §4, 06 §2 T7, 06 §5, 08 Q8; plan Q-A15, Q-A18;
+  # docs/runbooks/retention.md). The periods are configuration, the
+  # spec's defaults pending GCAA.
+  /v1/audit/verify:
+    get:
+      operationId: verifyAuditChain
+      tags: [audit]
+      summary: Verify one month of the audit log's hash chain
+      description: |
+        Recomputes the month's chain in id order (`audit.Verify`) and
+        answers how many rows from which id to which were checked, the
+        last hash, and the first broken row or none. The oldest kept
+        month, once older months were dropped after their retention,
+        links to the anchor recorded at the drop (`anchored_to`). The
+        verification is itself an `audit_chain_verified` events row in
+        the chain, and a broken month is an alarm on the status line.
+        `month` is a UTC calendar month (YYYY-MM); a month with no rows
+        answers `rows: 0`, never "intact" without numbers.
+      security:
+        - sessionCookie: []
+      x-roles: [admin, auditor]
+      x-audit: {event_type: audit_chain_verified, entity_type: events, purpose: none}
+      parameters:
+        - {name: month, in: query, required: true, schema: {type: string, pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$"}}
+      responses:
+        "200":
+          description: What was checked and what was found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditVerification"
+        "400":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/retention/status:
+    get:
+      operationId: getRetentionStatus
+      tags: [retention]
+      summary: The retention periods, the jobs' last runs, the archive and the alarms
+      description: |
+        The periods in force (`pending_gcaa: true`: the spec's Q8
+        defaults until GCAA and the DPO decide), every job's newest run
+        from the job ledger (database clock) with its summary, the
+        archive ledger by state, the active holds, the months of the
+        audit log found broken, and the USSP days still missing after
+        the grace period (02 F7). The read is a `retention_status_viewed`
+        events row.
+      security:
+        - sessionCookie: []
+      x-roles: [admin, auditor]
+      x-audit: {event_type: retention_status_viewed, entity_type: retention, purpose: none}
+      responses:
+        "200":
+          description: The status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetentionStatus"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/retention/holds:
+    get:
+      operationId: listLegalHolds
+      tags: [retention]
+      summary: Legal holds, newest first
+      description: |
+        Active holds, and released ones with `include_released`. At most
+        `limit`; `truncated` says when there are more. The read is a
+        `legal_holds_viewed` events row.
+      security:
+        - sessionCookie: []
+      x-roles: [admin, auditor, incident_officer]
+      x-audit: {event_type: legal_holds_viewed, entity_type: legal_hold, purpose: none}
+      parameters:
+        - {name: include_released, in: query, schema: {type: boolean, default: false}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+      responses:
+        "200":
+          description: One page of holds.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegalHoldPage"
+        "400":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: placeLegalHold
+      tags: [retention]
+      summary: Place a legal hold
+      description: |
+        Keeps what the hold covers past every retention period until it
+        is released: no deletion batch, chunk drop, month drop or
+        archive expiry touches it. A hold covers the violations named in
+        `violation_ids` (and their aircraft's telemetry around them);
+        with a window `[window_from, window_to)` the records of that
+        time, all of them when no list is given, else those of the
+        listed `track_ids` and `serials`; without a window the listed
+        aircraft at any time. A window, or at least one list, is
+        required. Placing a hold waits for a deletion batch in progress
+        and is never missed by the next one (the hold gate). The hold is
+        a `legal_hold_placed` events row with the case reference.
+      security:
+        - sessionCookie: []
+      x-roles: [admin, incident_officer]
+      x-audit: {event_type: legal_hold_placed, entity_type: legal_hold, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LegalHoldInput"
+      responses:
+        "201":
+          description: The hold.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegalHold"
+        "400":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/retention/holds/{hold_id}/release:
+    parameters:
+      - {name: hold_id, in: path, required: true, schema: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}}
+    post:
+      operationId: releaseLegalHold
+      tags: [retention]
+      summary: Release a legal hold
+      description: |
+        The hold stays on record with who released it, when and why; its
+        records fall back under their retention periods at the next run.
+        409 when it is released already. A `legal_hold_released` events
+        row.
+      security:
+        - sessionCookie: []
+      x-roles: [admin, incident_officer]
+      x-audit: {event_type: legal_hold_released, entity_type: legal_hold, purpose: none}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LegalHoldRelease"
+      responses:
+        "200":
+          description: The released hold.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegalHold"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
 
 components:
   securitySchemes:
@@ -3983,6 +5208,19 @@ components:
             $ref: "#/components/schemas/FieldProblem"
         truncated:
           type: boolean
+    DPNotificationProblem:
+      description: |
+        The refusal of the F3411 ISA notification (dp-poller): the
+        problem/v1 body, which is also an F3411 `ErrorResponse`, its one
+        member `message` carrying the same text as `detail`.
+      allOf:
+        - $ref: "#/components/schemas/Problem"
+        - type: object
+          required: [message]
+          properties:
+            message:
+              type: string
+              description: F3411 `ErrorResponse.message`; equal to `detail`.
     Severity:
       type: string
       enum: [info, warning, critical]
@@ -4051,6 +5289,16 @@ components:
           minimum: 1
           maximum: 120
           description: "Art. 16(2): a certificate whose operations ceased this many months ago lapses (default 12). Copied onto a certificate at issue."
+        no_authorisation_grace_s:
+          type: number
+          format: double
+          description: |
+            WP-26: how long an aircraft inside a U-space airspace may show
+            no matching operational intent before no_authorisation is
+            raised (default 10; pending GCAA, spec Q2).
+            no_authorisation_severity (default warning, pending GCAA) is
+            the severity it is raised at.
+        no_authorisation_severity: {$ref: "#/components/schemas/Severity"}
         note:
           type: string
           maxLength: 1000
@@ -4058,7 +5306,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/PolicyInput"
         - type: object
-          required: [version, active, created_at, created_by, note, registration_number_pattern, certificate_lapse_unused_months, certificate_lapse_ceased_months]
+          required: [version, active, created_at, created_by, note, registration_number_pattern, certificate_lapse_unused_months, certificate_lapse_ceased_months, no_authorisation_grace_s, no_authorisation_severity]
           properties:
             version:
               type: integer
@@ -4315,7 +5563,8 @@ components:
         confirm_before: {type: string, format: date-time}
     Role:
       type: string
-      enum: [viewer, inspector, registrar, incident_officer, admin, auditor]
+      description: The console roles, and `police.query`, the one grant of the police realm (WP-19).
+      enum: [viewer, inspector, registrar, incident_officer, admin, auditor, police.query]
     Realm:
       type: string
       enum: [console, police]
@@ -4377,6 +5626,11 @@ components:
     UserInput:
       type: object
       required: [username, password, roles, realm]
+      description: |
+        A console account holds console roles only; a police account
+        (WP-19) holds `police.query` only, names its `agency` and the
+        CIDRs of `ip_allowlist` it signs in and queries from (an empty
+        list admits no address). A console account carries neither.
       properties:
         username: {type: string, maxLength: 64}
         password: {type: string, maxLength: 1024}
@@ -4388,6 +5642,21 @@ components:
             $ref: "#/components/schemas/Role"
         realm:
           $ref: "#/components/schemas/Realm"
+        agency: {type: string, maxLength: 100, description: "Police realm only: the agency, 1 to 100 of letters, digits, space . _ -."}
+        ip_allowlist:
+          type: array
+          maxItems: 32
+          description: Police realm only, required there; CIDRs or single addresses.
+          items: {type: string, maxLength: 64}
+    PoliceAccessInput:
+      type: object
+      required: [agency, ip_allowlist]
+      properties:
+        agency: {type: string, maxLength: 100}
+        ip_allowlist:
+          type: array
+          maxItems: 32
+          items: {type: string, maxLength: 64}
     RolesInput:
       type: object
       required: [roles]
@@ -4409,6 +5678,11 @@ components:
           items: {type: string}
         realm:
           $ref: "#/components/schemas/Realm"
+        agency: {type: string, description: Police realm only.}
+        ip_allowlist:
+          type: array
+          description: Police realm only; the CIDRs a sign-in and a police query may come from.
+          items: {type: string}
         status: {type: string, enum: [active, disabled]}
         mfa_enrolled: {type: boolean}
         mfa_failures: {type: integer, description: Consecutive wrong MFA codes.}
@@ -4749,6 +6023,164 @@ components:
           type: array
           items: {$ref: "#/components/schemas/RegistryChange"}
         next_since: {type: integer, format: int64, description: Pass as since for the next page.}
+    # WP-20: the import report, the public check and the portal. The
+    # check, the applicant's status and the import report carry no
+    # personal data (internal/registry's contract test); only
+    # RegistryApplicationPersonalData does, for registrars.
+    RegistryImportKind:
+      type: string
+      enum: [operators, uas]
+    RegistryImportJSON:
+      type: array
+      description: A JSON export, an array of flat objects, kept as given and read by the rules file.
+      items: {type: object, additionalProperties: true}
+      x-go-type: json.RawMessage
+    RegistryImportOutcome:
+      type: object
+      required: [record, source_id, action, status]
+      properties:
+        record: {type: integer, minimum: 1, description: The record's number in the file, 1 being the first after the header.}
+        source_id: {type: string, description: The source's id of the record.}
+        action: {type: string, enum: [created, updated, unchanged]}
+        entity_id: {type: string, description: The registry id; absent in a dry run's create.}
+        fields:
+          type: array
+          description: The fields an update changes (names only; the values are personal).
+          items: {type: string}
+        status: {$ref: "#/components/schemas/RegistryStatus"}
+    RegistryImportReport:
+      type: object
+      required: [kind, dry_run, applied, records, created, updated, unchanged, rules_version, content_sha256, problems, outcomes]
+      properties:
+        kind: {$ref: "#/components/schemas/RegistryImportKind"}
+        dry_run: {type: boolean}
+        applied: {type: boolean, description: True when the import committed (never in a dry run).}
+        records: {type: integer, minimum: 0}
+        created: {type: integer, minimum: 0}
+        updated: {type: integer, minimum: 0}
+        unchanged: {type: integer, minimum: 0}
+        registry_version: {type: integer, format: int64, description: The registry version the import committed as.}
+        rules_version: {type: string}
+        content_sha256: {type: string, description: SHA-256 of the exact bytes read.}
+        problems:
+          type: array
+          maxItems: 100
+          description: Every problem by record and field (records[<n>].<field>); with any, nothing is written.
+          items: {$ref: "#/components/schemas/FieldProblem"}
+        problems_truncated: {type: boolean}
+        outcomes:
+          type: array
+          maxItems: 1000
+          description: What was (or would be) done with each record, at most 1000; outcomes_truncated beyond.
+          items: {$ref: "#/components/schemas/RegistryImportOutcome"}
+        outcomes_truncated: {type: boolean}
+    RegistryCheck:
+      type: object
+      description: The public answer for a registration number. Status only.
+      required: [status]
+      properties:
+        status: {type: string, enum: [valid, suspended, revoked, unknown]}
+        valid_until: {type: string, format: date-time, description: The end of validity of a registered number; absent for unknown.}
+    RegistryApplicationState:
+      type: string
+      enum: [unverified, submitted, under_review, approved, refused]
+    RegistryApplicationInput:
+      type: object
+      description: |
+        A registration application: the 2019/947 Art. 14(2) field set of
+        RegistryOperatorInput without the number (the authority issues
+        it), the validity (set at approval) and the source. lang is the
+        language of the e-mails (`en` or `ka`).
+      required: [operator_type, postal_address, contact_email, contact_phone, lang]
+      properties:
+        operator_type: {$ref: "#/components/schemas/OperatorType"}
+        full_name: {type: string, maxLength: 200}
+        legal_name: {type: string, maxLength: 200}
+        date_of_birth: {type: string, format: date}
+        legal_identification_number: {type: string, maxLength: 64}
+        postal_address: {type: string, maxLength: 500}
+        contact_email: {type: string, maxLength: 254}
+        contact_phone: {type: string, maxLength: 32}
+        insurance_policy_number: {type: string, maxLength: 64}
+        competency_confirmation: {type: boolean}
+        authorisations:
+          type: array
+          maxItems: 100
+          items: {type: object, additionalProperties: true}
+        lang: {type: string, enum: [en, ka]}
+    RegistryApplicationStatus:
+      type: object
+      description: What the applicant's link shows. No personal data.
+      required: [application_id, state, submitted_at]
+      properties:
+        application_id: {type: string}
+        state: {$ref: "#/components/schemas/RegistryApplicationState"}
+        submitted_at: {type: string, format: date-time}
+        verify_expires_at: {type: string, format: date-time, description: While unverified, when the verification link expires.}
+        decided_at: {type: string, format: date-time}
+        refusal_reason: {type: string}
+        registration_number: {type: string, description: Once approved, the public part of the number issued.}
+    RegistryApplication:
+      type: object
+      description: An application as registrars list it, without personal data.
+      required: [application_id, kind, state, operator_type, lang, submitted_at]
+      properties:
+        application_id: {type: string}
+        kind: {type: string, enum: [operator_registration]}
+        state: {$ref: "#/components/schemas/RegistryApplicationState"}
+        operator_type: {$ref: "#/components/schemas/OperatorType"}
+        lang: {type: string, enum: [en, ka]}
+        submitted_at: {type: string, format: date-time}
+        verified_at: {type: string, format: date-time}
+        registrar_id: {type: string}
+        review_started_at: {type: string, format: date-time}
+        decided_at: {type: string, format: date-time}
+        refusal_reason: {type: string}
+        registration_number: {type: string, description: The public part issued at approval.}
+        operator_id: {type: string, description: The operator registered at approval.}
+        valid_until: {type: string, format: date-time}
+    RegistryApplicationPage:
+      type: object
+      required: [applications]
+      properties:
+        applications:
+          type: array
+          items: {$ref: "#/components/schemas/RegistryApplication"}
+        next_cursor: {type: string}
+    RegistryApplicationPersonalData:
+      type: object
+      description: An application's content (registrars, with a purpose).
+      required: [application_id, operator_type]
+      properties:
+        application_id: {type: string}
+        operator_type: {$ref: "#/components/schemas/OperatorType"}
+        full_name: {type: string}
+        legal_name: {type: string}
+        date_of_birth: {type: string}
+        legal_identification_number: {type: string}
+        postal_address: {type: string}
+        contact_email: {type: string}
+        contact_phone: {type: string}
+        insurance_policy_number: {type: string}
+        competency_confirmation: {type: boolean}
+        authorisations:
+          type: array
+          items: {type: object, additionalProperties: true}
+    RegistryApplicationApproval:
+      type: object
+      properties:
+        valid_until: {type: string, format: date-time, description: "Default: REGISTRY_APPLICATION_VALIDITY_S from now."}
+    RegistryApplicationRefusal:
+      type: object
+      required: [reason]
+      properties:
+        reason: {type: string, minLength: 1, maxLength: 500}
+    OperatorLinkRequest:
+      type: object
+      required: [registration_number]
+      properties:
+        registration_number: {type: string, minLength: 1, maxLength: 64}
+        lang: {type: string, enum: [en, ka], default: en}
     # WP-7: Remote ID receivers, observations and raw frames.
     RIDReceiverOwner:
       type: string
@@ -5459,6 +6891,68 @@ components:
             reviewed_by: {type: [string, "null"]}
             review_note: {type: [string, "null"]}
             incident_requested: {type: boolean}
+            excerpt_segmenting:
+              $ref: "#/components/schemas/ViolationExcerptSegmenting"
+    # WP-23: the excerpt cut into segments and holes for the console, by
+    # the rule of the evidence packs (WP-17, B-13), so the console draws
+    # holes as holes and never judges where one is.
+    ViolationExcerptSegmenting:
+      type: object
+      description: |
+        The evidence excerpt cut as an evidence pack cuts a track
+        (docs/runbooks/incidents.md, B-13): at every silence longer than
+        the active policy's `max_gap_s`, every writer gap recorded in the
+        window and every sample without a position; each hole carries
+        every cause known of it and nothing is interpolated across it.
+        Present on `GET /v1/violations/{violation_id}` only. `unavailable`
+        (with `reason`) when the policy cannot be read: the console then
+        draws the samples unjoined. `writer_gaps_read: false` when the
+        recorded gaps could not be read: a silence is then labelled
+        `writer_gaps_unread`, never `no recorded cause`.
+      required: [state, segments, holes, unplaced]
+      properties:
+        state: {type: string, enum: [cut, unavailable]}
+        reason: {type: string, description: Why the excerpt was not cut (state unavailable).}
+        max_gap_s: {type: number, format: double, description: The active policy's max_gap_s that cut it.}
+        policy_version: {type: integer, format: int64}
+        writer_gaps_read: {type: boolean}
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ViolationExcerptSegment"
+        holes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ViolationExcerptHole"
+        unplaced:
+          type: array
+          description: Indexes of excerpt samples without a readable captured_at, left out of the cut.
+          items: {type: integer}
+    ViolationExcerptSegment:
+      type: object
+      required: [from, to, sample_indexes]
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        sample_indexes:
+          type: array
+          description: Indexes into evidence_excerpt, oldest first.
+          items: {type: integer}
+    ViolationExcerptHole:
+      type: object
+      required: [from, to, duration_s, causes, recorded]
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        duration_s: {type: number, format: double}
+        causes:
+          type: array
+          description: silence, no recorded cause, writer_gap, sample_without_position, writer_gaps_unread.
+          items: {type: string}
+        recorded:
+          type: array
+          description: The recorded writer gaps inside the hole, as an evidence pack words them.
+          items: {type: string}
     ViolationPage:
       type: object
       required: [violations]
@@ -5481,7 +6975,8 @@ components:
       enum: [info, warning, critical]
     IncidentOpenedFrom:
       type: string
-      enum: [violation, own_observation, ansp_notice, ussp_notice]
+      description: police_request is set by POST /v1/police/exports only (WP-19); an incident opened by hand naming it is refused.
+      enum: [violation, own_observation, ansp_notice, ussp_notice, police_request]
     IncidentIdentification:
       type: object
       description: The identification of the aircraft as it was judged at the time (uspace-core identify), as recorded.
@@ -5692,6 +7187,218 @@ components:
           description: unverifiable when the signing key is not held by this system any more.
         signature_detail: {type: [string, "null"]}
         verified_at: {type: string, format: date-time}
+    OccurrenceCategory:
+      type: string
+      description: The 376/2014 Art. 4(1) class of the report (spec 04 §3.3; the UAS classes of 2015/1018 are unverified, Q9).
+      enum: [airprox, nonconformance_in_prohibited, lost_link_in_uspace, emergency, other]
+    OccurrenceChannel:
+      type: string
+      description: mandatory (376 Art. 4) or voluntary (Art. 5); an operator's report (2019/947 Art. 19(2)) is mandatory.
+      enum: [mandatory, voluntary]
+    OccurrenceState:
+      type: string
+      enum: [received, classified, analysed, closed]
+    OccurrenceReporterInput:
+      type: object
+      description: |
+        Who reports. `org` is informational: the authority records the
+        token's `sub`. `person_ref` is the reporter's opaque reference
+        in the sender's system, sent in clear over TLS (M13) and sealed
+        at rest here; it is shown to incident officers only and never
+        exported (376 Art. 16).
+      properties:
+        org: {type: string, maxLength: 160}
+        person_ref: {type: string, maxLength: 128}
+    OccurrenceAircraftInput:
+      type: object
+      description: One UAS of the report. An operator registration's secret part is dropped, never stored.
+      properties:
+        serial: {type: string, maxLength: 128}
+        operator_reg: {type: string, maxLength: 128}
+        flight_id: {type: string, maxLength: 128}
+        authorisation_number: {type: string, maxLength: 128}
+    OccurrenceManned:
+      type: object
+      description: One manned aircraft of the report.
+      properties:
+        icao24: {type: string, pattern: "^[0-9a-f]{6}$"}
+        callsign: {type: string, maxLength: 128}
+    OccurrenceSeparation:
+      type: object
+      description: The minimum separation observed, in metres (horizontal, vertical) and when.
+      properties:
+        h_m: {type: number, format: double, minimum: 0}
+        v_m: {type: number, format: double, minimum: 0}
+        at: {type: string, format: date-time}
+    OccurrenceReport:
+      type: object
+      description: |
+        `occurrence/v1` (spec 04 §3.3), the request body of POST
+        /v1/occurrences; schemas/occurrence/v1.json is the same shape
+        with examples. Members this version does not know are ignored
+        (02 §1).
+      required: [schema, report_ref, channel, occurred_at, became_aware_at, category]
+      properties:
+        schema: {type: string, enum: [occurrence/v1]}
+        report_ref: {type: string, minLength: 1, maxLength: 128, description: "The sender's reference: with the sender, the idempotency key."}
+        channel: {$ref: "#/components/schemas/OccurrenceChannel"}
+        occurred_at: {type: string, format: date-time}
+        became_aware_at: {type: string, format: date-time, description: When the reporter became aware; the 72 h of 376 Art. 4(7)-(8) run from it.}
+        category: {$ref: "#/components/schemas/OccurrenceCategory"}
+        reporter: {$ref: "#/components/schemas/OccurrenceReporterInput"}
+        aircraft:
+          type: array
+          maxItems: 50
+          items: {$ref: "#/components/schemas/OccurrenceAircraftInput"}
+        manned:
+          type: array
+          maxItems: 50
+          items: {$ref: "#/components/schemas/OccurrenceManned"}
+        intent_refs:
+          type: array
+          maxItems: 50
+          items: {type: string, minLength: 1, maxLength: 64}
+        min_separation: {$ref: "#/components/schemas/OccurrenceSeparation"}
+        narrative: {type: string, maxLength: 20000, description: At most 20000 bytes of UTF-8.}
+        evidence_urls:
+          type: array
+          maxItems: 20
+          items: {type: string, format: uri, maxLength: 2048}
+        reported_at: {type: string, format: date-time, description: When the sender recorded the report.}
+    OccurrenceReceipt:
+      type: object
+      description: The acknowledgement of a report. It holds no reporter identity.
+      required: [occurrence_id, report_ref, received_at, within_72h, state, replayed]
+      properties:
+        occurrence_id: {type: string, description: The authority's id of the report (ULID).}
+        report_ref: {type: string}
+        received_at: {type: string, format: date-time, description: The authority's database clock at intake.}
+        within_72h: {type: boolean, description: "Received within the reporting deadline after became_aware_at; false: late, accepted and flagged."}
+        state: {$ref: "#/components/schemas/OccurrenceState"}
+        replayed: {type: boolean, description: True when this answers a report received before.}
+    OccurrenceAircraft:
+      type: object
+      properties:
+        serial: {type: string}
+        operator_reg: {type: string, description: The registration number's public part.}
+        flight_id: {type: string}
+        authorisation_number: {type: string}
+    OccurrenceSummary:
+      type: object
+      description: A report without its reporter's identity.
+      required: [occurrence_id, channel, origin, category, occurred_at, became_aware_at, received_at, within_72h, state,
+                 has_reporter_person, updated_at]
+      properties:
+        occurrence_id: {type: string}
+        channel: {$ref: "#/components/schemas/OccurrenceChannel"}
+        origin: {type: string, enum: [client, operator], description: "client: a USSP or the ANSP through its token; operator: an operator's report (2019/947 Art. 19(2))."}
+        category: {$ref: "#/components/schemas/OccurrenceCategory"}
+        occurred_at: {type: string, format: date-time}
+        became_aware_at: {type: string, format: date-time}
+        received_at: {type: string, format: date-time}
+        reported_at: {type: [string, "null"], format: date-time}
+        within_72h: {type: boolean}
+        state: {$ref: "#/components/schemas/OccurrenceState"}
+        risk_classification: {type: [string, "null"]}
+        has_reporter_person: {type: boolean, description: Whether a reporter person reference is held (readable by incident officers only).}
+        closed_at: {type: [string, "null"], format: date-time}
+        updated_at: {type: string, format: date-time}
+    OccurrencePage:
+      type: object
+      required: [occurrences]
+      properties:
+        occurrences:
+          type: array
+          items:
+            $ref: "#/components/schemas/OccurrenceSummary"
+        next_cursor:
+          type: string
+          description: Pass as cursor for the next page; absent on the last page.
+    Occurrence:
+      type: object
+      description: A report without its reporter's identity (GET .../reporter has it, for incident officers only).
+      required: [occurrence_id, channel, origin, category, occurred_at, became_aware_at, received_at, within_72h,
+                 report_deadline_s, state, has_reporter_person, aircraft, manned, intent_refs, narrative, evidence_urls,
+                 analysis, follow_up, updated_at]
+      properties:
+        occurrence_id: {type: string}
+        channel: {$ref: "#/components/schemas/OccurrenceChannel"}
+        origin: {type: string, enum: [client, operator]}
+        category: {$ref: "#/components/schemas/OccurrenceCategory"}
+        occurred_at: {type: string, format: date-time}
+        became_aware_at: {type: string, format: date-time}
+        received_at: {type: string, format: date-time}
+        reported_at: {type: [string, "null"], format: date-time}
+        within_72h: {type: boolean}
+        report_deadline_s: {type: integer, description: The reporting deadline in force at intake.}
+        state: {$ref: "#/components/schemas/OccurrenceState"}
+        risk_classification: {type: [string, "null"]}
+        classified_at: {type: [string, "null"], format: date-time}
+        classified_by: {type: [string, "null"]}
+        has_reporter_person: {type: boolean}
+        aircraft:
+          type: array
+          items: {$ref: "#/components/schemas/OccurrenceAircraft"}
+        manned:
+          type: array
+          items: {$ref: "#/components/schemas/OccurrenceManned"}
+        intent_refs:
+          type: array
+          items: {type: string}
+        min_separation:
+          oneOf:
+            - {$ref: "#/components/schemas/OccurrenceSeparation"}
+            - {type: "null"}
+        narrative: {type: string}
+        evidence_urls:
+          type: array
+          items: {type: string}
+        analysis: {type: string}
+        follow_up: {type: string}
+        closed_at: {type: [string, "null"], format: date-time}
+        updated_at: {type: string, format: date-time}
+        updated_by: {type: [string, "null"]}
+    OccurrenceReporter:
+      type: object
+      description: The reporter of an occurrence, for incident officers only (376 Art. 16).
+      required: [occurrence_id, reporter_org, report_ref]
+      properties:
+        occurrence_id: {type: string}
+        reporter_org: {type: string, description: "The sender's client id, or operator:<registration public part>."}
+        report_ref: {type: string}
+        person_ref: {type: [string, "null"], description: "The reporter's reference in the sender's system; null when none was sent."}
+    OccurrenceClassification:
+      type: object
+      required: [risk_classification]
+      additionalProperties: false
+      properties:
+        risk_classification: {type: string, minLength: 1, maxLength: 64}
+    OccurrenceAnalysisPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        analysis: {type: string, maxLength: 20000}
+        follow_up: {type: string, maxLength: 20000}
+        state: {type: string, enum: [analysed, closed]}
+    OccurrenceExportInput:
+      type: object
+      required: [from, to]
+      additionalProperties: false
+      properties:
+        from: {type: string, format: date-time, description: Received at or after.}
+        to: {type: string, format: date-time, description: Received before.}
+        format: {type: string, minLength: 1, maxLength: 64, description: "Default eccairs-compatible-draft (OCCURRENCES_EXPORT_FORMAT)."}
+    OccurrenceExport:
+      type: object
+      required: [export_id, format, created_at, record_count, size_bytes, content_hash, content]
+      properties:
+        export_id: {type: string}
+        format: {type: string}
+        created_at: {type: string, format: date-time}
+        record_count: {type: integer}
+        size_bytes: {type: integer, format: int64}
+        content_hash: {type: string, description: "sha256:<64 hex> of the UTF-8 bytes of content."}
+        content: {type: string, description: The de-identified document exactly as sealed (JSON text for eccairs-compatible-draft).}
     ViolationReviewInput:
       type: object
       required: [decision]
@@ -6020,3 +7727,358 @@ components:
         publication_id: {type: integer, format: int64}
         ussps: {type: integer, description: USSPs on the list.}
         wanted: {type: integer, format: int64, description: The list version the change counter stood at.}
+    # WP-19: the police realm's answers and the DPO report. Personal
+    # data appears in PoliceOperatorIdentity only, which a police answer
+    # carries only when the purpose allows it (registry contract test).
+    PoliceQueryMeta:
+      type: object
+      required: [query_id, purpose, case_ref, pii_released]
+      properties:
+        query_id: {type: string, description: The police_queries row of this query.}
+        purpose: {type: string}
+        case_ref: {type: string}
+        pii_released: {type: boolean, description: Whether the purpose allowed personal data and any was returned.}
+    PoliceOperatorIdentity:
+      type: object
+      required: [operator_id, operator_type]
+      description: Released only for a purpose of POLICE_PII_PURPOSES; each read is a registry_pii_viewed events row.
+      properties:
+        operator_id: {type: string}
+        operator_type: {type: string}
+        full_name: {type: string}
+        legal_name: {type: string}
+        postal_address: {type: string}
+        contact_email: {type: string}
+        contact_phone: {type: string}
+    PolicePosition:
+      type: object
+      required: [at, lat_deg, lon_deg, alt_source]
+      properties:
+        at: {type: string, format: date-time}
+        lat_deg: {type: number, format: double}
+        lon_deg: {type: number, format: double}
+        alt_amsl_m: {type: number, format: double}
+        alt_source: {type: string}
+        height_m: {type: number, format: double}
+        height_ref: {type: string}
+        speed_ms: {type: number, format: double}
+        track_deg: {type: number, format: double}
+    PoliceAircraft:
+      type: object
+      required: [track_id, identification_status, identification_basis, trust, source, first_seen, last_seen, emergency, positions, positions_truncated]
+      properties:
+        track_id: {type: string}
+        serial: {type: string}
+        registration_number: {type: string, description: "The operator registration's public part as identified (the registry's when matched)."}
+        identification_status: {type: string, enum: [registered, suspended, unknown_operator, unidentified]}
+        identification_reason: {type: string}
+        identification_basis: {type: string}
+        trust: {type: string}
+        source: {type: string}
+        first_seen: {type: string, format: date-time}
+        last_seen: {type: string, format: date-time}
+        emergency: {type: boolean}
+        positions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PolicePosition"
+        positions_truncated: {type: boolean}
+        operator:
+          $ref: "#/components/schemas/PoliceOperatorIdentity"
+        operator_unresolved: {type: string, description: "Why a personal-data purpose found no identity for this aircraft (not identified, not in the registry, ambiguous)."}
+    PolicePictureSources:
+      type: object
+      required: [newest_track_age_s, writer_gaps, writer_gap_causes, degraded]
+      properties:
+        newest_track_at: {type: [string, "null"], format: date-time, description: The newest sample of the picture anywhere (null when none within a day).}
+        newest_track_age_s: {type: [number, "null"], format: double}
+        writer_gaps: {type: integer, description: Recorded writer gaps of the tracks table in the window.}
+        writer_gap_causes:
+          type: array
+          items: {type: string}
+        degraded: {type: boolean, description: True when the picture is older than the live window or a recorded gap falls in the window.}
+    PoliceAircraftAnswer:
+      allOf:
+        - $ref: "#/components/schemas/PoliceQueryMeta"
+        - type: object
+          required: [mode, as_of, window_from, window_to, aircraft, truncated, sources]
+          properties:
+            mode: {type: string, enum: [live, at]}
+            as_of: {type: string, format: date-time}
+            window_from: {type: string, format: date-time}
+            window_to: {type: string, format: date-time}
+            aircraft:
+              type: array
+              items:
+                $ref: "#/components/schemas/PoliceAircraft"
+            truncated: {type: boolean, description: More than POLICE_MAX_AIRCRAFT aircraft; narrow the box.}
+            sources:
+              $ref: "#/components/schemas/PolicePictureSources"
+    PoliceRegistration:
+      type: object
+      required: [registration_number, operator_type, status, valid_from, valid_until]
+      properties:
+        registration_number: {type: string}
+        operator_type: {type: string}
+        status: {$ref: "#/components/schemas/RegistryStatus"}
+        valid_from: {type: string, format: date-time}
+        valid_until: {type: string, format: date-time}
+    PoliceUAS:
+      type: object
+      required: [serial, status]
+      properties:
+        serial: {type: string}
+        status: {$ref: "#/components/schemas/RegistryStatus"}
+        class_label: {type: string}
+        manufacturer: {type: string}
+        model: {type: string}
+        registration_mark: {type: string}
+    PoliceOperatorAnswer:
+      allOf:
+        - $ref: "#/components/schemas/PoliceQueryMeta"
+        - type: object
+          required: [operator, fleet, fleet_truncated]
+          properties:
+            operator:
+              $ref: "#/components/schemas/PoliceRegistration"
+            fleet:
+              type: array
+              items:
+                $ref: "#/components/schemas/PoliceUAS"
+            fleet_truncated: {type: boolean}
+            identity:
+              $ref: "#/components/schemas/PoliceOperatorIdentity"
+    PoliceSerialAnswer:
+      allOf:
+        - $ref: "#/components/schemas/PoliceQueryMeta"
+        - type: object
+          required: [uas, operator]
+          properties:
+            uas:
+              $ref: "#/components/schemas/PoliceUAS"
+            operator:
+              $ref: "#/components/schemas/PoliceRegistration"
+            identity:
+              $ref: "#/components/schemas/PoliceOperatorIdentity"
+    PoliceExportInput:
+      type: object
+      required: [purpose, case_ref, from, to]
+      description: Exactly one of incident_id and query.
+      properties:
+        purpose: {type: string, maxLength: 64}
+        case_ref: {type: string, minLength: 1, maxLength: 100}
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        incident_id: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}
+        query:
+          type: object
+          required: [bbox]
+          properties:
+            bbox: {type: string, maxLength: 128, description: "min_lon,min_lat,max_lon,max_lat (WGS84 degrees)."}
+    PoliceExport:
+      allOf:
+        - $ref: "#/components/schemas/PoliceQueryMeta"
+        - type: object
+          required: [pack_id, incident_id, incident_opened, from, to, content_hash, size_bytes, created_at, download]
+          properties:
+            pack_id: {type: string}
+            incident_id: {type: string}
+            incident_opened: {type: boolean, description: True when the export opened an incident (opened_from police_request).}
+            from: {type: string, format: date-time}
+            to: {type: string, format: date-time}
+            content_hash: {type: string}
+            size_bytes: {type: integer, format: int64}
+            signature: {type: [string, "null"]}
+            signature_kid: {type: [string, "null"]}
+            created_at: {type: string, format: date-time}
+            download: {type: string, description: The path of the download operation.}
+    DPOPoliceQuery:
+      type: object
+      required: [id, at, user_id, agency, kind, purpose, case_ref, query, result_count, pii, remote_ip]
+      properties:
+        id: {type: string}
+        at: {type: string, format: date-time}
+        user_id: {type: string}
+        agency: {type: string}
+        kind: {type: string, enum: [aircraft, operator, serial, export, download]}
+        purpose: {type: string}
+        case_ref: {type: string}
+        query:
+          type: object
+          additionalProperties: true
+        result_count: {type: integer}
+        pii: {type: boolean}
+        remote_ip: {type: string}
+    DPOPIIView:
+      type: object
+      required: [event_id, ts, event_type, actor_type, actor_id, entity_type]
+      properties:
+        event_id: {type: integer, format: int64}
+        ts: {type: string, format: date-time}
+        event_type: {type: string}
+        actor_type: {type: string}
+        actor_id: {type: string}
+        realm: {type: [string, "null"]}
+        purpose: {type: [string, "null"]}
+        entity_type: {type: string}
+        entity_id: {type: [string, "null"]}
+        case_ref: {type: string}
+        agency: {type: string}
+        police_query_id: {type: string}
+    DPOReport:
+      type: object
+      required: [month, from, to, police_queries, pii_views, truncated, totals]
+      properties:
+        month: {type: string}
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        police_queries:
+          type: array
+          items:
+            $ref: "#/components/schemas/DPOPoliceQuery"
+        pii_views:
+          type: array
+          items:
+            $ref: "#/components/schemas/DPOPIIView"
+        truncated: {type: boolean}
+        totals:
+          type: object
+          required: [police_queries, police_queries_with_pii, pii_views]
+          properties:
+            police_queries: {type: integer}
+            police_queries_with_pii: {type: integer}
+            pii_views: {type: integer}
+    # WP-27: retention, legal holds and the chain verification.
+    AuditVerification:
+      type: object
+      required: [month, rows, intact, verified_at]
+      properties:
+        month: {type: string, description: The UTC month verified (YYYY-MM).}
+        rows: {type: integer, format: int64, description: Rows checked.}
+        first_id: {type: integer, format: int64}
+        last_id: {type: integer, format: int64}
+        last_hash: {type: string}
+        anchored_to:
+          type: string
+          description: The dropped month whose last hash the first row links to (older months dropped after their retention); empty otherwise.
+        intact: {type: boolean, description: True when every row checked holds its hash and its link.}
+        broken:
+          $ref: "#/components/schemas/AuditChainBreak"
+        verified_at: {type: string, format: date-time, description: When the verification was recorded in the chain.}
+    AuditChainBreak:
+      type: object
+      required: [id, ts, reason]
+      properties:
+        id: {type: integer, format: int64}
+        ts: {type: string, format: date-time}
+        reason: {type: string, enum: [prev_hash_mismatch, hash_mismatch, payload_unreadable]}
+        want: {type: string}
+        got: {type: string}
+    RetentionPeriods:
+      type: object
+      required: [online_days, archive_years, violations_years, incidents, audit_years, pending_gcaa, archive_store]
+      properties:
+        online_days: {type: integer, description: Days the telemetry hypertables stay online before they are archived and dropped.}
+        archive_years: {type: integer, description: Years an archived chunk or USSP daily bundle is kept.}
+        violations_years: {type: integer, description: Years a closed violation is kept after it closed.}
+        incidents: {type: string, enum: [indefinite]}
+        audit_years: {type: integer, description: Years a month of the audit log is kept after it ended.}
+        pending_gcaa: {type: boolean, description: True while the periods are the spec's Q8 defaults and GCAA and the DPO have not decided.}
+        archive_store: {type: string, description: The archive store, or empty when none is configured (nothing is archived, so no chunk is dropped).}
+    RetentionJobRun:
+      type: object
+      required: [job, run_id, started_at]
+      properties:
+        job: {type: string}
+        run_id: {type: integer, format: int64}
+        started_at: {type: string, format: date-time}
+        finished_at: {type: string, format: date-time}
+        outcome: {type: string, enum: [ok, failed], description: Absent while the run is unfinished or was interrupted.}
+        summary: {type: object, additionalProperties: true}
+    RetentionArchiveCounts:
+      type: object
+      required: [exporting, archived, dropped, objects_deleted]
+      description: The telemetry archive ledger by state; archived means exported and verified, not yet dropped (held, or waiting).
+      properties:
+        exporting: {type: integer, format: int64}
+        archived: {type: integer, format: int64}
+        dropped: {type: integer, format: int64}
+        objects_deleted: {type: integer, format: int64}
+    RetentionStatus:
+      type: object
+      required: [periods, jobs, archive, active_holds, audit_broken_months, ussp_missing_days]
+      properties:
+        periods:
+          $ref: "#/components/schemas/RetentionPeriods"
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/RetentionJobRun"
+        archive:
+          $ref: "#/components/schemas/RetentionArchiveCounts"
+        active_holds: {type: integer, format: int64}
+        audit_broken_months:
+          type: array
+          items: {type: string}
+        ussp_missing_days:
+          type: array
+          description: USSP code and day (CODE/YYYY-MM-DD) of every daily records bundle still missing after the grace period.
+          items: {type: string}
+    LegalHoldInput:
+      type: object
+      required: [case_ref, reason]
+      properties:
+        case_ref: {type: string, minLength: 1, maxLength: 200}
+        reason: {type: string, minLength: 1, maxLength: 2000}
+        window_from: {type: string, format: date-time}
+        window_to: {type: string, format: date-time}
+        track_ids:
+          type: array
+          maxItems: 64
+          items: {type: string, minLength: 1, maxLength: 256}
+        serials:
+          type: array
+          maxItems: 64
+          items: {type: string, minLength: 1, maxLength: 64}
+        violation_ids:
+          type: array
+          maxItems: 64
+          items: {type: string, pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"}
+    LegalHoldRelease:
+      type: object
+      required: [reason]
+      properties:
+        reason: {type: string, minLength: 1, maxLength: 2000}
+    LegalHold:
+      type: object
+      required: [hold_id, case_ref, reason, track_ids, serials, violation_ids, placed_by, placed_at, active]
+      properties:
+        hold_id: {type: string}
+        case_ref: {type: string}
+        reason: {type: string}
+        window_from: {type: string, format: date-time}
+        window_to: {type: string, format: date-time}
+        track_ids:
+          type: array
+          items: {type: string}
+        serials:
+          type: array
+          items: {type: string}
+        violation_ids:
+          type: array
+          items: {type: string}
+        placed_by: {type: string}
+        placed_at: {type: string, format: date-time}
+        active: {type: boolean}
+        released_by: {type: string}
+        released_at: {type: string, format: date-time}
+        release_reason: {type: string}
+    LegalHoldPage:
+      type: object
+      required: [holds, truncated]
+      properties:
+        holds:
+          type: array
+          items:
+            $ref: "#/components/schemas/LegalHold"
+        truncated: {type: boolean}
