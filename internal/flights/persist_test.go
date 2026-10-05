@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -19,7 +20,9 @@ type memKV struct {
 	mu      sync.Mutex
 	m       map[string][]byte
 	failPut bool
-	allErr  error
+	// down fails every write, as a bus outage does.
+	down   bool
+	allErr error
 	// ops, when set, receives every write ("put <key>", "delete <key>").
 	ops chan string
 }
@@ -32,6 +35,9 @@ func (k *memKV) Put(_ context.Context, key string, v []byte) error {
 	if k.failPut {
 		return errors.New("bucket full")
 	}
+	if k.down {
+		return errors.New("nats: no responders available for request")
+	}
 	k.m[key] = append([]byte(nil), v...)
 	if k.ops != nil {
 		k.ops <- "put " + key
@@ -42,6 +48,9 @@ func (k *memKV) Put(_ context.Context, key string, v []byte) error {
 func (k *memKV) Delete(_ context.Context, key string) error {
 	k.mu.Lock()
 	defer k.mu.Unlock()
+	if k.down {
+		return errors.New("nats: no responders available for request")
+	}
 	delete(k.m, key)
 	if k.ops != nil {
 		k.ops <- "delete " + key
@@ -65,6 +74,15 @@ func (k *memKV) All(_ context.Context, maxKeys int) ([]bus.RevEntry, error) {
 }
 
 func (k *memKV) len() int { k.mu.Lock(); defer k.mu.Unlock(); return len(k.m) }
+
+func (k *memKV) setDown(d bool) { k.mu.Lock(); k.down = d; k.mu.Unlock() }
+
+func (k *memKV) has(key string) bool {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	_, ok := k.m[key]
+	return ok
+}
 
 // persistedRig is a binder rig whose flights a KVSaver keeps in kv.
 func persistedRig(kv *memKV, clk *clock) (*binderRig, *KVSaver) {
@@ -290,6 +308,97 @@ func TestKVSaverRun(t *testing.T) {
 	wait("put " + BindingKey("a"))
 	s.Forget("a")
 	wait("delete " + BindingKey("a"))
+	cancel()
+	<-done
+}
+
+// WP-19 review: a flight that ends while the bus is away (an outage
+// longer than flight_end_after_s) has its deletion fail. It is retried,
+// so once the bus is back the ended flight's key leaves the bucket
+// without a restart; dropped, the key outlived the outage.
+func TestAForgetThatFailedIsRetried(t *testing.T) {
+	kv, clk := newMemKV(), &clock{at: t0}
+	r, s := persistedRig(kv, clk)
+	r.b.Bind("a", "c1", "S1", nil, nil, nil, p0, t0, true)
+	if s.Flush(context.Background()) != 0 || !kv.has(BindingKey("a")) {
+		t.Fatal("the running flight was not saved")
+	}
+	kv.setDown(true)
+	clk.add(time.Duration(policy.Defaults().FlightEndAfterS*float64(time.Second)) + time.Second)
+	if n := r.b.Tick(); n != 1 {
+		t.Fatalf("Tick ended %d flights, want 1", n)
+	}
+	if failed := s.Flush(context.Background()); failed != 1 || s.Pending() != 1 || !kv.has(BindingKey("a")) {
+		t.Fatalf("during the outage: %d failed, %d pending, key kept %v", failed, s.Pending(), kv.has(BindingKey("a")))
+	}
+	if s.Flush(context.Background()) != 1 || s.Pending() != 1 {
+		t.Fatal("a second failed attempt dropped the deletion")
+	}
+	kv.setDown(false)
+	if failed := s.Flush(context.Background()); failed != 0 || s.Pending() != 0 {
+		t.Fatalf("after the outage: %d failed, %d pending", failed, s.Pending())
+	}
+	if kv.has(BindingKey("a")) {
+		t.Fatal("the ended flight's key is still in the bucket after the outage")
+	}
+	if s.Counters.Get(CounterSaveFailed) != 2 || s.Counters.Get(CounterForgetDropped) != 0 {
+		t.Fatalf("failed %d, dropped %d", s.Counters.Get(CounterSaveFailed), s.Counters.Get(CounterForgetDropped))
+	}
+}
+
+// A retried write gives way to a newer one for the same aircraft; a
+// failed deletion finds room past MaxPending up to twice it, a failed
+// save does not, and past that each is dropped and counted (E-10).
+func TestRetriesAreBoundedAndNewestWins(t *testing.T) {
+	kv := newMemKV()
+	s := &KVSaver{KV: kv, MaxPending: 2}
+	kv.setDown(true)
+	s.Save(Snapshot{Key: "a", FlightID: "old"})
+	s.Flush(context.Background())
+	s.Save(Snapshot{Key: "a", FlightID: "new"})
+	kv.setDown(false)
+	s.Flush(context.Background())
+	snaps, err := s.Load(context.Background())
+	if err != nil || len(snaps) != 1 || snaps[0].FlightID != "new" {
+		t.Fatalf("loaded %+v (%v), want the newer save", snaps, err)
+	}
+
+	s.Save(Snapshot{Key: "x", FlightID: "f"})
+	s.Save(Snapshot{Key: "y", FlightID: "f"})
+	s.requeue("s1", &Snapshot{Key: "s1", FlightID: "f"})
+	s.requeue("d1", nil)
+	s.requeue("d2", nil)
+	s.requeue("d3", nil)
+	if s.Pending() != 4 || s.Counters.Get(CounterSaveDropped) != 1 || s.Counters.Get(CounterForgetDropped) != 1 {
+		t.Fatalf("pending %d, saves dropped %d, deletions dropped %d", s.Pending(),
+			s.Counters.Get(CounterSaveDropped), s.Counters.Get(CounterForgetDropped))
+	}
+}
+
+// Run retries a write that failed without waiting for another to be
+// queued: the bus comes back and the deletion is made.
+func TestKVSaverRunRetries(t *testing.T) {
+	kv := newMemKV()
+	kv.ops = make(chan string, 4)
+	kv.m[BindingKey("a")] = []byte("{}")
+	kv.setDown(true)
+	s := &KVSaver{KV: kv, Counters: &core.Counters{}, Retry: time.Millisecond}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { s.Run(ctx); close(done) }()
+	s.Forget("a")
+	for s.Counters.Get(CounterSaveFailed) == 0 {
+		runtime.Gosched()
+	}
+	kv.setDown(false)
+	select {
+	case op := <-kv.ops:
+		if op != "delete "+BindingKey("a") {
+			t.Fatalf("bucket %s", op)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not retry the deletion")
+	}
 	cancel()
 	<-done
 }

@@ -18,11 +18,17 @@ import (
 // Counters of a KVSaver.
 const (
 	// CounterSaveFailed counts writes to flight_binding that failed; the
-	// flight is written again at its next save.
+	// write is queued again and retried (RetryEvery), unless a newer one
+	// for the same aircraft was queued meanwhile.
 	CounterSaveFailed = "flights_save_failed"
 	// CounterSaveDropped counts saves refused because MaxPending flights
 	// were already waiting for the bucket (E-10).
 	CounterSaveDropped = "flights_save_dropped"
+	// CounterForgetDropped counts deletions of an ended flight's key
+	// that failed and found no room to be retried (2 x MaxPending
+	// waiting): the key stays until the restore check (Ended) or its TTL
+	// removes it.
+	CounterForgetDropped = "flights_forget_dropped"
 	// CounterRestoreFailed counts a start whose saved flights could not
 	// be read: every aircraft starts a new flight (the behaviour before
 	// WP-19, said so on /readyz).
@@ -39,17 +45,32 @@ type KVStorer interface {
 	All(ctx context.Context, maxKeys int) ([]bus.RevEntry, error)
 }
 
+// RetryEvery is how long Run waits before it writes again what failed;
+// it doubles after each failed retry up to RetryMax and comes back to
+// RetryEvery after a flush that failed nothing.
+const (
+	RetryEvery = 2 * time.Second
+	RetryMax   = 30 * time.Second
+)
+
 // KVSaver keeps a Binder's running flights in the flight_binding bucket
 // (bus.BucketFlightBinding): Save and Forget queue, newest per aircraft
 // wins, and Run writes, so the binder never waits for the bucket. At
 // most MaxPending aircraft wait at a time (E-10). A write that fails is
-// counted and the flight is written again at its next save (at most
-// SaveEvery later while it flies). Safe for concurrent use.
+// counted and queued again, so a deletion that failed while the bus was
+// away is made when it is back (WP-19 review: dropped, an ended flight's
+// key outlived the outage and the next start brought the flight back).
+// A failed deletion may wait beside up to MaxPending others; past 2 x
+// MaxPending it is dropped and counted, and Load's Ended check is what
+// keeps that flight from coming back. Safe for concurrent use.
 type KVSaver struct {
 	KV         KVStorer
 	Counters   *core.Counters
 	Logger     *slog.Logger
 	MaxPending int
+	// Retry is the first wait before a failed write is retried
+	// (RetryEvery).
+	Retry time.Duration
 
 	once    sync.Once
 	mu      sync.Mutex
@@ -113,36 +134,75 @@ func (s *KVSaver) Pending() int {
 	return len(s.pending)
 }
 
-// Run writes what is queued until ctx ends.
+// Run writes what is queued until ctx ends, and retries what failed
+// (RetryEvery, doubling up to RetryMax).
 func (s *KVSaver) Run(ctx context.Context) {
 	s.init()
+	retry := time.NewTimer(time.Hour)
+	retry.Stop()
+	defer retry.Stop()
+	first := s.Retry
+	if first <= 0 {
+		first = RetryEvery
+	}
+	backoff := first
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-s.wake:
-			s.Flush(ctx)
+		case <-retry.C:
 		}
+		if s.Flush(ctx) == 0 {
+			backoff = first
+			continue
+		}
+		retry.Reset(backoff)
+		backoff = min(2*backoff, RetryMax)
 	}
 }
 
 // Flush writes everything queued now: each key once, with its newest
-// value.
-func (s *KVSaver) Flush(ctx context.Context) {
+// value. What fails is queued again; it returns how many writes failed.
+func (s *KVSaver) Flush(ctx context.Context) int {
 	s.init()
 	s.mu.Lock()
 	batch := s.pending
 	s.pending = map[string]*Snapshot{}
 	s.mu.Unlock()
+	failed := 0
 	for key, sn := range batch {
 		if err := s.write(ctx, key, sn); err != nil {
+			failed++
 			s.Counters.Inc(CounterSaveFailed)
 			if s.Logger != nil {
-				s.Logger.LogAttrs(ctx, slog.LevelWarn, "flight binding not saved",
-					slog.String("bucket", bus.BucketFlightBinding), slog.String("error", err.Error()))
+				s.Logger.LogAttrs(ctx, slog.LevelWarn, "flight binding not written; retried",
+					slog.String("bucket", bus.BucketFlightBinding), slog.Bool("delete", sn == nil), slog.String("error", err.Error()))
 			}
+			s.requeue(key, sn)
 		}
 	}
+	return failed
+}
+
+// requeue queues a write that failed again, unless a newer one for key
+// is already waiting. A deletion may take up to 2 x MaxPending places, a
+// save MaxPending (a running flight is saved again anyway).
+func (s *KVSaver) requeue(key string, sn *Snapshot) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, newer := s.pending[key]; newer {
+		return
+	}
+	limit, counter := s.MaxPending, CounterSaveDropped
+	if sn == nil {
+		limit, counter = 2*s.MaxPending, CounterForgetDropped
+	}
+	if len(s.pending) >= limit {
+		s.Counters.Inc(counter)
+		return
+	}
+	s.pending[key] = sn
 }
 
 func (s *KVSaver) write(ctx context.Context, key string, sn *Snapshot) error {
