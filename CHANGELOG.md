@@ -25,6 +25,24 @@ additively within `/v1`.
 
 ### Fixed
 
+- Occurrence reports reach the authority (system audit H-1). The
+  pinned `api/clients/authority.yaml` is the authority's at `e0e61ab`
+  (it had no `POST /v1/occurrences`); `internal/occurrence/authclient`
+  is generated from it (`createOccurrence`) and `occurrence.Client`
+  delivers each queued report after its commit, with a token of scope
+  `occurrences.write` for the authority's host. The queued body names
+  the class `category`, as the authority's `OccurrenceReport` requires
+  (it said `kind`: every report would have been a 400); a report queued
+  before is mapped. 201 and 200 (the authority's replay on `sub` and
+  `report_ref`) are delivered; a timeout, 408, 429 or 5xx, also one
+  answered after the authority's commit, is retried and never counted
+  as refused; a 409 `report_ref_conflict` fails the report on its first
+  answer with an alarm and `occurrence_reports_conflict`; another 4xx,
+  or a body that does not map (found before any token is asked for),
+  fails it. New `USSP_OCCURRENCE_MAX_ATTEMPTS` (50) and
+  `USSP_OCCURRENCE_BACKOFF_MAX_S` (600), pending GCAA. The fake
+  authority follows the pinned contract. Lab run against the authority
+  image: `scripts/lab-authority.sh`, docs/RUNBOOKS/WP-15.md Run 3.
 - A NATS outage no longer raises a false `lost_link` for every flight
   (PLAN §15.2 Q35 a, found by the WP-19 chaos run). The monitor's own
   input is its bus link: while it is down no `lost_link` is judged, the

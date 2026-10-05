@@ -3,13 +3,9 @@
 package integration
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -23,39 +19,6 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/records"
 	"github.com/rootxkit/uspace-ussp/internal/testfakes/authority"
 )
-
-// fakeDeliverer posts a report to the fake authority's POST
-// /v1/occurrences. Test only: the authority's published contract has no
-// such operation, so production code has no client for it (spec gap).
-type fakeDeliverer struct{ url string }
-
-func (d fakeDeliverer) Submit(ctx context.Context, body []byte) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.url+"/v1/occurrences", bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+authority.Token)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-	switch {
-	case resp.StatusCode == http.StatusConflict:
-		return "", &occurrence.PermanentError{Detail: string(b)}
-	case resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK:
-		return "", fmt.Errorf("the authority answered %d", resp.StatusCode)
-	}
-	var out struct {
-		ID string `json:"occurrence_id"`
-	}
-	if err := json.Unmarshal(b, &out); err != nil {
-		return "", err
-	}
-	return out.ID, nil
-}
 
 // kvHolds writes record_holds on the real NATS, as api does.
 type kvHolds struct{ kv *bus.Projector }
@@ -101,7 +64,11 @@ func TestIntegrationOccurrences(t *testing.T) {
 	t.Cleanup(fake.Close)
 	fake.Down()
 	st := occstore.Store{S: appStore(t)}
-	svc := &occurrence.Service{Store: st, Deliverer: fakeDeliverer{url: fake.URL()}, Holds: kvHolds{bus.NewProjector(conn, nil)},
+	client, err := occurrence.NewClient(fake.URL(), authority.Tokens{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &occurrence.Service{Store: st, Deliverer: client, Holds: kvHolds{bus.NewProjector(conn, nil)},
 		Policy: func() policy.Values { return policy.Defaults() }, SystemID: "USSP-DEV", Counters: &core.Counters{}, Logger: quiet()}
 	if err := svc.Detect(ctx); err != nil {
 		t.Fatal(err)
@@ -157,7 +124,7 @@ func TestIntegrationOccurrences(t *testing.T) {
 	}
 	got := fake.Occurrences()
 	var sent occurrence.Payload
-	if len(got) == 0 || json.Unmarshal(got[len(got)-1].Body, &sent) != nil || sent.Kind != occurrence.KindAirprox || len(sent.Manned) != 1 ||
+	if len(got) == 0 || json.Unmarshal(got[len(got)-1].Body, &sent) != nil || sent.Category != occurrence.KindAirprox || len(sent.Manned) != 1 ||
 		sent.Manned[0].ICAO24 != "4ca1f0" || sent.ReportRef != mine.ReportRef {
 		t.Fatalf("at the authority: %d reports, last %+v", len(got), sent)
 	}

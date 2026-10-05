@@ -1,4 +1,4 @@
 # <system> <owner/repo> <commit> <path in that repo>
 cisp rootxkit/uspace-cisp d4f3572b44e53a0a83e0948daf0ef4aeef3b7ee4 api/openapi.yaml
-authority rootxkit/uspace-authority db84edc73d7471827cc84b6ecf89938c2ee05767 api/openapi.yaml
+authority rootxkit/uspace-authority e0e61ab7b7a13881022bc1c5ef8b1da4d553ff60 api/openapi.yaml
 ansp rootxkit/uspace-ansp 7fc3ef1517fa1e66df38be72ab6efe0f3ae7ec1d api/openapi.yaml
