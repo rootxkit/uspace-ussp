@@ -47,6 +47,10 @@ printf '%s\n' "$@" >"$FAKE_ARGS"
 prev=""
 for a in "$@"; do
   if [ "$prev" = "--env-file" ]; then cp "$a" "$FAKE_ENV"; fi
+  if [ "$prev" = "--out" ]; then
+    # A report directory, as the suite writes one per run.
+    d="$a/run-$(date +%s%N)"; mkdir -p "$d"; echo '{}' >"$d/report.json"
+  fi
   prev="$a"
 done
 exit "${FAKE_RC:-0}"
@@ -132,6 +136,13 @@ if [ -e "$work/args" ]; then fail "the suite ran on a false declaration"; else p
 # ---- the suite's exit status, unchanged -----------------------------------------
 for rc in 1 3 0; do
   hook_rc "$rc" "the suite exits $rc: the hook exits $rc" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off FAKE_RC="$rc"
+  info="$(find "$work/out" -name run-info.txt -newer "$work/code" | sort | tail -n 1)"
+  if [ -n "$info" ] && grep -q "^suite exit $rc$" "$info" && grep -q "^USSP_AUTHORITY_PUSH off$" "$info"; then
+    pass "run-info.txt beside the report records exit $rc"
+  else
+    fail "run-info.txt for exit $rc: ${info:-none}"
+  fi
+  touch "$work/code"
 done
 hook_rc 0 "CONFORMANCE_ALLOW_INCOMPLETE=1 is handed to the suite" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_ALLOW_INCOMPLETE=1
 if handed_args | grep -q '^--allow-incomplete$'; then pass "--allow-incomplete given"; else fail "--allow-incomplete missing: $(handed_args | tr '\n' ' ')"; fi

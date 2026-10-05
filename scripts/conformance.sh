@@ -446,7 +446,25 @@ run_suite
 if [ -z "$external" ]; then
   say "footprint (docker stats, one sample):"
   # shellcheck disable=SC2046 # one argument per container id
-  docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}' $(dc ps -q) || true
+  if ! docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}' $(dc ps -q); then
+    say "docker stats failed: no footprint sample for this run"
+  fi
+fi
+# The run's provenance beside its report (E-05): what ran against what.
+run_dir="$(find "$out" -mindepth 1 -maxdepth 1 -type d -newermt "@$started" 2>/dev/null | sort | tail -n 1)"
+if [ -n "$run_dir" ] && [ -f "$run_dir/report.json" ]; then
+  {
+    echo "uspace-ussp $(git rev-parse HEAD)$(git diff --quiet HEAD || echo ' (dirty)')"
+    echo "uspace-lab $(git -C "$LAB_DIR" rev-parse HEAD 2>/dev/null || echo unknown)$(git -C "$LAB_DIR" diff --quiet HEAD 2>/dev/null || echo ' (dirty)')"
+    echo "target ${external:-the stack $project ($systems)}"
+    echo "image ${image:-not built here}${image_id:+ $image_id}"
+    echo "USSP_AUTHORITY_PUSH $push"
+    echo "system id $sid"
+    echo "suite exit $suite_rc"
+  } >"$run_dir/run-info.txt"
+  if [ -z "$external" ] && [ -f "$state/issuer/public/jwks.json" ]; then cp "$state/issuer/public/jwks.json" "$run_dir/issuer-jwks.json"; fi
+else
+  say "no report directory of this run under $out: no run-info.txt written"
 fi
 case "$suite_rc" in
   0) say "the suite passed after $(($(date +%s) - started)) s; report under $out" ;;
