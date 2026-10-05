@@ -123,3 +123,24 @@ not foresee: they are not applicable in every run, with that reason
 `uss_qualifier` (the lab's `coverage.yaml`). `NAT-PRECONDITION` and
 `REG-NOPII` need fixtures the stack does not create (an operator token
 and an existing resource with its ETag).
+
+## The reviewed baseline: not checked is never a pass
+
+`baseline.json` is the lab's `conformance-baseline/v1` file, written by
+the lab's `conformance baseline` from the reviewed push-on report kept
+in `docs/RUNBOOKS/WP-19/` (`from_run`, `from_digest`). The hook hands it
+to the suite (`--baseline`; `CONFORMANCE_BASELINE=none` runs without
+it), so a gate requirement it records not applicable no longer makes
+the run incomplete (exit 3), and one that passed in it and does not
+pass now is a regression (exit 1). Without it a release tag's run could
+never be green while Q34 is open.
+
+It accepts, each with its note: `F3411-SP` and `F3548-SCD`, **blocked
+by the owner decision Q34**; `F3548-CP` (nothing upstream to run);
+`NAT-PRECONDITION` and `REG-NOPII` (fixtures, open). None of them is a
+pass: the report's verdict stays `incomplete`, and the hook prints
+`NOT CHECKED, NOT A PASS: <id>: <note>` for each, as a warning
+annotation in the workflow and in `run-info.txt`. The hook refuses a
+baseline that records a requirement not applicable without a note. A
+change to it is a reviewed change: rewrite it from a new reviewed report
+only, and drop an entry when its blocker is resolved.

@@ -7,15 +7,21 @@ name: conformance
 # release tags only: it pulls external images and the lab. Not a
 # required check. The reports are uploaded whatever the verdict.
 #
-# The job's status is the suite's verdict: an incomplete run (exit 3: a
-# gate requirement not checked, such as F3411-SP while this USSP exposes
-# no InterUSS injection interface) fails it unless the dispatch says
-# allow_incomplete. Nothing here writes anywhere but the runner.
+# The job's status is the suite's gate on the reviewed baseline
+# (deploy/conformance/baseline.json): a failure or a regression fails it,
+# and so does an incomplete run (exit 3: a gate requirement not checked
+# that the baseline does not record) unless the dispatch says
+# allow_incomplete. The requirements the baseline accepts not applicable
+# (F3411-SP and F3548-SCD, blocked by the owner decision Q34; F3548-CP,
+# NAT-PRECONDITION, REG-NOPII) do not fail a tag's run, and are not a
+# pass: each is a warning annotation "not checked (not a pass)" with its
+# reason, and the report's verdict stays incomplete. Nothing here writes
+# anywhere but the runner.
 on:
   workflow_dispatch:
     inputs:
       allow_incomplete:
-        description: "Accept an incomplete run (gate requirements not applicable) as a pass"
+        description: "Accept an incomplete run (gate requirements not checked that the baseline does not record)"
         type: boolean
         default: false
       authority_push:

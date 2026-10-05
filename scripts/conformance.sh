@@ -48,13 +48,23 @@
 #   CONFORMANCE_KEEP                1 leaves the stack running after the run
 #   CONFORMANCE_OUT                 reports (default local/conformance/reports)
 #   CONFORMANCE_ALLOW_INCOMPLETE    1 accepts an incomplete run (exit 0, not 3)
+#   CONFORMANCE_BASELINE            the reviewed baseline the suite gates on
+#                                   (default deploy/conformance/baseline.json;
+#                                   none: no baseline, every requirement not
+#                                   checked makes the run incomplete, exit 3)
 #   CONFORMANCE_SUITE_BIN           a built cmd/conformance (default: built from LAB_DIR)
 #   GO                              the go command (default go)
 #
 # Exit status, the suite's: 0 pass; 1 a gate requirement failed (or the
 # target's declaration does not match what it answers); 2 a configuration
 # error, found before anything is built or started; 3 incomplete (a gate
-# requirement was not checked; the report says which and why). A failure
+# requirement was not checked and the baseline does not record it not
+# applicable; the report says which and why). A gate requirement the
+# baseline records not applicable (F3411-SP and F3548-SCD, blocked by
+# the owner decision PLAN §15.2 Q34) does not make the exit 3, and is
+# never a pass: the hook names each with the baseline's note, as a
+# warning annotation in a workflow, and the report's verdict stays
+# incomplete. A failure
 # of the stack itself is 1 and names its step. Secrets stay in files:
 # none is printed, put on a command line or written to the reports.
 set -euo pipefail
@@ -86,6 +96,8 @@ systems="${CONFORMANCE_SYSTEMS:-ussp}"
 port="${USSP_CONFORMANCE_HTTPS_PORT:-9543}"
 out="$(abspath "${CONFORMANCE_OUT:-local/conformance/reports}")"
 external="${USSP_CONFORMANCE_BASE_URL:-}"
+baseline="${CONFORMANCE_BASELINE:-deploy/conformance/baseline.json}"
+if [ "$baseline" != none ]; then baseline="$(abspath "$baseline")"; fi
 
 # ---- validation (no side effect before it has passed) -------------------------
 
@@ -107,6 +119,17 @@ validate() {
   fi
   case "${CONFORMANCE_ALLOW_INCOMPLETE:-}" in "" | 0 | 1) ;; *) usage "CONFORMANCE_ALLOW_INCOMPLETE is ${CONFORMANCE_ALLOW_INCOMPLETE}: want 1 or unset" ;; esac
   case "${CONFORMANCE_KEEP:-}" in "" | 0 | 1) ;; *) usage "CONFORMANCE_KEEP is ${CONFORMANCE_KEEP}: want 1 or unset" ;; esac
+  if [ "$baseline" != none ]; then
+    [ -r "$baseline" ] || usage "CONFORMANCE_BASELINE $baseline is not readable (none: run without a baseline)"
+    command -v jq >/dev/null 2>&1 || usage "jq is required to read the baseline $baseline"
+    jq -e '.format == "conformance-baseline/v1" and (.target | type == "string") and (.requirements | type == "object")' "$baseline" >/dev/null 2>&1 ||
+      usage "$baseline is not a conformance-baseline/v1 file with a target and requirements"
+    # A requirement accepted not applicable says why, where it is
+    # decided: it is printed with every run.
+    local unnoted
+    unnoted="$(jq -r '.requirements | to_entries[] | select(.value.status == "not_applicable" and ((.value.note // "") == "")) | .key' "$baseline")"
+    [ -z "$unnoted" ] || usage "$baseline records not applicable without a note saying why: $(echo "$unnoted" | tr '\n' ' ')"
+  fi
   if [ -n "$external" ]; then
     case "$external" in http://* | https://*) ;; *) usage "USSP_CONFORMANCE_BASE_URL $external is not an http(s) URL" ;; esac
     [ -n "${USSP_CONFORMANCE_AUTHORITY_PUSH:-}" ] || usage "USSP_CONFORMANCE_AUTHORITY_PUSH (on|off) is required with USSP_CONFORMANCE_BASE_URL: the target's USSP_AUTHORITY_PUSH decides what the suite may skip"
@@ -380,10 +403,21 @@ run_suite() {
     --env-file "$(winpath "$env_all")" --out "$(winpath "$out")")
   if [ -n "${sign_key:-}" ] && [ -s "$sign_key" ]; then args+=(--sign-key "$(winpath "$sign_key")"); fi
   if [ "${CONFORMANCE_ALLOW_INCOMPLETE:-}" = 1 ]; then args+=(--allow-incomplete); fi
+  if [ "$baseline" != none ]; then args+=(--baseline "$(winpath "$baseline")"); fi
   mkdir -p "$out"
   rc=0
   "$bin" "${args[@]}" || rc=$?
   suite_rc="$rc"
+}
+
+# not_checked <report.json>: the gate requirements the run did not check,
+# one "<id><TAB><the baseline's note>" per line (note empty when the
+# baseline does not record it, or there is none).
+not_checked() {
+  local bl='{}'
+  if [ "$baseline" != none ]; then bl="$(cat "$baseline")"; fi
+  jq -r --argjson bl "$bl" '.requirements[]? | select(.role == "gate" and .status == "not_applicable")
+    | [.id, (($bl.requirements // {})[.id] | select(.status == "not_applicable") | .note) // ""] | @tsv' "$1"
 }
 
 # ---- main -------------------------------------------------------------------------------
@@ -471,14 +505,38 @@ if [ -n "$run_dir" ] && [ -f "$run_dir/report.json" ]; then
     echo "USSP_AUTHORITY_PUSH $push"
     echo "system id $sid"
     echo "suite exit $suite_rc"
+    echo "baseline ${baseline#"$here"/}"
   } >"$run_dir/run-info.txt"
   if [ -z "$external" ] && [ -f "$state/issuer/public/jwks.json" ]; then cp "$state/issuer/public/jwks.json" "$run_dir/issuer-jwks.json"; fi
 else
   say "no report directory of this run under $out: no run-info.txt written"
 fi
+# A gate requirement not checked is never a pass, even when the
+# baseline accepts it: each is named with the reason it is not checked.
+blocked=0
+if [ -n "$run_dir" ] && [ -f "$run_dir/report.json" ] && [ "$baseline" != none ]; then
+  if ! nc="$(not_checked "$run_dir/report.json")"; then
+    say "could not read the requirements of $run_dir/report.json"
+    [ "$suite_rc" -ne 0 ] || suite_rc=1
+    nc=""
+  fi
+  while IFS=$'\t' read -r id note; do
+    [ -n "$id" ] || continue
+    if [ -n "$note" ]; then
+      blocked=$((blocked + 1))
+      say "NOT CHECKED, NOT A PASS: $id: $note (accepted not applicable by ${baseline#"$here"/})"
+      if [ "${GITHUB_ACTIONS:-}" = true ]; then echo "::warning title=conformance: $id not checked (not a pass)::$note"; fi
+      echo "not checked $id: $note" >>"$run_dir/run-info.txt"
+    else
+      say "NOT CHECKED: $id (no baseline records it not applicable: the run is incomplete)"
+    fi
+  done <<<"$nc"
+fi
 case "$suite_rc" in
   0)
-    if [ "${CONFORMANCE_ALLOW_INCOMPLETE:-}" = 1 ]; then
+    if [ "$blocked" -gt 0 ]; then
+      say "the suite exited 0 after $(($(date +%s) - started)) s with $blocked gate requirements not checked, each accepted by the reviewed baseline: the verdict is incomplete, not a pass; report under $out"
+    elif [ "${CONFORMANCE_ALLOW_INCOMPLETE:-}" = 1 ]; then
       say "the suite exited 0 after $(($(date +%s) - started)) s: a pass, or an incomplete run accepted by CONFORMANCE_ALLOW_INCOMPLETE=1 (the report says which); report under $out"
     else
       say "the suite passed after $(($(date +%s) - started)) s; report under $out"
