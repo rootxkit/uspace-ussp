@@ -59,6 +59,16 @@ additively within `/v1`.
   force refuses more, never less; it leaves the store too
   (`cis_direct_evicted`, logged). Only a set with no end to give up
   still refuses, counted as before.
+- A direct restriction stored before a restart is judged when the
+  process restarts during the CISP's outage with no CISP version
+  stored (H-2 review): the warm start loaded it but laid it over the
+  Evaluator only once a CISP restrictions version was installed, so it
+  stayed unjudged, raised nothing and its end cleared nothing. The warm
+  start now lays the direct restrictions over no CISP version, the CIS
+  stays stale, and the hooks are told, so the re-check raises
+  `restriction_activated`
+  (`TestIntegrationDirectRestrictionWarmedAfterARestartDuringTheOutage`,
+  `docs/RUNBOOKS/WP-12.md`).
 
 ### Security
 

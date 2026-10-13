@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -663,5 +664,84 @@ func TestDirectActivationEvictsAKeptEnd(t *testing.T) {
 				t.Errorf("counters %v", c.Snapshot())
 			}
 		})
+	}
+}
+
+// restartWithoutCISP builds the cache again on the rig's stores, as a
+// process started while the CISP is unreachable and before any CISP
+// version was stored: Warm loads the direct restrictions and nothing
+// else. It returns the changes the cache told its hook.
+func (g *directRig) restartWithoutCISP() *[]Change {
+	var mu sync.Mutex
+	changes := &[]Change{}
+	g.eval = NewEvaluator(EvaluatorConfig{StaleS: func() float64 { return 300 }, Now: g.clk.Now})
+	g.cache = NewCache(CacheConfig{Publishers: g.pubs, Store: g.store, Evaluator: g.eval, Projector: g.proj, Now: g.clk.Now,
+		Direct: DirectConfig{Client: &http.Client{Transport: g.ansp}, Store: g.direct},
+		OnChange: func(_ context.Context, c Change) {
+			mu.Lock()
+			defer mu.Unlock()
+			*changes = append(*changes, c)
+		}})
+	g.cache.Warm(context.Background())
+	return changes
+}
+
+// H-2 review: a process restarted during the CISP's outage, before any
+// CISP version was stored, loads the ANSP's direct restrictions from
+// the database, and they are judged: the warmed activation is in force
+// on the Evaluator and in the projection, the hooks are told (the
+// re-check that raises restriction_activated runs on it), and the CIS
+// stays stale, since the CISP's restrictions were never loaded. The
+// direct end delivered after the restart lifts it. The pair: with no
+// direct restriction stored, the restart installs nothing and tells no
+// restrictions change.
+func TestDirectWarmedAfterARestartWithoutTheCISP(t *testing.T) {
+	g := newDirectRig(t)
+	g.ansp.serve(t, "activated")
+	if code := g.post("activated"); code != http.StatusNoContent {
+		t.Fatalf("activated: %d", code)
+	}
+	g.cache.drainDirect(t.Context())
+	if len(g.direct.rows) != 1 {
+		t.Fatalf("stored %d", len(g.direct.rows))
+	}
+	changes := g.restartWithoutCISP()
+	if _, _, stale := g.eval.Age(); !stale {
+		t.Fatal("the CIS is not stale with no CISP version loaded")
+	}
+	if l, st := g.state(); l != LiftInForce || st != "active" {
+		t.Fatalf("the warmed direct activation: %v %q", l, st)
+	}
+	if g.projected() != "active" {
+		t.Fatalf("projected %q", g.projected())
+	}
+	told := false
+	for _, c := range *changes {
+		if c.Dataset == Restrictions && c.Reason == ChangeWarm && slices.Contains(c.FeatureIDs, fixtureIdentifier) {
+			told = true
+		}
+	}
+	if !told {
+		t.Fatalf("the hooks were not told the warmed restriction: %+v", *changes)
+	}
+	g.clk.advance(time.Hour - 9*time.Second)
+	g.ansp.serve(t, "ended")
+	if code := g.post("ended"); code != http.StatusNoContent {
+		t.Fatalf("ended: %d", code)
+	}
+	g.cache.drainDirect(t.Context())
+	if l, st := g.state(); l != LiftEnded || st != "ended" {
+		t.Fatalf("the direct end after the restart: %v %q", l, st)
+	}
+
+	empty := newDirectRig(t)
+	changes = empty.restartWithoutCISP()
+	if l, _ := empty.state(); l != LiftUnjudged {
+		t.Fatalf("a restart with nothing stored: %v", l)
+	}
+	for _, c := range *changes {
+		if c.Dataset == Restrictions {
+			t.Fatalf("a restrictions change told with nothing stored: %+v", c)
+		}
 	}
 }
