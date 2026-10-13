@@ -41,6 +41,8 @@ type fakeUSSP struct {
 	elsewhere      map[string]bool // bound to another client: 409
 	sourceDisabled bool
 	refuseAll      string // an outcome every frame gets, when set
+	refuseFromSeq  int64  // with refuseFrom, a sample from this seq on is refused_invalid (a teleport)
+	refuseFrom     bool
 	frames         []client.TelemetryFrame
 	bindings       []string
 	sockets        int
@@ -223,6 +225,8 @@ func (f *fakeUSSP) telemetry(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case f.refuseAll != "":
 			outcome = f.refuseAll
+		case f.refuseFrom && msg.Body.Seq >= f.refuseFromSeq && (msg.Body.End == nil || !*msg.Body.End):
+			outcome = "refused_invalid"
 		case !f.bound[msg.Body.Serial]:
 			outcome = "refused_unbound"
 		}

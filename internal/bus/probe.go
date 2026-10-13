@@ -17,6 +17,18 @@ import (
 // ReconnectWait is the pause between reconnection attempts.
 const ReconnectWait = 2 * time.Second
 
+// PingInterval and MaxPingsOut bound how long a silent partition (NATS
+// unreachable while nothing closes the connection) goes unseen: the
+// client pings every PingInterval and drops the connection as stale
+// once MaxPingsOut pings are unanswered, so the link is down within
+// (MaxPingsOut + 1) x PingInterval, about 6 s. nats.go's defaults (2 min,
+// 2) left it up for minutes, every consumer judging the silence as if
+// the bus were up (Q35).
+const (
+	PingInterval = 2 * time.Second
+	MaxPingsOut  = 2
+)
+
 // Conn is a NATS connection that is never given up on (B-08), with its
 // link state tracked from the client's own events, so reading it never
 // waits on the connection's lock (which a reconnection attempt holds
@@ -45,6 +57,8 @@ func Connect(url, credsFile, name string, logger *slog.Logger) (*Conn, error) {
 		nats.MaxReconnects(-1),
 		nats.ReconnectWait(ReconnectWait),
 		nats.Timeout(2 * time.Second),
+		nats.PingInterval(PingInterval),
+		nats.MaxPingsOutstanding(MaxPingsOut),
 		nats.ConnectHandler(func(*nats.Conn) {
 			c.set(true, "")
 			logger.LogAttrs(context.Background(), slog.LevelInfo, "nats connected", obs.Dependency("nats"))

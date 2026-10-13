@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/f3411"
+	"github.com/rootxkit/uspace-core/serial"
 
 	"github.com/rootxkit/uspace-ussp/internal/national/client"
 	inj "github.com/rootxkit/uspace-ussp/internal/stdapi/interuss/ridinjection"
@@ -161,11 +163,19 @@ type planned struct {
 	frames      []client.TelemetryFrame
 }
 
+// serialKey is the key two serials are one aircraft by: the binding
+// route's fold of the normalised serial.
+func serialKey(sn string) string {
+	return serial.FoldKey(serial.Normalize(strings.TrimSpace(sn))) //nolint:misspell // uspace-core's name
+}
+
 // planFlights maps every flight of a test onto its frames, choosing each
-// flight's serial (its own, or the next of pool), and refuses the whole
-// test on the first state that cannot be a sample: validation before any
-// side effect.
-func planFlights(p inj.CreateTestParameters, version string, pool []string, maxFlights, maxStates int) ([]planned, error) {
+// flight's serial (its own, or the first of pool no held test flies), and
+// refuses the whole test on the first state that cannot be a sample or a
+// serial a held test flies (held, by serialKey): validation before any
+// side effect. Each test has its own serials, so two tests never stream
+// one aircraft.
+func planFlights(p inj.CreateTestParameters, version string, pool []string, held map[string]bool, maxFlights, maxStates int) ([]planned, error) {
 	if len(p.RequestedFlights) == 0 {
 		return nil, core.Fieldf("requested_flights", "at least one flight")
 	}
@@ -185,16 +195,23 @@ func planFlights(p inj.CreateTestParameters, version string, pool []string, maxF
 		}
 		sn := injectedSerial(fl)
 		if sn == "" {
+			for next < len(pool) && (held[serialKey(pool[next])] || seen[serialKey(pool[next])]) {
+				next++
+			}
 			if next >= len(pool) {
-				return nil, core.Fieldf(field("details_responses"), "names no serial and the fixture's pool of %d is used up", len(pool))
+				return nil, core.Fieldf(field("details_responses"), "names no serial and the fixture's pool of %d is used up by this and the held tests", len(pool))
 			}
 			sn = pool[next]
 			next++
 		}
-		if seen[sn] {
+		key := serialKey(sn)
+		if seen[key] {
 			return nil, core.Fieldf(field("details_responses"), "serial %q flies another flight of this test", sn)
 		}
-		seen[sn] = true
+		if held[key] {
+			return nil, core.Fieldf(field("details_responses"), "serial %q flies in another held test; delete it first", sn)
+		}
+		seen[key] = true
 		op, err := operatorPosition(fl)
 		if err != nil {
 			return nil, err

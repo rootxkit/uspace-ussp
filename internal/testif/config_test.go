@@ -28,6 +28,12 @@ func TestGateRefusesUnlessSwitchAndTestSystemID(t *testing.T) {
 		{VarSwitch: "on", VarSystemID: "GEOUSSP1"},
 		{VarSwitch: "on", VarSystemID: "ussp-dev"},
 		{VarSystemID: "LABTEST1"},
+		// TEST or DEV inside a longer word is no marker: only a token is.
+		{VarSwitch: "on", VarSystemID: "LATEST"},
+		{VarSwitch: "on", VarSystemID: "DEVON"},
+		{VarSwitch: "on", VarSystemID: "LABTEST1"},
+		{VarSwitch: "on", VarSystemID: "PRODEV2"},
+		{VarSwitch: "on", VarSystemID: "TESTS"},
 	}
 	for _, m := range refused {
 		err := Gate(env(m))
@@ -39,7 +45,7 @@ func TestGateRefusesUnlessSwitchAndTestSystemID(t *testing.T) {
 			t.Errorf("%v: %q does not name both variables", m, err)
 		}
 	}
-	for _, id := range []string{"USSP-DEV", "LABTEST1", "TEST", "DEV01"} {
+	for _, id := range []string{"USSP-DEV", "TEST", "DEV01", "TEST01", "LAB-TEST-1", "7DEV"} {
 		if err := Gate(env(map[string]string{VarSwitch: "on", VarSystemID: id})); err != nil {
 			t.Errorf("%s: %v, want admitted", id, err)
 		}

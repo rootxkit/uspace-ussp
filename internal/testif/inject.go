@@ -33,6 +33,8 @@ const (
 	CounterBindingsMade        = "testif_bindings_made"
 	CounterUserNotifications   = "testif_user_notifications_answered"
 	CounterInjectionBadRequest = "testif_injection_bad_request"
+	CounterInjectionFailedLive = "testif_injection_failed_in_flight"
+	CounterFramesNotAcked      = "testif_frames_not_acknowledged"
 )
 
 // maxTestIDBytes bounds a test id.
@@ -74,9 +76,12 @@ type injector struct {
 
 	mu    sync.Mutex
 	tests map[string]*injTest
-	ctx   context.Context // the server's lifetime: a test's streams outlive its PUT
-	work  sync.WaitGroup
-	seq   uint64
+	// held is the serialKey of every serial a test flies, from its PUT
+	// until its streams have ended after its delete: each test its own.
+	held map[string]bool
+	ctx  context.Context // the server's lifetime: a test's streams outlive its PUT
+	work sync.WaitGroup
+	seq  uint64
 }
 
 type injTest struct {
@@ -84,23 +89,27 @@ type injTest struct {
 	flights     []inj.TestFlight
 	runs        []*flightRun
 	cancel      context.CancelFunc
-	reserved    bool // a PUT is still building it
+	reserved    bool     // a PUT is still building it
+	serials     []string // serialKey of every serial it flies (in held)
+	failure     error    // the ingest's refusal of a frame in flight (under injector.mu)
 }
 
 // flightRun is one injected flight on its socket.
 type flightRun struct {
 	p    planned
+	t    *injTest
 	sess *session
 	done chan struct{} // closed when the stream goroutine returns
 
 	mu     sync.Mutex
 	sent   int  // frames sent
+	ok     int  // frames sent before the first the ingest refused
 	ended  bool // its end frame was sent
 	closed bool
 }
 
 func newInjector(s *Server) *injector {
-	return &injector{s: s, clock: wallClock{}, tests: map[string]*injTest{}, ctx: context.Background()}
+	return &injector{s: s, clock: wallClock{}, tests: map[string]*injTest{}, held: map[string]bool{}, ctx: context.Background()}
 }
 
 func (in *injector) iface() iface {
@@ -177,21 +186,29 @@ func (in *injector) createTest(w http.ResponseWriter, r *http.Request) {
 	}
 	in.seq++
 	version := strconv.FormatInt(in.clock.Now().UnixMilli(), 36) + strconv.FormatUint(in.seq, 36)
+	// The serials are chosen under the lock against every held test's,
+	// so two tests never fly one serial (each its own of the pool).
+	plans, err := planFlights(params, version, in.s.fixture.Serials, in.held, cfg.MaxFlightsPerTest, cfg.MaxStatesFlight)
+	if err != nil {
+		in.mu.Unlock()
+		in.refuse(w, r, err)
+		return
+	}
 	t := &injTest{id: id, version: version, flights: params.RequestedFlights, reserved: true}
+	for _, p := range plans {
+		k := serialKey(p.serial)
+		t.serials = append(t.serials, k)
+		in.held[k] = true
+	}
 	in.tests[id] = t
 	in.mu.Unlock()
 	release := func() {
 		in.mu.Lock()
 		delete(in.tests, id)
 		in.mu.Unlock()
+		in.unhold(t)
 	}
 
-	plans, err := planFlights(params, version, in.s.fixture.Serials, cfg.MaxFlightsPerTest, cfg.MaxStatesFlight)
-	if err != nil {
-		release()
-		in.refuse(w, r, err)
-		return
-	}
 	if err := in.start(r.Context(), t, plans); err != nil {
 		release()
 		in.refuse(w, r, err)
@@ -199,7 +216,16 @@ func (in *injector) createTest(w http.ResponseWriter, r *http.Request) {
 	}
 	in.mu.Lock()
 	t.reserved = false
+	failure := t.failure
 	in.mu.Unlock()
+	if failure != nil {
+		// Refused in flight after start had read the failures: the PUT
+		// still fails with it.
+		in.stop(context.WithoutCancel(r.Context()), t)
+		release()
+		in.refuse(w, r, failure)
+		return
+	}
 	in.count(CounterInjectionAccepted)
 	in.s.Logger.LogAttrs(r.Context(), slog.LevelInfo, "rid injection test created", slog.String("test_id", id),
 		slog.String("version", version), slog.Int("flights", len(plans)))
@@ -235,7 +261,7 @@ func (in *injector) start(ctx context.Context, t *injTest, plans []planned) erro
 			in.stop(context.WithoutCancel(ctx), t)
 			return err
 		}
-		run := &flightRun{p: p, sess: sess, done: make(chan struct{})}
+		run := &flightRun{p: p, t: t, sess: sess, done: make(chan struct{})}
 		t.runs = append(t.runs, run)
 		in.work.Add(1)
 		go func() {
@@ -264,6 +290,14 @@ func (in *injector) start(ctx context.Context, t *injTest, plans []planned) erro
 			break
 		}
 	}
+	in.mu.Lock()
+	failure := t.failure
+	in.mu.Unlock()
+	if failure != nil {
+		// A flight's later frame was refused while the PUT waited for the
+		// others' first: the injection fails with that refusal.
+		errs = append([]error{failure}, errs...)
+	}
 	if len(errs) > 0 {
 		cancel()
 		in.stop(context.WithoutCancel(ctx), t)
@@ -279,6 +313,9 @@ func (in *injector) start(ctx context.Context, t *injTest, plans []planned) erro
 // stream sends a flight's frames at their times: a frame whose time has
 // passed goes at once with backlog true. The first frame's decision is
 // reported through first; the frame after the last one is the end frame.
+// Every later frame's decision is read before the next frame goes: a
+// frame the ingest refuses fails the test (fail), and nothing is sent
+// past the refusal but the flight's end frame.
 func (in *injector) stream(ctx context.Context, run *flightRun, ack time.Duration, first func(error)) {
 	reported := false
 	report := func(err error) {
@@ -288,6 +325,7 @@ func (in *injector) stream(ctx context.Context, run *flightRun, ack time.Duratio
 		}
 	}
 	defer report(context.Canceled)
+	var base ingestStatus
 	for j := range run.p.frames {
 		f := run.p.frames[j]
 		if err := in.clock.Until(ctx, f.Ts); err != nil {
@@ -306,29 +344,91 @@ func (in *injector) stream(ctx context.Context, run *flightRun, ack time.Duratio
 			if err != nil {
 				return
 			}
-		} else if _, err := run.sess.send(ctx, f); err != nil {
-			in.count(CounterFramesSendFailed)
-			return
+			// A refusal counted from here on is one in flight.
+			base, _, _ = run.sess.status()
+		} else {
+			if _, err := run.sess.send(ctx, f); err != nil {
+				in.count(CounterFramesSendFailed)
+				return
+			}
+			run.mu.Lock()
+			run.sent = j + 1
+			run.mu.Unlock()
+			actx, cancel := context.WithTimeout(ctx, ack)
+			err := run.sess.settle(actx, base, f.Serial)
+			cancel()
+			var ref *RefusalError
+			switch {
+			case errors.As(err, &ref):
+				in.fail(ctx, run, ref)
+				return
+			case errors.Is(err, errNotDecided):
+				// Not decided within the bound: the next frame's (or the
+				// end frame's) wait reads its decision with its own.
+				in.count(CounterFramesNotAcked)
+			case err != nil:
+				in.count(CounterFramesSendFailed)
+				return
+			}
 		}
 		in.count(CounterFramesSent)
 		run.mu.Lock()
-		run.sent = j + 1
+		run.sent, run.ok = j+1, j+1
 		run.mu.Unlock()
 	}
 	in.end(ctx, run, ack)
 }
 
-// end sends a flight's end frame once: its last sent frame at the
+// fail fails run's test on the ingest's refusal of a frame in flight:
+// the refusal is counted and logged at error with its reason, kept as the
+// test's failure, and every flight of the test is ended (an end frame
+// each, then the close), as a delete would; the test stays held until
+// its delete. While its PUT is still building it, the PUT fails with the
+// refusal and ends the flights itself.
+func (in *injector) fail(ctx context.Context, run *flightRun, ref *RefusalError) {
+	t := run.t
+	in.count(CounterFramesRefused)
+	in.mu.Lock()
+	first := t.failure == nil
+	if first {
+		t.failure = ref
+	}
+	building := t.reserved
+	in.mu.Unlock()
+	if !first {
+		return
+	}
+	in.count(CounterInjectionFailedLive)
+	in.s.Logger.LogAttrs(ctx, slog.LevelError, "rid injection test failed: a frame was refused in flight",
+		slog.String("test_id", t.id), slog.String("version", t.version), slog.String("serial", run.p.serial),
+		slog.String("injection_id", run.p.injectionID), slog.String("reason", ref.Reason))
+	if building {
+		t.cancel() // the PUT reads the failure and stops the test
+		return
+	}
+	// stop waits for every stream of the test, this one included, so it
+	// runs beside it; a later delete's stop finds the flights ended.
+	in.work.Add(1)
+	go func() {
+		defer in.work.Done()
+		in.stop(context.WithoutCancel(ctx), t)
+	}()
+}
+
+// end sends a flight's end frame once: its last accepted sample at the
 // current time (after the last state), end true, the next seq; and waits
 // for the ingest to decide on it.
 func (in *injector) end(ctx context.Context, run *flightRun, ack time.Duration) {
 	run.mu.Lock()
-	if run.ended || run.sent == 0 {
+	if run.ended || run.ok == 0 {
 		run.mu.Unlock()
 		return
 	}
 	run.ended = true
-	f := run.p.frames[run.sent-1]
+	// At the last accepted sample, numbered after the last sent one (a
+	// refused frame's position is not repeated).
+	f := run.p.frames[run.ok-1]
+	f.Seq = run.p.frames[run.sent-1].Seq
 	run.mu.Unlock()
 	t := in.clock.Now().UTC()
 	if !t.After(f.Ts) {
@@ -385,6 +485,7 @@ func (in *injector) deleteTest(w http.ResponseWriter, r *http.Request) {
 	delete(in.tests, id)
 	in.mu.Unlock()
 	in.stop(r.Context(), t)
+	in.unhold(t)
 	in.count(CounterInjectionDeleted)
 	writeJSON(w, http.StatusOK, inj.DeleteTestResponse{InjectedFlights: t.flights})
 }
@@ -427,6 +528,16 @@ func (in *injector) run(ctx context.Context) {
 	in.mu.Unlock()
 	for _, t := range tests {
 		in.stop(context.WithoutCancel(ctx), t)
+		in.unhold(t)
 	}
 	in.work.Wait()
+}
+
+// unhold frees t's serials once its streams have ended.
+func (in *injector) unhold(t *injTest) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	for _, k := range t.serials {
+		delete(in.held, k)
+	}
 }

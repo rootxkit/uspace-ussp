@@ -359,3 +359,161 @@ func TestUserNotifications(t *testing.T) {
 		t.Errorf("another scope: %d", w.Code)
 	}
 }
+
+// serialsOf is the serials the frames of a test's version flew.
+func serialsOf(f *fakeUSSP, version string) []string {
+	var out []string
+	frames := f.received()
+	for i := range frames {
+		fr := &frames[i]
+		if fr.Epoch != nil && strings.HasPrefix(*fr.Epoch, "t"+version+"-") && !slices.Contains(out, fr.Serial) {
+			out = append(out, fr.Serial)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// Each held test has its own serials: a second test without serials
+// takes the next of the pool, not the first test's; a serial a held test
+// flies is refused for another, before any side effect; once a test is
+// deleted its serials are free again. The single-test twin is
+// TestInjectionStreamsTheFlightsAndEnds.
+func TestInjectionGivesEachTestItsOwnSerial(t *testing.T) {
+	f := newFakeUSSP(t)
+	ts := newTestServer(t, f, nil)
+	version := func(res *httptestResult) string {
+		t.Helper()
+		var ch inj.ChangeTestResponse
+		if res.code != http.StatusOK || json.Unmarshal(res.body, &ch) != nil {
+			t.Fatalf("PUT %d %s", res.code, res.body)
+		}
+		return ch.Version
+	}
+	a := version(put(t, ts, "a", labInjection(t)))
+	pooled := labInjection(t)
+	pooled.RequestedFlights = pooled.RequestedFlights[1:] // names no serial
+	b := version(put(t, ts, "b", pooled))
+	ts.inject.work.Wait()
+	if got := serialsOf(f, a); !slices.Equal(got, []string{"TEST-INJ-0001", "TEST-WP21-0001"}) {
+		t.Errorf("test a flew %v", got)
+	}
+	if got := serialsOf(f, b); !slices.Equal(got, []string{"TEST-WP21-0002"}) {
+		t.Errorf("test b flew %v, want the pool's next serial, not test a's", got)
+	}
+	own := labInjection(t)
+	own.RequestedFlights = own.RequestedFlights[:1] // TEST-INJ-0001, which test a flies
+	sockets := f.sockets
+	if res := put(t, ts, "c", own); res.code != http.StatusBadRequest || !strings.Contains(string(res.body), "another held test") {
+		t.Errorf("a serial test a flies: %d %s", res.code, res.body)
+	}
+	f.mu.Lock()
+	if f.sockets != sockets {
+		t.Errorf("the refused test opened %d sockets", f.sockets-sockets)
+	}
+	f.mu.Unlock()
+	if w := ts.do(t, http.MethodDelete, BaseInjection+"/tests/a/"+a, ScopeInjectTestData, nil); w.Code != http.StatusOK {
+		t.Fatalf("DELETE %d %s", w.Code, w.Body)
+	}
+	c := version(put(t, ts, "c", own))
+	d := version(put(t, ts, "d", pooled))
+	ts.inject.work.Wait()
+	if got := serialsOf(f, c); !slices.Equal(got, []string{"TEST-INJ-0001"}) {
+		t.Errorf("test c flew %v once test a was deleted", got)
+	}
+	if got := serialsOf(f, d); !slices.Equal(got, []string{"TEST-WP21-0001"}) {
+		t.Errorf("test d flew %v, want the serial test a freed", got)
+	}
+}
+
+// gatedClock lets the first frame go at once and holds every later one
+// until open is closed: the injection is answered with the flight still
+// in the air.
+type gatedClock struct {
+	mu    sync.Mutex
+	now   time.Time
+	first time.Time
+	open  chan struct{}
+}
+
+func (c *gatedClock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
+
+func (c *gatedClock) Until(ctx context.Context, t time.Time) error {
+	if t.After(c.first) {
+		select {
+		case <-c.open:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	c.mu.Lock()
+	if t.After(c.now) {
+		c.now = t
+	}
+	c.mu.Unlock()
+	return ctx.Err()
+}
+
+// A frame the ingest refuses after the injection was answered fails the
+// test: nothing past the refusal is sent, the flight gets its end frame,
+// the failure is counted, and the test stays held until its delete,
+// which still answers. The accepted twin, every frame accepted and sent,
+// is
+// TestInjectionStreamsTheFlightsAndEnds.
+func TestInjectionFailsOnARefusalInFlight(t *testing.T) {
+	p := labInjection(t)
+	p.RequestedFlights = p.RequestedFlights[:1] // three states, seq 0 to 2
+
+	f := newFakeUSSP(t)
+	ts := newTestServer(t, f, nil)
+	t0 := time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
+	clock := &gatedClock{now: t0, first: t0.Add(500 * time.Millisecond), open: make(chan struct{})}
+	ts.inject.clock = clock
+	res := put(t, ts, "live", p)
+	if res.code != http.StatusOK {
+		t.Fatalf("PUT %d %s", res.code, res.body)
+	}
+	var ch inj.ChangeTestResponse
+	if err := json.Unmarshal(res.body, &ch); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.refuseFrom, f.refuseFromSeq = true, 1
+	f.mu.Unlock()
+	close(clock.open)
+	ts.inject.work.Wait()
+	frames := f.received()
+	var seqs []int64
+	ended := false
+	for _, fr := range frames {
+		if fr.End != nil && *fr.End {
+			ended = true
+			// At the last accepted sample, numbered after the refused one.
+			if fr.Seq != 2 || fr.Position != frames[0].Position {
+				t.Errorf("end frame seq %d at %+v, want seq 2 at the accepted %+v", fr.Seq, fr.Position, frames[0].Position)
+			}
+			continue
+		}
+		seqs = append(seqs, fr.Seq)
+	}
+	if !slices.Equal(seqs, []int64{0, 1}) {
+		t.Errorf("samples sent %v: want 0, then 1 (refused) and nothing past it", seqs)
+	}
+	if !ended {
+		t.Error("the failed flight got no end frame")
+	}
+	if n := ts.counters.Snapshot()[CounterInjectionFailedLive]; n != 1 {
+		t.Errorf("%s = %d, want 1", CounterInjectionFailedLive, n)
+	}
+	if again := put(t, ts, "live", p); again.code != http.StatusConflict {
+		t.Errorf("the failed test is not held until its delete: %d", again.code)
+	}
+	n := len(frames)
+	if w := ts.do(t, http.MethodDelete, BaseInjection+"/tests/live/"+ch.Version, ScopeInjectTestData, nil); w.Code != http.StatusOK {
+		t.Fatalf("DELETE of the failed test %d %s", w.Code, w.Body)
+	}
+	if got := len(f.received()); got != n {
+		t.Errorf("the delete of the ended flight sent %d more frames", got-n)
+	}
+
+}
