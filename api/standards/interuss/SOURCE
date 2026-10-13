@@ -1,0 +1,130 @@
+# Where the pinned InterUSS automated-testing interface files in
+# api/standards/interuss/ come from (docs/PLAN.md D13, §6.4; brief WP-21;
+# E-03). Each file is a byte-for-byte copy of the file at `path` in
+# interuss/automated_testing_interfaces at `commit`, kept at the same
+# relative path so that the files' own relative references resolve.
+# scripts/check-standards.sh checks every `sha256` offline;
+# scripts/fetch-standards.sh -interuss re-fetches `url`. CI never fetches.
+#
+# The commit is the one the lab's pinned uss_qualifier reads the
+# interfaces at (uspace-lab conformance/uss_qualifier/SOURCE: InterUSS
+# monitoring v0.36.0, 0fabe238ef177f66266eba6048545ae1e6bbb4a0). Observed
+# 2026-10-13: monitoring's uv.lock at that commit pins uas-standards 4.4.0;
+# interuss/uas_standards tag v4.4.0 is 6e182f43ec960b3bccf131c9006ff9979dd8a56e
+# (the same uas_standards commit as api/standards/SOURCE) and its
+# submodule interfaces/interuss/automated_testing is 17502448f450fd9d923577c0667b7d4cb4812620;
+# uss_qualifier's wire types come from that package. The monitoring
+# repository's own submodule interfaces/automated_testing is at
+# 3e6060bd6d5cd665eb5cc60ec7aaeab104547769, an older commit
+# (flight_planning 0.5.0, injection 0.5.1 with two descriptions shorter);
+# it is documentation in that repository and not what the suite imports.
+# uspace-authority pins observation.yaml and commons.yaml at the same
+# 17502448f450fd9d923577c0667b7d4cb4812620 (api/clients/SOURCE).
+#
+# The scope of each operation is in the file's `security` block (Q17:
+# the file wins); internal/testif reads them from these copies in a test.
+#
+# scd v1 (scd/v1/scd.yaml, scope utm.inject_test_data) is NOT pinned and
+# not built: at the pinned commit the F3548 suite drives flight_planning
+# v1 (lab coverage.yaml, f3548-scd.yaml). A later lab pin that needs it
+# adds it here with its own run (brief WP-21, scd v1).
+#
+# The generated code is internal/stdapi/interuss/<package>/<file>.gen.go
+# (scripts/generate-interuss.sh, oapi-codegen at the go.mod tool pin, the
+# configurations oapi-codegen.<package>[.<side>].yaml beside this file).
+
+[flight_planning/v1/astm_f3548v21.yaml]
+repo = https://github.com/interuss/automated_testing_interfaces
+commit = 17502448f450fd9d923577c0667b7d4cb4812620
+path = flight_planning/v1/astm_f3548v21.yaml
+url = https://raw.githubusercontent.com/interuss/automated_testing_interfaces/17502448f450fd9d923577c0667b7d4cb4812620/flight_planning/v1/astm_f3548v21.yaml
+sha256 = 65e8ce24904e4dff890b80301f08f4f6ce1c904d5f9f9160940b4c67a872feef
+title = Definitions used in flight planning interface specific to ASTM F3548-21.
+
+[flight_planning/v1/au.yaml]
+repo = https://github.com/interuss/automated_testing_interfaces
+commit = 17502448f450fd9d923577c0667b7d4cb4812620
+path = flight_planning/v1/au.yaml
+url = https://raw.githubusercontent.com/interuss/automated_testing_interfaces/17502448f450fd9d923577c0667b7d4cb4812620/flight_planning/v1/au.yaml
+sha256 = 252426b452bb2db1c609e2c9269e067f52e3773f9cb689c4ea0c6e6bd1e50159
+title = Australia-specific flight planning information schemas.
+
+[flight_planning/v1/flight_planning.yaml]
+repo = https://github.com/interuss/automated_testing_interfaces
+commit = 17502448f450fd9d923577c0667b7d4cb4812620
+path = flight_planning/v1/flight_planning.yaml
+url = https://raw.githubusercontent.com/interuss/automated_testing_interfaces/17502448f450fd9d923577c0667b7d4cb4812620/flight_planning/v1/flight_planning.yaml
+sha256 = eaffd24bbfe42ca16c8c7030175356d117e36fb01e83cf7e818033289ae7a5f1
+title = Flight Planning Automated Testing Interface
+
+[flight_planning/v1/geotemporal.yaml]
+repo = https://github.com/interuss/automated_testing_interfaces
+commit = 17502448f450fd9d923577c0667b7d4cb4812620
+path = flight_planning/v1/geotemporal.yaml
+url = https://raw.githubusercontent.com/interuss/automated_testing_interfaces/17502448f450fd9d923577c0667b7d4cb4812620/flight_planning/v1/geotemporal.yaml
+sha256 = f8c37bb16597ebd66c619c532399b32a0cbb02acd1b38f13ffc3cc4a90f7ce0d
+title = Geotemporal definitions used in flight planning interface.
+
+[flight_planning/v1/operator.yaml]
+repo = https://github.com/interuss/automated_testing_interfaces
+commit = 17502448f450fd9d923577c0667b7d4cb4812620
+path = flight_planning/v1/operator.yaml
+url = https://raw.githubusercontent.com/interuss/automated_testing_interfaces/17502448f450fd9d923577c0667b7d4cb4812620/flight_planning/v1/operator.yaml
+sha256 = 10eed4af677add6ec8d31d511d4ed1710a50117b7b7f5f9884b1f9f353f1b6b0
+title = Definitions used in flight planning interface specific to the operator.
+
+[flight_planning/v1/telemetry.yaml]
+repo = https://github.com/interuss/automated_testing_interfaces
+commit = 17502448f450fd9d923577c0667b7d4cb4812620
+path = flight_planning/v1/telemetry.yaml
+url = https://raw.githubusercontent.com/interuss/automated_testing_interfaces/17502448f450fd9d923577c0667b7d4cb4812620/flight_planning/v1/telemetry.yaml
+sha256 = b350b5d165e7f921ad210d9959d9d1a81a19c08f70a12fcb8f3c43f9c72266fc
+title = Telemetry definitions used in flight planning interface.
+
+[flight_planning/v1/uas.yaml]
+repo = https://github.com/interuss/automated_testing_interfaces
+commit = 17502448f450fd9d923577c0667b7d4cb4812620
+path = flight_planning/v1/uas.yaml
+url = https://raw.githubusercontent.com/interuss/automated_testing_interfaces/17502448f450fd9d923577c0667b7d4cb4812620/flight_planning/v1/uas.yaml
+sha256 = 4454aba1f36d71884258b5ee8a5364fdcd2f654baef3b0c445f15a941ba82a75
+title = Definitions used in flight planning interface specific to the UAS.
+
+[flight_planning/v1/user_notification.yaml]
+repo = https://github.com/interuss/automated_testing_interfaces
+commit = 17502448f450fd9d923577c0667b7d4cb4812620
+path = flight_planning/v1/user_notification.yaml
+url = https://raw.githubusercontent.com/interuss/automated_testing_interfaces/17502448f450fd9d923577c0667b7d4cb4812620/flight_planning/v1/user_notification.yaml
+sha256 = 31587572d779afbf2713fec0620561fd9a13bf1ac177b78f54ca5bca1908be29
+title = Definitions used in flight planning interface for user notifications.
+
+[flight_planning/v1/uspace.yaml]
+repo = https://github.com/interuss/automated_testing_interfaces
+commit = 17502448f450fd9d923577c0667b7d4cb4812620
+path = flight_planning/v1/uspace.yaml
+url = https://raw.githubusercontent.com/interuss/automated_testing_interfaces/17502448f450fd9d923577c0667b7d4cb4812620/flight_planning/v1/uspace.yaml
+sha256 = d2a47335c260264d95199d1379540ba9d6ea4df5922c2c8537233cbfae03c395
+title = Definitions used in flight planning interface specific to U-space flight authorisation.
+
+[rid/v1/commons.yaml]
+repo = https://github.com/interuss/automated_testing_interfaces
+commit = 17502448f450fd9d923577c0667b7d4cb4812620
+path = rid/v1/commons.yaml
+url = https://raw.githubusercontent.com/interuss/automated_testing_interfaces/17502448f450fd9d923577c0667b7d4cb4812620/rid/v1/commons.yaml
+sha256 = 15e2b164f6955b1b26d46ee4aeeed5460cf20a89ec70f31a045b623ff3f25eb3
+title = Definitions used for the injection and observation interfaces
+
+[rid/v1/injection.yaml]
+repo = https://github.com/interuss/automated_testing_interfaces
+commit = 17502448f450fd9d923577c0667b7d4cb4812620
+path = rid/v1/injection.yaml
+url = https://raw.githubusercontent.com/interuss/automated_testing_interfaces/17502448f450fd9d923577c0667b7d4cb4812620/rid/v1/injection.yaml
+sha256 = 881821f8d5efef9ea3bb1b3694e1addffb24b0b2726908b466dcbccf0a0f6d6c
+title = Remote ID Test Data Injection
+
+[rid/v1/observation.yaml]
+repo = https://github.com/interuss/automated_testing_interfaces
+commit = 17502448f450fd9d923577c0667b7d4cb4812620
+path = rid/v1/observation.yaml
+url = https://raw.githubusercontent.com/interuss/automated_testing_interfaces/17502448f450fd9d923577c0667b7d4cb4812620/rid/v1/observation.yaml
+sha256 = e0a6254ca230a80dea965d08cba584aacdd87ff18d8405262cc2c83a8d6dd5da
+title = Remote ID Display Data Observation

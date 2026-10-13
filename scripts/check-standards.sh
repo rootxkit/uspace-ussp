@@ -4,7 +4,10 @@
 # `commit`, `url` and `sha256` equal what uspace-core's SOURCE records
 # for the same standard (spec_commit, spec_url, spec_sha256) at the core
 # version go.mod pins; every *.yaml under api/standards/ has a SOURCE
-# section. Network is never used.
+# section. The InterUSS automated-testing interfaces (brief WP-21) have
+# no uspace-core copy: every file api/standards/interuss/SOURCE names
+# hashes to its `sha256`, and every *.yaml under api/standards/interuss/
+# has a section. Network is never used.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # shellcheck source=scripts/standards-source.sh
@@ -49,4 +52,32 @@ for p in api/standards/*.yaml; do
     fail "$p has no section in api/standards/SOURCE"
   fi
 done
+
+# The InterUSS automated-testing interfaces (api/standards/interuss/SOURCE).
+source_path=api/standards/interuss/SOURCE
+mapfile -t ifiles < <(source_files)
+if [ "${#ifiles[@]}" -eq 0 ]; then
+  fail "$source_path names no file"
+fi
+for f in "${ifiles[@]}"; do
+  path="api/standards/interuss/$f"
+  if [ ! -f "$path" ]; then
+    fail "$path is named in $source_path but missing"
+    continue
+  fi
+  want=$(source_get "$f" sha256)
+  got=$(sha256_of "$path")
+  if [ "$got" != "$want" ]; then
+    fail "$path hashes to $got, $source_path records $want (edited by hand? run scripts/fetch-standards.sh -interuss)"
+    continue
+  fi
+  echo "check-standards: interuss/$f sha256 $got = SOURCE"
+done
+while IFS= read -r p; do
+  name=${p#api/standards/interuss/}
+  if ! printf '%s
+' "${ifiles[@]}" | grep -qxF "$name"; then
+    fail "$p has no section in $source_path"
+  fi
+done < <(find api/standards/interuss -name '*.yaml' ! -name 'oapi-codegen.*' | sort)
 exit "$status"
