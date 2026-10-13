@@ -23,8 +23,21 @@
 # checks the declaration against what rid-sp answers before the suite
 # runs.
 #
+# WP-21 adds the test-interfaces process (docs/PLAN.md D13, §6.4):
+# ussp-test-interfaces from the separate image uspace-ussp-testif
+# (USSP_TESTIF_IMAGE, built by the hook from this checkout's
+# deploy/Dockerfile target testif), with USSP_TEST_INTERFACES=on, the
+# test operator's client and sessions from the state directory, reachable
+# on the lab network as http://ussp:8087 (the alias is an audience the
+# lab issuer issues and the process accepts), and the lab Caddy's
+# Caddyfile with /test/* on the USSP host routed to it
+# (USSP_CONFORMANCE_CADDYFILE, the lab's file plus that route, written
+# by the hook). The production compose and the production image have
+# neither (internal/app/testinterfaces tests read the files).
+#
 # Nothing in this stack reaches an aircraft: the operators are the lab's
-# simulators, and no USSP process has a send path towards a vehicle.
+# simulators and the test operator, and no USSP process has a send path
+# towards a vehicle.
 
 # The USSP's containers run as the invoking user, as the lab issuer
 # does: the lab's gen-secrets.sh writes every key 0600 in the state
@@ -47,3 +60,44 @@ services:
   ussp-traffic-ws: *user
   ussp-dss-sync: *user
   ussp-tsdb-writer: *user
+  caddy:
+    volumes:
+      - ${USSP_CONFORMANCE_CADDYFILE:?set by scripts/conformance.sh}:/etc/caddy/Caddyfile:ro
+  ussp-test-interfaces:
+    <<: *user
+    profiles: [testif]
+    image: ${USSP_TESTIF_IMAGE:?set by scripts/conformance.sh}
+    restart: "no"
+    read_only: true
+    tmpfs: [/tmp]
+    entrypoint: ["/usr/bin/ussp-test-interfaces"]
+    networks:
+      lab:
+        aliases: [ussp]
+    volumes:
+      - ${USSP_CONFORMANCE_CA_PEM:?set by scripts/conformance.sh}:/etc/lab-ca/ca.pem:ro
+      - ${USSP_TESTIF_STATE_DIR:?set by scripts/conformance.sh}:/run/secrets/testif:ro
+      - ${USSP_TESTIF_OPERATOR_FILE:?set by scripts/conformance.sh}:/etc/testif/test-operator.yaml:ro
+    environment:
+      SSL_CERT_FILE: /etc/lab-ca/ca.pem
+      USSP_TEST_INTERFACES: "on"
+      USSP_SYSTEM_ID: ${USSP_SYSTEM_ID:?deploy/demo.env}
+      USSP_LOG_LEVEL: info
+      USSP_STATUS_INTERVAL_S: "30"
+      USSP_AUDIENCES: ussp,${USSP_HOST:?deploy/demo.env}
+      USSP_TOKEN_ISSUERS: https://${LAB_HOST}=https://${LAB_HOST}/.well-known/jwks.json
+      USSP_TEST_INTERFACES_ADDR: ":8087"
+      USSP_TEST_INTERFACES_USSP_BASE_URL: https://${USSP_HOST}
+      USSP_TEST_INTERFACES_CA_FILE: /etc/lab-ca/ca.pem
+      USSP_TEST_INTERFACES_OPERATOR_CLIENT_ID: ${USSP_TESTIF_OPERATOR_CLIENT_ID:-unavailable}
+      USSP_TEST_INTERFACES_OPERATOR_SECRET_FILE: /run/secrets/testif/operator-secret
+      USSP_TEST_INTERFACES_SESSION_FILE: /run/secrets/testif/portal-session
+      USSP_TEST_INTERFACES_CONSOLE_SESSION_FILE: /run/secrets/testif/console-session
+      USSP_TEST_INTERFACES_OPERATOR_FILE: /etc/testif/test-operator.yaml
+    healthcheck:
+      # Ready, not only alive: the issuers' keys read (issuer_keys) and
+      # the USSP's api answering (ussp_api).
+      test: ["CMD", "/usr/bin/ussp-test-interfaces", "healthcheck", "/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 30

@@ -7,6 +7,33 @@ additively within `/v1`.
 
 ## [Unreleased]
 
+### Added
+
+- The InterUSS automated-testing interfaces `uss_qualifier` drives
+  (WP-21, PLAN D13 and §6.4): `cmd/test-interfaces`
+  (`ussp-test-interfaces`, image `uspace-ussp-testif`) serves RID
+  injection, RID observation and `flight_planning` v1 from the pinned
+  InterUSS files (`api/standards/interuss/`, automated_testing_interfaces
+  `17502448`) on its own listener. It is an operator client of this
+  USSP's published API and nothing else: an injected flight is
+  `telemetry/v1` on `WS /v1/telemetry` at its timestamps, a flight plan
+  an `intent/request/v1` on `/v1/intents` whose decision is the plan's
+  result, an observation `GET /v1/traffic/snapshot` with a staff
+  session. It refuses to start (exit 2) without `USSP_TEST_INTERFACES=on`
+  and a `USSP_SYSTEM_ID` containing `TEST` or `DEV`, admits only the
+  pinned files' scopes (outside the catalogue), and is not in the
+  production image or compose. `ussp-test-interfaces seed` creates the
+  conformance profile's test operator (`deploy/conformance/test-operator.yaml`)
+  through the national API. scd v1 is not built.
+- `make conformance` runs the test-interfaces process in the stack,
+  checks every declared interface answers 401 without a credential, runs
+  the lab's `uss_qualifier` `f3411-sp.yaml`, `f3548-scd.yaml` and
+  `f3411-dp.yaml` with its mock USS and folds the reports into the run
+  (`CONFORMANCE_QUALIFIER=off` skips them); the `conformance` workflow
+  does the same with a raised step timeout. CI builds, pushes and signs
+  the testif image and checks the production image has no
+  `ussp-test-interfaces` (`scripts/check-images.sh`).
+
 ### Fixed
 
 - The ANSP's degraded direct delivery (spec 02 F2 failure rule,
@@ -109,6 +136,48 @@ additively within `/v1`.
   `USSP_OCCURRENCE_BACKOFF_MAX_S` (600), pending GCAA. The fake
   authority follows the pinned contract. Lab run against the authority
   image: `scripts/lab-authority.sh`, docs/RUNBOOKS/WP-15.md Run 3.
+- A NATS outage no longer raises a false `lost_link` for every flight
+  (PLAN §15.2 Q35 a, found by the WP-19 chaos run). The monitor's own
+  input is its bus link: while it is down no `lost_link` is judged, the
+  outage is logged at error level as a monitoring outage and counted
+  (`monitor_input_outages`), and the silence of each flight counts from
+  the link's return, so a flight heard again is judged from its real
+  samples and one still silent loses its link `lost_link_s` after the
+  return. A real link loss with the bus up is raised as before, and a
+  sample clears it. A `lost_link` already raised is kept through the
+  outage.
+- A monitor restart longer than `lost_link_s` no longer raises
+  `lost_link` for every restored flight (Q35 review): a restored
+  tracker's silence counts from its restore (or the input's return,
+  whichever is later), so a flight heard after the restart raises none
+  and one still silent raises it `lost_link_s` after the restore.
+- A silent partition from NATS (unreachable, nothing closing the
+  connection) is seen within about 6 s (Q35 review): every process
+  pings NATS every 2 s and drops the connection as stale after two
+  unanswered pings (`bus.PingInterval`, `bus.MaxPingsOut`). With
+  nats.go's defaults (2 min, 2) the link stayed up for minutes, so the
+  monitor took its own blindness for the aircraft's silence.
+- A process started while a token service is down verifies that
+  service's tokens again (PLAN §15.2 Q35 b): each ecosystem issuer's
+  JWKS is stored in the new `jwks_cache` bucket when it is fetched
+  (rewritten hourly while it answers) and, when a start cannot fetch
+  it, the stored one verifies for at most `USSP_JWKS_CACHE_MAX_AGE_S`
+  from its fetch (default 86400, spec 05 §6, pending GCAA; 0 turns it
+  off). `/readyz` says `jwks` degraded with the stored keys' age rather
+  than down. New: `USSP_JWKS_CACHE_BUCKET_MAX_BYTES` (1 MiB).
+- `GET /v1/admin/inputs` (additive): each monitor instance may carry
+  `input_down_since`, `input_back_at`, `last_input_down_since` and
+  `lost_link_suspended_until`; the monitor's state is `down` with a
+  "monitoring outage" detail while an instance reports its input down.
+- A monitoring outage is recorded where it can be read while it lasts
+  (Q35 review). The status line goes to `monitor_status` on the bus
+  that is down, so nothing of the outage reached the console while it
+  lasted, and the return cleared its start. The monitor's own `/readyz`
+  now has an `input` entry: down "monitoring outage since T" while its
+  bus link is down, degraded with the outage's window during the grace,
+  up after with the last window. The status line keeps the window that
+  ended (`last_input_down_since` to `input_back_at`) until the next
+  outage, and the inputs page says it.
 - A restart of telemetry-ingest goes on with every flight in the air
   (WP-19, found by the chaos procedure's restart row): the running
   flights are saved in the new `flight_binding` bucket

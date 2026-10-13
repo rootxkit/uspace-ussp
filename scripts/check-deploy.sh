@@ -161,7 +161,7 @@ mutate "its own host not mapped to Caddy" 'del(.services["telemetry-ingest"].ext
 
 # Every base image the two Dockerfiles build from is pinned by digest: a
 # tag can move between two builds of one commit.
-unpinned="$(grep -HnE '^FROM ' deploy/Dockerfile deploy/web.Dockerfile | grep -vE '^[^:]+:[0-9]+:FROM [^ ]+@sha256:[0-9a-f]{64}( AS [a-z]+)?$' || true)"
+unpinned="$(grep -HnE '^FROM ' deploy/Dockerfile deploy/web.Dockerfile | grep -vE '^[^:]+:[0-9]+:FROM [^ ]+@sha256:[0-9a-f]{64}( AS [a-z][a-z-]*)?$' || true)"
 if [ -z "$unpinned" ]; then
   ok "every FROM of deploy/Dockerfile and deploy/web.Dockerfile is pinned by digest"
 else

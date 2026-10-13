@@ -225,8 +225,8 @@ func TestRestartWithoutSavedStateTakesTheIntentState(t *testing.T) {
 }
 
 // A flight that falls silent across a restart is restored with its last
-// sample: the new instance raises lost_link after lost_link_s of
-// silence without any sample, and republishes the lost_link state.
+// sample: the new instance raises lost_link once it has heard nothing
+// for lost_link_s itself, and republishes the lost_link state.
 func TestRestartSilentFlightLosesItsLink(t *testing.T) {
 	clk := newClock(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
 	intents := &fakeIntents{}
@@ -238,8 +238,74 @@ func TestRestartSilentFlightLosesItsLink(t *testing.T) {
 	first.cancel()
 	clk.Add(16 * time.Second)
 	second := startReplica(t, clk, intents, store, "m-1", "all")
+	clk.Add(secs(policy.Defaults().LostLinkS))
 	waitFor(t, "lost_link", func() bool { return len(second.sink.alerts("lost_link", "raised", flightA)) == 1 })
 	waitFor(t, "lost_link republished", func() bool { return second.states(flightA, conformance.StateLostLink) >= 3 })
+}
+
+// ticked waits until r's engine has ticked n more times on the clock as
+// it is now.
+func (r *replica) ticked(t *testing.T, n uint64) {
+	t.Helper()
+	from := r.eng.Counters.Get(CounterTicks)
+	waitFor(t, "ticks", func() bool { return r.eng.Counters.Get(CounterTicks) >= from+n })
+}
+
+// Q35 review: a monitor restart longer than lost_link_s is the
+// monitor's outage, not the aircraft's. Before, every restored flight
+// was judged silent since its last sample before the stop and raised
+// lost_link at the first tick, the aircraft flying all along. Now the
+// silence of a restored flight counts from the restore: a flight heard
+// after the restart raises none, and one still silent raises lost_link
+// lost_link_s after the restore, never before (the presence pair), and
+// its next sample clears it.
+func TestScenarioRestartLongerThanLostLinkRaisesNoLostLinkAtRestore(t *testing.T) {
+	ll := secs(policy.Defaults().LostLinkS)
+	for _, heard := range []bool{true, false} {
+		name := "silent after the restart"
+		if heard {
+			name = "heard after the restart"
+		}
+		t.Run(name, func(t *testing.T) {
+			clk := newClock(time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
+			intents := &fakeIntents{}
+			intents.set(intentA, stateBody(t, clk.Now()), true)
+			store := &memStates{}
+			a := ptr(intentA)
+			first := startReplica(t, clk, intents, store, "m-1", "all")
+			first.eng.Offer(track(t, flightA, a, origin, clk.Now(), "Airborne"))
+			waitFor(t, "saved", func() bool { s, ok := store.get(flightA); return ok && s.Tracker.HasLive })
+			first.cancel()
+			// Down for four times lost_link_s.
+			clk.Add(4 * ll)
+			second := startReplica(t, clk, intents, store, "m-1", "all")
+			second.ticked(t, 3)
+			if n := len(second.sink.alerts("lost_link", "raised", flightA)); n != 0 {
+				t.Fatalf("%d lost_link raised at the restore", n)
+			}
+			if heard {
+				for range 3 * int(ll/time.Second) {
+					clk.Add(time.Second)
+					second.eng.Offer(track(t, flightA, a, origin, clk.Now(), "Airborne"))
+					second.ticked(t, 2)
+				}
+				if n := len(second.sink.alerts("lost_link", "raised", flightA)); n != 0 {
+					t.Fatalf("%d lost_link raised for a flight heard after the restart", n)
+				}
+				return
+			}
+			clk.Add(ll - time.Second)
+			second.ticked(t, 3)
+			if n := len(second.sink.alerts("lost_link", "raised", flightA)); n != 0 {
+				t.Fatalf("lost_link raised %d times within lost_link_s of the restore", n)
+			}
+			clk.Add(time.Second)
+			waitFor(t, "lost_link after the restore", func() bool { return len(second.sink.alerts("lost_link", "raised", flightA)) == 1 })
+			clk.Add(time.Second)
+			second.eng.Offer(track(t, flightA, a, origin, clk.Now(), "Airborne"))
+			waitFor(t, "lost_link cleared", func() bool { return len(second.sink.alerts("lost_link", "cleared", flightA)) == 1 })
+		})
+	}
 }
 
 // A restored flight whose intent ended while the monitor was down is

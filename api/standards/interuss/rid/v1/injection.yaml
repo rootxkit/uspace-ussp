@@ -1,0 +1,567 @@
+openapi: 3.0.2
+info:
+  title: Remote ID Test Data Injection
+  version: 0.5.1
+  description: >-
+    This interface is provided by every Service Provider wishing to be tested by the automated testing framework.
+    The automated testing suite calls this interface to inject flight-related test data into the Service Provider system under test.
+paths:
+  /tests/{test_id}:
+    parameters:
+      -
+        examples:
+          default:
+            value: '2979bd18-7f06-441c-bda6-e82c841c35d6'
+        name: test_id
+        description: >-
+          The ID of the test.
+        schema:
+          type: string
+        in: query
+        required: true
+    put:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTestParameters'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeTestResponse'
+          description: Requested test was created successfully.
+        '409':
+          description: Test already exists.
+      operationId: createTest
+      summary: Create test
+      description: >-
+        Request the creation of one or more logical flights based on injection of the provided test data.
+        The Service Provider's test data injector may modify fields, such as `details.id`, as necessary to work with their system.
+        The Service Provider's test data injector should modify as few fields as practical, and change modified fields as little as practical.
+        The `injection_id` fields may not be modified.
+      security:
+        - TestAuth:
+            - rid.inject_test_data
+  /tests/{test_id}/{version}:
+    parameters:
+      -
+        examples:
+          default:
+            value: '2979bd18-7f06-441c-bda6-e82c841c35d6'
+        name: test_id
+        description: >-
+          The ID of the test.
+        schema:
+          type: string
+        in: query
+        required: true
+      -
+        name: version
+        description: >-
+          Current version of the test.
+        schema:
+          type: string
+        in: query
+        required: true
+    delete:
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteTestResponse'
+          description: Requested test was deleted successfully.
+      operationId: deleteTest
+      summary: Delete test
+      description: Remove all test data associated with this test from the Service Provider's test data injector.
+      security:
+        - TestAuth:
+            - rid.inject_test_data
+  /user_notifications:
+    get:
+      operationId: QueryUserNotifications
+      security:
+        - TestAuth:
+            - rid.inject_test_data
+      parameters:
+        - name: after
+          description: >-
+            Do not include any notifications observed before this time. 
+            The property 'observed_at' in UserNotification is to be used for comparison.
+          schema:
+            type: string
+            format: date-time
+          example: '2024-04-22T16:36:50.52Z'
+          in: query
+          required: true
+        - name: before
+          description: >-
+            Do not include any notifications observed after this time. 
+            This time must be after the time specified in 'after' parameter. 
+            If not provided, then the value defaults to now. 
+            The property 'observed_at' in UserNotification is to be used for comparison.
+          schema:
+            type: string
+            format: date-time
+          example: '2024-04-22T16:41:50.52Z'
+          in: query
+          required: false
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryUserNotificationsResponse'
+          description: User notifications sent retrieved successfully.
+        '400':
+          description: The request was missing 'after' query parameter, or the request was otherwise invalid.
+        '401':
+          description: Bearer access token was not provided in Authorization header, token could not be decoded, or token was invalid.
+        '403':
+          description: The access token was decoded successfully but did not include a scope appropriate to this endpoint.
+      summary: User notifications
+      description: >-
+        Returns the list of user notifications observed by the virtual user and applicable to the query parameters.  
+        The implementation of this endpoint requires that the user notifications be available for querying until the end of a test run.
+        The user notifications should be available to be queried within 5 seconds of observation by the virtual user.
+components:
+  schemas:
+    RIDFlightID:
+      description: |-
+        ID, unique to a remote ID service provider, which identifies a particular flight for which the remote ID service provider is providing remote ID services.
+
+        The following characters are not allowed: \0 \t \r \n # % / : ? @ [ \ ]
+      maxLength: 255
+      minLength: 1
+      type: string
+      example: uss1.JA6kHYCcByQ-6AfU
+    RIDAuthData:
+      description: Additional authentication data.
+      type: object
+      properties:
+        format:
+          description: |-
+            Format of additional authentication data.
+
+            0: None
+            1: UAS ID Signature
+            2: Operator ID Signature
+            3: Message Set Signature
+            4: Authentication Provided by Network Remote ID
+            5: Specific Method
+            6-9: Reserved for Spec
+            10-15: Available for Private Use
+          type: integer
+          default: 0
+          minimum: 0
+          exclusiveMinimum: false
+          maximum: 15
+          exclusiveMaximum: false
+        data:
+          description: Authentication data in form specified by `format`.
+          type: string
+          default: ''
+    RIDAircraftPosition:
+      description: "
+      Position of an aircraft as reported for remote ID purposes.
+      
+      The following fields are required for a successful injection, but are not included in the 'required' field
+      to allow the uss_qualifier to check SP behavior in situations where a networked UAS would not provide the necessary data
+      to participate in Network Remote ID:
+      
+        - lat
+        - lng
+        - alt
+      "
+      type: object
+      properties:
+        lat:
+          $ref: 'commons.yaml#/components/schemas/Latitude'
+        lng:
+          $ref: 'commons.yaml#/components/schemas/Longitude'
+        alt:
+          $ref: 'commons.yaml#/components/schemas/Altitude'
+        height:
+          $ref: 'commons.yaml#/components/schemas/RIDHeight'
+        accuracy_h:
+          anyOf:
+            - $ref: 'commons.yaml#/components/schemas/HorizontalAccuracy'
+          description: Horizontal error that is likely to be present in this reported
+            position.  Required when `extrapolated` field is true and always in the
+            entry for the current state.
+        accuracy_v:
+          anyOf:
+            - $ref: 'commons.yaml#/components/schemas/VerticalAccuracy'
+          description: Vertical error that is likely to be present in this reported
+            position.  Required when `extrapolated` field is true and always in the
+            entry for the current state.
+        extrapolated:
+          description: True if this position was generated primarily by computation
+            rather than primarily from a direct instrument measurement.  Assumed false
+            if not specified.
+          type: boolean
+        pressure_altitude:
+          format: float
+          description: The uncorrected altitude (based on reference standard 29.92
+            inHg, 1013.25 mb) provides a reference for algorithms that utilize "altitude
+            deltas" between aircraft.  This value is provided in meters and must have
+            a minimum resolution of 1 meter.
+          type: number
+    RIDFlightDetails:
+      description: Details about a flight reported by a remote ID service provider.  At
+        least one of the registration or serial fields must be filled if required
+        by CAA.
+      required:
+        - id
+      type: object
+      properties:
+        id:
+          description: ID for this flight, matching argument in request.
+          type: string
+          example: a3423b-213401-0023
+        operator_id:
+          $ref: 'commons.yaml#/components/schemas/OperatorId'
+        operator_location:
+          anyOf:
+            - $ref: 'commons.yaml#/components/schemas/LatLngPoint'
+          description: Location of party controlling the aircraft.
+        operation_description:
+          description: Free-text field that enables the operator to describe the purpose
+            of a flight, if so desired.
+          type: string
+          example: SafeFlightDrone company doing survey with DJI Inspire 2. See my
+            privacy policy www.example.com/privacy.
+        auth_data:
+          $ref: '#/components/schemas/RIDAuthData'
+        serial_number:
+          description: This field is DEPRECATED and will be removed in a future version;
+            use uas_id.serial_number instead.
+            Can be specified when no registration ID exists and required
+            by law in a region. This is expressed in the ANSI/CTA-2063-A Physical Serial
+            Number format.
+          type: string
+          example: INTCJ123-4567-890
+        registration_number:
+          description: This field is DEPRECATED and will be removed in a future version;
+            use uas_id.registration_number instead.
+            If a CAA provides a method of registering UAS, this number
+            is provided by the CAA or its authorized representative.  Required when
+            required by law in a region.
+          type: string
+          example: FA12345897
+        uas_id:
+          $ref: '#/components/schemas/UASID'
+        operator_altitude:
+          $ref: 'commons.yaml#/components/schemas/OperatorAltitude'
+        eu_classification:
+          description: When this field is specified, the Classification Type is "European
+            Union".  If no other classification field is specified, the Classification Type
+            is "Undeclared".
+          anyOf:
+            - $ref: 'commons.yaml#/components/schemas/UAClassificationEU'
+    RIDRecentAircraftPosition:
+      description: ""
+      required:
+        - time
+        - position
+      type: object
+      properties:
+        time:
+          format: date-time
+          description: Time at which this position applied.  RFC 3339 format, per
+            OpenAPI specification.
+          type: string
+        position:
+          $ref: '#/components/schemas/RIDAircraftPosition'
+    RIDAircraftState:
+      description: "
+      State of an aircraft for the purposes of remote ID.
+      
+      The following fields are required for a successful injection, but are not included in the 'required' field
+      to allow the uss_qualifier to check SP behavior in situations where a networked UAS would not provide the necessary data
+      to participate in Network Remote ID:
+      
+        - timestamp
+        - timestamp_accuracy
+        - accuracy_h
+        - accuracy_v
+        - speed
+        - vertical_speed
+        - track
+        - speed_accuracy
+        - position
+      "
+      type: object
+      properties:
+        timestamp:
+          format: date-time
+          description: Time at which this state was valid.  This may be the time coming
+            from the source, such as a GPS, or the time when the system computes the
+            values using an algorithm such as an Extended Kalman Filter (EKF).  Timestamp
+            must be expressed with a minimum resolution of 1/10th of a second.  RFC
+            3339 format, per OpenAPI specification.
+          type: string
+        timestamp_accuracy:
+          $ref: 'commons.yaml#/components/schemas/TimestampAccuracy'
+        operational_status:
+          $ref: 'commons.yaml#/components/schemas/RIDOperationalStatus'
+        position:
+          $ref: '#/components/schemas/RIDAircraftPosition'
+        track:
+          $ref: 'commons.yaml#/components/schemas/RIDTrack'
+        speed:
+          $ref: 'commons.yaml#/components/schemas/RIDSpeed'
+        speed_accuracy:
+          anyOf:
+            - $ref: 'commons.yaml#/components/schemas/SpeedAccuracy'
+          description: Accuracy of horizontal ground speed.
+        vertical_speed:
+          $ref: 'commons.yaml#/components/schemas/VerticalSpeed'
+        height:
+          $ref: 'commons.yaml#/components/schemas/RIDHeight'
+        group_radius:
+          format: float
+          description: Farthest horizontal distance from reported group location at
+            which an aircraft in the group may be located (meters).  This value contains
+            the "Operating Area Radius" data from the common data dictionary when
+            group operation area is specified by point-radius.
+          minimum: 0
+          exclusiveMinimum: true
+          type: number
+        group_ceiling:
+          format: float
+          description: Maximum altitude (meters WGS84-HAE) of Group Operation.  This
+            value contains the "Operating Area Ceiling" data from the common data
+            dictionary when group operation area is specified by point-radius.
+          type: number
+        group_floor:
+          format: float
+          description: Minimum altitude (meters WGS84-HAE) of Group Operation.  If
+            not specified, ground level shall be assumed.  This value contains the
+            "Operating Area Floor" data from the common data dictionary when group
+            operation area is specified by point-radius.
+          type: number
+        group_count:
+          format: int32
+          description: When operating a group (or formation or swarm), number of aircraft
+            in group.  This value contains the "Operating Area Count" data from the
+            common data dictionary when group operation area is specified by point-radius.
+          minimum: 1
+          exclusiveMinimum: false
+          type: integer
+        group_time_start:
+          format: date-time
+          description: Time at which a group operation starts.  This value contains
+            the "Operation Area Start" data from the common data dictionary when group
+            operation area is specified by point-radius.
+          type: string
+        group_time_end:
+          format: date-time
+          description: Time at which a group operation starts.  This value contains
+            the "Operation Area End" data from the common data dictionary when group
+            operation area is specified by point-radius.
+          type: string
+    SpecificSessionID:
+      description: |-
+        A unique 20 byte ID intended to identify a specific flight (session) while providing a
+        greater level of privacy to the operator. The first byte is the registered unique Specific Session ID
+        Type maintained by a registrar (see Annex A5), and the remaining 19 bytes is the Session ID per the
+        Specific Session ID Type specification.
+
+        Initial scheme registry entries include:
+
+        0 – reserved
+        1 – Internet Engineering Task Force (IETF) Drone Remote Identification Protocol (DRIP) entity ID
+        2 – IEEE 1609.2 HashedID8
+
+        Expressed as a hexadecimal string of the underlying data bytes.  A recipient should ignore any dashes in this value.  If fewer than 20 bytes are specified, the remaining bytes at the end are assumed to have value 0.
+      type: string
+      example: 02-a1b2c3d4e5f60708
+      default: ''
+    UASID:
+      description: Identification of the UAS performing this flight.  At least one
+        field of this object must be specified.
+      type: object
+      properties:
+        serial_number:
+          description: This is expressed in the CTA-2063-A Serial Number format.
+          type: string
+          example: INTCJ123-4567-890
+          default: ''
+        registration_id:
+          description: If a CAA provides a method of registering UAS, this number
+            is provided by the CAA or its authorized representative.  Format is
+            <ICAO Nationality MarkA>.<CAA Assigned ID>, ASCII encoded, only
+            uppercase letters (A-Z), dot (.), and digits (0-9) are allowed.
+            Example is valid for the US.
+          type: string
+          example: N.123456
+          default: ''
+        utm_id:
+          description: A UTM-provided universally unique ID traceable to a
+            non-obfuscated ID that acts as a "session id" to protect exposure of
+            operationally sensitive information.
+          type: string
+          example: ae1fa066-6d68-4018-8274-af867966978e
+          default: ''
+        specific_session_id:
+          $ref: '#/components/schemas/SpecificSessionID'
+
+    CreateTestParameters:
+      description: 'A complete set of data to be injected into a Service Provider system under test.'
+      required:
+        - requested_flights
+      type: object
+      properties:
+        requested_flights:
+          description: >-
+            One or more logical flights, each containing test data to inject into the system.
+            Elements should be sorted in ascending order of `timestamp`.
+          type: array
+          items:
+            $ref: '#/components/schemas/TestFlight'
+    ChangeTestResponse:
+      description: ''
+      required:
+        - injected_flights
+        - version
+      type: object
+      properties:
+        injected_flights:
+          description: 'The complete set of test data actually injected into the Service Provider system under test.'
+          type: array
+          items:
+            $ref: '#/components/schemas/TestFlight'
+        version:
+          description: Version of test.  Used to delete test.
+          type: string
+          example: 1
+    DeleteTestResponse:
+      description: ''
+      required:
+        - injected_flights
+      type: object
+      properties:
+        injected_flights:
+          description: 'The complete set of test data deleted.'
+          type: array
+          items:
+            $ref: '#/components/schemas/TestFlight'
+    TestFlight:
+      description: "The set of data to be provided to a Service Provider's test data injector for a single flight."
+      required:
+        - injection_id
+        - telemetry
+        - details_responses
+      type: object
+      properties:
+        injection_id:
+          description: 'ID of the injected test flight.  Remains the same regardless of the flight ID/UTM ID reported in the system.'
+          type: string
+          example: 'edb7695f-8737-4b9f-91f8-e2afbb333f41'
+        aircraft_type:
+          anyOf:
+            - $ref: 'commons.yaml#/components/schemas/UAType'
+          description: Aircraft type of the injected test flight.
+        telemetry:
+          description: >-
+            The set of telemetry data that should be injected into the system for this flight.
+            Each element follows the RIDAircraftState schema from the ASTM remote ID standard.
+          type: array
+          items:
+            $ref: '#/components/schemas/RIDAircraftState'
+        details_responses:
+          description: The details of the flight as a function of time.
+          type: array
+          items:
+            $ref: '#/components/schemas/TestFlightDetails'
+    TestFlightDetails:
+      description: The set of data with which the Service Provider system under test should respond when queried for the details of a test flight.
+      required:
+        - effective_after
+        - details
+      type: object
+      properties:
+        effective_after:
+          description: >-
+            The time after which the Service Provider system under test should respond with `details`, unless other `details` with a more recent `effective_after` time (before the current time) are available.
+          type: string
+          format: datetime
+        details:
+          description: >-
+            The details of the flight.
+            Follows the RIDFlightDetails schema from the ASTM remote ID standard.
+          $ref: '#/components/schemas/RIDFlightDetails'
+    Time:
+      required:
+        - value
+        - format
+      type: object
+      properties:
+        value:
+          type: string
+          description: >-
+            RFC3339-formatted time/date string.  The time zone must be 'Z'.
+          format: date-time
+          example: '1985-04-12T23:20:50.52Z'
+        format:
+          type: string
+          enum:
+            - RFC3339
+    UserNotification:
+      type: object
+      description: Notification observed by virtual user.
+      required:
+        - observed_at
+      properties:
+        observed_at:
+          anyOf:
+            - $ref: '#/components/schemas/Time'
+          description: Time at which the virtual user observed the notification.
+        message:
+          description: Message presented to the user, description of notification, or other means of helping identify the nature of the notification, for the purpose of increased readability of test reports.
+          type: string
+    QueryUserNotificationsResponse:
+      type: object
+      description: Response object for query request for notifications observed by the virtual user.
+      required:
+        - user_notifications
+      properties:
+        user_notifications:
+          description: List of applicable observed user notifications.
+          type: array
+          items:
+            $ref: '#/components/schemas/UserNotification'
+
+  securitySchemes:
+    TestAuth:
+      flows:
+        clientCredentials:
+          tokenUrl: https://example.com/oauth/token
+          scopes:
+            rid.inject_test_data: >-
+                Client may inject test data into a Service Provider for the purpose of conducting automated tests.
+      type: oauth2
+      description: |-
+        Authorization from, or on behalf of, an authorization authority, augmenting standard remote ID authorization for the purpose of automated testing.
+
+        This authority will issue access tokens that are JSON Web Tokens as defined in RFC 7519, using the `RS256` algorithm for the signature, and publish to all providers the public key for verifying that signature.
+
+        The following fields must be included in the JWT claim for access tokens issued by this authority:
+
+        * `exp`, with a time no further than 1 hour in the future.
+
+        * `sub`, with unique ID of the client requesting the access token.
+
+        * `scope`, with a string composed of a space-separated list of strings indicating the scopes granted, per RFC 6749.
+
+        * `aud`, with the fully qualified domain name of the URL the access token will be used to access.  For example, if a USS were querying the endpoint at https://uss.example.com:8888/rid_injection/tests/283ac627-5d68-4cfe-805b-dc0bec7d8fdc/v5, the access token included in the request should specify `"aud": "uss.example.com"`.
+
+        Clients must provide these access tokens in an `Authorization` header in the form `Bearer <token>` in accordance with RFC 6750.
+
+security:
+  - TestAuth:
+      - rid.inject_test_data

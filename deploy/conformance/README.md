@@ -29,7 +29,8 @@ push setting) and `issuer-jwks.json` to verify the signature
 |---|---|
 | `target.yaml` | the USSP's conformance target in the lab's format (`conformance/targets/README.md` there): every host and secret a `${VAR}` the hook fills |
 | `authority-push-off.yaml` | the declaration that `openAuthorityFlights` is not applicable while `USSP_AUTHORITY_PUSH=off` (below) |
-| `compose.yaml` | the overlay on the lab's systems stack: `USSP_AUTHORITY_PUSH` on rid-sp |
+| `compose.yaml` | the overlay on the lab's systems stack: `USSP_AUTHORITY_PUSH` on rid-sp; the `ussp-test-interfaces` service (profile `testif`, image `uspace-ussp-testif`, WP-21) and the lab Caddy's Caddyfile with `/test/*` routed to it |
+| `test-operator.yaml` | the test operator the hook seeds through the national API and test-interfaces is the client of (GEO-TEST/TEST values; the Annex IV items a flight plan lacks, pending GCAA) |
 | `chaos.sh` | one row of the chaos procedure against a running stack (`docs/RUNBOOKS/chaos.md`) |
 | `SOURCE` | the lab commit, the images it pins, the geoid's URL and digests |
 | `../../scripts/conformance.sh` | the hook (`make conformance`): validation, stack, declaration check, suite |
@@ -113,16 +114,29 @@ the reason the report then shows. With `USSP_CONFORMANCE_AUTHORITY_PUSH=on`
 nothing is skipped and the three checks run against the stream. A run
 of each is recorded in `docs/RUNBOOKS/conformance.md`.
 
-## What is not run
+## What is run, and what is not
 
-`F3411-SP` and `F3548-SCD` are driven by `uss_qualifier` through the
-InterUSS automated-testing interfaces (RID injection,
-`flight_planning` v1), which this USSP does not expose and the plan does
-not foresee: they are not applicable in every run, with that reason
-(PLAN §15.2 Q34, open). `F3548-CP` has no requirement set in the pinned
+Since WP-21 the stack runs `uss_qualifier` too: the test-interfaces
+process (`cmd/test-interfaces`, image `uspace-ussp-testif`, PLAN D13)
+serves RID injection, RID observation and `flight_planning` v1 as an
+operator client of the published API; the hook seeds the test operator
+(`test-operator.yaml`) through the national API, declares the three
+interfaces in the target, checks each answers 401 without a credential,
+starts the lab's mock USS and runs `f3411-sp.yaml` (F3411-SP),
+`f3548-scd.yaml` (F3548-SCD) and `f3411-dp.yaml` (informative), folding
+each report into the suite's run. `CONFORMANCE_QUALIFIER=off` runs the
+national suite alone and says the InterUSS suites were not run in that
+invocation. The runs and their findings are in `docs/RUNBOOKS/WP-21.md`.
+
+What remains: `F3548-CP` has no requirement set in the pinned
 `uss_qualifier` (the lab's `coverage.yaml`). `NAT-PRECONDITION` and
 `REG-NOPII` need fixtures the stack does not create (an operator token
-and an existing resource with its ETag).
+and an existing resource with its ETag). F3411-SP and F3548-SCD run but
+do not pass yet: the test operator is not validated by a registry in the
+stack (the lab's fixtures), and the lab's qualifier environment lacks a
+scope v0.36.0 needs (`docs/RUNBOOKS/WP-21.md` R1 to R3); the baseline
+keeps them not applicable until a run shows them pass, so a run with
+the qualifier on exits 1 today.
 
 ## The reviewed baseline: not checked is never a pass
 
