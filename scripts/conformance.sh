@@ -52,6 +52,9 @@
 #                                   (default deploy/conformance/baseline.json;
 #                                   none: no baseline, every requirement not
 #                                   checked makes the run incomplete, exit 3)
+#   CONFORMANCE_EXERCISED           the minimum passed checks of each known failure
+#                                   of the baseline (default
+#                                   deploy/conformance/exercised.json)
 #   CONFORMANCE_SUITE_BIN           a built cmd/conformance (default: built from LAB_DIR)
 #   CONFORMANCE_QUALIFIER           on (default) | off: the uss_qualifier steps (WP-21).
 #                                   On the stack: the test operator seeded, the
@@ -91,7 +94,12 @@
 # the run while it fails exactly those checks (the suite's gate: a check
 # outside the list is a regression), and is never a pass either: the
 # hook names each "KNOWN FAILING, NOT A PASS" with the note, as a
-# warning annotation in a workflow. A failure
+# warning annotation in a workflow. The suite's gate flags only failures
+# outside the list, so a run that exercises nothing (no injection
+# reaches the USSP) would fail only listed checks: each known failure
+# also needs at least the passed checks deploy/conformance/exercised.json
+# records for it, or the run is 1 ("EXERCISED TOO LITTLE"), and a known
+# failure the exercised file does not bound is refused (2). A failure
 # of the stack itself is 1 and names its step. Secrets stay in files:
 # none is printed, put on a command line or written to the reports.
 set -euo pipefail
@@ -125,6 +133,7 @@ out="$(abspath "${CONFORMANCE_OUT:-local/conformance/reports}")"
 external="${USSP_CONFORMANCE_BASE_URL:-}"
 baseline="${CONFORMANCE_BASELINE:-deploy/conformance/baseline.json}"
 if [ "$baseline" != none ]; then baseline="$(abspath "$baseline")"; fi
+exercised="$(abspath "${CONFORMANCE_EXERCISED:-deploy/conformance/exercised.json}")"
 
 # ---- validation (no side effect before it has passed) -------------------------
 
@@ -161,6 +170,16 @@ validate() {
     local untracked
     untracked="$(jq -r '.requirements | to_entries[] | select(.value.status == "fail" and (((.value.note // "") == "") or (((.value.failing // []) | length) == 0))) | .key' "$baseline")"
     [ -z "$untracked" ] || usage "$baseline records a known failure without a note saying where it is tracked or without its failing checks: $(echo "$untracked" | tr '\n' ' ')"
+    # A known failure says how much of it must still run: the gate alone
+    # passes a run whose only failures are listed, a run that exercised
+    # nothing among them.
+    [ -r "$exercised" ] || usage "CONFORMANCE_EXERCISED $exercised is not readable"
+    jq -e '.format == "ussp-conformance-exercised/v1" and (.requirements | type == "object")' "$exercised" >/dev/null 2>&1 ||
+      usage "$exercised is not a ussp-conformance-exercised/v1 file with requirements"
+    local unbounded
+    unbounded="$(jq -r --slurpfile ex "$exercised" '.requirements | to_entries[] | select(.value.status == "fail")
+      | select(($ex[0].requirements[.key].min_passed // null) as $m | ($m | type) != "number" or $m < 1 or ($m | floor) != $m) | .key' "$baseline")"
+    [ -z "$unbounded" ] || usage "$exercised records no minimum passed checks (an integer of at least 1) for the known failures: $(echo "$unbounded" | tr '\n' ' ')"
   fi
   if [ -n "$external" ]; then
     case "$external" in http://* | https://*) ;; *) usage "USSP_CONFORMANCE_BASE_URL $external is not an http(s) URL" ;; esac
@@ -742,6 +761,22 @@ known_failing() {
     | [.id, ($bl.requirements[.id].note // "")] | @tsv' "$1"
 }
 
+# under_exercised <report.json>: the baseline's known failures that the
+# run judged with fewer passed checks than the exercised file requires,
+# one "<id><TAB><passed><TAB><minimum>" per line. One the report does
+# not name counts as 0 passed; one the run did not check (not
+# applicable) is not judged here: it is not checked, named above.
+under_exercised() {
+  jq -r --slurpfile bl "$baseline" --slurpfile ex "$exercised" '
+    (.requirements // []) as $r
+    | $bl[0].requirements | to_entries[] | select(.value.status == "fail") | .key as $id
+    | ([$r[] | select(.id == $id)][0]) as $q
+    | select(($q.status // "") != "not_applicable")
+    | (($q.outcomes.pass // 0) | if type == "number" then . else 0 end) as $p
+    | $ex[0].requirements[$id].min_passed as $m
+    | select($p < $m) | [$id, $p, $m] | @tsv' "$1"
+}
+
 # ---- main -------------------------------------------------------------------------------
 
 case "$cmd" in
@@ -883,6 +918,24 @@ if [ -n "$run_dir" ] && [ -f "$run_dir/report.json" ] && [ "$baseline" != none ]
     if [ "${GITHUB_ACTIONS:-}" = true ]; then echo "::warning title=conformance: $id known failing (not a pass)::$note"; fi
     echo "known failing $id: $note" >>"$run_dir/run-info.txt"
   done <<<"$kf"
+  # A known failure that ran too little to say anything is a failure:
+  # the gate cannot tell it from a run that tested nothing.
+  if ! ue="$(under_exercised "$(winpath "$run_dir/report.json")")"; then
+    say "could not read the requirements of $run_dir/report.json"
+    [ "$suite_rc" -ne 0 ] || suite_rc=1
+    ue=""
+  fi
+  while IFS=$'\t' read -r id passed min; do
+    [ -n "$id" ] || continue
+    say "EXERCISED TOO LITTLE: $id: $passed passed checks, the minimum is $min (${exercised#"$here"/}): the run did not exercise it; exit 1"
+    if [ "${GITHUB_ACTIONS:-}" = true ]; then echo "::error title=conformance: $id exercised too little::$passed passed checks, the minimum is $min"; fi
+    echo "exercised too little $id: $passed passed checks, minimum $min" >>"$run_dir/run-info.txt"
+    if [ "$suite_rc" -eq 0 ] || [ "$suite_rc" -eq 3 ]; then suite_rc=1; fi
+  done <<<"$ue"
+elif [ "$baseline" != none ] && [ "$(jq '[.requirements[] | select(.status == "fail")] | length' "$baseline")" != 0 ]; then
+  # Without a report the known failures' minimums cannot be read: not a pass.
+  say "no report of this run: the known failures of ${baseline#"$here"/} could not be checked for their minimum passed checks; exit 1"
+  if [ "$suite_rc" -eq 0 ] || [ "$suite_rc" -eq 3 ]; then suite_rc=1; fi
 fi
 if [ "$qualifier_failed" = 1 ] && [ "$suite_rc" -ne 1 ]; then
   say "a uss_qualifier configuration wrote no report: its requirement was not judged; exit 1, whatever the suite said ($suite_rc)"
