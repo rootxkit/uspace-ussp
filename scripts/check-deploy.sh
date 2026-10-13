@@ -174,6 +174,63 @@ if [ -z "$secret_set" ]; then ok "the settings example sets no DSN, credential o
 code="$(sed -n 's/^USSP_SYSTEM_ID=//p' deploy/compose/ussp.env.example)"
 if [[ "$code" =~ ^[A-Z0-9]{1,8}$ ]]; then ok "USSP_SYSTEM_ID=$code is an authority code"; else bad "USSP_SYSTEM_ID=$code is not an authority code (A-Z, 0-9, at most 8)"; fi
 
+# ---- deploy.sh, verify-image.sh and teardown.sh ------------------------------
+
+# Each refusal of the preflight, before anything is pulled or started,
+# then the run that gets past it (it fails later, at the probes, since
+# nothing runs here: the presence that makes the refusals mean something).
+cp -r "$work/secrets" "$work/pre-secrets"
+mkdir -p "$work/pre-ground"
+printf 'P5\n2 3\n65535\n' > "$work/pre-ground/egm2008-2_5.pgm"
+sed "s#^USSP_SECRETS_DIR=.*#USSP_SECRETS_DIR=$work/pre-secrets#; s#^USSP_GROUND_DIR=.*#USSP_GROUND_DIR=$work/pre-ground#; s#^USSP_SETTINGS_FILE=.*#USSP_SETTINGS_FILE=$work/pre-settings.env#" \
+  "$work/deploy.env" > "$work/pre.env"
+preflight() { # <label> <expected text> [settings sed] [deploy env sed] [deploy.sh args...]
+  local label="$1" want="$2" sset="${3:-}" dset="${4:-}" rc=0 out
+  shift 4 || shift $#
+  sed "${sset:-p;d}" deploy/compose/ussp.env.example > "$work/pre-settings.env"
+  [ -n "$sset" ] || cp deploy/compose/ussp.env.example "$work/pre-settings.env"
+  sed "${dset:-}" "$work/pre.env" > "$work/pre-run.env"
+  out="$(USSP_DEPLOY_WAIT_S=5 deploy/deploy.sh --env-file "$work/pre-run.env" --project uspace-ussp-check --verify-only "$@" 2>&1)" || rc=$?
+  if [ "$rc" -ne 0 ] && grep -qF -- "$want" <<<"$out"; then
+    ok "deploy.sh: $label (exit $rc: $want)"
+  else
+    bad "deploy.sh: $label: exit $rc, want '$want': $(tail -n 3 <<<"$out" | tr '\n' ' ')"
+  fi
+}
+preflight "an image by tag is refused" "is not a reference by digest" "" 's#^USSP_GO_IMAGE=.*#USSP_GO_IMAGE=ghcr.io/rootxkit/uspace-ussp:latest#'
+preflight "a DSN in the settings is refused" "the settings file sets USSP_PG_URL=" 's#^USSP_LOG_LEVEL=info#USSP_LOG_LEVEL=info\nUSSP_PG_URL=postgres://x#' ""
+preflight "a code the authority never issues is refused" "USSP_SYSTEM_ID 'USSP-DEV' is not the authority's form" 's#^USSP_SYSTEM_ID=.*#USSP_SYSTEM_ID=USSP-DEV#' ""
+preflight "a missing geoid grid is refused" "is missing or empty" "" "s#^USSP_GROUND_DIR=.*#USSP_GROUND_DIR=$work/ground#"
+rm "$work/pre-secrets/backup.env"
+preflight "an incomplete secrets directory is refused" "missing: backup.env" "" ""
+cp "$work/secrets/backup.env" "$work/pre-secrets/backup.env"
+preflight "--unsigned-local-images with a registry image is refused" "a registry image is always verified" "" "" --unsigned-local-images
+preflight "a complete preflight passes, then the probes find nothing running" "preflight: renders" "" ""
+for ref in ghcr.io/rootxkit/uspace-ussp:latest "ghcr.io/other/uspace-ussp@sha256:$(printf '0%.0s' {1..64})"; do
+  rc=0
+  out="$(deploy/verify-image.sh "$ref" 2>&1)" || rc=$?
+  if [ "$rc" -eq 1 ] && grep -qE 'not a reference by digest|not an image of' <<<"$out"; then
+    ok "verify-image refuses $ref before cosign runs"
+  else
+    bad "verify-image with $ref: exit $rc: $out"
+  fi
+done
+
+# teardown.sh: a project with a container is removed and the absence
+# checked; a project with nothing is reported empty.
+tproject="uspace-ussp-teardown-check-$$"
+MSYS_NO_PATHCONV=1 docker run -d --label "com.docker.compose.project=$tproject" \
+  "${NATS_BOX_IMAGE:-natsio/nats-box:0.18.0@sha256:abdc9f9f0120bb8adfbf674eb037d1551db55356eb198b7bd4ffed377f6950a6}" \
+  nats-server -p 4222 >/dev/null
+if [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$tproject")" ] &&
+   out="$(deploy/teardown.sh --project "$tproject" --volumes)" &&
+   [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$tproject")" ]; then
+  ok "teardown.sh removed a running container of its project and says so ($out)"
+else
+  bad "teardown.sh: ${out:-no output}"
+  docker rm -f "$(docker ps -aq --filter "label=com.docker.compose.project=$tproject")" >/dev/null 2>&1 || true
+fi
+
 # ---- the Caddy snippet -------------------------------------------------------
 
 # The proof against the pinned Caddy, then against the snippet with the
