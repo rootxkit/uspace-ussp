@@ -15,7 +15,7 @@ PKGS  ?= ./...
 # change both in one `ci:` commit. The linters equal uspace-core's.
 # oapi-codegen is not pinned here: it is the go.mod tool directive.
 GOLANGCI_LINT_VERSION ?= v2.14.0
-STATICCHECK_VERSION   ?= v0.8.1
+STATICCHECK_VERSION   ?= v0.8.2
 GOVULNCHECK_VERSION   ?= v1.8.0
 # The gitleaks version CI runs (GITLEAKS_VERSION in ci.yml's gitleaks job).
 GITLEAKS_VERSION      ?= v8.24.3
