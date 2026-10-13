@@ -74,7 +74,7 @@ func TestBusDownClosesTheStreams(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", s.name, err)
 		}
-		defer c.CloseNow()
+		t.Cleanup(func() { _ = c.CloseNow() })
 		// Two status frames: live, and still live one period later.
 		for range 2 {
 			next(t, ss, c, 2*time.Second, func(f frame) bool { return f.Schema == SchemaStatus })
@@ -108,7 +108,7 @@ func TestBusDownClosesTheStreams(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s with the bus back: %v", s.name, err)
 		}
-		defer c.CloseNow()
+		t.Cleanup(func() { _ = c.CloseNow() })
 		for range 2 {
 			next(t, ss, c, 2*time.Second, func(f frame) bool { return f.Schema == SchemaStatus })
 		}
