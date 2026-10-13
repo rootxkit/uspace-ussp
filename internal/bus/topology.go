@@ -383,6 +383,13 @@ func (t Topology) Bucket(name string) (jetstream.KeyValueConfig, bool) {
 	return t.Buckets[i], true
 }
 
+// WithoutBucket is t without the bucket named name (a process that may
+// not create it keeps the rest in place).
+func (t Topology) WithoutBucket(name string) Topology {
+	t.Buckets = slices.DeleteFunc(slices.Clone(t.Buckets), func(b jetstream.KeyValueConfig) bool { return b.Bucket == name })
+	return t
+}
+
 // Ensure creates every stream and bucket of t that does not exist and
 // leaves an existing one as it is: changing a live stream is an
 // operator's decision, which Verify reports. It returns the names it
