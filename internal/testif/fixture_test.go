@@ -3,6 +3,7 @@ package testif
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -55,6 +56,31 @@ func TestFixtureRefusesWhatIsNotATestOperator(t *testing.T) {
 		}
 		if _, err := LoadFixture(p); err == nil {
 			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+// annex_iv.open_subcategory is one of A1, A2 and A3 or absent (an open
+// plan is then refused, TestPlanOpenSubcategoryIsTheFixtures).
+func TestFixtureOpenSubcategory(t *testing.T) {
+	b, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The profile's file without the member, whether it names one or not.
+	bare := regexp.MustCompile(`(?m)^\s*open_subcategory:.*\n`).ReplaceAllString(string(b), "")
+	if f, err := LoadFixture(writeFile(t, "bare.yaml", bare)); err != nil || f.AnnexIV.OpenSubcategory != "" {
+		t.Fatalf("a fixture without open_subcategory: %+v %v", f.AnnexIV, err)
+	}
+	for v, ok := range map[string]bool{"A3": true, "A1": true, "A4": false, "a3": false, "STS-01": false} {
+		s := strings.Replace(bare, "\nannex_iv:\n", "\nannex_iv:\n  open_subcategory: "+v+"\n", 1)
+		p := filepath.Join(t.TempDir(), "f.yaml")
+		if err := os.WriteFile(p, []byte(s), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		f, err := LoadFixture(p)
+		if (err == nil) != ok || ok && f.AnnexIV.OpenSubcategory != v {
+			t.Errorf("open_subcategory %s: %v", v, err)
 		}
 	}
 }

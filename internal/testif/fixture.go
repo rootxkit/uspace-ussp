@@ -45,6 +45,12 @@ type Fixture struct {
 			Procedure    string    `yaml:"procedure"`
 			LandingSites []LatLngY `yaml:"landing_sites"`
 		} `yaml:"contingency"`
+		// OpenSubcategory is the open-category subcategory (Annex IV
+		// item 4, A1, A2 or A3) the test operator declares for a plan in
+		// the open category, which FlightAuthorisationData does not
+		// carry; empty, an open plan is refused (pending GCAA: A3 admits
+		// every open class, UAS.OPEN.040, and no Art. 1(3) exemption).
+		OpenSubcategory     string   `yaml:"open_subcategory"`
 		EmergencyContactRef string   `yaml:"emergency_contact_ref"`
 		PilotRef            string   `yaml:"pilot_ref"`
 		Takeoff             *LatLngY `yaml:"takeoff"`
@@ -71,6 +77,9 @@ var (
 	fixtureRegRe    = regexp.MustCompile(`^GEOTEST[A-Z0-9]{1,13}$`)
 	fixtureSerialRe = regexp.MustCompile(`^TEST[A-Z0-9-]{1,60}$`)
 	idTechs         = []string{"network", "direct", "both"}
+	// openSubcategories are intent/request/v1's subcategory enumeration
+	// (TestAnnexIVMappingIsTheSchemas).
+	openSubcategories = []string{"A1", "A2", "A3"}
 )
 
 // LoadFixture reads and checks the fixture: GEOTEST* and TEST* values
@@ -117,6 +126,9 @@ func (f Fixture) validate() error {
 	}
 	if f.AnnexIV.Contingency.Procedure == "" || f.AnnexIV.EmergencyContactRef == "" {
 		bad("annex_iv.contingency.procedure and annex_iv.emergency_contact_ref are required")
+	}
+	if f.AnnexIV.OpenSubcategory != "" && !slices.Contains(openSubcategories, f.AnnexIV.OpenSubcategory) {
+		bad("annex_iv.open_subcategory is %q, not one of %v", f.AnnexIV.OpenSubcategory, openSubcategories)
 	}
 	if len(f.IdentificationTechnologies) == 0 {
 		bad("identification_technologies maps no entry")

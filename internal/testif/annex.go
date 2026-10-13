@@ -43,10 +43,11 @@ const (
 // flight_planning v1): the U-space flight authorisation's members onto
 // the ten Annex IV items, the F3548 priority onto the flight type, the
 // area onto the volumes (as the plan's JSON), and the items the file has
-// no member for (contingency, emergency contact reference, pilot,
-// take-off, landing) from the test operator's fixture. A plan without
-// uspace_flight_authorisation, or with a value the tables do not map, is
-// refused before any call.
+// no member for (the open subcategory, contingency, emergency contact
+// reference, pilot, take-off, landing) from the test operator's
+// fixture. A plan without uspace_flight_authorisation, with a value the
+// tables do not map, or in the open category while the fixture declares
+// no subcategory, is refused before any call.
 func (p *planner) request(plan fp.FlightPlan, clientRef string, volumes json.RawMessage) (intentBody, error) {
 	fa := plan.UspaceFlightAuthorisation
 	if fa == nil {
@@ -69,11 +70,22 @@ func (p *planner) request(plan fp.FlightPlan, clientRef string, volumes json.Raw
 		return intentBody{}, refusedItem("uspace_flight_authorisation.endurance_minutes", "not a positive number of minutes")
 	}
 	fx := p.s.fixture.AnnexIV
+	var sub any
+	if cat == "open" {
+		// Item 4 in the open category is the subcategory too; the plan
+		// has no member for it and the test operator declares it.
+		if fx.OpenSubcategory == "" {
+			return intentBody{}, refusedItem("uspace_flight_authorisation.operation_category",
+				"Open: the plan names no subcategory (Annex IV item 4) and the test operator declares none (annex_iv.open_subcategory, pending GCAA)")
+		}
+		sub = fx.OpenSubcategory
+	}
 	r := client.IntentRequest{
 		ClientRef:                clientRef,
 		UasSerial:                fa.UasSerialNumber,
 		Mode:                     mode,
 		Category:                 cat,
+		Subcategory:              sub,
 		IdentificationTechnology: tech,
 		ConnectivityMethods:      slices.Clone(fa.ConnectivityMethods),
 		EnduranceS:               int(math.Round(float64(fa.EnduranceMinutes) * 60)),

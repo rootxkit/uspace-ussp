@@ -268,6 +268,25 @@ func writeFile(t *testing.T, name, content string) string {
 	return p
 }
 
+// profileFixture is the conformance profile's fixture with the open
+// subcategory the test operator declares (annex_iv.open_subcategory, A3,
+// pending GCAA) when the file does not name one yet.
+func profileFixture(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", "deploy", "conformance", "test-operator.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	if !strings.Contains(s, "open_subcategory:") {
+		if !strings.Contains(s, "\nannex_iv:\n") {
+			t.Fatal("the fixture has no annex_iv block")
+		}
+		s = strings.Replace(s, "\nannex_iv:\n", "\nannex_iv:\n  open_subcategory: A3\n", 1)
+	}
+	return writeFile(t, "test-operator.yaml", s)
+}
+
 func newTestServer(t *testing.T, f *fakeUSSP, edit func(*Config)) *testServer {
 	t.Helper()
 	cfg, err := Load(env(map[string]string{
@@ -275,7 +294,7 @@ func newTestServer(t *testing.T, f *fakeUSSP, edit func(*Config)) *testServer {
 		"USSP_TEST_INTERFACES_OPERATOR_CLIENT_ID":   "op-test",
 		"USSP_TEST_INTERFACES_OPERATOR_SECRET_FILE": writeFile(t, "secret", "s3cret"),
 		"USSP_TEST_INTERFACES_SESSION_FILE":         writeFile(t, "session", "portal-session"),
-		"USSP_TEST_INTERFACES_OPERATOR_FILE":        filepath.Join("..", "..", "deploy", "conformance", "test-operator.yaml"),
+		"USSP_TEST_INTERFACES_OPERATOR_FILE":        profileFixture(t),
 		"USSP_TEST_INTERFACES_ACK_TIMEOUT_S":        "5",
 	}))
 	if err != nil {
