@@ -40,7 +40,7 @@ func (l occList) Open(context.Context) ([]gen.OccurrenceReportItem, bool, error)
 
 func occItem(t *testing.T) gen.OccurrenceReportItem {
 	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
-	return gen.OccurrenceReportItem{ReportRef: "USSP-DEV:occurrence:alert:x", Kind: "airprox", State: "pending", Channel: "mandatory", FlaggedBy: "supervisor",
+	return gen.OccurrenceReportItem{ReportRef: "DEV01:occurrence:alert:x", Kind: "airprox", State: "pending", Channel: "mandatory", FlaggedBy: "supervisor",
 		BecameAwareAt: now, DeadlineAt: now.Add(72 * time.Hour), TimeToDeadlineS: -5, Critical: true,
 		FlightIds: []openapi_types.UUID{mustUUID(t, "0b5d4c3a-2e1f-4a0b-9c8d-7e6f5a4b3c2d")}}
 }

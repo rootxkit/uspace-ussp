@@ -23,7 +23,7 @@
 system: ussp
 name: ${CONFORMANCE_TARGET_NAME:-ussp-conformance}
 role: own
-participant: ${USSP_CONFORMANCE_PARTICIPANT:-ussp-USSP-DEV-01}
+participant: ${USSP_CONFORMANCE_PARTICIPANT:-ussp-DEV01-01}
 base_url: ${USSP_CONFORMANCE_BASE_URL}
 images:
   ussp: ${USSP_IMAGE:-unrecorded}

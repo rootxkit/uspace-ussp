@@ -61,6 +61,7 @@ const (
 	CounterExpired          = "traffic_ws_credential_expired"
 	CounterSessionEnded     = "traffic_ws_session_ended"
 	CounterGeoChanges       = "traffic_ws_geo_changes_sent"
+	CounterBusDown          = "traffic_ws_closed_bus_down"
 )
 
 // The access of the operations (06 §3): an operator machine token of
@@ -118,6 +119,12 @@ type Server struct {
 	RepeatEvery time.Duration
 	// Degraded lists the process's degraded dependencies (/readyz).
 	Degraded func() []string
+	// Link is the process's NATS link (bus.Conn.Link). While it is down
+	// this process receives no track, alert or source status, so a
+	// stream must not say it is live (05 §6: consoles freeze with age
+	// shown): every stream closes with 1013 at its next status frame and
+	// one opened then closes before its first. nil is a link always up.
+	Link func() (up bool, since time.Time, why string)
 	// Geo is the geo change push (brief WP-12): every installed CIS
 	// version is a geo/changed/v1 frame on the traffic stream, so the
 	// subscriber refetches GET /v1/geo; nil sends none.
@@ -367,6 +374,10 @@ func (s *Server) serve(rctx context.Context, conn *websocket.Conn, sub *Sub, p a
 	resubscribed := make(chan struct{}, 1)
 	wg.Go(func() { s.read(ctx, cancel, conn, c, resubscribed) })
 
+	if s.closeIfBusDown(conn) {
+		cancel()
+		return
+	}
 	s.enqueue(c, s.status(c))
 	if alertsOnly {
 		s.sendActive(ctx, c)
@@ -413,6 +424,10 @@ func (s *Server) serve(rctx context.Context, conn *websocket.Conn, sub *Sub, p a
 				s.count(CounterGeoChanges)
 			}
 		case <-status.C:
+			if s.closeIfBusDown(conn) {
+				cancel()
+				return
+			}
 			if p.Session && s.Sessions != nil {
 				if err := s.Sessions.CheckSession(ctx, p.Claims.JTI, p.Claims.Subject); errors.Is(err, auth.ErrSessionRefused) {
 					s.count(CounterSessionEnded)
@@ -439,6 +454,24 @@ func (s *Server) serve(rctx context.Context, conn *websocket.Conn, sub *Sub, p a
 }
 
 // write is the only writer of the socket.
+// closeIfBusDown closes conn with 1013 (try again later) while the
+// process's NATS link is down, and says whether it did. Checked before
+// every status frame, so no status frame says a stream is live while
+// nothing reaches it; the client reconnects with its backoff and is
+// served again once the link is back.
+func (s *Server) closeIfBusDown(conn *websocket.Conn) bool {
+	if s.Link == nil {
+		return false
+	}
+	up, since, _ := s.Link()
+	if up {
+		return false
+	}
+	s.count(CounterBusDown)
+	_ = conn.Close(websocket.StatusTryAgainLater, "the bus is down since "+since.UTC().Format(time.RFC3339)+": reconnect later")
+	return true
+}
+
 func (s *Server) write(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, c *connState) {
 	for {
 		select {

@@ -219,7 +219,7 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 			return v.OperatorID, found, loaded
 		},
 		Ctx: ctx, ProductEvery: o.ProductEvery, StatusEvery: o.StatusEvery, RecordEvery: o.RecordEvery, RepeatEvery: o.RepeatEvery,
-		Degraded: func() []string { return rt.Health.Snapshot().Degraded }, Counters: hubCounters, Logger: logger,
+		Degraded: func() []string { return rt.Health.Snapshot().Degraded }, Link: rt.Bus.Link, Counters: hubCounters, Logger: logger,
 	}
 	if o.Server != nil {
 		o.Server(srv)

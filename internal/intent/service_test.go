@@ -49,7 +49,7 @@ func TestSubmitAuthorisesAndProjects(t *testing.T) {
 	}
 	if d.Decision != DecisionAuthorised || d.State != StateAccepted || d.Version != 1 || d.ClientRef != "ref-1" ||
 		d.DSSState == nil || *d.DSSState != "Accepted" || d.AuthorisationNumber == nil ||
-		!strings.HasPrefix(*d.AuthorisationNumber, "USSP-DEV-GEOTESTOP0001-") || len(*d.AuthorisationNumber) != len("USSP-DEV-GEOTESTOP0001-")+26 ||
+		!strings.HasPrefix(*d.AuthorisationNumber, "DEV01-GEOTESTOP0001-") || len(*d.AuthorisationNumber) != len("DEV01-GEOTESTOP0001-")+26 ||
 		d.DeviationThresholds == nil || *d.DeviationThresholds != (Thresholds{HM: 50, VM: 15, TS: 60}) ||
 		string(d.Alternative) != "null" || d.PolicyVersion != 7 || d.CISVersionChecked == nil || *d.CISVersionChecked != freshBasis().CISVersion ||
 		d.RegistryCheckedAt == nil || !d.RegistryCheckedAt.Equal(testNow) || d.WeatherCheckedRef == nil || *d.WeatherCheckedRef != testWeatherRef || d.ExemptArt13 || d.InUSpaceAirspace ||
