@@ -27,6 +27,12 @@ type twoIssuers struct {
 
 func newTwoIssuers(t *testing.T) *twoIssuers {
 	t.Helper()
+	return newTwoIssuersWith(t, nil)
+}
+
+// newTwoIssuersWith is newTwoIssuers with a JWKS store (nil: none).
+func newTwoIssuersWith(t *testing.T, store JWKSStore) *twoIssuers {
+	t.Helper()
 	f := &twoIssuers{authority: newEcosystem(t), lab: newEcosystem(t)}
 	// The same key, another iss: the lab's token service.
 	_, _, k := testKeys(t)
@@ -38,7 +44,7 @@ func newTwoIssuers(t *testing.T) *twoIssuers {
 		f.authority.URL: {JWKSURL: f.authority.JWKS},
 		f.lab.URL:       {JWKSURL: f.lab.JWKS},
 	}}
-	f.v, err = NewVerifier(context.Background(), VerifierConfig{Ecosystem: cfg, RetryInterval: 10 * time.Millisecond,
+	f.v, err = NewVerifier(context.Background(), VerifierConfig{Ecosystem: cfg, RetryInterval: 10 * time.Millisecond, Cache: store, CacheKey: cacheKeyFor(store), CacheWriter: testWriter,
 		OnBuilt: func(set string, _ *core.Counters) { f.mu.Lock(); f.built = append(f.built, set); f.mu.Unlock() }})
 	mustNoErr(t, err)
 	return f

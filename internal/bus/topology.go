@@ -80,6 +80,11 @@ const (
 	// flight binder and read back when it starts, so a restart keeps
 	// every flight's id (WP-19 restart row).
 	BucketFlightBinding = "flight_binding"
+	// BucketJWKSCache holds each ecosystem issuer's last fetched JWKS, by
+	// issuer hash, written by every process that verifies tokens and read
+	// by one that starts while that issuer cannot be fetched (PLAN §15.2
+	// Q35 b; spec 05 §6 "JWKS cached 24 h").
+	BucketJWKSCache = "jwks_cache"
 )
 
 // Bounds (E-10). The server's max_payload is 1 MiB by default, so no
@@ -141,6 +146,12 @@ const (
 	FlightBindingTTL = 24 * time.Hour
 	// FlightBindingBytes bounds one saved flight.
 	FlightBindingBytes = 4 << 10
+	// JWKSCacheTTL is jwks_cache's TTL: spec 05 §6's 24 h, the most
+	// USSP_JWKS_CACHE_MAX_AGE_S may be; a process that verifies rewrites
+	// its issuers' keys every hour while they answer.
+	JWKSCacheTTL = 24 * time.Hour
+	// JWKSCacheBytes bounds one stored JWKS.
+	JWKSCacheBytes = 64 << 10
 )
 
 // ALRT's and TRAFFIC's bounds (every stream bounded in age and size):
@@ -195,6 +206,7 @@ const (
 	// FlightBindingMaxBytes: one saved flight for each of the binder's
 	// 10 000 aircraft (flights.MaxFlights), with room.
 	FlightBindingMaxBytes = int64(64 << 20)
+	JWKSCacheMaxBytes     = int64(1 << 20)
 )
 
 // RecordHoldBytes bounds one record hold (a flight id, its reasons and
@@ -327,6 +339,7 @@ func defaultTopology() Topology {
 			bucket(BucketRIDSubscriptions, "the peer Display Provider's DSS subscriptions, by subscription id (monitor)", RIDSubscriptionBytes, RIDSubscriptionsTTL, RIDSubscriptionsMaxBytes),
 			bucket(BucketMonitorStatus, "each monitor instance's status line, by instance (monitor)", MonitorStatusBytes, MonitorStatusTTL, MonitorStatusMaxBytes),
 			bucket(BucketFlightBinding, "each aircraft's running flight, by aircraft key hash (telemetry-ingest)", FlightBindingBytes, FlightBindingTTL, FlightBindingMaxBytes),
+			bucket(BucketJWKSCache, "each ecosystem issuer's last fetched JWKS, by issuer hash (every process that verifies tokens)", JWKSCacheBytes, JWKSCacheTTL, JWKSCacheMaxBytes),
 		},
 	}
 }
@@ -368,6 +381,13 @@ func (t Topology) Bucket(name string) (jetstream.KeyValueConfig, bool) {
 		return jetstream.KeyValueConfig{}, false
 	}
 	return t.Buckets[i], true
+}
+
+// WithoutBucket is t without the bucket named name (a process that may
+// not create it keeps the rest in place).
+func (t Topology) WithoutBucket(name string) Topology {
+	t.Buckets = slices.DeleteFunc(slices.Clone(t.Buckets), func(b jetstream.KeyValueConfig) bool { return b.Bucket == name })
+	return t
 }
 
 // Ensure creates every stream and bucket of t that does not exist and

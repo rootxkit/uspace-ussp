@@ -1,0 +1,358 @@
+package auth
+
+import (
+	"bytes"
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
+	"maps"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	coreauth "github.com/rootxkit/uspace-core/auth"
+	"github.com/rootxkit/uspace-core/core"
+)
+
+// Counters of the persisted JWKS (PLAN §15.2 Q35 b).
+const (
+	// CounterJWKSCacheSaved counts JWKS written to the store.
+	CounterJWKSCacheSaved = "jwks_cache_saved"
+	// CounterJWKSCacheSaveFailed counts writes the store refused.
+	CounterJWKSCacheSaveFailed = "jwks_cache_save_failed"
+	// CounterJWKSCacheRestored counts issuers whose keys a start took
+	// from the store because their JWKS could not be fetched.
+	CounterJWKSCacheRestored = "jwks_cache_restored"
+	// CounterJWKSCacheRefused counts stored JWKS not used: unreadable,
+	// for another issuer, or older than CacheMaxAge.
+	CounterJWKSCacheRefused = "jwks_cache_refused"
+	// CounterJWKSCacheMACMismatch counts stored JWKS refused because
+	// their MAC is missing or is not this process's under CacheKey:
+	// written by someone without the key (any user of the NATS account
+	// can write a KV bucket), or altered since. Never used.
+	CounterJWKSCacheMACMismatch = "jwks_cache_mac_mismatch"
+	// CounterJWKSCacheExpired counts tokens refused because the only keys
+	// of their issuer are a stored JWKS past CacheMaxAge.
+	CounterJWKSCacheExpired = "jwks_cache_expired"
+)
+
+// DefaultJWKSCacheMaxAge is how long a stored JWKS may verify tokens
+// while its issuer cannot be fetched: spec 05 §6 "JWKS cached 24 h"
+// (pending GCAA; USSP_JWKS_CACHE_MAX_AGE_S).
+const DefaultJWKSCacheMaxAge = 24 * time.Hour
+
+// jwksSaveEvery is how often an unchanged JWKS is written again, so its
+// fetched_at stays recent while the issuer answers.
+const jwksSaveEvery = time.Hour
+
+// maxCachedJWKSBytes bounds a stored JWKS read back.
+const maxCachedJWKSBytes = 64 << 10
+
+// JWKSStore keeps each ecosystem issuer's last fetched JWKS outside the
+// process (the jwks_cache bucket, bus.KVStore), so a process started
+// while a token service is down still verifies that service's tokens.
+type JWKSStore interface {
+	Get(ctx context.Context, key string) ([]byte, bool, error)
+	Put(ctx context.Context, key string, value []byte) error
+}
+
+// CachedJWKS is one issuer's JWKS as the store holds it. JWKS is the
+// document exactly as fetched (base64 on the wire, so the bytes the MAC
+// covers are the bytes read back); MAC is HMAC-SHA256 under the
+// process's CacheKey over the store key, the issuer, FetchedAt and JWKS
+// (jwksMAC).
+type CachedJWKS struct {
+	Issuer    string    `json:"issuer"`
+	FetchedAt time.Time `json:"fetched_at"`
+	JWKS      []byte    `json:"jwks"`
+	MAC       []byte    `json:"mac"`
+}
+
+// JWKSCacheKeyBytes is the length of the key that binds a stored JWKS.
+const JWKSCacheKeyBytes = 32
+
+// maxJWKSCacheKeyFileBytes bounds the key file read.
+const maxJWKSCacheKeyFileBytes = 1024
+
+// LoadJWKSCacheKey reads the key that binds this process's stored JWKS:
+// a file holding the base64 of exactly JWKSCacheKeyBytes bytes
+// (USSP_JWKS_CACHE_KEY_FILE). It never says what the file holds.
+func LoadJWKSCacheKey(path string) ([]byte, error) {
+	f, err := os.Open(path) //nolint:gosec // the path is the operator's configuration
+	if err != nil {
+		return nil, core.Fieldf("USSP_JWKS_CACHE_KEY_FILE", "%q cannot be read", path)
+	}
+	defer func() { _ = f.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(f, maxJWKSCacheKeyFileBytes+1))
+	if err != nil || len(raw) > maxJWKSCacheKeyFileBytes {
+		return nil, core.Fieldf("USSP_JWKS_CACHE_KEY_FILE", "%q cannot be read or is over %d bytes", path, maxJWKSCacheKeyFileBytes)
+	}
+	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(raw)))
+	if err != nil || len(key) != JWKSCacheKeyBytes {
+		return nil, core.Fieldf("USSP_JWKS_CACHE_KEY_FILE", "must hold the base64 of exactly %d bytes", JWKSCacheKeyBytes)
+	}
+	return key, nil
+}
+
+// jwksMAC is the MAC of a stored JWKS: HMAC-SHA256 under key over a
+// domain tag, the store key it is written under, the issuer, the fetch
+// time and the document, each length-prefixed, so an entry can be moved
+// neither to another key nor to another issuer.
+func jwksMAC(key []byte, storeKey string, c CachedJWKS) []byte {
+	m := hmac.New(sha256.New, key)
+	for _, part := range [][]byte{[]byte("uspace-ussp/jwks_cache/v1"), []byte(storeKey), []byte(c.Issuer),
+		[]byte(c.FetchedAt.UTC().Format(time.RFC3339Nano)), c.JWKS} {
+		m.Write(binary.BigEndian.AppendUint64(nil, uint64(len(part))))
+		m.Write(part)
+	}
+	return m.Sum(nil)
+}
+
+// JWKSCacheKey is an issuer's key in the store, under the prefix of the
+// process that writes it (its NATS user, the only one nats.conf lets
+// publish under that prefix): writer "." and a hash of the issuer, since
+// an issuer URL holds characters a KV key may not.
+func JWKSCacheKey(writer, issuer string) string {
+	h := sha256.Sum256([]byte(issuer))
+	return writer + "." + hex.EncodeToString(h[:16])
+}
+
+// validWriter is a KV key token: a NATS user name of this deployment.
+func validWriter(w string) bool {
+	if w == "" {
+		return false
+	}
+	for _, r := range w {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+// cachedEco is, per issuer, the verifier built from its stored JWKS and
+// when that JWKS was fetched.
+type cachedEco struct {
+	v         map[string]*coreauth.Verifier
+	fetchedAt map[string]time.Time
+}
+
+// storedJWKS answers core's JWKS fetch with a stored document: core
+// parses and indexes it exactly as one it fetched (JWT and JWS go
+// through uspace-core/auth), and nothing leaves the process.
+type storedJWKS struct {
+	url string
+	doc []byte
+}
+
+// RoundTrip answers the stored document for its URL, 404 for any other.
+func (s storedJWKS) RoundTrip(r *http.Request) (*http.Response, error) {
+	code, body := http.StatusOK, s.doc
+	if r.URL.String() != s.url {
+		code, body = http.StatusNotFound, nil
+	}
+	return &http.Response{StatusCode: code, Header: http.Header{"Content-Type": {"application/json"}},
+		Body: io.NopCloser(strings.NewReader(string(body))), Request: r}, nil
+}
+
+func (v *Verifier) logger() *slog.Logger {
+	if v.cfg.Logger != nil {
+		return v.cfg.Logger
+	}
+	return slog.New(slog.DiscardHandler)
+}
+
+func (v *Verifier) maxAge() time.Duration {
+	if v.cfg.CacheMaxAge > 0 {
+		return v.cfg.CacheMaxAge
+	}
+	return DefaultJWKSCacheMaxAge
+}
+
+// jwksSaveTimeout bounds one write to the store.
+const jwksSaveTimeout = 2 * time.Second
+
+// persist hands iss's JWKS doc (fetched at now) to the store when it
+// changed or was last written jwksSaveEvery ago. The write runs in the
+// background, at most one per issuer at a time and bounded by
+// jwksSaveTimeout, so neither the readiness probe nor the build ever
+// waits on the bus (a bus outage made /readyz miss its 2 s bound).
+func (v *Verifier) persist(ctx context.Context, iss string, doc []byte, now time.Time) {
+	if v.cfg.Cache == nil {
+		return
+	}
+	sum := sha256.Sum256(doc)
+	v.mu.Lock()
+	last, saved := v.savedAt[iss]
+	same := bytes.Equal(v.savedSum[iss], sum[:])
+	if (saved && same && now.Sub(last) < jwksSaveEvery) || v.saving[iss] {
+		v.mu.Unlock()
+		return
+	}
+	v.saving[iss] = true
+	v.mu.Unlock()
+	entry := CachedJWKS{Issuer: iss, FetchedAt: now.UTC(), JWKS: doc}
+	entry.MAC = jwksMAC(v.cfg.CacheKey, JWKSCacheKey(v.cfg.CacheWriter, iss), entry)
+	data, err := json.Marshal(entry)
+	if err != nil {
+		v.counters.Inc(CounterJWKSCacheSaveFailed)
+		v.mu.Lock()
+		delete(v.saving, iss)
+		v.mu.Unlock()
+		return
+	}
+	wctx := context.WithoutCancel(ctx)
+	v.saves.Go(func() {
+		wctx, cancel := context.WithTimeout(wctx, jwksSaveTimeout)
+		defer cancel()
+		err := v.cfg.Cache.Put(wctx, JWKSCacheKey(v.cfg.CacheWriter, iss), data)
+		v.mu.Lock()
+		defer v.mu.Unlock()
+		delete(v.saving, iss)
+		if err != nil {
+			v.counters.Inc(CounterJWKSCacheSaveFailed)
+			return
+		}
+		v.counters.Inc(CounterJWKSCacheSaved)
+		v.savedAt[iss], v.savedSum[iss] = now, sum[:]
+	})
+}
+
+// restore builds a verifier from the stored JWKS of every ecosystem
+// issuer whose own verifier is not built and that has none from the
+// store yet, when that JWKS is younger than CacheMaxAge. It does nothing
+// without a store. An issuer built later drops its stored one
+// (forgetCached): its own verifier judges its tokens from then on.
+func (v *Verifier) restore(ctx context.Context) {
+	if v.cfg.Cache == nil {
+		return
+	}
+	now := v.now()
+	prev := v.cached.Load()
+	out := &cachedEco{v: map[string]*coreauth.Verifier{}, fetchedAt: map[string]time.Time{}}
+	if prev != nil {
+		maps.Copy(out.v, prev.v)
+		maps.Copy(out.fetchedAt, prev.fetchedAt)
+	}
+	added := 0
+	for _, iss := range v.ecoISS {
+		if v.IssuerReady(iss) || out.v[iss] != nil {
+			continue
+		}
+		storeKey := JWKSCacheKey(v.cfg.CacheWriter, iss)
+		data, found, err := v.cfg.Cache.Get(ctx, storeKey)
+		if err != nil || !found {
+			continue
+		}
+		c, err := decodeCached(data, iss, v.cfg.CacheKey, storeKey)
+		if errors.Is(err, errJWKSMAC) {
+			// Never used, whatever it holds: not written by this process.
+			v.counters.Inc(CounterJWKSCacheMACMismatch)
+			v.logger().LogAttrs(ctx, slog.LevelError, "stored JWKS refused: its MAC is not this process's",
+				slog.String("issuer", iss), slog.String("bucket_key", storeKey))
+			continue
+		}
+		if err != nil || now.Sub(c.FetchedAt) >= v.maxAge() || c.FetchedAt.After(now) {
+			v.counters.Inc(CounterJWKSCacheRefused)
+			continue
+		}
+		url := v.cfg.Ecosystem.Issuers[iss].JWKSURL
+		cfg := v.cfg.Ecosystem
+		cfg.Issuers = map[string]coreauth.IssuerConfig{iss: {JWKSURL: url}}
+		cfg.HTTPClient = &http.Client{Transport: storedJWKS{url: url, doc: c.JWKS}}
+		cv, err := coreauth.NewVerifier(ctx, cfg)
+		if err != nil {
+			// Not a JWKS core can use.
+			v.counters.Inc(CounterJWKSCacheRefused)
+			continue
+		}
+		out.v[iss], out.fetchedAt[iss] = cv, c.FetchedAt
+		added++
+	}
+	if added == 0 {
+		return
+	}
+	v.counters.Add(CounterJWKSCacheRestored, uint64(added))
+	v.cached.Store(out)
+}
+
+// forgetCached drops the stored JWKS's verifier of iss, once its own
+// verifier is built.
+func (v *Verifier) forgetCached(iss string) {
+	for {
+		prev := v.cached.Load()
+		if prev == nil || prev.v[iss] == nil {
+			return
+		}
+		out := &cachedEco{v: maps.Clone(prev.v), fetchedAt: maps.Clone(prev.fetchedAt)}
+		delete(out.v, iss)
+		delete(out.fetchedAt, iss)
+		if len(out.v) == 0 {
+			out = nil
+		}
+		if v.cached.CompareAndSwap(prev, out) {
+			return
+		}
+	}
+}
+
+// cachedAt is when the stored JWKS that verifies iss's tokens was
+// fetched; false when none does.
+func (v *Verifier) cachedAt(iss string) (time.Time, bool) {
+	c := v.cached.Load()
+	if c == nil {
+		return time.Time{}, false
+	}
+	at, ok := c.fetchedAt[iss]
+	return at, ok
+}
+
+// errJWKSMAC is a stored JWKS whose MAC is missing or wrong.
+var errJWKSMAC = errors.New("the MAC is not this process's")
+
+// decodeCached reads a stored entry and checks its MAC under key before
+// anything it says is believed.
+func decodeCached(data []byte, iss string, key []byte, storeKey string) (CachedJWKS, error) {
+	var c CachedJWKS
+	if len(data) > maxCachedJWKSBytes {
+		return c, errors.New("over the bound")
+	}
+	if err := json.Unmarshal(data, &c); err != nil {
+		return c, err
+	}
+	if len(key) != JWKSCacheKeyBytes || !hmac.Equal(c.MAC, jwksMAC(key, storeKey, c)) {
+		return CachedJWKS{}, errJWKSMAC
+	}
+	if c.Issuer != iss || c.FetchedAt.IsZero() || len(c.JWKS) == 0 {
+		return c, errors.New("not this issuer's")
+	}
+	return c, nil
+}
+
+// verifyCached verifies token with the stored keys of iss; false when
+// there are none for it.
+func (v *Verifier) verifyCached(ctx context.Context, iss, token string) (coreauth.Claims, bool, error) {
+	c := v.cached.Load()
+	if c == nil {
+		return coreauth.Claims{}, false, nil
+	}
+	at, ok := c.fetchedAt[iss]
+	if !ok {
+		return coreauth.Claims{}, false, nil
+	}
+	if v.now().Sub(at) >= v.maxAge() {
+		v.counters.Inc(CounterJWKSCacheExpired)
+		return coreauth.Claims{}, true, &coreauth.TokenError{Counter: CounterJWKSUnavailable, Claim: "kid",
+			Reason: "the issuer's keys could not be fetched and the stored ones are older than the cache's maximum age"}
+	}
+	cl, err := c.v[iss].Verify(ctx, token)
+	return cl, true, err
+}

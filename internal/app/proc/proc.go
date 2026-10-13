@@ -18,6 +18,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -275,7 +277,7 @@ func openDependencies(rt *Runtime, spec Spec) ([]schemaPool, func(), error) {
 		}
 		closers = append(closers, nc.Close)
 		rt.Bus = nc
-		rt.topology = nc.Maintain(TopologyOf(rt.Config), rt.Logger)
+		rt.topology = nc.Maintain(TopologyFor(spec.Process, rt.Config), rt.Logger)
 		rt.Health.Register(DepNATS, spec.NATS == Required, nc.Probe())
 	}
 	return pools, closeAll, nil
@@ -344,8 +346,33 @@ func TopologyOf(cfg config.Config) bus.Topology {
 			bus.BucketRIDSubscriptions: int64(cfg.RIDSubscriptionsBucketMaxBytes),
 			bus.BucketMonitorStatus:    int64(cfg.MonitorStatusBucketMaxBytes),
 			bus.BucketFlightBinding:    int64(cfg.FlightBindingBucketMaxBytes),
+			bus.BucketJWKSCache:        int64(cfg.JWKSCacheBucketMaxBytes),
 		},
 	})
+}
+
+// JWKSCacheWriters are the processes that store the issuers' JWKS in
+// jwks_cache: those that read USSP_JWKS_CACHE_KEY_FILE. Each writes only
+// under its own NATS user's prefix, and deploy/compose/nats.conf denies
+// every other process the bucket (TestNATSConfJWKSCacheWriters).
+func JWKSCacheWriters() []string {
+	for _, v := range config.Variables() {
+		if v.Name == "USSP_JWKS_CACHE_KEY_FILE" {
+			return strings.Split(v.ReadBy, ",")
+		}
+	}
+	return nil
+}
+
+// TopologyFor is the topology process keeps in place: TopologyOf
+// without jwks_cache for a process that is not one of
+// JWKSCacheWriters, which nats.conf does not let create it.
+func TopologyFor(process string, cfg config.Config) bus.Topology {
+	t := TopologyOf(cfg)
+	if slices.Contains(JWKSCacheWriters(), process) {
+		return t
+	}
+	return t.WithoutBucket(bus.BucketJWKSCache)
 }
 
 func secs(n int) time.Duration {

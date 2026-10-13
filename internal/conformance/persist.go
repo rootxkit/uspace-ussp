@@ -119,7 +119,12 @@ func (t *Tracker) State() TrackerState {
 // flight that is not conforming counts its time back inside from wall
 // at the earliest, so a restored tracker never returns a flight to
 // conforming (nor clears its nonconformance) without the full
-// hysteresis seen by itself.
+// hysteresis seen by itself. Its silence counts from wall too: whatever
+// came between the save and the restore was not heard by this monitor
+// (stopped, or the flight judged elsewhere), so lost_link is raised
+// lost_link_s after the restore at the earliest, not at the first tick
+// of a monitor that was down longer than lost_link_s (Q35). A lost_link
+// already raised is kept.
 func RestoreTracker(s TrackerState, counters *core.Counters, wall time.Time) *Tracker {
 	t := NewTracker(s.FlightID, s.IntentID, s.AuthorisationNumber, counters)
 	if !states[s.Base] || s.Base == StateLostLink {
@@ -133,6 +138,7 @@ func RestoreTracker(s TrackerState, counters *core.Counters, wall time.Time) *Tr
 	t.authorised, t.authMissing, t.disabled = s.Authorised, s.AuthMissing, s.Disabled
 	t.lastCaptured, t.lastLive, t.hasLive, t.lastFlying = s.LastCaptured, s.LastLive, s.HasLive, s.LastFlying
 	t.lastPos, t.lastCell5 = s.LastPos, s.LastCell5
+	t.silentFrom = wall
 	t.linkLost, t.lostAt, t.outsideSince, t.lastOutside, t.ncSince = s.LinkLost, s.LostAt, s.OutsideSince, s.LastOutside, s.NCSince
 	t.nc, t.ll, t.ncReason = s.NC.AlertOf(), s.LL.AlertOf(), s.NCReason
 	if t.ll != nil && !t.linkLost {

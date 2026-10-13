@@ -180,18 +180,18 @@ func TestRunStopsWithItsContext(t *testing.T) {
 func TestFetchJWKSRefusesWhatIsNotAJWKS(t *testing.T) {
 	v := newVerifier(t, nil, nil, nil)
 	ctx := context.Background()
-	if err := v.fetchJWKS(ctx, "http://127.0.0.1:1/jwks"); err == nil {
+	if _, err := v.fetchJWKS(ctx, "http://127.0.0.1:1/jwks"); err == nil {
 		t.Error("an unreachable URL fetched")
 	}
-	if err := v.fetchJWKS(ctx, "::bad"); err == nil {
+	if _, err := v.fetchJWKS(ctx, "::bad"); err == nil {
 		t.Error("a malformed URL fetched")
 	}
 	eco := newEcosystem(t)
-	if err := v.fetchJWKS(ctx, eco.srv.URL+"/x"); err != nil {
+	if _, err := v.fetchJWKS(ctx, eco.srv.URL+"/x"); err != nil {
 		t.Errorf("the fake JWKS: %v", err)
 	}
 	eco.Down()
-	if err := v.fetchJWKS(ctx, eco.srv.URL+"/x"); err == nil || !strings.Contains(err.Error(), "HTTP 502") {
+	if _, err := v.fetchJWKS(ctx, eco.srv.URL+"/x"); err == nil || !strings.Contains(err.Error(), "HTTP 502") {
 		t.Errorf("a 502: %v", err)
 	}
 }

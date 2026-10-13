@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"slices"
@@ -82,6 +83,26 @@ type VerifierConfig struct {
 	// the set: core creates the set with the verifier, so the process
 	// publishes it then.
 	OnBuilt func(set string, c *core.Counters)
+	// Cache, when set, keeps each ecosystem issuer's JWKS across
+	// restarts (the jwks_cache bucket; PLAN §15.2 Q35 b): written when a
+	// fetch answers, read when a start cannot fetch, and used for at
+	// most CacheMaxAge (DefaultJWKSCacheMaxAge, 05 §6) from its fetch.
+	Cache       JWKSStore
+	CacheMaxAge time.Duration
+	// CacheKey binds every JWKS this process writes to Cache with an
+	// HMAC, checked before a stored one is used: any user of the NATS
+	// account can write the bucket, so an entry without this process's
+	// MAC is refused (jwks_cache_mac_mismatch). JWKSCacheKeyBytes long,
+	// from USSP_JWKS_CACHE_KEY_FILE; NewVerifier refuses a Cache
+	// without it.
+	CacheKey []byte
+	// CacheWriter is the prefix of every key this process reads and
+	// writes in Cache: its NATS user, the only user nats.conf lets
+	// publish under it, so another process's credential cannot write
+	// this process's entries. Required with Cache.
+	CacheWriter string
+	// Logger, when set, says a refused stored JWKS.
+	Logger *slog.Logger
 }
 
 // Verifier verifies every token this system accepts with core's
@@ -104,6 +125,12 @@ type VerifierConfig struct {
 // WP-19). A process does not wait for a token service (B-08). After the
 // first fetch core serves the cached keys through any outage (T5) and
 // the probe reports jwks degraded with the cache's age.
+//
+// With a Cache, an issuer whose JWKS a start cannot fetch has its tokens
+// verified with the JWKS a previous fetch stored, for at most
+// CacheMaxAge from that fetch, until its own verifier is built (Q35 b;
+// before, the cache was in memory and a restart during a token-service
+// outage refused every token of that service until it answered).
 type Verifier struct {
 	cfg    VerifierConfig
 	own    *coreauth.Verifier
@@ -115,9 +142,17 @@ type Verifier struct {
 	counters core.Counters
 	now      func() time.Time
 
-	mu      sync.Mutex
-	fetched map[string]time.Time // issuer -> last successful JWKS fetch
-	lastErr map[string]string
+	// cached holds the verifiers built from stored JWKS, for the issuers
+	// whose own verifier is not built yet.
+	cached atomic.Pointer[cachedEco]
+
+	mu       sync.Mutex
+	fetched  map[string]time.Time // issuer -> last successful JWKS fetch
+	lastErr  map[string]string
+	savedAt  map[string]time.Time // issuer -> last write to Cache
+	savedSum map[string][]byte
+	saving   map[string]bool // issuer -> a write in flight
+	saves    sync.WaitGroup
 }
 
 // NewVerifier builds the own-issuer verifier at once; the ecosystem ones
@@ -126,6 +161,12 @@ func NewVerifier(ctx context.Context, cfg VerifierConfig) (*Verifier, error) {
 	if cfg.RetryInterval <= 0 {
 		cfg.RetryInterval = DefaultRetryInterval
 	}
+	if cfg.Cache != nil && len(cfg.CacheKey) != JWKSCacheKeyBytes {
+		return nil, core.Fieldf("USSP_JWKS_CACHE_KEY_FILE", "a stored JWKS is used only with a key of %d bytes that binds it", JWKSCacheKeyBytes)
+	}
+	if cfg.Cache != nil && !validWriter(cfg.CacheWriter) {
+		return nil, fmt.Errorf("jwks_cache: writer %q is not a NATS user name", cfg.CacheWriter)
+	}
 	if cfg.ProbeClient == nil {
 		cfg.ProbeClient = &http.Client{
 			Timeout:       5 * time.Second,
@@ -133,6 +174,7 @@ func NewVerifier(ctx context.Context, cfg VerifierConfig) (*Verifier, error) {
 		}
 	}
 	v := &Verifier{cfg: cfg, now: cfg.Ecosystem.Now, fetched: map[string]time.Time{}, lastErr: map[string]string{},
+		savedAt: map[string]time.Time{}, savedSum: map[string][]byte{}, saving: map[string]bool{},
 		eco: map[string]*atomic.Pointer[coreauth.Verifier]{}}
 	if v.now == nil {
 		v.now = time.Now
@@ -188,6 +230,11 @@ func (v *Verifier) Verify(ctx context.Context, token string) (coreauth.Claims, e
 	if p, ok := v.eco[iss]; ok {
 		if eco := p.Load(); eco != nil {
 			return eco.Verify(ctx, token)
+		}
+		// Not built: its JWKS could not be fetched since this process
+		// started. Its stored JWKS, when young enough, verifies meanwhile.
+		if cl, ok, err := v.verifyCached(ctx, iss, token); ok {
+			return cl, err
 		}
 		v.counters.Inc(CounterJWKSUnavailable)
 		return coreauth.Claims{}, &coreauth.TokenError{Counter: CounterJWKSUnavailable, Claim: "kid",
@@ -251,9 +298,20 @@ func (v *Verifier) BuildEcosystem(ctx context.Context) error {
 		delete(v.lastErr, iss)
 		v.mu.Unlock()
 		v.eco[iss].Store(eco)
+		v.forgetCached(iss)
 		if v.cfg.OnBuilt != nil {
 			v.cfg.OnBuilt(EcosystemSet(i), eco.Counters())
 		}
+		// What core fetched is stored for a later start: it reads the
+		// same URL, so a fetch here stores the set it holds.
+		if doc, err := v.fetchJWKS(ctx, v.cfg.Ecosystem.Issuers[iss].JWKSURL); err == nil {
+			v.persist(ctx, iss, doc, now)
+		}
+	}
+	if len(errs) > 0 {
+		// An issuer cannot be fetched: its stored JWKS, when young
+		// enough, verifies its tokens until it is built.
+		v.restore(ctx)
 	}
 	return errors.Join(errs...)
 }
@@ -302,7 +360,13 @@ func (v *Verifier) Probe(ctx context.Context) (obs.State, string) {
 	errs := make([]error, len(v.ecoISS))
 	var wg sync.WaitGroup
 	for i, iss := range v.ecoISS {
-		wg.Go(func() { errs[i] = v.fetchJWKS(fctx, v.cfg.Ecosystem.Issuers[iss].JWKSURL) })
+		wg.Go(func() {
+			doc, err := v.fetchJWKS(fctx, v.cfg.Ecosystem.Issuers[iss].JWKSURL)
+			errs[i] = err
+			if err == nil && v.IssuerReady(iss) {
+				v.persist(ctx, iss, doc, v.now())
+			}
+		})
 	}
 	wg.Wait()
 	worst := obs.StateUp
@@ -332,6 +396,14 @@ func (v *Verifier) Probe(ctx context.Context) (obs.State, string) {
 			details = append(details, fmt.Sprintf("%s: cached, age %d s (%v)", iss, int64(now.Sub(last)/time.Second), err))
 			continue
 		}
+		if at, ok := v.cachedAt(iss); !built && ok && now.Sub(at) < v.maxAge() {
+			if worst == obs.StateUp {
+				worst = obs.StateDegraded
+			}
+			details = append(details, fmt.Sprintf("%s: not fetched since this process started; the stored keys fetched %s verify (age %d s, at most %d s) (%v)",
+				iss, at.UTC().Format(time.RFC3339), int64(now.Sub(at)/time.Second), int64(v.maxAge()/time.Second), err))
+			continue
+		}
 		worst = obs.StateDown
 		details = append(details, fmt.Sprintf("%s: never fetched (%v)", iss, err))
 	}
@@ -344,25 +416,29 @@ func (v *Verifier) Probe(ctx context.Context) (obs.State, string) {
 }
 
 // fetchJWKS checks that url answers 200 with a JSON object holding a
-// keys array.
-func (v *Verifier) fetchJWKS(ctx context.Context, url string) error {
+// keys array, and returns the document.
+func (v *Verifier) fetchJWKS(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	resp, err := v.cfg.ProbeClient.Do(req)
 	if err != nil {
-		return errors.New("unreachable")
+		return nil, errors.New("unreachable")
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	doc, err := io.ReadAll(io.LimitReader(resp.Body, maxProbeBytes))
+	if err != nil {
+		return nil, errors.New("unreachable")
 	}
 	var set struct {
 		Keys []json.RawMessage `json:"keys"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxProbeBytes)).Decode(&set); err != nil || set.Keys == nil {
-		return errors.New("not a JWKS")
+	if err := json.Unmarshal(doc, &set); err != nil || set.Keys == nil {
+		return nil, errors.New("not a JWKS")
 	}
-	return nil
+	return doc, nil
 }
