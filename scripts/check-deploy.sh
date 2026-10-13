@@ -159,6 +159,15 @@ mutate "an image by tag" '.services.web.image = "ghcr.io/rootxkit/uspace-ussp-we
 mutate "its own JWKS read over plain http" '.services["traffic-ws"].environment.USSP_TOKEN_ISSUERS |= sub("=https://ussp.example.test/"; "=http://ussp-api:8080/")' 'over plain http'
 mutate "its own host not mapped to Caddy" 'del(.services["telemetry-ingest"].extra_hosts)' 'is not mapped to the edge Caddy'
 
+# Every base image the two Dockerfiles build from is pinned by digest: a
+# tag can move between two builds of one commit.
+unpinned="$(grep -HnE '^FROM ' deploy/Dockerfile deploy/web.Dockerfile | grep -vE '^[^:]+:[0-9]+:FROM [^ ]+@sha256:[0-9a-f]{64}( AS [a-z]+)?$' || true)"
+if [ -z "$unpinned" ]; then
+  ok "every FROM of deploy/Dockerfile and deploy/web.Dockerfile is pinned by digest"
+else
+  bad "base images not pinned by digest: $(tr '\n' ' ' <<<"$unpinned")"
+fi
+
 # ---- the settings ------------------------------------------------------------
 
 # Every variable of ENV.md is named in the settings example (set, or

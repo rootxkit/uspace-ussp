@@ -5,7 +5,7 @@
 #
 #   docker build -f deploy/Dockerfile --build-arg VERSION=v0.1.0 --build-arg COMMIT=$(git rev-parse HEAD) .
 
-FROM golang:1.27 AS build
+FROM golang:1.27@sha256:007a316059246276cb214df93950be77837545dc78007a73e0291a4963d5d3bf AS build
 WORKDIR /src
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local
 COPY go.mod go.sum ./
@@ -28,7 +28,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 # it, so it is writable (deploy/compose/staging.yaml).
 RUN mkdir -p /dirs/var/lib/ussp/records
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 COPY --from=build /out/ /usr/bin/
 COPY --from=build --chown=65532:65532 /dirs/ /
 USER nonroot:nonroot
