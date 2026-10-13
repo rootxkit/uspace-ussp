@@ -139,13 +139,15 @@ printf '{"release":"smoke"}\n' > "$work/basemap/SOURCE.json"
 # smoke checks the deployment, not the geoid.
 { printf 'P5\n# Description smoke grid, N = 20 m\n# Offset 20\n# Scale 1\n2 3\n65535\n'; head -c 12 /dev/zero; } > "$work/ground/egm2008-2_5.pgm"
 chmod -R a+rX "$work/ground" "$work/basemap"
-docker network create --subnet "$subnet" --ip-range "$prefix.128/25" "$edge" >/dev/null
+docker network create --subnet "$subnet" --gateway "$prefix.1" --ip-range "$prefix.128/25" "$edge" >/dev/null
 # Where the containers reach the peers on the host: on Linux the edge
 # bridge's own address (the host's interface on it, nothing else hears
 # it); under Docker Desktop the host's loopback through host-gateway.
 if docker info --format '{{.OperatingSystem}}' 2>/dev/null | grep -qi 'docker desktop'; then
   peers_bind=127.0.0.1 peers_ip=host-gateway
 else
+  # Set at creation: a newer Docker leaves IPAM.Config.Gateway empty
+  # unless it was given.
   peers_bind="$(docker network inspect "$edge" --format '{{(index .IPAM.Config 0).Gateway}}')"
   peers_ip="$peers_bind"
 fi
