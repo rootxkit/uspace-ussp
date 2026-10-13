@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/rootxkit/uspace-core/core"
 
@@ -25,16 +26,25 @@ const (
 	SwitchOn    = "on"
 )
 
-// systemIDMarkers are the substrings one of which a test or development
-// system id contains.
+// systemIDMarkers are the tokens one of which a test or development
+// system id contains (systemIDTokens).
 var systemIDMarkers = []string{"TEST", "DEV"}
+
+// systemIDTokens splits a system id at its token boundaries: a token is
+// a maximal run of letters, so a digit or any other character ends one.
+// DEV01, TEST, USSP-DEV and TEST-02 carry a marker; LATEST, DEVON and
+// LABTEST1 do not, since their TEST or DEV is part of a longer word.
+func systemIDTokens(id string) []string {
+	return strings.FieldsFunc(id, func(r rune) bool { return !unicode.IsLetter(r) })
+}
 
 // ErrRefused is the gate's refusal: the process exits 2 on it before it
 // opens a listener.
 var ErrRefused = errors.New("the InterUSS test interfaces are refused")
 
 // Gate refuses to start unless USSP_TEST_INTERFACES is on and
-// USSP_SYSTEM_ID is set and contains TEST or DEV (D13). It reads the raw
+// USSP_SYSTEM_ID is set and has TEST or DEV as a token (D13), never as
+// part of a longer word. It reads the raw
 // environment, before any other configuration: an unset system id is
 // refused, never taken from a default. The error names both variables.
 func Gate(lookup config.LookupFunc) error {
@@ -45,8 +55,8 @@ func Gate(lookup config.LookupFunc) error {
 	if sw != SwitchOn {
 		why = append(why, VarSwitch+" is "+describe(sw)+", not on")
 	}
-	if !slices.ContainsFunc(systemIDMarkers, func(m string) bool { return strings.Contains(id, m) }) {
-		why = append(why, VarSystemID+" is "+describe(id)+", which contains neither TEST nor DEV")
+	if !slices.ContainsFunc(systemIDTokens(id), func(tok string) bool { return slices.Contains(systemIDMarkers, tok) }) {
+		why = append(why, VarSystemID+" is "+describe(id)+", which has neither TEST nor DEV as a token")
 	}
 	if len(why) == 0 {
 		return nil
@@ -138,7 +148,7 @@ func intVar(dst func(*Config) *int, lo, hi int) func(*Config, string) error {
 // ones, in the order of deploy/ENV.md.
 func Variables() []Variable {
 	return []Variable{
-		{Name: VarSwitch, Default: "off", Help: "on starts the InterUSS automated-testing interfaces (with a USSP_SYSTEM_ID containing TEST or DEV); anything else exits 2 before a listener opens. Never on in production (D13)",
+		{Name: VarSwitch, Default: "off", Help: "on starts the InterUSS automated-testing interfaces (with a USSP_SYSTEM_ID that has TEST or DEV as a token: DEV01, not LATEST); anything else exits 2 before a listener opens. Never on in production (D13)",
 			set: func(*Config, string) error { return nil }},
 		{Name: "USSP_TEST_INTERFACES_ADDR", Default: ":8087", Help: "listen address of test-interfaces (/test/rid/v1/injection, /test/rid/v1/observation, /test/flight_planning/v1, /healthz, /readyz, /metrics)",
 			set: str(func(c *Config) *string { return &c.Addr })},

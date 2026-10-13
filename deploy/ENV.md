@@ -130,7 +130,8 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 WP-21) is built into the `uspace-ussp-testif` image only, never into the
 production image or compose. It refuses to start, exit 2 before any
 listener, unless `USSP_TEST_INTERFACES=on` and `USSP_SYSTEM_ID` is set
-and contains `TEST` or `DEV`. Beside the variables below it reads the
+and has `TEST` or `DEV` as a token (a maximal run of letters: `DEV01`
+and `USSP-DEV` do, `LATEST` and `LABTEST1` do not). Beside the variables below it reads the
 shared ones of the table above that every process reads (`all`) and
 `USSP_SYSTEM_ID`, `USSP_AUDIENCES` (the host uss_qualifier calls it at)
 and `USSP_TOKEN_ISSUERS` (the lab issuer); it never reads
@@ -142,7 +143,7 @@ holds these rows to the code).
 
 | Process | Variable | Required | Default | Unit | Meaning |
 |---|---|---|---|---|---|
-| `test-interfaces` | `USSP_TEST_INTERFACES` |  | `off` |  | on starts the InterUSS automated-testing interfaces (with a USSP_SYSTEM_ID containing TEST or DEV); anything else exits 2 before a listener opens. Never on in production (D13) |
+| `test-interfaces` | `USSP_TEST_INTERFACES` |  | `off` |  | on starts the InterUSS automated-testing interfaces (with a USSP_SYSTEM_ID that has TEST or DEV as a token: DEV01, not LATEST); anything else exits 2 before a listener opens. Never on in production (D13) |
 | `test-interfaces` | `USSP_TEST_INTERFACES_ADDR` |  | `:8087` |  | listen address of test-interfaces (/test/rid/v1/injection, /test/rid/v1/observation, /test/flight_planning/v1, /healthz, /readyz, /metrics) |
 | `test-interfaces` | `USSP_TEST_INTERFACES_USSP_BASE_URL` | `test-interfaces` |  |  | this USSP's published base URL as an operator reaches it (token, intents, accounts, WS /v1/telemetry, traffic snapshot) |
 | `test-interfaces` | `USSP_TEST_INTERFACES_CA_FILE` |  |  |  | PEM bundle the USSP's TLS certificate is checked against (the lab's CA); empty uses the system roots |
