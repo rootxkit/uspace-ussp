@@ -155,7 +155,7 @@ func TestNATSStagingBackupUser(t *testing.T) {
 		}
 	}
 	d := natsDeny.FindStringSubmatch(block)
-	if d == nil || !strings.Contains(d[1], `"$JS.API.CONSUMER.DELETE.>"`) {
+	if len(d) < 2 || !strings.Contains(d[1], `"$JS.API.CONSUMER.DELETE.>"`) {
 		t.Errorf("the backup user may delete a consumer: %v", d)
 	}
 }
