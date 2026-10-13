@@ -84,3 +84,27 @@ func TestFixtureOpenSubcategory(t *testing.T) {
 		}
 	}
 }
+
+// annex_iv.open_subcategory_by_class names class labels of
+// intent/request/v1 only, each onto A1, A2 or A3: the profile's table is
+// read as declared, and a table naming another class or subcategory is
+// refused at load, not at the first plan.
+func TestFixtureOpenSubcategoryByClass(t *testing.T) {
+	f, err := LoadFixture(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.AnnexIV.OpenSubcategoryByClass; len(got) != 3 || got["C0"] != "A1" || got["C1"] != "A1" || got["C2"] != "A2" {
+		t.Errorf("the profile's table: %v", got)
+	}
+	b, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for table, ok := range map[string]bool{"{C0: A1}": true, "{C7: A1}": false, "{C0: A4}": false, "{Other: A3}": false} {
+		s := regexp.MustCompile(`(?m)^(\s*open_subcategory_by_class:).*$`).ReplaceAllString(string(b), "${1} "+table)
+		if _, err := LoadFixture(writeFile(t, "f.yaml", s)); (err == nil) != ok {
+			t.Errorf("open_subcategory_by_class %s: %v", table, err)
+		}
+	}
+}

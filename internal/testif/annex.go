@@ -73,12 +73,16 @@ func (p *planner) request(plan fp.FlightPlan, clientRef string, volumes json.Raw
 	var sub any
 	if cat == "open" {
 		// Item 4 in the open category is the subcategory too; the plan
-		// has no member for it and the test operator declares it.
-		if fx.OpenSubcategory == "" {
+		// has no member for it: it follows the plan's class by the test
+		// operator's table, else the test operator's one subcategory.
+		if s := fx.OpenSubcategoryByClass[classes[fa.UasClass]]; s != "" {
+			sub = s
+		} else if fx.OpenSubcategory != "" {
+			sub = fx.OpenSubcategory
+		} else {
 			return intentBody{}, refusedItem("uspace_flight_authorisation.operation_category",
-				"Open: the plan names no subcategory (Annex IV item 4) and the test operator declares none (annex_iv.open_subcategory, pending GCAA)")
+				"Open: the plan names no subcategory (Annex IV item 4) and the test operator declares none for class %q (annex_iv.open_subcategory_by_class, annex_iv.open_subcategory, pending GCAA)", string(fa.UasClass))
 		}
-		sub = fx.OpenSubcategory
 	}
 	r := client.IntentRequest{
 		ClientRef:                clientRef,
