@@ -20,7 +20,7 @@ On the host, as the deploy user, the backup and then its check:
 |---|---|
 | `ussp_relational-<stamp>.dump` | the relational database whole, `pg_dump -Fc` |
 | `ussp_timeseries-<stamp>.dump` | the time series with the rows of the chunks of the last `USSP_BACKUP_TS_DAYS` days (7); older chunks and their compressed relations keep their definitions only. "The last 7 days" is the database's clock (`now()` in the container), never the host's |
-| `nats-kv-<stamp>.jsonl` | every JetStream KV bucket, one JSON line per key, read as the `backup` NATS user, which may read and may not write (`nats.staging.conf`) |
+| `nats-kv-<stamp>.jsonl` | every JetStream KV bucket, one JSON line per key, read as the `backup` NATS user, which may read the `KV_<bucket>` streams only and may not write, read another stream or delete a consumer (`nats.staging.conf`) |
 | `manifest-<stamp>.json` | the database clock, the cutoff, each tree's schema version, each file's bytes, SHA-256 and entries, the KV export's keys, buckets and buckets with keys; written last, so a stamp without it is incomplete |
 
 Each file is written under a `.partial` name and read back before it is

@@ -279,6 +279,18 @@ if [ "$rc" -eq 0 ] || ! grep -q 'Permissions Violation for Publish to "$KV.polic
   fail "the backup user could put a key (exit $rc): $(tail -n 1 <<<"$out")"
 fi
 echo "smoke: the backup user reads the buckets and its put is refused (Permissions Violation)"
+# It reads the KV streams only, and deletes no consumer: TRK's info and
+# a consumer deletion are refused by the server (the presence of the
+# narrowing; the export above is its twin).
+for probe in 'stream info TRK|$JS.API.STREAM.INFO.TRK' 'consumer rm TRK smoke -f|$JS.API.CONSUMER.DELETE.TRK.smoke'   'consumer rm KV_policy smoke -f|$JS.API.CONSUMER.DELETE.KV_policy.smoke'; do
+  cmd="${probe%%|*}"; subject="${probe#*|}"
+  rc=0
+  out="$(MSYS_NO_PATHCONV=1 docker run --rm --network "${project}_ussp" --env-file "$work/secrets/backup.env" -e CMD="$cmd"     natsio/nats-box:0.18.0@sha256:abdc9f9f0120bb8adfbf674eb037d1551db55356eb198b7bd4ffed377f6950a6     sh -c 'nats --server="$NATS_URL" --timeout=3s $CMD' 2>&1)" || rc=$?
+  if [ "$rc" -eq 0 ] || ! grep -qF "Permissions Violation for Publish to \"$subject\"" <<<"$out"; then
+    fail "the backup user's '$cmd' was not refused (exit $rc): $(tail -n 1 <<<"$out")"
+  fi
+  echo "smoke: the backup user's '$cmd' is refused (Permissions Violation for $subject)"
+done
 USSP_COMPOSE_PROJECT="$project" RESTORE_CHECK_EXPECT="$expect" "$deploy/restore-check.sh" "$work/backups"
 events="${expect#events=}"
 events="${events%%,*}"

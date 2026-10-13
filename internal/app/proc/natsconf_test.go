@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/rootxkit/uspace-ussp/internal/bus"
@@ -100,5 +101,60 @@ func TestNATSConfJWKSCacheWriters(t *testing.T) {
 	}
 	if len(TopologyFor(config.ProcessDSSSync, config.Config{}).Buckets) != len(TopologyOf(config.Config{}).Buckets)-1 {
 		t.Error("TopologyFor dropped more than jwks_cache")
+	}
+}
+
+var natsAllow = regexp.MustCompile(`(?s)allow:\s*\[(.*?)\]`)
+
+// The staging backup user reads the KV buckets and nothing else: its
+// publish allow list is the account's stream listing and, for each
+// bucket of the topology and no other stream, that bucket's stream
+// info, direct and message gets, the ordered consumer a key listing
+// creates and its flow control. Consumer deletion is denied (a
+// process's durable consumer included). The smoke run exercises the
+// list on a server (deploy/smoke/run.sh, step 6).
+func TestNATSStagingBackupUser(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "deploy", "compose", "nats.staging.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var block string
+	for _, m := range natsUserBlock.FindAllStringSubmatch(string(b), -1) {
+		if m[1] == "backup" {
+			block = m[2]
+		}
+	}
+	if block == "" {
+		t.Fatal("no backup user in nats.staging.conf")
+	}
+	var allow []string
+	if a := natsAllow.FindStringSubmatch(block); a != nil {
+		for _, q := range natsQuoted.FindAllStringSubmatch(a[1], -1) {
+			allow = append(allow, q[1])
+		}
+	}
+	want := []string{"$JS.API.INFO", "$JS.API.STREAM.NAMES", "$JS.API.STREAM.LIST"}
+	for _, bk := range TopologyOf(config.Config{}).Buckets {
+		k := "KV_" + bk.Bucket
+		want = append(want, "$JS.API.STREAM.INFO."+k, "$JS.API.STREAM.MSG.GET."+k, "$JS.API.DIRECT.GET."+k, "$JS.API.DIRECT.GET."+k+".>",
+			"$JS.API.CONSUMER.CREATE."+k, "$JS.API.CONSUMER.CREATE."+k+".>", "$JS.API.CONSUMER.INFO."+k+".>", "$JS.FC."+k+".>")
+	}
+	slices.Sort(allow)
+	slices.Sort(want)
+	if !slices.Equal(allow, want) {
+		for _, a := range allow {
+			if !slices.Contains(want, a) {
+				t.Errorf("the backup user may publish %s", a)
+			}
+		}
+		for _, w := range want {
+			if !slices.Contains(allow, w) {
+				t.Errorf("the backup user may not publish %s: that bucket is not backed up", w)
+			}
+		}
+	}
+	d := natsDeny.FindStringSubmatch(block)
+	if d == nil || !strings.Contains(d[1], `"$JS.API.CONSUMER.DELETE.>"`) {
+		t.Errorf("the backup user may delete a consumer: %v", d)
 	}
 }
