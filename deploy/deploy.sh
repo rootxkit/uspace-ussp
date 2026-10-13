@@ -231,9 +231,16 @@ if [ "$mode" = deploy ]; then
   # ---- 4. both trees, and what migrate says --------------------------------
   for m in migrate migrate-timeseries; do
     dc up -d --no-deps --force-recreate "$m" >/dev/null 2>&1 || fail "$m did not start"
+    # docker wait answers at once for a container that has already exited
+    # and prints its exit status; compose wait does not, for an exited one.
+    id="$(dc ps -aq "$m" | tr -d '\r')"
+    [ -n "$id" ] || fail "$m has no container"
     rc=0
-    timeout "$WAIT_S" docker compose -p "$project" "${env_files[@]}" --env-file "$settings" -f "$compose_file" "${extra_files[@]}" \
-      wait "$m" >/dev/null 2>&1 || rc=$?
+    status="$(timeout "$WAIT_S" docker wait "$id" 2>&1)" || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      [[ "$status" =~ ^[0-9]+$ ]] || fail "docker wait $m answered $status"
+      rc="$status"
+    fi
     logs="$(dc logs --no-log-prefix "$m" 2>/dev/null | tr -d '\r')"
     [ "$rc" -ne 124 ] || fail "$m did not exit within ${WAIT_S}s"
     [ "$rc" -eq 0 ] || fail "$m exited $rc: $(printf '%s\n' "$logs" | tail -n 3 | tr '\n' ' ')"
