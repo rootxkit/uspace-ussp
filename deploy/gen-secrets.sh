@@ -103,7 +103,11 @@ fi
 write_env "$dir/db.env" \
   "POSTGRES_PASSWORD=$(hexpw)" "USSP_PG_API_PASSWORD=$(hexpw)" "USSP_PG_TSDB_PASSWORD=$(hexpw)"
 lines=()
-for p in "${procs[@]}" backup; do lines+=("USSP_NATS_$(upper "$p")_PASSWORD=$(hexpw)"); done
+# NATS reads a $VARIABLE of its configuration as a configuration value:
+# a password that starts with a digit and goes on with letters does not
+# parse ("Expected a top-level value to end"), and the server never
+# starts. Each one starts with a letter.
+for p in "${procs[@]}" backup; do lines+=("USSP_NATS_$(upper "$p")_PASSWORD=n$(hexpw)"); done
 write_env "$dir/nats.env" "${lines[@]}"
 unset lines
 

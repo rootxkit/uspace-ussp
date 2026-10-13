@@ -68,6 +68,15 @@ while IFS= read -r line; do
   if grep -qF -- "$v" <<<"$out$again"; then leaked=1; fi
 done < <(cat "$work"/secrets/*.env)
 if [ "$leaked" -eq 0 ]; then ok "gen-secrets prints no value it wrote"; else bad "gen-secrets printed a value it wrote"; fi
+# NATS parses a $VARIABLE as a value: a password starting with a digit
+# and going on with letters stops the server at start.
+digit="$(grep -cE '^USSP_NATS_[A-Z_]+_PASSWORD=[0-9]' "$work/secrets/nats.env" || true)"
+count="$(grep -cE '^USSP_NATS_[A-Z_]+_PASSWORD=' "$work/secrets/nats.env" || true)"
+if [ "$count" -eq 8 ] && [ "$digit" -eq 0 ]; then
+  ok "gen-secrets: all 8 NATS passwords start with a letter"
+else
+  bad "gen-secrets: $digit of $count NATS passwords start with a digit (NATS would not start)"
+fi
 # Modes are not kept on a Windows checkout's file system.
 if type -P cygpath >/dev/null 2>&1; then
   echo "check-deploy: SKIPPED file modes (Windows file system)"
