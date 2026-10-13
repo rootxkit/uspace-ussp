@@ -241,6 +241,43 @@ func (s *session) sendAndWait(ctx context.Context, f client.TelemetryFrame) erro
 	}
 }
 
+// refusedSince is the ingest's refusal of a frame on the socket since
+// base, nil while there is none.
+func refusedSince(st, base ingestStatus, serial string) *RefusalError {
+	refused := st.refusals(base)
+	if len(refused) == 0 {
+		return nil
+	}
+	return &RefusalError{Status: http.StatusBadRequest, Reason: strings.Join(refused, ","),
+		Detail: "telemetry-ingest refused a frame of " + serial + " in flight"}
+}
+
+// settle waits until the ingest has decided on every frame the socket
+// carried and returns its refusal of any of them since base; ctx bounds
+// the wait (errNotDecided).
+func (s *session) settle(ctx context.Context, base ingestStatus, serial string) error {
+	s.wmu.Lock()
+	n := s.sent
+	s.wmu.Unlock()
+	for {
+		st, changed, err := s.status()
+		if ref := refusedSince(st, base, serial); ref != nil {
+			return ref
+		}
+		if st.decided() >= n {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("the telemetry socket closed before the frames were acknowledged: %w", err)
+		}
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			return errNotDecided
+		}
+	}
+}
+
 // close ends the socket normally and waits for the reader.
 func (s *session) close() {
 	_ = s.conn.Close(websocket.StatusNormalClosure, "")
