@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # SQL, jq and the containers' shells name their own $variables
 # The staging smoke (WP-20; `make staging-smoke`, CI job `staging-smoke`):
 # deploy/compose/staging.yaml brought up from scratch the way
 # deploy/deploy.sh deploys it, behind the edge Caddy with
@@ -26,12 +27,16 @@
 #    5. the simulated operator through the public host (TestStagingSmoke):
 #       registration, sign-in, client, serial, token, an intent authorised
 #       and activated, telemetry acknowledged; it must pass, not skip;
-#    6. the whole stack stopped and removed (volumes kept), deployed again,
+#    6. a backup (deploy/backup.sh) with the writers paused, a telemetry
+#       row older than the time-series window among the rows: the restore
+#       check must give back every count but that row, and must refuse
+#       counts that differ and a file that differs from its manifest;
+#    7. the whole stack stopped and removed (volumes kept), deployed again,
 #       and the operator's intent read back after it;
-#    7. one migration of each tree rolled back: the process that needs it
+#    8. one migration of each tree rolled back: the process that needs it
 #       refuses to start and names both versions; migrate brings it back;
-#    8. memory and CPU of every container (docker stats);
-#    9. teardown (also on failure): the project's containers, volumes and
+#    9. memory and CPU of every container (docker stats);
+#   10. teardown (also on failure): the project's containers, volumes and
 #       networks removed and their absence checked; the peers stopped.
 #
 # SMOKE_VERSION, when set, is the VERSION the images were built with;
@@ -75,7 +80,7 @@ dc() {
 teardown() {
   local rc=$?
   echo
-  echo "smoke: ---- 9. teardown"
+  echo "smoke: ---- 10. teardown"
   if [ "$rc" -ne 0 ] && [ -n "${SMOKE_LOG_DIR:-}" ]; then
     mkdir -p "$SMOKE_LOG_DIR"
     if [ -f "$work/deploy.env" ] && [ -f "$work/settings.env" ]; then
@@ -116,7 +121,7 @@ cert_id="$(openssl rand -hex 16)"
 printf 'USSP_CERTIFICATE_ID=%s\n' "$cert_id" > "$work/secrets/certificate.env"
 openssl rand -hex 24 | tr -d '\n' > "$work/secrets/keys/client.secret"
 chmod 0644 "$work/secrets/keys/"*
-mkdir -p "$work/ca" "$work/basemap" "$work/ground" "$work/state"
+mkdir -p "$work/ca" "$work/basemap" "$work/ground" "$work/state" "$work/backups"
 MSYS_NO_PATHCONV=1 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 2 \
   -subj "/O=uspace-ussp smoke/CN=smoke root" \
   -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" \
@@ -242,7 +247,58 @@ driver() { # <phase>
 driver file
 
 # ---- 6 -----------------------------------------------------------------------
-step "6. the stack removed (volumes kept), deployed again, read back"
+step "6. backup and restore check"
+pg_q() { dc exec -T timescaledb psql -X -v ON_ERROR_STOP=1 -q -U postgres -d "$1" -tAc "$2" | tr -d '\r'; }
+# One telemetry row from before the time-series window, written by the
+# database's clock: the backup must leave its data out (the absence),
+# beside the operator's rows it keeps (the presence).
+pg_q ussp_timeseries "INSERT INTO telemetry (flight_id, captured_at, rx_ts, time_source, geom, cell5)
+  VALUES (gen_random_uuid(), now() - interval '10 days', now() - interval '10 days', 'gnss',
+          ST_SetSRID(ST_MakePoint(44.8, 41.7), 4326), 'c5:smoke')" >/dev/null
+# The writers paused, so nothing changes between the counts and the dump.
+writers=(api telemetry-ingest rid-sp monitor traffic-ws dss-sync tsdb-writer)
+dc pause "${writers[@]}" >/dev/null 2>&1
+recent="$(pg_q ussp_timeseries "SELECT count(*) FROM telemetry WHERE captured_at >= now() - interval '7 days'")"
+all_rows="$(pg_q ussp_timeseries "SELECT count(*) FROM telemetry")"
+expect="events=$(pg_q ussp_relational "SELECT count(*) FROM events"),operator_accounts=$(pg_q ussp_relational "SELECT count(*) FROM operator_accounts"),operational_intents=$(pg_q ussp_relational "SELECT count(*) FROM operational_intents"),telemetry=$recent"
+echo "smoke: live counts with the writers paused: $expect (telemetry $all_rows rows in all, $recent in the window)"
+rc=0
+USSP_COMPOSE_PROJECT="$project" USSP_SECRETS_DIR="$work/secrets" "$deploy/backup.sh" --settings "$work/settings.env" "$work/backups" || rc=$?
+dc unpause "${writers[@]}" >/dev/null 2>&1
+[ "$rc" -eq 0 ] || fail "backup.sh exited $rc"
+if [ "$all_rows" -le "$recent" ] || [ "$recent" -eq 0 ]; then fail "the smoke's telemetry is not both inside and outside the window ($recent of $all_rows)"; fi
+# The backup's NATS user reads every bucket (the export above) and writes
+# none: a put as that user is refused by the server.
+rc=0
+out="$(MSYS_NO_PATHCONV=1 docker run --rm --network "${project}_ussp" --env-file "$work/secrets/backup.env" \
+  natsio/nats-box:0.18.0@sha256:abdc9f9f0120bb8adfbf674eb037d1551db55356eb198b7bd4ffed377f6950a6 \
+  sh -c 'nats --server="$NATS_URL" --timeout=3s kv put policy current smoke' 2>&1)" || rc=$?
+if [ "$rc" -eq 0 ] || ! grep -q 'Permissions Violation for Publish to "$KV.policy.current"' <<<"$out"; then
+  fail "the backup user could put a key (exit $rc): $(tail -n 1 <<<"$out")"
+fi
+echo "smoke: the backup user reads the buckets and its put is refused (Permissions Violation)"
+USSP_COMPOSE_PROJECT="$project" RESTORE_CHECK_EXPECT="$expect" "$deploy/restore-check.sh" "$work/backups"
+events="${expect#events=}"
+events="${events%%,*}"
+wrong="events=$((events + 1)),${expect#*,}"
+rc=0
+out="$(USSP_COMPOSE_PROJECT="$project" RESTORE_CHECK_EXPECT="$wrong" "$deploy/restore-check.sh" "$work/backups" 2>&1)" || rc=$?
+if [ "$rc" -eq 0 ] || ! grep -q "expected $wrong" <<<"$out"; then
+  fail "restore-check accepted counts that differ ($wrong)"
+fi
+echo "smoke: restore-check refuses counts that differ (exit $rc)"
+cp -r "$work/backups" "$work/tampered"
+dump="$(find "$work/tampered" -name 'ussp_relational-*.dump' | head -n 1)"
+printf 'x' >> "$dump"
+rc=0
+out="$(USSP_COMPOSE_PROJECT="$project" "$deploy/restore-check.sh" "$work/tampered" 2>&1)" || rc=$?
+if [ "$rc" -eq 0 ] || ! grep -q 'the manifest says otherwise' <<<"$out"; then
+  fail "restore-check accepted a dump that differs from its manifest: $(tail -n 1 <<<"$out")"
+fi
+echo "smoke: restore-check refuses a dump that differs from its manifest (exit $rc)"
+
+# ---- 7 -----------------------------------------------------------------------
+step "7. the stack removed (volumes kept), deployed again, read back"
 dc down --remove-orphans >/dev/null 2>&1 || fail "compose down failed"
 [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$project")" ] || fail "containers left after compose down"
 echo "smoke: no container of $project left; volumes kept: $(docker volume ls -q --filter "label=com.docker.compose.project=$project" | tr '\n' ' ')"
@@ -250,8 +306,8 @@ out="$(dc up -d --no-deps --wait --wait-timeout 60 caddy 2>&1)" || fail "the edg
 "$deploy/deploy.sh" "${deploy_args[@]}" --unsigned-local-images --strict "${accepts[@]}" | grep -E '^deploy: (migrate|ok|FAIL)'
 driver after-restart
 
-# ---- 7 -----------------------------------------------------------------------
-step "7. one migration back: the process refuses and names both versions"
+# ---- 8 -----------------------------------------------------------------------
+step "8. one migration back: the process refuses and names both versions"
 refuses() { # <migrate service> <process> <tree>
   local m="$1" svc="$2" tree="$3" out rc=0 down up
   down="$(dc run --rm --no-deps -T "$m" down 2>&1)" || fail "$m down failed: $(tail -n 2 <<<"$down" | tr '\n' ' ')"
@@ -278,8 +334,8 @@ refuses migrate api relational
 refuses migrate-timeseries tsdb-writer timeseries
 "$deploy/deploy.sh" "${deploy_args[@]}" --unsigned-local-images --verify-only --strict "${accepts[@]}" | grep -E '^deploy: (ok|FAIL)'
 
-# ---- 8 -----------------------------------------------------------------------
-step "8. memory and CPU (docker stats, after the smoke)"
+# ---- 9 -----------------------------------------------------------------------
+step "9. memory and CPU (docker stats, after the smoke)"
 mapfile -t ids < <(docker ps -q --filter "label=com.docker.compose.project=$project")
 docker stats --no-stream --format '{{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}' "${ids[@]}" |
   sed "s/^$project-//" | sort | tee "$work/stats.txt"
