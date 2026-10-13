@@ -294,6 +294,24 @@ for pair in "F3411-SP|R6" "F3411-SP|R7" "F3548-SCD|R8"; do
     fail "deploy/conformance/baseline.json: $id is not recorded known failing with WP-21 $r and its failing checks"
   fi
 done
+# An injection the USSP refuses is never a known failure: with the
+# injection checks accepted, a run where nothing reaches the USSP fails
+# only listed checks and the gate stays green. The reviewed run
+# 20261013T163501Z is such a run (every injection refused): at least one
+# of its failing checks must be outside the baseline's list.
+nothing_injected="$here/docs/RUNBOOKS/WP-21/20261013T163501Z-ussp-conformance/report.json"
+uncovered="$(jq -r --slurpfile bl "$repo_bl" '[.outcomes[] | select(.requirement == "F3411-SP" and .status == "fail") | "\(.check) \(.subject)"]
+  - ($bl[0].requirements["F3411-SP"].failing // []) | length' "$nothing_injected")"
+if [ "${uncovered:-0}" -gt 0 ]; then
+  pass "a run where no injection reached the USSP fails a check deploy/conformance/baseline.json does not accept ($uncovered)"
+else
+  fail "deploy/conformance/baseline.json accepts every failing check of a run where nothing was injected"
+fi
+if jq -e '[.requirements[] | (.failing // [])[]] | any(endswith(".rid.injection.UpsertTestSuccess"))' "$repo_bl" >/dev/null; then
+  fail "deploy/conformance/baseline.json accepts UpsertTestSuccess as known failing"
+else
+  pass "deploy/conformance/baseline.json does not accept UpsertTestSuccess as known failing"
+fi
 hook_rc 0 "the repository's baseline is the default and valid" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off
 if handed_args | grep -q 'deploy/conformance/baseline.json$'; then pass "the default baseline is deploy/conformance/baseline.json"; else fail "default baseline: $(handed_args | tr '\n' ' ')"; fi
 
