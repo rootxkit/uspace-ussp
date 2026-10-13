@@ -340,6 +340,100 @@ jobs:
           echo "gitleaks commits: $range ($n commits)"
           ./gitleaks git --no-banner --redact --verbose --log-opts="$range" .
 
+  # The staging shape read back as compose renders it, the deploy
+  # preflight and the certificate wiring, the Caddy proof against the
+  # pinned Caddy, and shellcheck from its pinned image (WP-20,
+  # scripts/check-deploy.sh). Nothing is deployed.
+  deploy:
+    name: deploy checks (compose, preflight, Caddy proof)
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: tool versions
+        run: |
+          docker compose version
+          jq --version
+          openssl version
+          curl -V | head -n 1
+      - name: make check-deploy
+        run: make check-deploy
+
+  # The staging smoke (WP-20, deploy/smoke/run.sh): both images built from
+  # this commit and loaded locally (never pushed), deploy/compose/
+  # staging.yaml deployed from scratch by deploy/deploy.sh behind an edge
+  # Caddy with the snippet, a simulated operator through the public host
+  # (an intent authorised, telemetry acknowledged), a backup and its
+  # restore check with known counts, a redeploy that keeps the data, one
+  # migration back refused by name, memory per container, the teardown
+  # verified. The containers' logs are uploaded on failure.
+  staging-smoke:
+    name: staging smoke (deploy.sh, operator, backup, restore)
+    needs: changes
+    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: version
+        id: version
+        run: echo "version=smoke-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - name: Go image (local, not pushed)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: deploy/Dockerfile
+          load: true
+          push: false
+          tags: uspace-ussp:smoke
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            COMMIT=${{ github.sha }}
+          cache-from: type=gha,scope=go
+      - name: web image (local, not pushed)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: web
+          file: deploy/web.Dockerfile
+          load: true
+          push: false
+          tags: uspace-ussp-web:smoke
+          cache-from: type=gha,scope=web
+      - name: tool versions
+        run: |
+          docker version --format 'docker {{.Server.Version}}'
+          docker compose version
+          jq --version
+          openssl version
+      - name: deploy/smoke/run.sh
+        env:
+          SMOKE_GO_IMAGE: uspace-ussp:smoke
+          SMOKE_WEB_IMAGE: uspace-ussp-web:smoke
+          SMOKE_VERSION: ${{ steps.version.outputs.version }}
+          SMOKE_LOG_DIR: ${{ runner.temp }}/smoke-logs
+        run: deploy/smoke/run.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: staging-smoke-logs
+          path: ${{ runner.temp }}/smoke-logs
+          if-no-files-found: ignore
+
   # Both images, built on a pull request and not pushed. This job holds
   # only the workflow's read token: a branch that changes a Dockerfile
   # or a build dependency never runs with a token that may push to GHCR
@@ -378,12 +472,14 @@ jobs:
 
   # On main and v* tags, after every gate, both images are pushed to
   # GHCR by short SHA (and by the tag), with an SBOM and provenance, and
-  # signed with cosign (keyless). `latest` is never pushed; CI never
-  # deploys. Only this job, which never runs for a pull request, holds
-  # packages: write and id-token: write.
+  # signed with cosign (keyless), and the signatures read back; the SPDX
+  # SBOMs deploy/verify-image.sh checks are made and attested by the two
+  # jobs after this one (WP-20). `latest` is never pushed; CI never
+  # deploys. Only this job and `attest`, which never run for a pull
+  # request, hold packages: write and id-token: write.
   image:
     name: images
-    needs: [changes, build-vet-lint, test-race, integration, web, gitleaks, govulncheck]
+    needs: [changes, build-vet-lint, test-race, integration, web, gitleaks, govulncheck, deploy, staging-smoke]
     if: >-
       always() && !cancelled() && !contains(needs.*.result, 'failure') &&
       github.event_name == 'push'
@@ -393,6 +489,9 @@ jobs:
       contents: read
       packages: write
       id-token: write
+    outputs:
+      go_digest: ${{ steps.go.outputs.digest }}
+      web_digest: ${{ steps.web.outputs.digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: tags
@@ -449,3 +548,101 @@ jobs:
         run: |
           cosign sign --yes "ghcr.io/rootxkit/uspace-ussp@${GO_DIGEST}"
           cosign sign --yes "ghcr.io/rootxkit/uspace-ussp-web@${WEB_DIGEST}"
+      # Read back what was signed: both signatures verify against this
+      # workflow's own identity, as deploy/verify-image.sh checks them.
+      - name: verify both signatures
+        env:
+          GO_DIGEST: ${{ steps.go.outputs.digest }}
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+        run: |
+          if [ -z "$GO_DIGEST" ] || [ -z "$WEB_DIGEST" ]; then echo "an image has no digest"; exit 1; fi
+          refs=("ghcr.io/rootxkit/uspace-ussp@${GO_DIGEST}" "ghcr.io/rootxkit/uspace-ussp-web@${WEB_DIGEST}")
+          for ref in "${refs[@]}"; do
+            cosign verify "$ref" --certificate-identity "${GITHUB_SERVER_URL}/${GITHUB_WORKFLOW_REF}" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null
+            echo "signature verified: $ref"
+          done
+          {
+            echo '### Images (pushed, signed, signature verified)'
+            echo
+            for ref in "${refs[@]}"; do echo "- $ref"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: forget the registry credential
+        if: always()
+        run: docker logout ghcr.io
+
+  # The SPDX SBOMs (syft), apart from the push and the signing: the
+  # third-party SBOM action runs with a read-only package token and no
+  # OIDC token, never beside a registry credential that can push.
+  sbom:
+    name: SBOMs
+    if: github.event_name == 'push'
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: read-only registry login
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: SBOM of the Go image (syft, SPDX)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ghcr.io/rootxkit/uspace-ussp@${{ needs.image.outputs.go_digest }}
+          format: spdx-json
+          output-file: sbom-uspace-ussp.spdx.json
+          upload-artifact: false
+      - name: SBOM of the web image (syft, SPDX)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ghcr.io/rootxkit/uspace-ussp-web@${{ needs.image.outputs.web_digest }}
+          format: spdx-json
+          output-file: sbom-uspace-ussp-web.spdx.json
+          upload-artifact: false
+      - name: forget the registry credential
+        if: always()
+        run: docker logout ghcr.io
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom
+          path: sbom-*.spdx.json
+          if-no-files-found: error
+
+  # The SBOMs attached to the digests as signed attestations (cosign
+  # alone, with the write and OIDC permissions this needs), then read back
+  # with the check deploy/verify-image.sh makes: `cosign verify` and
+  # `cosign verify-attestation` run once here on every main and tag.
+  attest:
+    name: attest SBOMs
+    if: github.event_name == 'push'
+    needs: [image, sbom]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sbom
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: attach the SBOMs (cosign keyless) and verify the attestations
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GO_DIGEST: ${{ needs.image.outputs.go_digest }}
+          WEB_DIGEST: ${{ needs.image.outputs.web_digest }}
+        run: |
+          echo "$TOKEN" | cosign login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          go_ref="ghcr.io/rootxkit/uspace-ussp@${GO_DIGEST}"
+          web_ref="ghcr.io/rootxkit/uspace-ussp-web@${WEB_DIGEST}"
+          cosign attest --yes --type spdxjson --predicate sbom-uspace-ussp.spdx.json "$go_ref"
+          cosign attest --yes --type spdxjson --predicate sbom-uspace-ussp-web.spdx.json "$web_ref"
+          for ref in "$go_ref" "$web_ref"; do
+            cosign verify-attestation --type spdxjson "$ref" --certificate-identity "${GITHUB_SERVER_URL}/${GITHUB_WORKFLOW_REF}" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null
+            echo "SBOM attestation verified: $ref"
+          done
