@@ -383,6 +383,12 @@ func TestIdentificationThroughTheRegistry(t *testing.T) {
 	if id.Status != core.IdentUnknownOperator || id.Reason != core.ReasonRegistryUnavailable || id.Basis != core.BasisAuthenticated {
 		t.Fatalf("no answer: %+v", id)
 	}
+	// The registry id on the authenticated basis is the bound serial:
+	// rid-sp serves it as uas_id.serial_number before the registry holds
+	// the aircraft (ridsp.DetailsOf).
+	if id.Serial != nil || id.RegistryUASID == nil || *id.RegistryUASID != serial.Normalize(snA) { //nolint:misspell // core's name
+		t.Fatalf("registry id %v, want the bound serial %q", id.RegistryUASID, snA)
+	}
 	k := registry.Key{Entity: registry.EntityUAS, Key: serial.Normalize(snA)} //nolint:misspell // core's name
 	r.reg.all[k] = registry.Entry{Key: k, KeyFold: serial.FoldKey(snA), Status: registry.StatusValid, FetchedAt: t0}
 	r.clk.add(time.Second)

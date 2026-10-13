@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 
+	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/f3411"
 	"github.com/rootxkit/uspace-core/regnum"
 
@@ -63,21 +64,28 @@ func ClassificationOf(in *IntentFacts) f3411.UAClassificationEU {
 }
 
 // DetailsOf is the RIDFlightDetails of one flight (spec 04 §3.1, Art.
-// 8(2)): uas_id {serial_number, registration_id (the UA registration
+// 8(2)): uas_id {serial_number (the registry's, else the bound one,
+// else the intent's), registration_id (the UA registration
 // when declared), utm_id (our flight id)}, operator_id (the public part
 // of the operator registration number, never its secret part),
 // operator_location (the remote pilot's or take-off position of the
 // newest sample that carries one, with its WGS84 altitude when sent),
 // operation_description (the authorisation number) and
-// eu_classification. v.Recent are the flight's earlier samples; in is
-// the flight's intent, nil without one.
+// eu_classification when the intent declares a category or a class
+// (absent, the Classification Type is Undeclared). v.Recent are the
+// flight's earlier samples; in is the flight's intent, nil without one.
 func DetailsOf(v View, in *IntentFacts) f3411.RIDFlightDetails {
 	b := v.Current.Body
 	d := f3411.RIDFlightDetails{Id: v.ID}
 	uas := f3411.UASID{UtmId: ptr(v.ID)}
-	switch {
-	case b.Identification.Serial != nil && *b.Identification.Serial != "":
-		uas.SerialNumber = ptr(*b.Identification.Serial)
+	switch id := b.Identification; {
+	case id.Serial != nil && *id.Serial != "":
+		uas.SerialNumber = ptr(*id.Serial)
+	case id.Basis == core.BasisAuthenticated && id.RegistryUASID != nil && *id.RegistryUASID != "":
+		// The session binding names the aircraft: on the authenticated
+		// basis the registry id is the bound serial (telemetry-ingest's
+		// drone id), known before the registry projection holds it.
+		uas.SerialNumber = ptr(*id.RegistryUASID)
 	case in != nil && in.UASSerial != "":
 		uas.SerialNumber = ptr(in.UASSerial)
 	}
@@ -94,8 +102,12 @@ func DetailsOf(v View, in *IntentFacts) f3411.RIDFlightDetails {
 	if loc := operatorLocationOf(v.Current, v.Recent); loc != nil {
 		d.OperatorLocation = loc
 	}
-	cls := ClassificationOf(in)
-	d.EuClassification = &cls
+	if cls := ClassificationOf(in); *cls.Category != f3411.EUCategoryUndefined || *cls.Class != f3411.EUClassUndefined {
+		// The member's presence is the Classification Type "European
+		// Union"; a flight that declares neither leaves it out
+		// (Undeclared), the F3411 file's reading.
+		d.EuClassification = &cls
+	}
 	return d
 }
 

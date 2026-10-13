@@ -45,6 +45,17 @@ type Fixture struct {
 			Procedure    string    `yaml:"procedure"`
 			LandingSites []LatLngY `yaml:"landing_sites"`
 		} `yaml:"contingency"`
+		// OpenSubcategoryByClass is the open-category subcategory
+		// (Annex IV item 4) of a plan by its uas_class label, which
+		// FlightAuthorisationData carries while it has no member for the
+		// subcategory (pending GCAA; the spec's defaults: C0 and C1 A1,
+		// C2 A2).
+		OpenSubcategoryByClass map[string]string `yaml:"open_subcategory_by_class"`
+		// OpenSubcategory is the subcategory (A1, A2 or A3) of an open
+		// plan whose class the table does not name; empty, such a plan is
+		// refused (pending GCAA: A3 admits every open class, UAS.OPEN.040,
+		// and no Art. 1(3) exemption).
+		OpenSubcategory     string   `yaml:"open_subcategory"`
 		EmergencyContactRef string   `yaml:"emergency_contact_ref"`
 		PilotRef            string   `yaml:"pilot_ref"`
 		Takeoff             *LatLngY `yaml:"takeoff"`
@@ -71,6 +82,11 @@ var (
 	fixtureRegRe    = regexp.MustCompile(`^GEOTEST[A-Z0-9]{1,13}$`)
 	fixtureSerialRe = regexp.MustCompile(`^TEST[A-Z0-9-]{1,60}$`)
 	idTechs         = []string{"network", "direct", "both"}
+	// openSubcategories are intent/request/v1's subcategory enumeration
+	// (TestAnnexIVMappingIsTheSchemas).
+	openSubcategories = []string{"A1", "A2", "A3"}
+	// classLabels are intent/request/v1's class_label enumeration.
+	classLabels = []string{"C0", "C1", "C2", "C3", "C4", "C5", "C6"}
 )
 
 // LoadFixture reads and checks the fixture: GEOTEST* and TEST* values
@@ -117,6 +133,17 @@ func (f Fixture) validate() error {
 	}
 	if f.AnnexIV.Contingency.Procedure == "" || f.AnnexIV.EmergencyContactRef == "" {
 		bad("annex_iv.contingency.procedure and annex_iv.emergency_contact_ref are required")
+	}
+	if f.AnnexIV.OpenSubcategory != "" && !slices.Contains(openSubcategories, f.AnnexIV.OpenSubcategory) {
+		bad("annex_iv.open_subcategory is %q, not one of %v", f.AnnexIV.OpenSubcategory, openSubcategories)
+	}
+	for k, v := range f.AnnexIV.OpenSubcategoryByClass {
+		if !slices.Contains(classLabels, k) {
+			bad("annex_iv.open_subcategory_by_class names %q, not one of %v", k, classLabels)
+		}
+		if !slices.Contains(openSubcategories, v) {
+			bad("annex_iv.open_subcategory_by_class[%s] is %q, not one of %v", k, v, openSubcategories)
+		}
 	}
 	if len(f.IdentificationTechnologies) == 0 {
 		bad("identification_technologies maps no entry")

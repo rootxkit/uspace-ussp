@@ -1,0 +1,13 @@
+uspace-ussp c66a708c80e6323cae5dd3ce5efb996a475d915a (dirty)
+uspace-lab 04fac75a1fc8d25cadebd231864663aa51698742
+target the stack uspace-ussp-qf (ussp)
+image uspace-ussp:conformance-c66a708c80e6 sha256:ec4f235813a31ce6a6fada4864865738aa6279737f93ba5d0f6d415fd35c1d19
+USSP_AUTHORITY_PUSH off
+system id DEV01
+suite exit 1
+baseline deploy/conformance/baseline.json
+test-interfaces image uspace-ussp-testif:conformance-c66a708c80e6 sha256:d0966f93c953d21228e209e6269b890e5a30f5907331cc9e1a97e06ba6d3883b
+uss_qualifier on: reports F3411-SP=/c/Users/LBEROZASHVILI/Desktop/projects/uspace/uspace-ussp-wt/qf/local/conformance/reports/qualifier-20261013T220127Z/F3411-SP/qualifier/report.json F3548-SCD=/c/Users/LBEROZASHVILI/Desktop/projects/uspace/uspace-ussp-wt/qf/local/conformance/reports/qualifier-20261013T220127Z/F3548-SCD/qualifier/report.json F3411-DP=/c/Users/LBEROZASHVILI/Desktop/projects/uspace/uspace-ussp-wt/qf/local/conformance/reports/qualifier-20261013T220127Z/F3411-DP/qualifier/report.json
+not checked NAT-PRECONDITION: no check of the USSP contract applies (lab national.stale_precondition); open in docs/RUNBOOKS/conformance.md; not a pass
+not checked REG-NOPII: the target file supplies no operator token (fixture open in docs/RUNBOOKS/conformance.md); not checked, not a pass
+not checked F3548-CP: not checkable upstream: uss_qualifier v0.36.0 (the lab's pin) has no constraint processing requirement set; not a pass

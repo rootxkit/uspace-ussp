@@ -1,0 +1,12 @@
+{
+  "format": "ussp-conformance-exercised/v1",
+  "note": "read by scripts/conformance.sh, not by the lab suite (whose baseline format admits no other field): each known failure of baseline.json needs at least min_passed passed checks in a run, so a run that exercised nothing among them is not green. The minimums are the passed checks of the reviewed run 20261013T224233Z; a run where no injection reached the USSP (20261013T163501Z) passed 2 of F3411-SP. Rewrite with the baseline, from the same reviewed report.",
+  "requirements": {
+    "F3411-SP": {
+      "min_passed": 21
+    },
+    "F3548-SCD": {
+      "min_passed": 15
+    }
+  }
+}
