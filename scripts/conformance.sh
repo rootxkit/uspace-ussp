@@ -195,7 +195,8 @@ validate() {
   fi
   if [ -z "$external" ] && [ "$qualifier" = on ]; then
     for f in conformance/uss_qualifier/run-qualifier.sh conformance/uss_qualifier/compose.yaml conformance/uss_qualifier/f3411-sp.yaml \
-      conformance/uss_qualifier/f3548-scd.yaml conformance/uss_qualifier/f3411-dp.yaml deploy/systems/Caddyfile; do
+      conformance/uss_qualifier/f3548-scd.yaml conformance/uss_qualifier/f3411-dp.yaml deploy/systems/Caddyfile \
+      conformance/fixtures/test-operators.yaml cmd/demo-seed/main.go sim/sitl.env.example; do
       [ -f "$LAB_DIR/$f" ] || usage "LAB_DIR $LAB_DIR has no $f: the uss_qualifier steps need the lab's WP-L7 configurations (CONFORMANCE_QUALIFIER=off skips them)"
     done
     command -v timeout >/dev/null 2>&1 || usage "timeout is required for the uss_qualifier steps (CONFORMANCE_QUALIFIER=off skips them)"
@@ -369,22 +370,27 @@ PY
     [ "$code" = 0 ] || die "$m exited $code: docker compose -p $project logs $m"
   done
   say "USSP healthy and migrated after $(($(date +%s) - t0)) s"
+  # The authority before the test operator's seed when the qualifier
+  # runs: the USSP admits the operator, and creates its client, only when
+  # the authority's registry answers F8 validity `valid`, so the lab's
+  # registry seed of the operator (uspace-lab
+  # conformance/fixtures/test-operators.yaml) runs at the authority
+  # first. The chaos procedure (systems all) starts it here too: the
+  # CISP's api refuses to start until the authority's JWKS answers.
+  if [ "$systems" = all ] || [ "$qualifier" = on ]; then
+    authority_up
+  fi
+  if [ "$qualifier" = on ]; then
+    registry_seed
+  fi
   testif_up
 
   ussp_host="$(val USSP_HOST)"
   if [ "$systems" = all ]; then
-    # The other three systems, for the chaos procedure
-    # (docs/RUNBOOKS/chaos.md): the authority first, because the CISP's
-    # api refuses to start until the authority's JWKS answers (the lab's
-    # demo-up.sh does the same). curl's own bounded retry waits for it.
-    local ah others
-    ah="$(val AUTHORITY_HOST)"
+    # The other two systems, for the chaos procedure
+    # (docs/RUNBOOKS/chaos.md).
+    local others
     t0="$(date +%s)"
-    # shellcheck disable=SC2046 # one argument per service
-    dc up -d $(dc config --services | grep '^authority-') >/dev/null || die "the authority did not start"
-    curl -sS -o "$(winpath "$state/authority-jwks.json")" --fail --max-time 5 --retry 60 --retry-delay 2 --retry-all-errors \
-      --cacert "$(winpath "$state/demo/ca/ca.pem")" --ssl-no-revoke --resolve "$ah:$port:127.0.0.1" "https://$ah:$port/.well-known/jwks.json" ||
-      die "the authority's JWKS did not answer through the lab Caddy: docker compose -p $project logs authority-api"
     others="$(dc config --services | grep -E '^(cisp|ansp)-' | tr '\n' ' ')"
     # The CISP's api and the ANSP's each refuse to start until the
     # other's JWKS answers, so one of them restarts once or twice and
@@ -397,7 +403,7 @@ PY
       # shellcheck disable=SC2086 # one argument per service
       dc up -d --wait --wait-timeout 300 $others >/dev/null || die "the CISP or the ANSP did not become healthy: docker compose -p $project ps"
     fi
-    say "authority, CISP and ANSP up after $(($(date +%s) - t0)) s"
+    say "CISP and ANSP up after $(($(date +%s) - t0)) s"
   fi
   lab_host="$(val LAB_HOST)"
   # The interfaces as uss_qualifier reaches them on the lab network
@@ -472,6 +478,38 @@ write_caddyfile() {
     END { if (!done) exit 3 }
   ' "$src" >"$dst.tmp" || die "the lab's Caddyfile has no {\$USSP_HOST} block with 'import no_metrics': the /test/* route cannot be added"
   mv "$dst.tmp" "$dst"
+}
+
+# authority_up: the lab's authority, waited for through the lab Caddy
+# (curl's own bounded retry; its JWKS answers once the api is up).
+authority_up() {
+  local ah t0
+  ah="$(val AUTHORITY_HOST)"
+  t0="$(date +%s)"
+  # shellcheck disable=SC2046 # one argument per service
+  dc up -d $(dc config --services | grep '^authority-') >/dev/null || die "the authority did not start"
+  curl -sS -o "$(winpath "$state/authority-jwks.json")" --fail --max-time 5 --retry 60 --retry-delay 2 --retry-all-errors \
+    --cacert "$(winpath "$state/demo/ca/ca.pem")" --ssl-no-revoke --resolve "$ah:$port:127.0.0.1" "https://$ah:$port/.well-known/jwks.json" ||
+    die "the authority's JWKS did not answer through the lab Caddy: docker compose -p $project logs authority-api"
+  say "authority up after $(($(date +%s) - t0)) s"
+}
+
+# registry_seed: the lab's registry step (cmd/demo-seed --steps registry)
+# at the authority, through its console API: the lab's operators, the
+# scenarios' aircraft and the test operators of
+# conformance/fixtures/test-operators.yaml with their serials, before
+# the USSP is asked about them. Built, not `go run`, so its status is
+# its own; its log is kept in the state directory (it names no secret).
+registry_seed() {
+  local dir t0
+  dir="$state/bin"
+  mkdir -p "$dir"
+  (cd "$LAB_DIR" && "$GO" build -o "$(winpath "$dir/demo-seed.exe")" ./cmd/demo-seed) || die "could not build the lab's cmd/demo-seed in $LAB_DIR"
+  t0="$(date +%s)"
+  (cd "$LAB_DIR" && "$dir/demo-seed.exe" --env "$(winpath "$stack_env")" --lab sim/sitl.env.example --steps registry \
+    --test-operators conformance/fixtures/test-operators.yaml scenarios/*.yaml) >"$state/registry-seed.log" 2>&1 ||
+    { tail -n 20 "$state/registry-seed.log" >&2; die "the lab's registry seed failed (above; $state/registry-seed.log)"; }
+  say "lab registry seeded at the authority after $(($(date +%s) - t0)) s"
 }
 
 # testif_up: the test operator seeded through the national API (a staff
