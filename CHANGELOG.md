@@ -51,6 +51,24 @@ additively within `/v1`.
   be held longer, the held set is bounded by `USSP_CIS_DIRECT_MAX`: past
   it a further direct restriction is not applied, counted
   (`cis_direct_full`), logged at error and retried.
+- A direct activation is no longer refused when the held set is full
+  of kept ends (H-2 review): the refused activation was a restriction
+  in force that raised nothing. At `USSP_CIS_DIRECT_MAX` an ended
+  overlay is given up first, one the CISP no longer holds in force,
+  else (for an activation) the longest held, whose older version in
+  force refuses more, never less; it leaves the store too
+  (`cis_direct_evicted`, logged). Only a set with no end to give up
+  still refuses, counted as before.
+- A direct restriction stored before a restart is judged when the
+  process restarts during the CISP's outage with no CISP version
+  stored (H-2 review): the warm start loaded it but laid it over the
+  Evaluator only once a CISP restrictions version was installed, so it
+  stayed unjudged, raised nothing and its end cleared nothing. The warm
+  start now lays the direct restrictions over no CISP version, the CIS
+  stays stale, and the hooks are told, so the re-check raises
+  `restriction_activated`
+  (`TestIntegrationDirectRestrictionWarmedAfterARestartDuringTheOutage`,
+  `docs/RUNBOOKS/WP-12.md`).
 
 ### Security
 

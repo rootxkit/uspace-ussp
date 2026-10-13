@@ -247,6 +247,10 @@ func (c *Cache) Warm(ctx context.Context) {
 		c.warmErr = err.Error()
 		c.mu.Unlock()
 		c.cfg.Logger.Warn("the CIS cache could not be read from the database", obs.Err(err))
+		if es, ok := c.installWarmDirect(); ok {
+			c.project(ctx)
+			c.notify(ctx, &Version{Dataset: Restrictions}, 0, nil, es, ChangeWarm)
+		}
 		return
 	}
 	now := c.cfg.Now()
@@ -271,12 +275,39 @@ func (c *Cache) Warm(ctx context.Context) {
 		c.cfg.Logger.Info("CIS version loaded from the database", slog.String("dataset", string(v.Dataset)),
 			slog.Int64("version", v.Number), slog.Float64("age_s", sv.AgeS))
 	}
+	if es, ok := c.installWarmDirect(); ok {
+		installed = append(installed, warmed{&Version{Dataset: Restrictions}, es})
+	}
 	c.project(ctx)
 	// What changed while this process was not running is not known:
 	// every feature of every loaded version is listed.
 	for _, w := range installed {
 		c.notify(ctx, w.v, 0, nil, w.es, ChangeWarm)
 	}
+}
+
+// installWarmDirect lays the direct restrictions warmed from the store
+// over no CISP restrictions version, when none was loaded at this start
+// (a restart while the CISP is unreachable, before it was ever stored):
+// they are the ANSP's signed documents, judged whatever the CISP's age,
+// and installVersion lays them over a version only once one is loaded.
+// The restrictions stay unloaded, so the CIS stays stale. It returns
+// the entries installed, false when there was nothing to install.
+func (c *Cache) installWarmDirect() ([]*Entry, bool) {
+	lock := c.locks[Restrictions]
+	lock.Lock()
+	defer lock.Unlock()
+	c.mu.Lock()
+	if c.restrBase != nil || len(c.direct) == 0 {
+		c.mu.Unlock()
+		return nil, false
+	}
+	mv, es := c.mergedRestrictions()
+	c.mu.Unlock()
+	c.cfg.Evaluator.replace(Restrictions, mv, es)
+	c.cfg.Logger.Info("direct restrictions loaded from the database with no CISP restrictions version",
+		slog.Int("direct", len(es)))
+	return es, true
 }
 
 // Trigger asks for a pull of d after a notification; it never blocks.

@@ -220,3 +220,160 @@ func directScenario(t *testing.T, cispDown bool) {
 		t.Fatal("the CIS was fresh again before the end: the scenario did not run on a stale CIS")
 	}
 }
+
+// H-2 review, restart persistence: the api process restarts during the
+// CISP's outage, before any CISP version was stored (a first start, or
+// a CIS store that never kept one), and before the re-check of a direct
+// activation it had stored ever ran. The restarted cache loads the
+// ANSP's direct restriction from cis_direct_restrictions with no CISP
+// restrictions version under it, and it is judged: the warm start's
+// re-check raises restriction_activated for the activated intent under
+// it, the clearing pass leaves it open while the restriction is in
+// force, and the ANSP's direct end, delivered after the restart, clears
+// it resolved. The CIS stays stale throughout: the CISP's own versions
+// were never loaded at this start.
+func TestIntegrationDirectRestrictionWarmedAfterARestartDuringTheOutage(t *testing.T) {
+	g := newIntentRig(t)
+	pol := policy.Record{Version: 1, Values: policy.Defaults()}
+	pol.Values.ActivationLeadS = 7200
+	g.pol.Store(&pol)
+	conn := busConn(t, mustEnv(t, "USSP_TEST_NATS_URL"), true)
+	pub := bus.NewPublisher(conn, g.counters)
+	g.svc.Projector = intent.BusProjector{KV: g.kv, Pub: pub, Notices: geo.NoticeBus{Pub: pub, Counters: g.counters}}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	g.publishAll(nil, nil, nil)
+	number, serial, token := g.operatorWith("ussp.intents")
+	c := g.file(token, g.request(number, serial, "w-"+unique(), g.box(0.001, 0.001, 0.004)))
+	if c.status != 201 || c.str("state") != "accepted" {
+		t.Fatalf("file: %d %s", c.status, c.raw)
+	}
+	id := c.str("intent_id")
+	if r := g.stack.call("PATCH", "/v1/intents/"+id, map[string]any{"action": "activate"}, bearer(token)); r.status != 200 || r.str("state") != "activated" {
+		t.Fatalf("activate: %d %s", r.status, r.raw)
+	}
+	log := &noticeLog{}
+	stop, err := conn.Listen("alrt.v1.restriction_activated.>", func(_ string, data []byte) {
+		var m geo.NoticeMessage
+		if json.Unmarshal(data, &m) == nil {
+			log.mu.Lock()
+			log.msgs, log.at = append(log.msgs, m), append(log.at, time.Now())
+			log.mu.Unlock()
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(stop)
+	rec := &alerts.Recorder{
+		Source: &bus.StreamSource{Open: bus.PullOpener(conn.JetStream(), bus.DefaultTopology(), bus.StreamALRT, bus.PullSpec{
+			Durable: "it-direct-warm-" + unique(), FilterSubject: "alrt.v1.restriction_activated.>", MaxAckPending: 256,
+		})},
+		Store: alertstore.Store{S: appStore(t)}, Logger: quiet(),
+	}
+	go rec.Run(ctx)
+
+	// The CISP down past cis_stale_s (1 s here).
+	g.cis.fake.Down()
+	t.Cleanup(g.cis.fake.Up)
+	g.cis.staleS.Store(1)
+	stale := func() bool { _, _, st := g.cis.eval.Age(); return st }
+	within(t, 10*time.Second, stale)
+
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	u := strings.ToUpper(unique())
+	ident := "DAR" + u[len(u)-4:]
+	restrictionID := "01K6P0" + u[len(u)-12:]
+	feature := geoFeature(ident, "PROHIBITED", g.box(-0.002, -0.002, 0.01), 0, 3000, period(now, now.Add(3*time.Hour)), nil)
+	pullURL := g.cis.ansp.URL() + "/v1/restrictions/" + restrictionID + "/direct"
+	publisher := g.cis.fake.Publishers[cisp.PublisherANSP]
+	deliver := func(version int64, state, reason string) {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{
+			"schema": cis.DirectSchema, "id": restrictionID, "ansp_ref": "ansp-01:" + restrictionID, "ansp_version": version,
+			"identifier": ident, "uspace_airspace_id": "GEOTU01", "state": state, "starts_at": now.Format(time.RFC3339Nano),
+			"ends_at": now.Add(3 * time.Hour).Format(time.RFC3339Nano), "changed_at": time.Now().UTC().Format(time.RFC3339Nano),
+			"feature": feature,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sig, err := publisher.SignDetached(body, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		g.cis.ansp.ServeDirect(restrictionID, body, sig)
+		removed := []string{}
+		if reason == "restriction_ended" {
+			removed = []string{ident}
+		}
+		code, err := g.cis.ansp.Notify(ctx, g.cis.callback, restrictionID, map[string]any{
+			"schema": "cis/change/v1", "msg_id": signer.NewID(), "producer": "ansp/api", "dataset": "restrictions", "version": version,
+			"etag":        `"ansp-01:` + restrictionID + `:` + strconv.FormatInt(version, 10) + `"`,
+			"feature_ids": []string{ident}, "removed_ids": removed, "reason": reason,
+			"at": time.Now().UTC().Format(time.RFC3339Nano), "pull_url": pullURL,
+		})
+		if err != nil || code != http.StatusNoContent {
+			t.Fatalf("notify %s: %d %v", reason, code, err)
+		}
+	}
+	// The activation is stored; the process stops before its re-check
+	// runs (no hook yet), so nothing is raised before the restart.
+	deliver(2, "active", "restriction_activated")
+	within(t, 10*time.Second, func() bool {
+		return g.cis.dbCount("SELECT count(*) FROM cis_direct_restrictions WHERE identifier = $1 AND ansp_version = 2 AND state = 'active'", ident) == 1
+	})
+	if n := len(log.of(id)); n != 0 {
+		t.Fatalf("%d notices before the restart", n)
+	}
+	// The restart, during the outage, with no CISP version stored.
+	if _, err := relOwner(t).Exec(context.Background(), "DELETE FROM cis_datasets"); err != nil {
+		t.Fatal(err)
+	}
+	re := geo.NewRechecker(g.svc, nil, g.counters, quiet())
+	hook := cis.ChangeHook(re.Changed)
+	g.cis.hook.Store(&hook)
+	restarted := time.Now()
+	g.cis.restart()
+	g.svc.Decider.CIS, g.svc.Decider.Integrity, re.CIS = g.cis.eval, g.cis.cache, g.cis.eval
+	go re.Run(ctx)
+	within(t, 10*time.Second, func() bool { return len(log.of(id)) == 1 })
+	log.mu.Lock()
+	t.Logf("warmed direct restriction %s: restart to restriction_activated on the bus %v", ident, log.at[0].Sub(restarted))
+	log.mu.Unlock()
+	raised := log.of(id)[0]
+	if raised.Body.State != geo.StateRaised || raised.Body.Severity != core.SeverityCritical {
+		t.Fatalf("raised %+v", raised.Body)
+	}
+	if v := g.cis.version(cis.Restrictions); v != 0 || !stale() || g.cis.eval.RestrictionLift(ident) != cis.LiftInForce {
+		t.Fatalf("after the restart: CISP restrictions version %d, stale %v, lift %v", v, stale(), g.cis.eval.RestrictionLift(ident))
+	}
+	db := relOwner(t)
+	within(t, 10*time.Second, func() bool {
+		return count(t, db, "SELECT count(*) FROM alerts WHERE id = $1::uuid AND cleared_at IS NULL", raised.Body.AlertID) == 1
+	})
+	svc := &alerts.Service{Store: alertstore.Store{S: appStore(t)}, Bus: pub, Restrictions: g.cis.cache, Logger: quiet()}
+	if _, err := svc.ClearLiftedNotices(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(log.of(id)); n != 1 {
+		t.Fatalf("the clearing pass touched an alert whose warmed restriction is in force: %d messages", n)
+	}
+	// The ANSP's direct end, after the restart, still without the CISP.
+	deliver(3, "ended", "restriction_ended")
+	within(t, 10*time.Second, func() bool { return g.cis.eval.RestrictionLift(ident) == cis.LiftEnded })
+	if n, err := svc.ClearLiftedNotices(ctx); err != nil || n < 1 {
+		t.Fatalf("cleared on the direct end: %d %v", n, err)
+	}
+	within(t, 10*time.Second, func() bool {
+		return count(t, db, "SELECT count(*) FROM alerts WHERE id = $1::uuid AND cleared_at IS NOT NULL AND clear_reason = 'resolved'",
+			raised.Body.AlertID) == 1
+	})
+	ms := log.of(id)
+	if last := ms[len(ms)-1]; last.Body.AlertID != raised.Body.AlertID || last.Body.State != "cleared" {
+		t.Fatalf("clear on the bus %+v", last.Body)
+	}
+	if !stale() {
+		t.Fatal("the CIS was fresh again before the end: the scenario did not run during the outage")
+	}
+}
