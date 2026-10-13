@@ -50,7 +50,11 @@ schema versions, KV keys. It fails on a file that differs, a failed
 restore, a schema version other than the manifest's, a KV export with
 another number of keys or of buckets holding keys than the manifest's
 (`kv.keys`, `kv.buckets_with_keys`; a manifest without the latter, from
-before that check, is refused), a KV value that does not decode, or
+before that check, is refused), a backup that exported another number
+of buckets than the topology has (`kv.buckets` against
+`deploy/nats-kv-buckets.txt`, which `TestKVBucketListIsTheTopologys` holds
+to `internal/bus`) or a key of a bucket it does not name, a KV value that
+does not decode (the KV checks run before any database is touched), or
 counts other than `RESTORE_CHECK_EXPECT`. The scratch
 databases are dropped afterwards, also on failure, and their absence is
 checked. They take about the databases' size again, for the length of the

@@ -159,3 +159,30 @@ func TestNATSStagingBackupUser(t *testing.T) {
 		t.Errorf("the backup user may delete a consumer: %v", d)
 	}
 }
+
+// deploy/nats-kv-buckets.txt is the topology's KV buckets, one name a
+// line, read by deploy/restore-check.sh: the number of buckets a backup
+// exported is checked against it, not against the backup's own files.
+// A bucket added to the topology and not to the file, or one the file
+// names and the topology has not, fails here.
+func TestKVBucketListIsTheTopologys(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "deploy", "nats-kv-buckets.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed []string
+	for _, l := range strings.Split(strings.ReplaceAll(string(b), "\r", ""), "\n") {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			listed = append(listed, l)
+		}
+	}
+	var want []string
+	for _, bk := range TopologyOf(config.Config{}).Buckets {
+		want = append(want, bk.Bucket)
+	}
+	slices.Sort(listed)
+	slices.Sort(want)
+	if !slices.Equal(listed, want) {
+		t.Errorf("deploy/nats-kv-buckets.txt lists %v, the topology has %v", listed, want)
+	}
+}

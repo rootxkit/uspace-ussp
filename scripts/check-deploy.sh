@@ -272,6 +272,50 @@ else
   docker rm -f "$(docker ps -aq --filter "label=com.docker.compose.project=$tproject")" >/dev/null 2>&1 || true
 fi
 
+# ---- restore-check.sh: the KV export against the topology -------------------
+
+# The number of buckets a backup exported is checked against the
+# topology's (deploy/nats-kv-buckets.txt), before any database is
+# touched: a manifest that records one bucket more than the topology has
+# is refused, as is an export with a bucket the topology does not name;
+# the backup that matches gets past the check and stops at the next step
+# (no timescaledb container runs here: the presence that makes the
+# refusals mean something).
+rbk="$work/restore-kv"
+mkdir -p "$rbk"
+topo_n="$(grep -cvE '^[[:space:]]*(#|$)' deploy/nats-kv-buckets.txt)"
+first_bucket="$(grep -vE '^[[:space:]]*(#|$)' deploy/nats-kv-buckets.txt | head -n 1 | tr -d '\r')"
+rstamp=20261014T000000Z
+kv_backup() { # <dir> <buckets recorded> <bucket of the one key>
+  local d="$1" n="$2" b="$3" f bytes sum
+  rm -rf "$d"; mkdir -p "$d"
+  printf 'relational' > "$d/ussp_relational-$rstamp.dump"
+  printf 'timeseries' > "$d/ussp_timeseries-$rstamp.dump"
+  jq -cn --arg b "$b" '{bucket: $b, key: "k", value_b64: "dg=="}' > "$d/nats-kv-$rstamp.jsonl"
+  jq -n --arg s "$rstamp" --argjson n "$n" '{stamp: $s, schema: {relational: 1, timeseries: 1}, kv: {keys: 1, buckets: $n, buckets_with_keys: 1}, files: {}}' > "$d/m.json"
+  for f in "ussp_relational-$rstamp.dump" "ussp_timeseries-$rstamp.dump" "nats-kv-$rstamp.jsonl"; do
+    bytes="$(wc -c < "$d/$f" | tr -d ' ')"
+    sum="$(sha256sum "$d/$f" | cut -d' ' -f1)"
+    jq --arg f "$f" --argjson b "$bytes" --arg s "$sum" '.files[$f] = {bytes: $b, sha256: $s}' "$d/m.json" > "$d/m2.json"
+    mv "$d/m2.json" "$d/m.json"
+  done
+  mv "$d/m.json" "$d/manifest-$rstamp.json"
+}
+restore_kv() { # <label> <expected text> <buckets recorded> <bucket of the key>
+  local label="$1" want="$2" rc=0 out
+  kv_backup "$rbk/b" "$3" "$4"
+  out="$(USSP_COMPOSE_PROJECT="uspace-ussp-restore-check-$$" deploy/restore-check.sh "$rbk/b" 2>&1)" || rc=$?
+  if [ "$rc" -ne 0 ] && grep -qF -- "$want" <<<"$out"; then
+    ok "restore-check.sh: $label (exit $rc: $want)"
+  else
+    bad "restore-check.sh: $label: exit $rc, want '$want': $(tail -n 2 <<<"$out" | tr '\n' ' ')"
+  fi
+}
+restore_kv "a backup with one bucket more than the topology is refused" "the topology has $topo_n" "$((topo_n + 1))" "$first_bucket"
+restore_kv "a backup with one bucket fewer than the topology is refused" "the topology has $topo_n" "$((topo_n - 1))" "$first_bucket"
+restore_kv "a key of a bucket the topology does not name is refused" "not a bucket of the topology" "$topo_n" "not_a_bucket"
+restore_kv "the topology's bucket count gets past the check" "no running timescaledb container" "$topo_n" "$first_bucket"
+
 # ---- the Caddy snippet -------------------------------------------------------
 
 # The proof against the pinned Caddy, then against the snippet with the
