@@ -246,9 +246,9 @@ services:
       # USSP_CERTIFICATE_ID, the authority's id of this USSP's certificate
       # (Art. 7(6) notices): copied from the authority's issue answer by
       # uspace-deploy's scripts/ussp-certificate.sh, never written by
-      # hand. Optional to compose so a first deploy renders before the
-      # certificate is issued; deploy.sh checks the file when it is there
-      # and says so when it is not.
+      # hand. Optional to compose so the model renders before the
+      # certificate is issued; deploy.sh refuses a deploy without it
+      # unless --without-certificate says so, and checks its form.
       - path: ${USSP_SECRETS_DIR}/certificate.env
         required: false
     environment:

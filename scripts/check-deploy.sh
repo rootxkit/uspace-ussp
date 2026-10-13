@@ -205,7 +205,25 @@ rm "$work/pre-secrets/backup.env"
 preflight "an incomplete secrets directory is refused" "missing: backup.env" "" ""
 cp "$work/secrets/backup.env" "$work/pre-secrets/backup.env"
 preflight "--unsigned-local-images with a registry image is refused" "a registry image is always verified" "" "" --unsigned-local-images
-preflight "a complete preflight passes, then the probes find nothing running" "preflight: renders" "" ""
+preflight "a complete preflight passes, then the probes find nothing running" "preflight: renders" "" "" --without-certificate
+# The certificate wiring, in the files scripts/ussp-certificate.sh
+# (uspace-deploy) writes: certificate.env as "USSP_CERTIFICATE_ID=<id>\n",
+# keys/client.secret without a newline.
+cert_id=0123456789abcdef0123456789abcdef
+secret_line='s#^\# USSP_TOKEN_CLIENT_SECRET_FILE=#USSP_TOKEN_CLIENT_SECRET_FILE=#'
+preflight "no certificate is refused and names the script" "scripts/ussp-certificate.sh ANSWER.json" "" ""
+preflight "--without-certificate passes the preflight and says so" "certificate none (--without-certificate)" "" "" --without-certificate
+printf 'USSP_CERTIFICATE_ID=%s\n' "${cert_id^^}" > "$work/pre-secrets/certificate.env"
+preflight "a certificate id not in the authority's form is refused" "certificate.env must hold one line" "" ""
+printf 'USSP_CERTIFICATE_ID=%s\n' "$cert_id" > "$work/pre-secrets/certificate.env"
+preflight "the certificate id reaches api" "certificate $cert_id" "" ""
+printf 'a-client-secret-of-the-authority' > "$work/pre-secrets/keys/client.secret"
+preflight "a client secret the settings do not name is refused" "no outgoing call would use it" "" ""
+preflight "the client secret named by the settings is read by the four callers" "outgoing calls as ussp-STG01-01" "$secret_line" ""
+rm "$work/pre-secrets/keys/client.secret"
+preflight "a client secret named but missing is refused" "keys/client.secret is missing or empty" "$secret_line" ""
+printf 'a-client-secret-of-the-authority' > "$work/pre-secrets/keys/client.secret"
+
 for ref in ghcr.io/rootxkit/uspace-ussp:latest "ghcr.io/other/uspace-ussp@sha256:$(printf '0%.0s' {1..64})"; do
   rc=0
   out="$(deploy/verify-image.sh "$ref" 2>&1)" || rc=$?

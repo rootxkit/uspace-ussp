@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # the jq programs name their own $variables
 # Deploys uspace-ussp with deploy/compose/staging.yaml and says what it
 # verified (WP-20; LESSONS E-02: a deploy that reports success while
 # doing nothing is worse than a failure). The deploy is the owner's act:
@@ -7,7 +8,7 @@
 #   deploy/deploy.sh --env-file <deployment env> [--env-file <more>]... \
 #                    [--project uspace-ussp] [-f <extra compose file>]... \
 #                    [--verify-only] [--strict] [--accept <service>:<dependency>]... \
-#                    [--unsigned-local-images]
+#                    [--without-certificate] [--unsigned-local-images]
 #
 # The env files give compose its variables (deploy/compose/deploy.env.
 # example: the images by digest, USSP_HOST, the settings file, the
@@ -19,6 +20,10 @@
 #      runs the one image; the secrets directory is complete
 #      (gen-secrets.sh --check); the settings file sets no secret and an
 #      authority-form USSP_SYSTEM_ID; the geoid grid it names is there;
+#      the authority's certificate is wired as uspace-deploy's
+#      scripts/ussp-certificate.sh writes it (certificate.env with the
+#      id; keys/client.secret exactly when the settings name it), or
+#      --without-certificate says it is not issued yet;
 #   2. verifies both images' cosign signatures and SBOM attestations
 #      (deploy/verify-image.sh), then pulls them by those digests;
 #   3. starts the database and NATS and waits for their health checks;
@@ -63,6 +68,7 @@ project=uspace-ussp
 mode=deploy
 strict=0
 unsigned=0
+without_certificate=0
 env_files=()
 extra_files=()
 accept=()
@@ -75,6 +81,7 @@ while [ "$#" -gt 0 ]; do
     --strict) strict=1 ;;
     --accept) accept+=("${2:?--accept needs <service>:<dependency>}"); shift ;;
     --unsigned-local-images) unsigned=1 ;;
+    --without-certificate) without_certificate=1 ;;
     *) echo "deploy: unknown argument $1" >&2; exit 2 ;;
   esac
   shift
@@ -115,7 +122,6 @@ if ! err="$(dc config --quiet 2>&1)"; then
   fail "compose does not render: $err"
 fi
 rendered="$(dc config --format json)"
-# shellcheck disable=SC2016 # jq variables
 image_of() { printf '%s' "$rendered" | jqr --arg s "$1" '.services[$s].image // ""'; }
 go_image="$(image_of api)"
 web_image="$(image_of web)"
@@ -150,7 +156,50 @@ if [ -n "$geoid" ]; then
     *) fail "USSP_GEOID_FILE $geoid is not under /srv/ground (USSP_GROUND_DIR)" ;;
   esac
 fi
-verified+=("preflight: renders, images by one reference each, secrets complete, settings hold no secret, USSP_SYSTEM_ID=$code")
+
+# The authority's certificate (Art. 7(6) notices; M8, audit M-6), as
+# uspace-deploy's scripts/ussp-certificate.sh writes it from the issue
+# answer: certificate.env holds USSP_CERTIFICATE_ID=<32 hex> and nothing
+# else, and keys/client.secret the secret of ussp-<code>-01 when the
+# client authenticates with a secret. The settings name that file in
+# USSP_TOKEN_CLIENT_SECRET_FILE exactly when it is there: a file without
+# the line is a secret no process reads (no outgoing call is ever made),
+# a line without the file a process that refuses to start.
+cert_file="$secrets/certificate.env"
+if [ -e "$cert_file" ]; then
+  [ -r "$cert_file" ] || fail "cannot read $cert_file"
+  if ! grep -qxE 'USSP_CERTIFICATE_ID=[0-9a-f]{32}' "$cert_file" || [ "$(grep -cv '^[[:space:]]*$' "$cert_file")" -ne 1 ]; then
+    fail "certificate.env must hold one line USSP_CERTIFICATE_ID=<the authority's 32 hexadecimal characters>, as scripts/ussp-certificate.sh writes it"
+  fi
+  cert_id="$(sed -n 's/^USSP_CERTIFICATE_ID=//p' "$cert_file")"
+  [ "$(printf '%s' "$rendered" | jqr '.services.api.environment.USSP_CERTIFICATE_ID // ""')" = "$cert_id" ] ||
+    fail "api does not get USSP_CERTIFICATE_ID from certificate.env"
+  log "certificate $cert_id named by the operating-status notices"
+elif [ "$without_certificate" -eq 1 ]; then
+  log "NO CERTIFICATE: --without-certificate; USSP_CERTIFICATE_ID is unset and no Art. 7(6) notice can be sent (api's /readyz says so)"
+  cert_id="none (--without-certificate)"
+else
+  fail "no certificate.env in $secrets: issue this USSP's certificate at the authority (code $code), then uspace-deploy's scripts/ussp-certificate.sh ANSWER.json; --without-certificate deploys without it"
+fi
+secret_setting="$(printf '%s' "$rendered" | jqr '.services.api.environment.USSP_TOKEN_CLIENT_SECRET_FILE // ""')"
+if [ -n "$secret_setting" ]; then
+  case "$secret_setting" in
+    /run/secrets/ussp/?*) host_secret="$secrets/keys/${secret_setting#/run/secrets/ussp/}" ;;
+    *) fail "USSP_TOKEN_CLIENT_SECRET_FILE $secret_setting is not under /run/secrets/ussp (the secrets directory's keys/)" ;;
+  esac
+  [ -s "$host_secret" ] || fail "USSP_TOKEN_CLIENT_SECRET_FILE names $secret_setting but ${host_secret#"$secrets"/} is missing or empty (scripts/ussp-certificate.sh writes it)"
+  [ "$(wc -l < "$host_secret" | tr -d ' ')" -le 1 ] || fail "${host_secret#"$secrets"/} holds more than one line"
+  for s in api rid-sp monitor dss-sync; do
+    [ "$(printf '%s' "$rendered" | jqr --arg s "$s" '.services[$s].environment.USSP_TOKEN_CLIENT_SECRET_FILE // ""')" = "$secret_setting" ] ||
+      fail "$s does not read the client secret ($s makes outgoing calls)"
+  done
+  log "outgoing calls as ussp-$code-01 with the secret in ${host_secret#"$secrets"/}"
+elif [ -e "$secrets/keys/client.secret" ]; then
+  fail "keys/client.secret is there but the settings do not set USSP_TOKEN_CLIENT_SECRET_FILE=/run/secrets/ussp/client.secret: no outgoing call would use it"
+else
+  log "NO OUTGOING TOKEN CLIENT: USSP_TOKEN_CLIENT_SECRET_FILE is unset (no call to the authority, the CISP, the ANSP or the DSS can be made; each process's /readyz says so)"
+fi
+verified+=("preflight: renders, images by one reference each, secrets complete, settings hold no secret, USSP_SYSTEM_ID=$code, certificate $cert_id")
 
 # ---- 2. signatures, then pull by digest -------------------------------------
 
