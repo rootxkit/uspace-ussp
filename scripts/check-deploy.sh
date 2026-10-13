@@ -174,6 +174,26 @@ if [ -z "$secret_set" ]; then ok "the settings example sets no DSN, credential o
 code="$(sed -n 's/^USSP_SYSTEM_ID=//p' deploy/compose/ussp.env.example)"
 if [[ "$code" =~ ^[A-Z0-9]{1,8}$ ]]; then ok "USSP_SYSTEM_ID=$code is an authority code"; else bad "USSP_SYSTEM_ID=$code is not an authority code (A-Z, 0-9, at most 8)"; fi
 
+# ---- the Caddy snippet -------------------------------------------------------
+
+# The proof against the pinned Caddy, then against the snippet with the
+# /metrics and /readyz refusal removed, which must fail and name them.
+if out="$(deploy/caddy/proof.sh 2>&1)"; then
+  ok "$(tail -n 1 <<<"$out") (deploy/caddy/proof.sh)"
+else
+  bad "the Caddy proof:"; grep -E '^FAIL|^proof:' <<<"$out" >&2
+fi
+perl -0pe 's/\@internal path[^\n]*\n\thandle \@internal \{\n\t\trespond 404\n\t\}\n//' deploy/caddy/ussp.caddy > "$work/no-internal.caddy"
+if cmp -s deploy/caddy/ussp.caddy "$work/no-internal.caddy"; then
+  bad "the mutation of the snippet changed nothing"
+elif out="$(PROOF_SNIPPET="$work/no-internal.caddy" PROOF_PORT=58455 deploy/caddy/proof.sh 2>&1)"; then
+  bad "the Caddy proof passes a snippet that routes /metrics and /readyz"
+elif grep -q '^FAIL   internal: /metrics' <<<"$out" && grep -q '^FAIL   internal: /readyz' <<<"$out"; then
+  ok "the Caddy proof fails a snippet that routes /metrics and /readyz, and names them"
+else
+  bad "the Caddy proof fails the mutated snippet for another reason:"; grep -E '^FAIL' <<<"$out" >&2
+fi
+
 # ---- shellcheck --------------------------------------------------------------
 
 # The pinned v0.10.0 in a container (the same version everywhere), or
