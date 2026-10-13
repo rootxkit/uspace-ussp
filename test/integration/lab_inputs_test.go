@@ -83,9 +83,9 @@ func TestLabWP14Inputs(t *testing.T) {
 	if err := json.Unmarshal(raw, &all); err != nil {
 		t.Fatal(err)
 	}
-	ours := all["ussp-USSP-DEV-01"]
+	ours := all["ussp-DEV01-01"]
 	if strings.TrimSpace(ours) == "" {
-		t.Fatal("no secret for ussp-USSP-DEV-01")
+		t.Fatal("no secret for ussp-DEV01-01")
 	}
 	secretFile := filepath.Join(t.TempDir(), "secret")
 	if err := os.WriteFile(secretFile, []byte(strings.TrimSpace(ours)), 0o600); err != nil {
@@ -159,7 +159,7 @@ func TestLabWP14Inputs(t *testing.T) {
 	_ = ridAddr
 	monAddr, _, monLogs := runLogged(t, monitor.SpecWith(monitor.Options{}), map[string]string{
 		"USSP_MONITOR_ADDR": "127.0.0.1:0", "USSP_NATS_URL": mustEnv(t, "USSP_TEST_NATS_URL"),
-		"USSP_TOKEN_ISSUERS": issuers, "USSP_TOKEN_CLIENT_SECRET_FILE": secretFile, "USSP_SYSTEM_ID": "USSP-DEV",
+		"USSP_TOKEN_ISSUERS": issuers, "USSP_TOKEN_CLIENT_SECRET_FILE": secretFile, "USSP_SYSTEM_ID": "DEV01",
 		"USSP_ANSP_STREAM_URL": "ws://ansp:8091/v1/manned-traffic/stream", "USSP_MTLS_MODE": "off",
 		"USSP_ADSB_SOURCE": "http://127.0.0.1:8092/data/aircraft.json", "USSP_ADSB_RECEIVER_ID": "lab-rx-1",
 		"USSP_DSS_BASE_URL": dssURL, "USSP_USS_BASE_URL": "http://" + self + ":8095",

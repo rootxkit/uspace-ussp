@@ -26,7 +26,7 @@
  "fixtures": {
   "now": "2026-11-01T12:00:00Z",
   "undulation_m": 20,
-  "system_id": "USSP-DEV",
+  "system_id": "DEV01",
   "request": {
    "client_ref": "ref-1",
    "uas_serial": "TEST0001",

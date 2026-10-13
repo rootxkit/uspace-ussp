@@ -41,7 +41,7 @@ func TestIntegrationStatusNotices(t *testing.T) {
 		t.Fatal(err)
 	}
 	newSvc := func() *status.Service {
-		return &status.Service{Store: statusstore.Store{S: appStore(t)}, Authority: client, CertificateID: cert, SystemID: "USSP-DEV",
+		return &status.Service{Store: statusstore.Store{S: appStore(t)}, Authority: client, CertificateID: cert, SystemID: "DEV01",
 			Counters: &core.Counters{}, Logger: quiet()}
 	}
 	s := newSvc()
@@ -157,7 +157,7 @@ func TestIntegrationStatusConcurrentRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 	cert := hex.EncodeToString(b[:])
-	svc := &status.Service{Store: statusstore.Store{S: appStore(t)}, CertificateID: cert, SystemID: "USSP-DEV",
+	svc := &status.Service{Store: statusstore.Store{S: appStore(t)}, CertificateID: cert, SystemID: "DEV01",
 		Counters: &core.Counters{}, Logger: quiet()}
 	if _, _, err := svc.Request(ctx, "staff-0", status.KindStart); err != nil {
 		t.Fatal(err)

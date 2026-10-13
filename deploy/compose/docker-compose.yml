@@ -30,7 +30,7 @@ x-go: &go
 
 x-env: &env
   USSP_LOG_LEVEL: ${USSP_LOG_LEVEL:-info}
-  USSP_SYSTEM_ID: ${USSP_SYSTEM_ID:-USSP-DEV}
+  USSP_SYSTEM_ID: ${USSP_SYSTEM_ID:-DEV01}
   USSP_MTLS_MODE: ${USSP_MTLS_MODE:-off}
 
 services:
