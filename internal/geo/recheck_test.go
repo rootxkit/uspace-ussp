@@ -22,7 +22,7 @@ import (
 // an intent with no cell or a bus that fails is an error.
 func TestNoticeBusPublishesAValidAlert(t *testing.T) {
 	at := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
-	no := "USSP-DEV-GEOTESTOP0001-X"
+	no := "DEV01-GEOTESTOP0001-X"
 	c5, _, err := cell.Key(core.LatLon{LatDeg: 41.705, LonDeg: 44.805})
 	if err != nil {
 		t.Fatal(err)

@@ -123,7 +123,7 @@ type rig struct {
 func newRig(t *testing.T, s *ZoneSet) *rig {
 	g := &rig{t: t, tr: NewTracker(nil), pol: policy.Record{Version: 7, Values: policy.Defaults()},
 		clk: time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC), flight: "0b1d6a52-9b62-4b5e-9f0d-3f1c2a4b5c6d"}
-	g.ref = Ref{FlightID: g.flight, IntentID: "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f", AuthorisationNumber: "USSP-DEV-GEO-TEST-01-X", Cell5: "c5:4180:4470"}
+	g.ref = Ref{FlightID: g.flight, IntentID: "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f", AuthorisationNumber: "DEV01-GEO-TEST-01-X", Cell5: "c5:4180:4470"}
 	if evs := g.tr.Configure(s, g.pol, g.clk); len(evs) != 0 {
 		t.Fatalf("first configure: %v", evs)
 	}

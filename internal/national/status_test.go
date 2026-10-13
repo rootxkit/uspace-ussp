@@ -34,7 +34,7 @@ func (s *statusSvc) List(context.Context) ([]gen.StatusNotice, error) { return s
 
 func notice() gen.StatusNotice {
 	return gen.StatusNotice{Kind: "start", At: time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC), CertificateId: "0123456789abcdef0123456789abcdef",
-		Reference: "USSP-DEV:status:start:1", RequestedBy: "staff-1", State: "pending"}
+		Reference: "DEV01:status:start:1", RequestedBy: "staff-1", State: "pending"}
 }
 
 // GET and POST /v1/admin/status: the list with the certificate id; 201

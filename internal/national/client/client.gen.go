@@ -4315,6 +4315,9 @@ type ClientInterface interface {
 	// upgrade from an allowed Origin with a session cookie that is
 	// refused or with no credential at all, is accepted and closed
 	// with 4401 (sign in again, M22), which a browser can read.
+	// While traffic-ws's NATS link is down the stream is closed with
+	// 1013 at its next status frame, and one opened then is closed
+	// with 1013 before its first (spec 05 §6).
 	// Server to client, in the common envelope:
 	// console/status/v1 on connect and every 2 s, every alert/v1 of the
 	// intent's flight as it comes (conformance and proximity alerts,
@@ -4647,6 +4650,10 @@ type ClientInterface interface {
 	// upgrade from an allowed Origin with a session cookie that is
 	// refused or with no credential at all, is accepted and closed
 	// with 4401 (sign in again, M22), which a browser can read.
+	// While traffic-ws's NATS link is down it receives no track or
+	// alert, so the stream is closed with 1013 at its next status
+	// frame, and one opened then is closed with 1013 before its first
+	// (spec 05 §6: the console freezes with its age shown).
 	//
 	// Server to client, every frame in the common envelope with a body
 	// named by schema (M29): console/status/v1 on connect and every
@@ -5968,6 +5975,9 @@ func (c *Client) RequestStatusNotice(ctx context.Context, body RequestStatusNoti
 // upgrade from an allowed Origin with a session cookie that is
 // refused or with no credential at all, is accepted and closed
 // with 4401 (sign in again, M22), which a browser can read.
+// While traffic-ws's NATS link is down the stream is closed with
+// 1013 at its next status frame, and one opened then is closed
+// with 1013 before its first (spec 05 §6).
 // Server to client, in the common envelope:
 // console/status/v1 on connect and every 2 s, every alert/v1 of the
 // intent's flight as it comes (conformance and proximity alerts,
@@ -6480,6 +6490,10 @@ func (c *Client) PostTelemetryBatch(ctx context.Context, body PostTelemetryBatch
 // upgrade from an allowed Origin with a session cookie that is
 // refused or with no credential at all, is accepted and closed
 // with 4401 (sign in again, M22), which a browser can read.
+// While traffic-ws's NATS link is down it receives no track or
+// alert, so the stream is closed with 1013 at its next status
+// frame, and one opened then is closed with 1013 before its first
+// (spec 05 §6: the console freezes with its age shown).
 //
 // Server to client, every frame in the common envelope with a body
 // named by schema (M29): console/status/v1 on connect and every
@@ -9628,6 +9642,9 @@ type ClientWithResponsesInterface interface {
 	// upgrade from an allowed Origin with a session cookie that is
 	// refused or with no credential at all, is accepted and closed
 	// with 4401 (sign in again, M22), which a browser can read.
+	// While traffic-ws's NATS link is down the stream is closed with
+	// 1013 at its next status frame, and one opened then is closed
+	// with 1013 before its first (spec 05 §6).
 	// Server to client, in the common envelope:
 	// console/status/v1 on connect and every 2 s, every alert/v1 of the
 	// intent's flight as it comes (conformance and proximity alerts,
@@ -9982,6 +9999,10 @@ type ClientWithResponsesInterface interface {
 	// upgrade from an allowed Origin with a session cookie that is
 	// refused or with no credential at all, is accepted and closed
 	// with 4401 (sign in again, M22), which a browser can read.
+	// While traffic-ws's NATS link is down it receives no track or
+	// alert, so the stream is closed with 1013 at its next status
+	// frame, and one opened then is closed with 1013 before its first
+	// (spec 05 §6: the console freezes with its age shown).
 	//
 	// Server to client, every frame in the common envelope with a body
 	// named by schema (M29): console/status/v1 on connect and every
@@ -15332,6 +15353,9 @@ func (c *ClientWithResponses) RequestStatusNoticeWithResponse(ctx context.Contex
 // upgrade from an allowed Origin with a session cookie that is
 // refused or with no credential at all, is accepted and closed
 // with 4401 (sign in again, M22), which a browser can read.
+// While traffic-ws's NATS link is down the stream is closed with
+// 1013 at its next status frame, and one opened then is closed
+// with 1013 before its first (spec 05 §6).
 // Server to client, in the common envelope:
 // console/status/v1 on connect and every 2 s, every alert/v1 of the
 // intent's flight as it comes (conformance and proximity alerts,
@@ -15794,6 +15818,10 @@ func (c *ClientWithResponses) PostTelemetryBatchWithResponse(ctx context.Context
 // upgrade from an allowed Origin with a session cookie that is
 // refused or with no credential at all, is accepted and closed
 // with 4401 (sign in again, M22), which a browser can read.
+// While traffic-ws's NATS link is down it receives no track or
+// alert, so the stream is closed with 1013 at its next status
+// frame, and one opened then is closed with 1013 before its first
+// (spec 05 §6: the console freezes with its age shown).
 //
 // Server to client, every frame in the common envelope with a body
 // named by schema (M29): console/status/v1 on connect and every

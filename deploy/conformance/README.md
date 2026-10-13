@@ -62,7 +62,7 @@ left running (`make conformance-down` removes it and checks nothing is
 left); otherwise it is removed after the run, also after a failure.
 
 The safety check of the profile: a target whose `USSP_SYSTEM_ID` (the
-lab's `USSP-DEV`, or `USSP_CONFORMANCE_SYSTEM_ID`) contains neither
+lab's `DEV01`, or `USSP_CONFORMANCE_SYSTEM_ID`) contains neither
 `TEST` nor `DEV` is refused before anything starts. Nothing in the stack
 reaches an aircraft.
 

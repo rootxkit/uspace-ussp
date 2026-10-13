@@ -105,7 +105,7 @@ jobs:
       # GOLANGCI_LINT_VERSION (equal to uspace-core's); change both in
       # one `ci:` commit.
       - name: staticcheck
-        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:

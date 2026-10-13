@@ -51,8 +51,12 @@ type Entry struct {
 	Requirements        *Requirements
 	RequirementsProblem string
 	// Restriction is the CISP's cis_restriction of a restrictions
-	// feature (its state); nil elsewhere or when absent.
+	// feature (its state); nil elsewhere or when absent. For a direct
+	// restriction it is built from the ANSP's restriction/direct/v1.
 	Restriction *cispclient.CisRestriction
+	// Direct is true for a restriction from the ANSP's degraded direct
+	// path that the CISP does not hold yet (direct.go).
+	Direct bool
 }
 
 // Requirements is cis/uspace_requirements/v1 as the generated type reads
