@@ -17,6 +17,14 @@ name: conformance
 # pass: each is a warning annotation "not checked (not a pass)" with its
 # reason, and the report's verdict stays incomplete. Nothing here writes
 # anywhere but the runner.
+#
+# WP-21: the stack also runs the test-interfaces process (the testif
+# image, built from this commit) and the hook runs the lab's
+# uss_qualifier f3411-sp.yaml, f3548-scd.yaml and f3411-dp.yaml with its
+# mock USS against it, folding the reports into the run; the qualifier
+# input off runs the national suite alone. The F3548 run is long (the
+# lab's QUALIFIER_TIMEOUT_S, 3600 s, bounds one run): the step's timeout
+# is raised for it, and its reports are uploaded with the others.
 on:
   workflow_dispatch:
     inputs:
@@ -29,6 +37,11 @@ on:
         type: choice
         options: ["off", "on"]
         default: "off"
+      qualifier:
+        description: "Run uss_qualifier F3411-SP, F3548-SCD and F3411-DP against the test interfaces (WP-21)"
+        type: choice
+        options: ["on", "off"]
+        default: "on"
   push:
     tags: ["v*"]
 
@@ -50,7 +63,9 @@ jobs:
   conformance:
     name: lab conformance suite
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The national suite takes minutes; uss_qualifier's three runs up to
+    # QUALIFIER_TIMEOUT_S each (the step's bound below).
+    timeout-minutes: 200
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: read deploy/conformance/SOURCE
@@ -85,10 +100,13 @@ jobs:
           mv "$RUNNER_TEMP/geoid/geoids/egm2008-2_5.pgm" local/conformance/ground/
           echo "$GEOID_PGM_SHA256  local/conformance/ground/egm2008-2_5.pgm" | sha256sum -c -
       - name: make conformance
+        timeout-minutes: 190
         env:
           LAB_DIR: ${{ github.workspace }}/lab
           USSP_CONFORMANCE_AUTHORITY_PUSH: ${{ inputs.authority_push || 'off' }}
           CONFORMANCE_ALLOW_INCOMPLETE: ${{ inputs.allow_incomplete && '1' || '' }}
+          CONFORMANCE_QUALIFIER: ${{ inputs.qualifier || 'on' }}
+          QUALIFIER_TIMEOUT_S: "3600"
         run: make conformance
       - name: reports
         if: always()
