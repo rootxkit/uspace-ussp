@@ -296,6 +296,16 @@ stack_up() {
     { cat "$state/check-images.log" >&2; die "the image check failed (above)"; }
   say "test-interfaces image $testif_image ($testif_image_id); the image under test has no ussp-test-interfaces"
 
+  # What the seeds created lives in the stack's databases, which a run
+  # removes (down -v): on a stack with no volume yet, the records of an
+  # earlier run's seeds (the lab's seed-state.json, the test operator's
+  # client, secret and sessions) name rows that no longer exist, and the
+  # seeds would skip creating them. They are removed; the keys, the CA
+  # and the passwords the stack is started with are kept.
+  if [ -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$project")" ]; then
+    rm -f "$state/demo/seed-state.json"
+    rm -rf "$testif_state"
+  fi
   mkdir -p "$state/demo" "$state/issuer/public"
   # The lab's demo.env with this run's values: the state outside the lab
   # checkout, the ground directory, the port, the image. Overridden keys
