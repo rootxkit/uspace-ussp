@@ -133,11 +133,14 @@ What remains: `F3548-CP` has no requirement set in the pinned
 `uss_qualifier` (the lab's `coverage.yaml`). `NAT-PRECONDITION` and
 `REG-NOPII` need fixtures the stack does not create (an operator token
 and an existing resource with its ETag). F3411-SP and F3548-SCD run but
-do not pass yet: the test operator is not validated by a registry in the
-stack (the lab's fixtures), and the lab's qualifier environment lacks a
-scope v0.36.0 needs (`docs/RUNBOOKS/WP-21.md` R1 to R3); the baseline
-keeps them not applicable until a run shows them pass, so a run with
-the qualifier on exits 1 today.
+do not pass yet: R1 to R3 (the lab's) are resolved, and what fails now
+is this repository's test interfaces (`docs/RUNBOOKS/WP-21.md` R6 to
+R8). The baseline records both as known failures with the checks that
+fail, so a run with the qualifier on exits 0 while they fail only those
+checks and pass at least the minimum `exercised.json` records, and
+names each "KNOWN FAILING, NOT A PASS"; a refused injection
+(`UpsertTestSuccess`) is not among the accepted checks, and a run below
+a minimum exits 1.
 
 ## The reviewed baseline: not checked is never a pass
 
@@ -150,12 +153,23 @@ the run incomplete (exit 3), and one that passed in it and does not
 pass now is a regression (exit 1). Without it a release tag's run could
 never be green while Q34 is open.
 
-It accepts, each with its note: `F3411-SP` and `F3548-SCD`, **blocked
-by the owner decision Q34**; `F3548-CP` (nothing upstream to run);
-`NAT-PRECONDITION` and `REG-NOPII` (fixtures, open). None of them is a
-pass: the report's verdict stays `incomplete`, and the hook prints
-`NOT CHECKED, NOT A PASS: <id>: <note>` for each, as a warning
-annotation in the workflow and in `run-info.txt`. The hook refuses a
-baseline that records a requirement not applicable without a note. A
+It accepts not applicable, each with its note: `F3548-CP` (nothing
+upstream to run); `NAT-PRECONDITION` and `REG-NOPII` (fixtures, open).
+None of them is a pass: the report's verdict stays `incomplete`, and the
+hook prints `NOT CHECKED, NOT A PASS: <id>: <note>` for each, as a
+warning annotation in the workflow and in `run-info.txt`. It records
+`F3411-SP` and `F3548-SCD` (run against the test interfaces since WP-21,
+no longer blocked by Q34) as **known failures**, tracked by WP-21's R6,
+R7 and R8 (`docs/RUNBOOKS/WP-21.md`), with the checks that fail: the
+suite fails the run on any other failing check, the hook fails a run that passed
+fewer checks of either than `exercised.json` records (a run that
+exercised nothing among them fails only listed checks, which the
+suite's gate alone accepts; the lab reads the baseline with unknown
+fields refused, so the minimums are a file of their own), and prints
+`KNOWN FAILING, NOT A PASS: <id>: <note>` for each, as a warning
+annotation and in `run-info.txt`. The hook refuses a baseline that
+records a requirement not applicable without a note, or a known failure
+without its note, its failing checks or its minimum in `exercised.json`. A
 change to it is a reviewed change: rewrite it from a new reviewed report
-only, and drop an entry when its blocker is resolved.
+only, `exercised.json` with it, and drop an entry when its blocker is
+resolved.

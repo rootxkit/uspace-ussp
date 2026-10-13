@@ -1,24 +1,46 @@
 {
   "format": "conformance-baseline/v1",
   "target": "ussp-conformance",
-  "from_run": "20261005T141923Z-ussp-conformance",
-  "from_digest": "sha256:cdd6ff5911325499a7d02bb0c9d515ad516d89012e0f8ebd64d48e8ec27980ee",
+  "from_run": "20261013T224233Z-ussp-conformance",
+  "from_digest": "sha256:b0d627aaadcf3f2ae753e5ff4a151a17068f7469d9557d8da99d7d1382a27f86",
   "requirements": {
     "A11Y-PUBLIC": {
       "status": "not_applicable",
       "note": "informative: the target names no public page"
     },
     "F3411-SP": {
-      "status": "not_applicable",
-      "note": "BLOCKED by owner decision Q34 (docs/PLAN.md §15.2): this USSP exposes no InterUSS rid_injection interface; not checked, not a pass"
+      "status": "fail",
+      "note": "known failing, not a pass: WP-21 R6 (the injected UA type, classification, registration and serial ids, speed accuracy and height are not what /uss/flights serves) and R7 (flights injected later in a run are not observed; injected timestamps; a serial reused by a later test is refused out of order), both in internal/testif (docs/RUNBOOKS/WP-21.md); the failing checks are those of the runs 20261013T194900Z and 20261013T224233Z, less UpsertTestSuccess: an injection the USSP refuses is never a known failure, or a run where nothing is injected would fail only listed checks",
+      "failing": [
+        "uss_qualifier astm.f3411.v22a.NET0030",
+        "uss_qualifier astm.f3411.v22a.NET0040",
+        "uss_qualifier astm.f3411.v22a.NET0260,Table1,10",
+        "uss_qualifier astm.f3411.v22a.NET0260,Table1,11",
+        "uss_qualifier astm.f3411.v22a.NET0260,Table1,14",
+        "uss_qualifier astm.f3411.v22a.NET0260,Table1,18",
+        "uss_qualifier astm.f3411.v22a.NET0260,Table1,1a",
+        "uss_qualifier astm.f3411.v22a.NET0260,Table1,1b",
+        "uss_qualifier astm.f3411.v22a.NET0260,Table1,2",
+        "uss_qualifier astm.f3411.v22a.NET0260,Table1,4",
+        "uss_qualifier astm.f3411.v22a.NET0260,Table1,5",
+        "uss_qualifier astm.f3411.v22a.NET0320",
+        "uss_qualifier astm.f3411.v22a.NET0340",
+        "uss_qualifier astm.f3411.v22a.NET0500",
+        "uss_qualifier astm.f3411.v22a.NET0610",
+        "uss_qualifier astm.f3411.v22a.NET0710,1"
+      ]
     },
     "F3548-CP": {
       "status": "not_applicable",
       "note": "not checkable upstream: uss_qualifier v0.36.0 (the lab's pin) has no constraint processing requirement set; not a pass"
     },
     "F3548-SCD": {
-      "status": "not_applicable",
-      "note": "BLOCKED by owner decision Q34 (docs/PLAN.md §15.2): this USSP exposes no InterUSS flight_planning interface; not checked, not a pass"
+      "status": "fail",
+      "note": "known failing, not a pass: WP-21 R8 (every plan Rejected on Annex IV item 4: the uspace_flight_authorisation mapping to subcategory in internal/testif, and whether such a plan may be in the open category, pending GCAA) (docs/RUNBOOKS/WP-21.md); the failing checks are those of the runs 20261013T194900Z and 20261013T224233Z",
+      "failing": [
+        "uss_qualifier astm.f3548.v21.SCD0005",
+        "uss_qualifier interuss.automated_testing.flight_planning.ExpectedBehavior"
+      ]
     },
     "NAT-INVALID": {
       "status": "pass"

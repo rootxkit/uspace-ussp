@@ -1,0 +1,4 @@
+{"time":"2026-10-14T02:27:46.2269278+04:00","level":"INFO","msg":"authority: admin signed in; lab-registrar, lab-inspector present","process":"demo-seed"}
+{"time":"2026-10-14T02:27:46.5780334+04:00","level":"INFO","msg":"authority: 1 test operators and their 8 aircraft in the registry (conformance/fixtures/test-operators.yaml)","process":"demo-seed"}
+{"time":"2026-10-14T02:27:46.5780334+04:00","level":"INFO","msg":"authority: 3 operators and 29 aircraft in the registry","process":"demo-seed"}
+{"time":"2026-10-14T02:27:46.5780334+04:00","level":"INFO","msg":"done","process":"demo-seed","steps":"registry"}
