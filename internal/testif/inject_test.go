@@ -186,6 +186,12 @@ func TestInjectionStreamsTheFlightsAndEnds(t *testing.T) {
 	if one[0].Status != client.TelemetryFrameStatusGround {
 		t.Error("the earliest state is not sent first")
 	}
+	// The end frame is no new measurement: its sample is the last one's
+	// a millisecond later, not the time it was sent (the states here are
+	// a day old), so the SP's last timestamp stays the injected one.
+	if !one[3].Ts.Equal(one[2].Ts.Add(time.Millisecond)) || one[3].Position != one[2].Position {
+		t.Errorf("end frame at %s %+v, want the last state's %s + 1 ms at %+v", one[3].Ts, one[3].Position, one[2].Ts, one[2].Position)
+	}
 	if two := bySerial["TEST-WP21-0001"]; len(two) != 2 || two[1].End == nil || !*two[1].End {
 		t.Errorf("flight 2 frames %+v", two)
 	}

@@ -477,8 +477,8 @@ func (in *injector) fail(ctx context.Context, run *flightRun, ref *RefusalError)
 	}()
 }
 
-// end sends a flight's end frame once: its last accepted sample at the
-// current time (after the last state), end true, the next seq; and waits
+// end sends a flight's end frame once: its last accepted sample a
+// millisecond after the last sent one, end true, the next seq; and waits
 // for the ingest to decide on it.
 func (in *injector) end(ctx context.Context, run *flightRun, ack time.Duration) {
 	run.mu.Lock()
@@ -488,14 +488,16 @@ func (in *injector) end(ctx context.Context, run *flightRun, ack time.Duration) 
 	}
 	run.ended = true
 	// At the last accepted sample, numbered after the last sent one (a
-	// refused frame's position is not repeated).
+	// refused frame's position is not repeated), and timed a millisecond
+	// after the last sent one: the end is no new measurement, so the
+	// time it is sent is not a sample's time (the SP serves the
+	// timestamp as the time the position was valid; the ingest places an
+	// old one as history by its age).
 	f := run.p.frames[run.ok-1]
-	f.Seq = run.p.frames[run.sent-1].Seq
+	last := run.p.frames[run.sent-1]
+	f.Seq = last.Seq
 	run.mu.Unlock()
-	t := in.clock.Now().UTC()
-	if !t.After(f.Ts) {
-		t = f.Ts.Add(time.Millisecond)
-	}
+	t := last.Ts.Add(time.Millisecond)
 	yes := true
 	f.Ts, f.End, f.Seq, f.Backlog = t, &yes, f.Seq+1, nil
 	actx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ack)
