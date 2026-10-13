@@ -53,6 +53,11 @@ additively within `/v1`.
   return. A real link loss with the bus up is raised as before, and a
   sample clears it. A `lost_link` already raised is kept through the
   outage.
+- A monitor restart longer than `lost_link_s` no longer raises
+  `lost_link` for every restored flight (Q35 review): a restored
+  tracker's silence counts from its restore (or the input's return,
+  whichever is later), so a flight heard after the restart raises none
+  and one still silent raises it `lost_link_s` after the restore.
 - A process started while a token service is down verifies that
   service's tokens again (PLAN §15.2 Q35 b): each ecosystem issuer's
   JWKS is stored in the new `jwks_cache` bucket when it is fetched

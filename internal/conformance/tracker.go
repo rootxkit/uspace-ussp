@@ -264,10 +264,15 @@ type Tracker struct {
 
 	lastCaptured time.Time // the last admitted sample's placement
 	lastLive     time.Time // the same, capped at the wall time
-	hasLive      bool
-	lastFlying   bool
-	lastPos      core.LatLon
-	lastCell5    string
+	// silentFrom is the earliest a silence counts from: a restored
+	// tracker's restore (RestoreTracker). The monitor heard nothing while
+	// it was stopped, so the time before is its outage, not the
+	// aircraft's (Q35).
+	silentFrom time.Time
+	hasLive    bool
+	lastFlying bool
+	lastPos    core.LatLon
+	lastCell5  string
 
 	linkLost     bool
 	lostAt       time.Time
@@ -687,8 +692,10 @@ func (t *Tracker) TickFeed(cfg Config, wall time.Time, feed Feed) Events {
 		t.lastOutside = wall
 	}
 	silentSince := t.lastLive
-	if feed.BackAt.After(silentSince) {
-		silentSince = feed.BackAt
+	for _, from := range []time.Time{feed.BackAt, t.silentFrom} {
+		if from.After(silentSince) {
+			silentSince = from
+		}
 	}
 	if !feed.Down && !t.disabled && t.authorised && t.hasLive && t.lastFlying && !t.linkLost && wall.Sub(silentSince) >= secs(cfg.LostLinkS) {
 		t.change(&ev, wall, func() {
