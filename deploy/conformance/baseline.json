@@ -10,7 +10,7 @@
     },
     "F3411-SP": {
       "status": "fail",
-      "note": "known failing, not a pass: WP-21 R6 (the injected UA type, classification, registration and serial ids, speed accuracy and height are not what /uss/flights serves) and R7 (flights injected later in a run are not observed; injected timestamps; a serial reused by a later test is refused out of order), both in internal/testif (docs/RUNBOOKS/WP-21.md); the failing checks are those of the runs 20261013T194900Z and 20261013T224233Z",
+      "note": "known failing, not a pass: WP-21 R6 (the injected UA type, classification, registration and serial ids, speed accuracy and height are not what /uss/flights serves) and R7 (flights injected later in a run are not observed; injected timestamps; a serial reused by a later test is refused out of order), both in internal/testif (docs/RUNBOOKS/WP-21.md); the failing checks are those of the runs 20261013T194900Z and 20261013T224233Z, less UpsertTestSuccess: an injection the USSP refuses is never a known failure, or a run where nothing is injected would fail only listed checks",
       "failing": [
         "uss_qualifier astm.f3411.v22a.NET0030",
         "uss_qualifier astm.f3411.v22a.NET0040",
@@ -27,8 +27,7 @@
         "uss_qualifier astm.f3411.v22a.NET0340",
         "uss_qualifier astm.f3411.v22a.NET0500",
         "uss_qualifier astm.f3411.v22a.NET0610",
-        "uss_qualifier astm.f3411.v22a.NET0710,1",
-        "uss_qualifier interuss.automated_testing.rid.injection.UpsertTestSuccess"
+        "uss_qualifier astm.f3411.v22a.NET0710,1"
       ]
     },
     "F3548-CP": {

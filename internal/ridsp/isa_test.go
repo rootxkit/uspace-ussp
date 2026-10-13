@@ -415,6 +415,7 @@ func TestWorkerPutAndDelete(t *testing.T) {
 	if err := r.p.Plan(context.Background(), r.m, flights.Body{FlightID: flightN(1), Event: flights.EventEnded}); err != nil {
 		t.Fatal(err)
 	}
+	r.m.advance(Horizon) // the delete is held for the near-real-time period (NET0610)
 	r.once(t)
 	if _, ok := r.d.ISAs()[id]; ok || r.m.isas[id].DeletedAt == nil || r.w.Counters.Get(CounterISADeletes) != 1 {
 		t.Fatalf("ISA not deleted: %+v", r.d.ISAs())
@@ -526,6 +527,7 @@ func TestWorkerSkips(t *testing.T) {
 		t.Fatalf("written for an ended flight: %v", r.w.Counters.Snapshot())
 	}
 	_ = r.p.Plan(context.Background(), r.m, flights.Body{FlightID: flightN(1), Event: flights.EventEnded})
+	r.m.advance(Horizon) // the delete is held for the near-real-time period (NET0610)
 	r.once(t)
 	if r.m.isas[id].DeletedAt == nil || len(r.d.Calls()) != 0 {
 		t.Fatalf("a never written ISA: %+v %v", r.m.isas[id], r.d.Calls())
@@ -543,6 +545,7 @@ func TestWorkerSkips(t *testing.T) {
 	r.once(t)
 	r.m.ended[flightN(3)] = true
 	_ = r.p.Plan(context.Background(), r.m, flights.Body{FlightID: flightN(3), Event: flights.EventEnded})
+	r.m.advance(Horizon) // the delete is held for the near-real-time period (NET0610)
 	gone := r.d.ISAs()[id3]
 	req, _ := http.NewRequest(http.MethodDelete, r.d.URL()+"/rid/v2/dss/identification_service_areas/"+id3+"/"+gone.Version, nil)
 	req.Header.Set("Authorization", "Bearer x")
@@ -847,6 +850,7 @@ func TestNotificationsDoNotBlockISAWrites(t *testing.T) {
 	if err := r.p.Plan(context.Background(), r.m, flights.Body{FlightID: flightN(1), Event: flights.EventEnded}); err != nil {
 		t.Fatal(err)
 	}
+	r.m.advance(Horizon) // the delete is held for the near-real-time period (NET0610)
 	began = time.Now()
 	r.once(t)
 	if took := time.Since(began); took > 2*time.Second {
@@ -911,6 +915,7 @@ func TestWorkerBadSubscribersRecordsFirst(t *testing.T) {
 	if err := r.p.Plan(context.Background(), r.m, flights.Body{FlightID: flightN(1), Event: flights.EventEnded}); err != nil {
 		t.Fatal(err)
 	}
+	r.m.advance(Horizon) // the delete is held for the near-real-time period (NET0610)
 	r.once(t)
 	if _, ok := r.d.ISAs()[id]; ok || r.m.isas[id].DeletedAt == nil || len(r.m.pending()) != 0 {
 		t.Fatalf("delete not recorded at the first attempt: deleted %v pending %d", r.m.isas[id].DeletedAt, len(r.m.pending()))
@@ -960,6 +965,7 @@ func TestWorkerPutAndDeleteSerialisedPerISA(t *testing.T) {
 	if err := r.p.Plan(context.Background(), r.m, flights.Body{FlightID: flightN(1), Event: flights.EventEnded}); err != nil {
 		t.Fatal(err)
 	}
+	r.m.advance(Horizon) // the delete is held for the near-real-time period (NET0610)
 	bDone := make(chan error, 1)
 	go func() { _, err := b.Once(context.Background()); bDone <- err }()
 	select {
@@ -1061,5 +1067,40 @@ func TestWorkerRefusalsBounded(t *testing.T) {
 	}
 	if len(r.m.pending()) != 1 || r.w.Counters.Get(CounterISAGivenUp) != 0 {
 		t.Fatalf("an outage gave the ISA up: %d %v", len(r.m.pending()), r.w.Counters.Snapshot())
+	}
+}
+
+// NET0610: a flight stays discoverable for NetMaxNearRealTimeDataPeriod
+// after it ends. Its ISA is not deleted when the flight ends: the delete
+// is held for Horizon, so a Display Provider still finds the ISA and the
+// last position served on /uss/flights, and it is deleted once the
+// Horizon has passed (E-01: kept, then gone).
+func TestEndedFlightISAKeptForHorizon(t *testing.T) {
+	r := newWorkerRig(t)
+	id := r.start(t, 1)
+	r.once(t)
+	if _, ok := r.d.ISAs()[id]; !ok {
+		t.Fatal("ISA not written")
+	}
+	r.m.ended[flightN(1)] = true
+	if err := r.p.Plan(context.Background(), r.m, flights.Body{FlightID: flightN(1), Event: flights.EventEnded}); err != nil {
+		t.Fatal(err)
+	}
+	if items := r.m.pending(); len(items) != 1 || items[0].Kind != store.OutboxISADelete {
+		t.Fatalf("ended: %+v", items)
+	}
+	r.once(t)
+	if _, ok := r.d.ISAs()[id]; !ok || r.m.isas[id].DeletedAt != nil {
+		t.Fatal("the ISA of a flight that just ended was deleted: a Display Provider no longer finds its last minute")
+	}
+	r.m.advance(Horizon - time.Second)
+	r.once(t)
+	if _, ok := r.d.ISAs()[id]; !ok {
+		t.Fatal("the ISA was deleted before NetMaxNearRealTimeDataPeriod had passed")
+	}
+	r.m.advance(2 * time.Second)
+	r.once(t)
+	if _, ok := r.d.ISAs()[id]; ok || r.m.isas[id].DeletedAt == nil || r.w.Counters.Get(CounterISADeletes) != 1 {
+		t.Fatalf("the ISA was not deleted after the Horizon: %+v", r.d.ISAs())
 	}
 }

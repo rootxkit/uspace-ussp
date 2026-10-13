@@ -172,6 +172,17 @@ func (m *memStore) Enqueue(_ context.Context, kind, entityID string, version int
 	return m.enqueueLocked(kind, entityID, version, payload)
 }
 
+func (m *memStore) EnqueueHeld(_ context.Context, kind, entityID string, version int64, payload any, hold time.Duration) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ok, err := m.enqueueLocked(kind, entityID, version, payload)
+	if ok && hold > 0 {
+		it := m.items[len(m.items)-1]
+		it.NextAt = it.NextAt.Add(hold)
+	}
+	return ok, err
+}
+
 func (m *memStore) enqueueLocked(kind, entityID string, version int64, payload any) (bool, error) {
 	for _, it := range m.items {
 		if it.Kind == kind && it.EntityID == entityID && it.EntityVersion == version {

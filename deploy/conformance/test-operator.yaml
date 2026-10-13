@@ -43,6 +43,13 @@ annex_iv:
   contingency:
     procedure: "Test operator: land at the nearest safe place in the volume and report to the USSP (pending GCAA)"
     landing_sites: []
+  # Annex IV item 4 in the open category, by the plan's uas_class: the
+  # spec's defaults, pending GCAA. A class not named here takes
+  # open_subcategory.
+  open_subcategory_by_class: {C0: A1, C1: A1, C2: A2}
+  # Any other class (C3 to C6, Other): A3 admits every open class
+  # (UAS.OPEN.040), pending GCAA.
+  open_subcategory: A3
   emergency_contact_ref: TEST-EMERGENCY-CONTACT-0001
   pilot_ref: ""
   takeoff: null

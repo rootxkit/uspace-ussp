@@ -52,8 +52,10 @@ var (
 // FrameOf maps one injected RIDAircraftState onto a telemetry/v1 frame
 // of serial at seq (brief WP-21, RID injection step 3): ts is the state's
 // timestamp, the position its lat and lng, alt_wgs84_m its position.alt
-// (W84, as the file says), height_m and height_ref its height (the
-// state's, else the position's), speed_ms, track_deg and vspeed_ms with
+// (W84, as the file says), height_m and height_ref the position's height
+// (F3411-22a: RIDAircraftState has no height of its own; the state's
+// height member is the v19 place and is not sent), speed_ms, track_deg
+// and vspeed_ms with
 // F3411's special values read by uspace-core as unknown (null), status
 // its operational_status (absent: Undeclared, the file's default),
 // emergency when that status is Emergency, the accuracies (absent:
@@ -83,10 +85,7 @@ func FrameOf(s inj.RIDAircraftState, serial, epoch string, seq int64, op *client
 		Status:           client.TelemetryFrameStatusUndeclared,
 		OperatorPosition: op,
 	}
-	h := s.Height
-	if h == nil {
-		h = p.Height
-	}
+	h := p.Height
 	if ch := coreHeight(h); ch != nil {
 		if d := ch.DistanceM(); d != nil {
 			ref, ok := heightRefs[h.Reference]

@@ -43,6 +43,15 @@ type fakeUSSP struct {
 	refuseAll      string // an outcome every frame gets, when set
 	refuseFromSeq  int64  // with refuseFrom, a sample from this seq on is refused_invalid (a teleport)
 	refuseFrom     bool
+	// quiet answers an accepted later sample with no status, as the
+	// ingest acknowledges accepted samples only with its periodic one;
+	// the first sample, a refusal and an end frame are answered.
+	quiet bool
+	// silent answers no frame at all: nothing the socket carries is
+	// ever decided.
+	silent bool
+	// seen, when set, gets one value per frame received.
+	seen           chan struct{}
 	frames         []client.TelemetryFrame
 	bindings       []string
 	sockets        int
@@ -221,6 +230,9 @@ func (f *fakeUSSP) telemetry(w http.ResponseWriter, r *http.Request) {
 		}
 		f.mu.Lock()
 		f.frames = append(f.frames, msg.Body)
+		if f.seen != nil {
+			f.seen <- struct{}{}
+		}
 		outcome := "accepted"
 		switch {
 		case f.refuseAll != "":
@@ -230,6 +242,7 @@ func (f *fakeUSSP) telemetry(w http.ResponseWriter, r *http.Request) {
 		case !f.bound[msg.Body.Serial]:
 			outcome = "refused_unbound"
 		}
+		quiet := f.quiet && outcome == "accepted" && msg.Body.Seq > 0 && (msg.Body.End == nil || !*msg.Body.End)
 		f.mu.Unlock()
 		body.Outcomes[outcome]++
 		if outcome == "accepted" {
@@ -237,6 +250,9 @@ func (f *fakeUSSP) telemetry(w http.ResponseWriter, r *http.Request) {
 			body.AckedSeq[msg.Body.Serial] = msg.Body.Seq
 		} else {
 			body.Refused++
+		}
+		if quiet || f.silent {
+			continue
 		}
 		if !send() {
 			return
@@ -268,6 +284,14 @@ func writeFile(t *testing.T, name, content string) string {
 	return p
 }
 
+// profileFixture is the conformance profile's fixture as committed
+// (TestProfileFixtureIsCommitted): the tests read the file the profile
+// ships, never a patched copy.
+func profileFixture(t *testing.T) string {
+	t.Helper()
+	return fixturePath
+}
+
 func newTestServer(t *testing.T, f *fakeUSSP, edit func(*Config)) *testServer {
 	t.Helper()
 	cfg, err := Load(env(map[string]string{
@@ -275,7 +299,7 @@ func newTestServer(t *testing.T, f *fakeUSSP, edit func(*Config)) *testServer {
 		"USSP_TEST_INTERFACES_OPERATOR_CLIENT_ID":   "op-test",
 		"USSP_TEST_INTERFACES_OPERATOR_SECRET_FILE": writeFile(t, "secret", "s3cret"),
 		"USSP_TEST_INTERFACES_SESSION_FILE":         writeFile(t, "session", "portal-session"),
-		"USSP_TEST_INTERFACES_OPERATOR_FILE":        filepath.Join("..", "..", "deploy", "conformance", "test-operator.yaml"),
+		"USSP_TEST_INTERFACES_OPERATOR_FILE":        profileFixture(t),
 		"USSP_TEST_INTERFACES_ACK_TIMEOUT_S":        "5",
 	}))
 	if err != nil {
