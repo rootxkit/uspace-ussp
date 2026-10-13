@@ -149,6 +149,13 @@ test("S-M1 and S-M3: register, client, intent, decision, geo, traffic, alert ack
   await expect(prox).toBeVisible();
   await expect(prox).toContainText("Converging aircraft");
   await expect(prox).toContainText("Authenticated");
+  // The CPA thresholds the monitor judges with, as the status frame
+  // carries them, with their policy version (audit M-5).
+  const thresholds = page.locator('[data-panel="thresholds"]');
+  await expect(thresholds).toHaveAttribute("data-thresholds", "present");
+  await expect(thresholds.locator('[data-threshold="cpa_horizontal_min_m"]')).toContainText(/\d m$/);
+  await expect(thresholds.locator('[data-threshold="cpa_tcpa_max_s"]')).toContainText(/\d s$/);
+  await expect(thresholds).toContainText("Policy version ");
   await shot(page, "traffic-en");
 
   // The alert stream: acknowledged, recorded with the time.

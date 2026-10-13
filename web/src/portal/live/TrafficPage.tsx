@@ -16,7 +16,7 @@ import { TrackLayer } from "@rootxkit/uspace-ui/layers";
 import { AgeLegend, IdentificationLegend, TrackLegend } from "@rootxkit/uspace-ui/legend";
 import { useNowMs } from "@rootxkit/uspace-ui/live";
 import type { Trust } from "@rootxkit/uspace-ui/model";
-import { FeedStatusBar } from "@rootxkit/uspace-ui/status";
+import { FeedStatusBar, ThresholdsPanel } from "@rootxkit/uspace-ui/status";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@rootxkit/uspace-ui/ui";
 import { useAppT } from "@/i18n/t";
 import { PageHeading, RequireSession, Utc } from "../common";
@@ -68,6 +68,8 @@ function Live({ intentId }: { intentId: string }) {
           <TrackLegend counts={trustCounts} />
           <IdentificationLegend />
           {feed.staleAfterS !== null && <AgeLegend staleAfterS={feed.staleAfterS} />}
+          {/* The CPA thresholds the monitor judges with, as the status frame carries them (audit M-5). */}
+          <ThresholdsPanel thresholds={feed.extras.thresholds} evaluationPeriodS={feed.extras.evaluationPeriodS} policyVersion={feed.policyVersion} />
         </div>
       </div>
       <section aria-labelledby="prox-heading">

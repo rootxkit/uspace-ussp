@@ -95,6 +95,11 @@ source with its state and time, read from `GET /v1/admin/inputs`.
   shown as its centre with its centre and radius in words: the kit draws
   a circle's outline only when the API drew it, and this API draws none
   (`docs/PLAN.md` §15.1 Q28).
+- The console's map and the portal's traffic page show the CPA
+  thresholds in force with the kit's `ThresholdsPanel`, as the traffic
+  stream's `console/status/v1` carries them (`thresholds{}`,
+  `evaluation_period_s`, the policy version); a frame without them says
+  so, and nothing is defaulted.
 
 ## Configuration (read at request time)
 
