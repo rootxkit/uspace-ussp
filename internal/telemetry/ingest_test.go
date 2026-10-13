@@ -576,3 +576,25 @@ func TestReplayWindowSurvivesARestart(t *testing.T) {
 		t.Fatalf("store failure not counted: %v", r4.counters.Snapshot())
 	}
 }
+
+// A connection id names one connection, also across a restart: the
+// first session of a restarted process (a new Ingestor) does not carry
+// the id of the first session before it. The WP-19 restart row saw a
+// client keep the old connection's counters under the reused id
+// "telemetry-1" and lose them. Within one process two sessions differ
+// as they always did.
+func TestConnectionIDsDifferAcrossARestart(t *testing.T) {
+	before := New(Config{}).NewSession(clientA, t0)
+	after := New(Config{}).NewSession(clientA, t0)
+	if before.ID != after.ID {
+		t.Fatalf("session numbers %d and %d: both should be the first of their process", before.ID, after.ID)
+	}
+	if before.connectionID() == after.connectionID() {
+		t.Fatalf("the first sessions of two processes share the connection id %s", before.connectionID())
+	}
+	in := New(Config{})
+	a, b := in.NewSession(clientA, t0), in.NewSession(clientA, t0)
+	if a.connectionID() == b.connectionID() || !strings.HasPrefix(a.connectionID(), "telemetry-") {
+		t.Fatalf("one process: %s and %s", a.connectionID(), b.connectionID())
+	}
+}

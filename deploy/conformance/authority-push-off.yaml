@@ -1,0 +1,19 @@
+# Appended by scripts/conformance.sh to the lab's
+# conformance/national/contracts/ussp.yaml when the target runs with
+# USSP_AUTHORITY_PUSH=off, the product default. PLAN D12 (and §15 Q33):
+# WS /v1/authority/flights is an optional national extension, off by
+# default and never a condition of any milestone; with it off, rid-sp
+# does not serve the path (404, as the contract's description says) and
+# the F3411 Display Provider path (GET /uss/flights) is the baseline. Its
+# checks are then not applicable, and the report says why. With
+# USSP_AUTHORITY_PUSH=on this file is not used and every check runs.
+#
+# The checks named are the ones the suite applies to a WebSocket read
+# with an ecosystem token (lab conformance/national/checks.go):
+# not_found, stale_precondition and invalid_body produce no outcome for
+# it.
+skip:
+  openAuthorityFlights:
+    unauthenticated: "USSP_AUTHORITY_PUSH=off on this target: WS /v1/authority/flights is not served (uspace-ussp PLAN D12, Q33)"
+    wrong_scope: "USSP_AUTHORITY_PUSH=off on this target: WS /v1/authority/flights is not served (uspace-ussp PLAN D12, Q33)"
+    success: "USSP_AUTHORITY_PUSH=off on this target: WS /v1/authority/flights is not served (uspace-ussp PLAN D12, Q33)"

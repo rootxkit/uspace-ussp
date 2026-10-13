@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -145,16 +146,27 @@ func (v *Verifier) persist(ctx context.Context, iss string, doc []byte, now time
 	})
 }
 
-// restore builds the verifier of the stored JWKS of every ecosystem
-// issuer that has one younger than CacheMaxAge. It does nothing once one
-// is built, or without a store.
+// restore builds a verifier from the stored JWKS of every ecosystem
+// issuer whose own verifier is not built and that has none from the
+// store yet, when that JWKS is younger than CacheMaxAge. It does nothing
+// without a store. An issuer built later drops its stored one
+// (forgetCached): its own verifier judges its tokens from then on.
 func (v *Verifier) restore(ctx context.Context) {
-	if v.cfg.Cache == nil || v.cached.Load() != nil {
+	if v.cfg.Cache == nil {
 		return
 	}
 	now := v.now()
+	prev := v.cached.Load()
 	out := &cachedEco{v: map[string]*coreauth.Verifier{}, fetchedAt: map[string]time.Time{}}
+	if prev != nil {
+		maps.Copy(out.v, prev.v)
+		maps.Copy(out.fetchedAt, prev.fetchedAt)
+	}
+	added := 0
 	for _, iss := range v.ecoISS {
+		if v.IssuerReady(iss) || out.v[iss] != nil {
+			continue
+		}
 		data, found, err := v.cfg.Cache.Get(ctx, JWKSCacheKey(iss))
 		if err != nil || !found {
 			continue
@@ -175,12 +187,44 @@ func (v *Verifier) restore(ctx context.Context) {
 			continue
 		}
 		out.v[iss], out.fetchedAt[iss] = cv, c.FetchedAt
+		added++
 	}
-	if len(out.v) == 0 {
+	if added == 0 {
 		return
 	}
-	v.counters.Add(CounterJWKSCacheRestored, uint64(len(out.v)))
+	v.counters.Add(CounterJWKSCacheRestored, uint64(added))
 	v.cached.Store(out)
+}
+
+// forgetCached drops the stored JWKS's verifier of iss, once its own
+// verifier is built.
+func (v *Verifier) forgetCached(iss string) {
+	for {
+		prev := v.cached.Load()
+		if prev == nil || prev.v[iss] == nil {
+			return
+		}
+		out := &cachedEco{v: maps.Clone(prev.v), fetchedAt: maps.Clone(prev.fetchedAt)}
+		delete(out.v, iss)
+		delete(out.fetchedAt, iss)
+		if len(out.v) == 0 {
+			out = nil
+		}
+		if v.cached.CompareAndSwap(prev, out) {
+			return
+		}
+	}
+}
+
+// cachedAt is when the stored JWKS that verifies iss's tokens was
+// fetched; false when none does.
+func (v *Verifier) cachedAt(iss string) (time.Time, bool) {
+	c := v.cached.Load()
+	if c == nil {
+		return time.Time{}, false
+	}
+	at, ok := c.fetchedAt[iss]
+	return at, ok
 }
 
 func decodeCached(data []byte, iss string) (CachedJWKS, error) {

@@ -47,14 +47,13 @@ func cachedVerifier(t *testing.T, eco *ecosystem, c *clock, store JWKSStore) *Ve
 }
 
 // startDuringOutage is a process started while the token service is
-// down: its build fails, and what Run does next (restore) is done.
+// down: its build fails, which restores the stored keys.
 func startDuringOutage(t *testing.T, eco *ecosystem, c *clock, store JWKSStore) *Verifier {
 	t.Helper()
 	v := cachedVerifier(t, eco, c, store)
 	if err := v.BuildEcosystem(context.Background()); err == nil {
 		t.Fatal("built while the token service is down")
 	}
-	v.restore(context.Background())
 	return v
 }
 
@@ -236,5 +235,60 @@ func TestAStoreThatDoesNotAnswerHoldsUpNothing(t *testing.T) {
 	v.saves.Wait()
 	if v.Counters().Get(CounterJWKSCacheSaved) != 1 {
 		t.Fatalf("saved %d", v.Counters().Get(CounterJWKSCacheSaved))
+	}
+}
+
+// Q35 b with #38's per-issuer verifiers: each issuer's JWKS is stored
+// on its own, and a start with one issuer down takes only that issuer's
+// keys from the store. The lab's tokens verify with its own fetched
+// keys, the authority's with its stored ones, and /readyz names the
+// authority alone as verifying from the store. Once the authority
+// answers, its own verifier replaces the stored keys.
+func TestTheStoredJWKSOfOneIssuerDownAtStart(t *testing.T) {
+	ctx := context.Background()
+	store := &memJWKS{}
+	first := newTwoIssuersWith(t, store)
+	mustNoErr(t, first.v.BuildEcosystem(ctx))
+	first.v.saves.Wait()
+	if n := first.v.Counters().Get(CounterJWKSCacheSaved); n != 2 {
+		t.Fatalf("stored %d issuers' JWKS, want 2", n)
+	}
+
+	f := newTwoIssuersWith(t, store)
+	// The second process's issuers sign with the first's keys: the same
+	// token services, restarted.
+	f.authority, f.lab = first.authority, first.lab
+	f.v.cfg.Ecosystem.Issuers[f.authority.URL] = coreauth.IssuerConfig{JWKSURL: f.authority.JWKS}
+	f.v.cfg.Ecosystem.Issuers[f.lab.URL] = coreauth.IssuerConfig{JWKSURL: f.lab.JWKS}
+	f.authority.Down()
+	if err := f.v.BuildEcosystem(ctx); err == nil || !strings.Contains(err.Error(), f.authority.URL) {
+		t.Fatalf("build with the authority down: %v", err)
+	}
+	if !f.v.IssuerReady(f.lab.URL) || f.v.IssuerReady(f.authority.URL) || f.v.Counters().Get(CounterJWKSCacheRestored) != 1 {
+		t.Fatalf("lab built %v, authority built %v, restored %v", f.v.IssuerReady(f.lab.URL), f.v.IssuerReady(f.authority.URL), f.v.Counters().Snapshot())
+	}
+	if _, ok := f.v.cachedAt(f.lab.URL); ok {
+		t.Fatal("the lab's stored keys were restored although its own were fetched")
+	}
+	now := time.Now()
+	if c, err := f.v.Verify(ctx, f.authority.token(t, "authority-01", ownHost, []string{"ussp.records"}, now)); err != nil || c.Issuer != f.authority.URL {
+		t.Fatalf("an authority token from the stored keys: %v %+v", err, c)
+	}
+	if c, err := f.v.Verify(ctx, f.lab.token(t, "lab-01", ownHost, nil, now)); err != nil || c.Issuer != f.lab.URL {
+		t.Fatalf("a lab token: %v %+v", err, c)
+	}
+	st, detail := f.v.Probe(ctx)
+	if st != obs.StateDegraded || !strings.Contains(detail, f.authority.URL+": not fetched since this process started; the stored keys") ||
+		strings.Contains(detail, f.lab.URL) {
+		t.Fatalf("probe: %s %q", st, detail)
+	}
+
+	f.authority.Up()
+	mustNoErr(t, f.v.BuildEcosystem(ctx))
+	if f.v.cached.Load() != nil || !f.v.EcosystemReady() {
+		t.Fatal("the authority's fetched keys did not replace its stored ones")
+	}
+	if _, err := f.v.Verify(ctx, f.authority.token(t, "authority-01", ownHost, nil, now)); err != nil {
+		t.Fatalf("an authority token after it answers: %v", err)
 	}
 }

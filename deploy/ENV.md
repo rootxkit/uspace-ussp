@@ -74,6 +74,7 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_RECORD_HOLDS_BUCKET_MAX_BYTES` | `all` |  | `16777216` | bytes | size bound of the record_holds bucket, reserved in the JetStream file store; a full bucket refuses puts |
 | `USSP_RID_DP_SUBSCRIPTIONS_BUCKET_MAX_BYTES` | `all` |  | `4194304` | bytes | size bound of the rid_dp_subscriptions bucket, reserved in the JetStream file store; a full bucket refuses puts |
 | `USSP_MONITOR_STATUS_BUCKET_MAX_BYTES` | `all` |  | `4194304` | bytes | size bound of the monitor_status bucket, reserved in the JetStream file store; a full bucket refuses puts |
+| `USSP_FLIGHT_BINDING_BUCKET_MAX_BYTES` | `all` |  | `67108864` | bytes | size bound of the flight_binding bucket, reserved in the JetStream file store; a full bucket refuses puts |
 | `USSP_JWKS_CACHE_BUCKET_MAX_BYTES` | `all` |  | `1048576` | bytes | size bound of the jwks_cache bucket, reserved in the JetStream file store; a full bucket refuses puts |
 | `USSP_SYSTEM_ID` | `api,rid-sp,monitor,dss-sync` |  | `USSP-DEV` |  | the USSP code from the authority's certificate (M8); never an audience |
 | `USSP_AUDIENCES` | `api,telemetry-ingest,rid-sp,traffic-ws` |  |  |  | hosts accepted as JWT aud, comma-separated: the public host and a lab alias (M18) |

@@ -8,6 +8,10 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
+// ErrBucketNotFound is what a KVStore answers for a bucket that does not
+// exist (yet): the topology maintainer has not created it.
+var ErrBucketNotFound = jetstream.ErrBucketNotFound
+
 // KVStore reads and writes single keys of one bucket for a process that
 // owns the bucket's values (rid-sp's rid_isa_notifications), each call
 // bounded by Timeout (DefaultKVTimeout).
