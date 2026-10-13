@@ -2,14 +2,17 @@ package testif
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"maps"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/rootxkit/uspace-core/core"
 
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
+	"github.com/rootxkit/uspace-ussp/internal/national/client"
 )
 
 // DepUSSP is the readiness entry of the USSP's api as the test operator
@@ -30,18 +33,30 @@ type Server struct {
 	// its registration; set by the constructors of the interfaces.
 	interfaces []iface
 	cfg        Config
+	fixture    Fixture
+	inject     *injector
+
+	opMu       sync.Mutex
+	operatorID client.OperatorID // the test operator's id at the USSP, from GET /v1/accounts/me
 }
 
 // NewServer builds the test listener of cfg. The interfaces are added
 // here, each by its own constructor.
 func NewServer(cfg Config, g *Guard, u *USSP, counters *core.Counters, logger *slog.Logger) (*Server, error) {
-	s := &Server{Guard: g, USSP: u, Counters: counters, Logger: logger, cfg: cfg}
+	fx, err := LoadFixture(cfg.OperatorFile)
+	if err != nil {
+		return nil, fmt.Errorf("USSP_TEST_INTERFACES_OPERATOR_FILE: %w", err)
+	}
+	s := &Server{Guard: g, USSP: u, Counters: counters, Logger: logger, cfg: cfg, fixture: fx}
+	s.inject = newInjector(s)
+	s.interfaces = append(s.interfaces, s.inject.iface())
 	return s, nil
 }
 
-// Run is the server's background work until ctx ends.
+// Run is the server's background work until ctx ends: the injected
+// flights' streams, which end (an end frame each) when ctx does.
 func (s *Server) Run(ctx context.Context) {
-	<-ctx.Done()
+	s.inject.run(ctx)
 }
 
 // iface is one InterUSS interface: its access table and the function

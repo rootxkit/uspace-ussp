@@ -149,3 +149,61 @@ func (u *USSP) Probe(ctx context.Context) (obs.State, string) {
 		return obs.StateDown, fmt.Sprintf("the USSP's api answers /readyz %d", resp.StatusCode())
 	}
 }
+
+// operator is the test operator's id at the USSP: GET /v1/accounts/me
+// with the operator_admin's portal session, remembered once read.
+func (s *Server) operator(ctx context.Context, portal *client.ClientWithResponses) (client.OperatorID, error) {
+	var none client.OperatorID
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+	if s.operatorID != none {
+		return s.operatorID, nil
+	}
+	resp, err := portal.GetMeWithResponse(ctx)
+	if err != nil {
+		return none, fmt.Errorf("GET /v1/accounts/me: the USSP did not answer: %w", err)
+	}
+	if resp.JSON200 == nil {
+		return none, problemOf(resp.StatusCode(), resp.Body)
+	}
+	var id client.OperatorID
+	if resp.JSON200.OperatorId == nil || id.UnmarshalText([]byte(*resp.JSON200.OperatorId)) != nil {
+		return none, &RefusalError{Status: http.StatusForbidden, Reason: "no_operator", Detail: "the portal session names no operator"}
+	}
+	s.operatorID = id
+	return id, nil
+}
+
+// bind binds every planned flight's serial to the test operator's client
+// through the portal's binding route (POST
+// /v1/accounts/operators/{id}/clients/{id}/serials): the real path, a
+// binding of the same client again is the same binding, one of another
+// client a refusal (409, permanent). Without a portal session nothing
+// is bound here; the hook binds the fixture's pool at seed time and an
+// unbound serial is then the ingest's refusal.
+func (s *Server) bind(ctx context.Context, plans []planned) error {
+	if s.USSP.Session == "" {
+		return nil
+	}
+	portal, err := s.USSP.Portal()
+	if err != nil {
+		return err
+	}
+	op, err := s.operator(ctx, portal)
+	if err != nil {
+		return err
+	}
+	for _, p := range plans {
+		resp, err := portal.BindSerialWithResponse(ctx, op, s.cfg.OperatorClientID, client.SerialBindingRequest{Serial: p.serial})
+		if err != nil {
+			return fmt.Errorf("binding %s: the USSP did not answer: %w", p.serial, err)
+		}
+		if resp.JSON201 == nil {
+			ref := problemOf(resp.StatusCode(), resp.Body)
+			ref.Detail = "binding " + p.serial + ": " + ref.Detail
+			return ref
+		}
+		s.Counters.Inc(CounterBindingsMade)
+	}
+	return nil
+}
