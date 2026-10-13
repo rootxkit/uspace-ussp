@@ -85,7 +85,13 @@
 # the owner decision PLAN §15.2 Q34) does not make the exit 3, and is
 # never a pass: the hook names each with the baseline's note, as a
 # warning annotation in a workflow, and the report's verdict stays
-# incomplete. A failure
+# incomplete. A gate requirement the baseline records as a known failure
+# (status fail, a note saying where it is tracked and the failing checks:
+# F3411-SP and F3548-SCD until WP-21's R6 to R8 are fixed) does not fail
+# the run while it fails exactly those checks (the suite's gate: a check
+# outside the list is a regression), and is never a pass either: the
+# hook names each "KNOWN FAILING, NOT A PASS" with the note, as a
+# warning annotation in a workflow. A failure
 # of the stack itself is 1 and names its step. Secrets stay in files:
 # none is printed, put on a command line or written to the reports.
 set -euo pipefail
@@ -150,6 +156,11 @@ validate() {
     local unnoted
     unnoted="$(jq -r '.requirements | to_entries[] | select(.value.status == "not_applicable" and ((.value.note // "") == "")) | .key' "$baseline")"
     [ -z "$unnoted" ] || usage "$baseline records not applicable without a note saying why: $(echo "$unnoted" | tr '\n' ' ')"
+    # A known failure says where it is tracked and which checks fail: an
+    # empty list would accept any failure of the requirement.
+    local untracked
+    untracked="$(jq -r '.requirements | to_entries[] | select(.value.status == "fail" and (((.value.note // "") == "") or (((.value.failing // []) | length) == 0))) | .key' "$baseline")"
+    [ -z "$untracked" ] || usage "$baseline records a known failure without a note saying where it is tracked or without its failing checks: $(echo "$untracked" | tr '\n' ' ')"
   fi
   if [ -n "$external" ]; then
     case "$external" in http://* | https://*) ;; *) usage "USSP_CONFORMANCE_BASE_URL $external is not an http(s) URL" ;; esac
@@ -720,6 +731,17 @@ not_checked() {
     | [.id, (($bl.requirements // {})[.id] | select(.status == "not_applicable") | .note) // ""] | @tsv' "$1"
 }
 
+# known_failing <report.json>: the gate requirements that failed in the
+# run and that the baseline records as known failures, one
+# "<id><TAB><the baseline's note>" per line.
+known_failing() {
+  local bl='{}'
+  if [ "$baseline" != none ]; then bl="$(cat "$baseline")"; fi
+  jq -r --argjson bl "$bl" '.requirements[]? | select(.role == "gate" and .status == "fail")
+    | select((($bl.requirements // {})[.id].status // "") == "fail")
+    | [.id, ($bl.requirements[.id].note // "")] | @tsv' "$1"
+}
+
 # ---- main -------------------------------------------------------------------------------
 
 case "$cmd" in
@@ -829,6 +851,7 @@ fi
 # A gate requirement not checked is never a pass, even when the
 # baseline accepts it: each is named with the reason it is not checked.
 blocked=0
+known=0
 if [ -n "$run_dir" ] && [ -f "$run_dir/report.json" ] && [ "$baseline" != none ]; then
   if ! nc="$(not_checked "$(winpath "$run_dir/report.json")")"; then
     say "could not read the requirements of $run_dir/report.json"
@@ -846,6 +869,20 @@ if [ -n "$run_dir" ] && [ -f "$run_dir/report.json" ] && [ "$baseline" != none ]
       say "NOT CHECKED: $id (no baseline records it not applicable: the run is incomplete)"
     fi
   done <<<"$nc"
+  # A known failure the suite did not count as a regression is not a
+  # pass: each is named with where it is tracked.
+  if ! kf="$(known_failing "$(winpath "$run_dir/report.json")")"; then
+    say "could not read the requirements of $run_dir/report.json"
+    [ "$suite_rc" -ne 0 ] || suite_rc=1
+    kf=""
+  fi
+  while IFS=$'\t' read -r id note; do
+    [ -n "$id" ] || continue
+    known=$((known + 1))
+    say "KNOWN FAILING, NOT A PASS: $id: $note (recorded failing by ${baseline#"$here"/})"
+    if [ "${GITHUB_ACTIONS:-}" = true ]; then echo "::warning title=conformance: $id known failing (not a pass)::$note"; fi
+    echo "known failing $id: $note" >>"$run_dir/run-info.txt"
+  done <<<"$kf"
 fi
 if [ "$qualifier_failed" = 1 ] && [ "$suite_rc" -ne 1 ]; then
   say "a uss_qualifier configuration wrote no report: its requirement was not judged; exit 1, whatever the suite said ($suite_rc)"
@@ -853,7 +890,9 @@ if [ "$qualifier_failed" = 1 ] && [ "$suite_rc" -ne 1 ]; then
 fi
 case "$suite_rc" in
   0)
-    if [ "$blocked" -gt 0 ]; then
+    if [ "$known" -gt 0 ]; then
+      say "the suite exited 0 after $(($(date +%s) - started)) s with $known gate requirements failing as the reviewed baseline records them (no regression) and $blocked not checked: the verdict is not a pass; report under $out"
+    elif [ "$blocked" -gt 0 ]; then
       say "the suite exited 0 after $(($(date +%s) - started)) s with $blocked gate requirements not checked, each accepted by the reviewed baseline: the verdict is incomplete, not a pass; report under $out"
     elif [ "${CONFORMANCE_ALLOW_INCOMPLETE:-}" = 1 ]; then
       say "the suite exited 0 after $(($(date +%s) - started)) s: a pass, or an incomplete run accepted by CONFORMANCE_ALLOW_INCOMPLETE=1 (the report says which); report under $out"
