@@ -59,6 +59,21 @@ def say($s; $m): "\($s): \($m)";
       | ($svc[$s].environment.USSP_TOKEN_ISSUERS // "" | split(",") | map(split("=") | .[1] // "" | capture("^https://(?<h>[^/:]+)").h) | last) as $own
       | if ($svc[$s].extra_hosts // [] | map(tostring) | any(startswith($own)) | not) then say($s; "this USSP's own host \($own) is not mapped to the edge Caddy") else empty end),
 
+    # The processes that verify tokens each read their own jwks_cache key
+    # (USSP_JWKS_CACHE_KEY_FILE), mounted read-only from
+    # keys/jwks-cache-<process>.key at that path, and no other process's;
+    # a process that verifies nothing reads none.
+    (go[] as $s | select($m | present($s)) | $svc[$s] as $v
+      | ((["api", "telemetry-ingest", "rid-sp", "traffic-ws"] | index($s)) != null) as $want
+      | ($v.environment.USSP_JWKS_CACHE_KEY_FILE // "") as $path
+      | [$v.volumes // [] | .[] | select((.source // "") | test("/keys/jwks-cache-[a-z-]+\\.key$"))] as $keys
+      | (if $want and $path == "" then say($s; "USSP_JWKS_CACHE_KEY_FILE unset: it stores and uses no JWKS")
+         elif ($want | not) and $path != "" then say($s; "USSP_JWKS_CACHE_KEY_FILE set on a process that verifies no token")
+         else empty end),
+        (if $want and ($keys | map(select((.source | endswith("/keys/jwks-cache-\($s).key")) and .target == $path and (.read_only // false))) | length) != 1
+         then say($s; "its jwks-cache key is not mounted read-only at \($path)") else empty end),
+        (if ($keys | map(select(.source | endswith("/keys/jwks-cache-\($s).key") | not)) | length) > 0 then say($s; "mounts another process's jwks-cache key") else empty end)),
+
     # The one-shots: each opens only the tree it migrates, and no NATS.
     ([["migrate", "USSP_PG_URL"], ["migrate-timeseries", "USSP_TS_URL"]][] as [$s, $d] | select($m | present($s))
       | ["USSP_PG_URL", "USSP_TS_URL", "USSP_NATS_URL"][] as $v

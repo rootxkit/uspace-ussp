@@ -52,8 +52,14 @@ deploy/gen-secrets.sh --owner 65532 /srv/uspace-ussp/secrets
 It writes `db.env`, `nats.env`, one `<process>.env` per process (its own
 NATS user and only the DSNs it opens), `migrate.env`,
 `migrate-timeseries.env`, `backup.env`, `web.env` and `keys/issuer.pem`,
-`keys/mfa.key`; `--check` lists what is missing. The layout is
-uspace-deploy's, so either tool's directory serves the compose file.
+`keys/mfa.key`, and `keys/jwks-cache-<process>.key` for api,
+telemetry-ingest, rid-sp and traffic-ws (each process's own HMAC key for
+the JWKS it stores in `jwks_cache`, mounted into it alone); `--check`
+lists what is missing, and `deploy.sh` refuses to start without it. The
+layout is uspace-deploy's, so either tool's directory serves the compose
+file, once uspace-deploy's `scripts/gen-secrets.sh` writes the four
+`jwks-cache` keys too (until then, run this one on its directory: it
+writes only what is missing).
 Every NATS password starts with a letter: NATS reads `$VARIABLE` as a
 value, and the smoke's first start failed on a hex password beginning
 with a digit ("variable reference for 'USSP_NATS_TSDB_WRITER_PASSWORD'

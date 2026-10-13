@@ -22,7 +22,9 @@
 #                       in git: db.env, nats.env, <process>.env (that
 #                       process's own NATS user and only the DSNs it
 #                       opens), migrate.env, migrate-timeseries.env,
-#                       web.env, keys/ (issuer.pem, mfa.key); and, once
+#                       web.env, keys/ (issuer.pem, mfa.key, and one
+#                       jwks-cache-<process>.key per process that verifies
+#                       tokens, mounted into that process alone); and, once
 #                       the authority has issued this USSP's certificate,
 #                       certificate.env and keys/client.secret, written by
 #                       uspace-deploy's scripts/ussp-certificate.sh
@@ -263,9 +265,11 @@ services:
       USSP_TRUSTED_PROXIES: ${USSP_CADDY_IP}/32,${USSP_WEB_IP:?web's address on the edge network}/32
       USSP_ISSUER_KEY_FILE: /run/secrets/ussp/issuer.pem
       USSP_MFA_KEY_FILE: /run/secrets/ussp/mfa.key
+      USSP_JWKS_CACHE_KEY_FILE: /run/secrets/jwks-cache.key
       USSP_RECORDS_DIR: /var/lib/ussp/records
       GOMEMLIMIT: 200MiB
     volumes:
+      - ${USSP_SECRETS_DIR}/keys/jwks-cache-api.key:/run/secrets/jwks-cache.key:ro
       - ${USSP_SECRETS_DIR}/keys:/run/secrets/ussp:ro
       - ${USSP_GROUND_DIR:?the geoid grid directory}:/srv/ground:ro
       - records:/var/lib/ussp/records
@@ -290,11 +294,13 @@ services:
     environment:
       <<: *env
       USSP_TELEMETRY_INGEST_ADDR: ":8081"
+      USSP_JWKS_CACHE_KEY_FILE: /run/secrets/jwks-cache.key
       USSP_TOKEN_ISSUERS: *own-issuer
       # The geoid grid is memory-mapped (core v1.4.0); the limit keeps
       # room for the copy an older core held.
       GOMEMLIMIT: 180MiB
     volumes:
+      - ${USSP_SECRETS_DIR}/keys/jwks-cache-telemetry-ingest.key:/run/secrets/jwks-cache.key:ro
       - ${USSP_GROUND_DIR}:/srv/ground:ro
     healthcheck:
       <<: *probe
@@ -315,9 +321,11 @@ services:
       - ${USSP_SECRETS_DIR}/rid-sp.env
     environment:
       <<: *env
+      USSP_JWKS_CACHE_KEY_FILE: /run/secrets/jwks-cache.key
       USSP_RID_SP_ADDR: ":8082"
       GOMEMLIMIT: 76MiB
     volumes:
+      - ${USSP_SECRETS_DIR}/keys/jwks-cache-rid-sp.key:/run/secrets/jwks-cache.key:ro
       - ${USSP_SECRETS_DIR}/keys:/run/secrets/ussp:ro
     healthcheck:
       <<: *probe
@@ -367,9 +375,11 @@ services:
     environment:
       <<: *env
       USSP_TRAFFIC_WS_ADDR: ":8084"
+      USSP_JWKS_CACHE_KEY_FILE: /run/secrets/jwks-cache.key
       USSP_TOKEN_ISSUERS: *own-issuer
       GOMEMLIMIT: 76MiB
     volumes:
+      - ${USSP_SECRETS_DIR}/keys/jwks-cache-traffic-ws.key:/run/secrets/jwks-cache.key:ro
       - ${USSP_GROUND_DIR}:/srv/ground:ro
     healthcheck:
       <<: *probe

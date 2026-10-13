@@ -31,6 +31,11 @@
 #   web.env                 USSP_WEB_BFF_SECRET (32 random bytes, base64)
 #   keys/issuer.pem         RSA 3072, this USSP's token issuer (its JWKS)
 #   keys/mfa.key            base64 of 32 bytes, seals staff TOTP secrets
+#   keys/jwks-cache-<process>.key
+#                           base64 of 32 bytes, one per process that verifies
+#                           tokens (api, telemetry-ingest, rid-sp, traffic-ws):
+#                           the HMAC key that binds the JWKS it stores in
+#                           jwks_cache (USSP_JWKS_CACHE_KEY_FILE)
 #
 # Not written here: certificate.env and keys/client.secret, which come
 # from the authority's answer when it issues this USSP's certificate
@@ -150,6 +155,13 @@ if need "$dir/keys/mfa.key"; then
   openssl rand -base64 32 > "$dir/keys/mfa.key.tmp"
   put "$dir/keys/mfa.key" 0600
 fi
+
+for p in api telemetry-ingest rid-sp traffic-ws; do
+  if need "$dir/keys/jwks-cache-$p.key"; then
+    openssl rand -base64 32 > "$dir/keys/jwks-cache-$p.key.tmp"
+    put "$dir/keys/jwks-cache-$p.key" 0600
+  fi
+done
 
 if [ -n "$owner" ] && [ "$check" -eq 0 ]; then
   chown "$owner:$owner" "$dir/keys" "$dir"/keys/*

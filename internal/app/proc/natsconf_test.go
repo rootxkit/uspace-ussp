@@ -15,6 +15,7 @@ import (
 // natsConfs are the NATS configurations the deployments start with.
 var natsConfs = []string{
 	filepath.Join("..", "..", "..", "deploy", "compose", "nats.conf"),
+	filepath.Join("..", "..", "..", "deploy", "compose", "nats.staging.conf"),
 }
 
 var (

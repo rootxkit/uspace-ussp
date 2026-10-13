@@ -158,6 +158,9 @@ mutate "a published port" '.services.api.ports = [{"target": 8080, "published": 
 mutate "an image by tag" '.services.web.image = "ghcr.io/rootxkit/uspace-ussp-web:latest"' 'not pinned by digest'
 mutate "its own JWKS read over plain http" '.services["traffic-ws"].environment.USSP_TOKEN_ISSUERS |= sub("=https://ussp.example.test/"; "=http://ussp-api:8080/")' 'over plain http'
 mutate "its own host not mapped to Caddy" 'del(.services["telemetry-ingest"].extra_hosts)' 'is not mapped to the edge Caddy'
+mutate "a verifier without its jwks_cache key" 'del(.services["rid-sp"].environment.USSP_JWKS_CACHE_KEY_FILE)' 'USSP_JWKS_CACHE_KEY_FILE unset'
+mutate "another process's jwks_cache key" '.services["traffic-ws"].volumes |= map(if (.source // "" | endswith("/keys/jwks-cache-traffic-ws.key")) then .source |= sub("traffic-ws.key$"; "api.key") else . end)' "another process's jwks-cache key"
+mutate "a jwks_cache key on a process that verifies nothing" '.services.monitor.environment.USSP_JWKS_CACHE_KEY_FILE = "/run/secrets/jwks-cache.key"' 'verifies no token'
 
 # Every base image the two Dockerfiles build from is pinned by digest: a
 # tag can move between two builds of one commit.
