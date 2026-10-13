@@ -58,6 +58,12 @@ additively within `/v1`.
   tracker's silence counts from its restore (or the input's return,
   whichever is later), so a flight heard after the restart raises none
   and one still silent raises it `lost_link_s` after the restore.
+- A silent partition from NATS (unreachable, nothing closing the
+  connection) is seen within about 6 s (Q35 review): every process
+  pings NATS every 2 s and drops the connection as stale after two
+  unanswered pings (`bus.PingInterval`, `bus.MaxPingsOut`). With
+  nats.go's defaults (2 min, 2) the link stayed up for minutes, so the
+  monitor took its own blindness for the aircraft's silence.
 - A process started while a token service is down verifies that
   service's tokens again (PLAN §15.2 Q35 b): each ecosystem issuer's
   JWKS is stored in the new `jwks_cache` bucket when it is fetched
