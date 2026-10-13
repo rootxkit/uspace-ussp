@@ -22,7 +22,7 @@ import { useAppT } from "@/i18n/t";
 import { useApi, type Schemas } from "@/lib/api";
 import { Fact, Num, PageHeading, RequireSession, Utc } from "../common";
 import { PortalMap } from "../PortalMap";
-import { DraftLayer, OutlineFields, outlineOf, type Outline, type Point } from "./VolumeEditor";
+import { VolumeDrawing, VolumeFields, outlineOf, type Outline } from "./VolumeEditor";
 
 // The answer as openapi-fetch types it: alternative (always null in v1) is not on it.
 type Decision = Omit<Schemas["IntentDecision"], "alternative">;
@@ -252,10 +252,6 @@ function ModifyForm({ id, onDone }: { id: string; onDone(d: Decision): void }) {
   const t = useAppT();
   const api = useApi();
   const [outline, setOutline] = useState<Outline>({ kind: "polygon", vertices: [] });
-  const onPick = useCallback(
-    (p: Point) => setOutline((o) => (o.kind === "polygon" ? { ...o, vertices: [...o.vertices, p] } : { ...o, center: p })),
-    [],
-  );
   return (
     <section aria-labelledby="modify-heading" className="flex flex-col gap-2 rounded border border-[var(--us-border)] p-3">
       <h2 id="modify-heading" className="m-0 text-base font-semibold">
@@ -265,9 +261,9 @@ function ModifyForm({ id, onDone }: { id: string; onDone(d: Decision): void }) {
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="flex flex-col gap-2">
           <PortalMap className="h-[300px]">
-            <DraftLayer outline={outline} onPick={onPick} />
+            <VolumeDrawing outline={outline} onChange={setOutline} />
           </PortalMap>
-          <OutlineFields outline={outline} onChange={setOutline} />
+          <VolumeFields outline={outline} onChange={setOutline} />
         </div>
         <Form
           schema={modifySchema}

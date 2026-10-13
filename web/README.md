@@ -89,9 +89,12 @@ source with its state and time, read from `GET /v1/admin/inputs`.
   `font-src 'self'`, `worker-src blob:`), fonts through `next/font/local`
   from the kit, the basemap at `/basemap/` from the deployment; the
   browser tests check that nothing leaves the origin.
-- The kit 0.1.0 has no drawing tool (KIT: pending uspace-ui): an outline
-  is points clicked on the map or typed; a circle is shown as its centre
-  and radius in words (drawing it would need geometry here).
+- An outline is drawn with the kit's `DrawLayer` (a click adds a vertex
+  or places the centre, a drag moves one) and typed with its
+  `OutlineFields`, at most the contract's 1000 vertices. A circle is
+  shown as its centre with its centre and radius in words: the kit draws
+  a circle's outline only when the API drew it, and this API draws none
+  (`docs/PLAN.md` §15.1 Q28).
 
 ## Configuration (read at request time)
 

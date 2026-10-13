@@ -9,7 +9,7 @@
 // refusal the API names goes onto its field, the rest are listed with
 // their path. A refused intent is a decision (201) whose conflicts the
 // decision view lists, never a problem.
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWatch } from "react-hook-form";
 import { z } from "zod";
@@ -19,7 +19,7 @@ import { useAppT } from "@/i18n/t";
 import { useApi, type Schemas } from "@/lib/api";
 import { PageHeading, RequireSession } from "../common";
 import { PortalMap } from "../PortalMap";
-import { DraftLayer, OutlineFields, outlineOf, type Outline, type Point } from "./VolumeEditor";
+import { VolumeDrawing, VolumeFields, outlineOf, type Outline } from "./VolumeEditor";
 
 const MODES = ["VLOS", "BVLOS"] as const;
 const FLIGHT_TYPES = ["normal", "special_operation"] as const;
@@ -184,11 +184,6 @@ export function IntentFormPage() {
   const router = useRouter();
   const [outline, setOutline] = useState<Outline>({ kind: "polygon", vertices: [] });
   const [initial] = useState(defaults);
-  const onPick = useCallback(
-    (p: Point) =>
-      setOutline((o) => (o.kind === "polygon" ? { ...o, vertices: [...o.vertices, p] } : { ...o, center: p })),
-    [],
-  );
   return (
     <section aria-labelledby="new-intent-heading" className="flex flex-col gap-3">
       <PageHeading id="new-intent-heading">{t("portal.intent.new_heading")}</PageHeading>
@@ -197,9 +192,9 @@ export function IntentFormPage() {
         <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
           <div className="flex flex-col gap-2">
             <PortalMap className="h-[360px] lg:h-[520px]">
-              <DraftLayer outline={outline} onPick={onPick} />
+              <VolumeDrawing outline={outline} onChange={setOutline} />
             </PortalMap>
-            <OutlineFields outline={outline} onChange={setOutline} />
+            <VolumeFields outline={outline} onChange={setOutline} />
           </div>
           <Form
             schema={intentSchema}
