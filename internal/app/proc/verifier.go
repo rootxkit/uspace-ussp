@@ -69,6 +69,8 @@ func TokenVerifier(ctx context.Context, rt *Runtime, issuer *auth.Issuer) (auth.
 		vc.Cache = bus.KVStore{JS: rt.Bus.JetStream(), Bucket: bus.BucketJWKSCache}
 		vc.CacheMaxAge = time.Duration(cfg.JWKSCacheMaxAgeS) * time.Second
 		vc.CacheKey = key
+		// Its NATS user in every compose file (deploy/compose/nats.conf).
+		vc.CacheWriter = rt.Process
 	}
 	v, err := auth.NewVerifier(ctx, vc)
 	if err != nil {

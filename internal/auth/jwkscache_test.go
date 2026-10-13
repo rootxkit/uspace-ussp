@@ -47,6 +47,9 @@ var (
 	otherCacheKey = bytes.Repeat([]byte{0xa5}, JWKSCacheKeyBytes)
 )
 
+// testWriter is the NATS user of the processes of these tests.
+const testWriter = "api"
+
 // cacheKeyFor is testCacheKey with a store, nil without.
 func cacheKeyFor(store JWKSStore) []byte {
 	if store == nil {
@@ -61,7 +64,7 @@ func cachedVerifier(t *testing.T, eco *ecosystem, c *clock, store JWKSStore) *Ve
 	cfg := coreauth.Config{Audiences: []string{ownHost, labAlias}, StrictSessionClaims: true, Now: c.fn(),
 		Issuers: map[string]coreauth.IssuerConfig{eco.URL: {JWKSURL: eco.JWKS}}}
 	v, err := NewVerifier(context.Background(), VerifierConfig{Ecosystem: cfg, RetryInterval: 10 * time.Millisecond,
-		Cache: store, CacheKey: cacheKeyFor(store)})
+		Cache: store, CacheKey: cacheKeyFor(store), CacheWriter: testWriter})
 	mustNoErr(t, err)
 	return v
 }
@@ -189,7 +192,7 @@ func TestAStoredJWKSThatDoesNotReadIsRefused(t *testing.T) {
 		store := &memJWKS{}
 		// Written by this process (its MAC verifies): what it says is
 		// then checked.
-		mustNoErr(t, store.Put(ctx, JWKSCacheKey(eco.URL), sealed(t, testCacheKey, JWKSCacheKey(eco.URL), value)))
+		mustNoErr(t, store.Put(ctx, JWKSCacheKey(testWriter, eco.URL), sealed(t, testCacheKey, JWKSCacheKey(testWriter, eco.URL), value)))
 		eco.Down()
 		v := startDuringOutage(t, eco, c, store)
 		if v.cached.Load() != nil || v.Counters().Get(CounterJWKSCacheRefused) != 1 {
@@ -215,7 +218,7 @@ func TestAPlantedJWKSIsRefusedAndAGenuineOneRestores(t *testing.T) {
 	first := cachedVerifier(t, eco, c, genuine)
 	mustNoErr(t, first.BuildEcosystem(ctx))
 	first.saves.Wait()
-	raw, found, err := genuine.Get(ctx, JWKSCacheKey(eco.URL))
+	raw, found, err := genuine.Get(ctx, JWKSCacheKey(testWriter, eco.URL))
 	if err != nil || !found {
 		t.Fatalf("nothing stored: %v", err)
 	}
@@ -239,12 +242,12 @@ func TestAPlantedJWKSIsRefusedAndAGenuineOneRestores(t *testing.T) {
 	mustNoErr(t, err)
 	for name, data := range map[string][]byte{
 		"no MAC":                    unsealed,
-		"another key's MAC":         sealed(t, otherCacheKey, JWKSCacheKey(eco.URL), plant),
-		"moved from another key":    sealed(t, testCacheKey, JWKSCacheKey("https://other.test"), plant),
+		"another key's MAC":         sealed(t, otherCacheKey, JWKSCacheKey(testWriter, eco.URL), plant),
+		"moved from another key":    sealed(t, testCacheKey, JWKSCacheKey(testWriter, "https://other.test"), plant),
 		"the keys of a genuine one": swappedData,
 	} {
 		store := &memJWKS{}
-		mustNoErr(t, store.Put(ctx, JWKSCacheKey(eco.URL), data))
+		mustNoErr(t, store.Put(ctx, JWKSCacheKey(testWriter, eco.URL), data))
 		v := startDuringOutage(t, eco, c, store)
 		if v.cached.Load() != nil || v.Counters().Get(CounterJWKSCacheMACMismatch) != 1 || v.Counters().Get(CounterJWKSCacheRestored) != 0 {
 			t.Fatalf("%s: used (%v)", name, v.Counters().Snapshot())
@@ -276,7 +279,7 @@ func TestTheJWKSCacheKeyIsRequiredAndRead(t *testing.T) {
 		!strings.Contains(err.Error(), "USSP_JWKS_CACHE_KEY_FILE") {
 		t.Fatalf("a store without a key: %v", err)
 	}
-	if _, err := NewVerifier(context.Background(), VerifierConfig{Ecosystem: cfg, Cache: &memJWKS{}, CacheKey: testCacheKey}); err != nil {
+	if _, err := NewVerifier(context.Background(), VerifierConfig{Ecosystem: cfg, Cache: &memJWKS{}, CacheKey: testCacheKey, CacheWriter: testWriter}); err != nil {
 		t.Fatalf("a store with a key: %v", err)
 	}
 	dir := t.TempDir()
@@ -436,5 +439,56 @@ func TestTheStoredJWKSOfOneIssuerDownAtStart(t *testing.T) {
 	}
 	if _, err := f.v.Verify(ctx, f.authority.token(t, "authority-01", ownHost, nil, now)); err != nil {
 		t.Fatalf("an authority token after it answers: %v", err)
+	}
+}
+
+// writerVerifier is cachedVerifier as the process whose NATS user is
+// writer.
+func writerVerifier(t *testing.T, eco *ecosystem, c *clock, store JWKSStore, writer string) *Verifier {
+	t.Helper()
+	cfg := coreauth.Config{Audiences: []string{ownHost}, StrictSessionClaims: true, Now: c.fn(),
+		Issuers: map[string]coreauth.IssuerConfig{eco.URL: {JWKSURL: eco.JWKS}}}
+	v, err := NewVerifier(context.Background(), VerifierConfig{Ecosystem: cfg, RetryInterval: 10 * time.Millisecond,
+		Cache: store, CacheKey: testCacheKey, CacheWriter: writer})
+	mustNoErr(t, err)
+	return v
+}
+
+// Each process writes and reads only the keys under its own NATS user,
+// the only user nats.conf lets publish there: rid-sp's stored JWKS is
+// not what api restores (nothing for api), and rid-sp restarted
+// restores its own (the pair). A writer that is not a NATS user name
+// is refused at construction.
+func TestEachProcessReadsOnlyItsOwnStoredJWKS(t *testing.T) {
+	c := newClock(t0())
+	ctx := context.Background()
+	eco := newEcosystem(t)
+	store := &memJWKS{}
+	first := writerVerifier(t, eco, c, store, "rid-sp")
+	mustNoErr(t, first.BuildEcosystem(ctx))
+	first.saves.Wait()
+	if _, found, _ := store.Get(ctx, JWKSCacheKey("rid-sp", eco.URL)); !found {
+		t.Fatal("rid-sp's JWKS is not under its own prefix")
+	}
+	eco.Down()
+	api := writerVerifier(t, eco, c, store, "api")
+	if err := api.BuildEcosystem(ctx); err == nil {
+		t.Fatal("built while the token service is down")
+	}
+	if api.cached.Load() != nil || api.Counters().Get(CounterJWKSCacheRestored) != 0 {
+		t.Fatalf("api restored rid-sp's entry: %v", api.Counters().Snapshot())
+	}
+	again := writerVerifier(t, eco, c, store, "rid-sp")
+	if err := again.BuildEcosystem(ctx); err == nil {
+		t.Fatal("built while the token service is down")
+	}
+	if again.Counters().Get(CounterJWKSCacheRestored) != 1 {
+		t.Fatalf("rid-sp did not restore its own entry: %v", again.Counters().Snapshot())
+	}
+	for _, w := range []string{"", "api.x", "API", "a>b", "*"} {
+		cfg := coreauth.Config{Audiences: []string{ownHost}}
+		if _, err := NewVerifier(ctx, VerifierConfig{Ecosystem: cfg, Cache: store, CacheKey: testCacheKey, CacheWriter: w}); err == nil {
+			t.Fatalf("writer %q accepted", w)
+		}
 	}
 }

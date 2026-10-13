@@ -182,6 +182,22 @@ jobs:
             sleep 1
           done
           docker logs nats; exit 1
+      # A second NATS started with the shipped deploy/compose/nats.conf,
+      # on which the users' permissions are exercised (internal/bus
+      # TestNATSConfJWKSCacheWritersOnAServer), with random passwords.
+      - name: NATS with deploy/compose/nats.conf
+        run: |
+          : > "$RUNNER_TEMP/natsconf.env"
+          for u in API TELEMETRY_INGEST RID_SP MONITOR TRAFFIC_WS DSS_SYNC TSDB_WRITER; do
+            pw="n$(openssl rand -hex 16)"
+            echo "::add-mask::$pw"
+            echo "USSP_NATS_${u}_PASSWORD=$pw" >> "$RUNNER_TEMP/natsconf.env"
+          done
+          cat "$RUNNER_TEMP/natsconf.env" >> "$GITHUB_ENV"
+          echo "USSP_TEST_NATS_CONF_URL=nats://127.0.0.1:4223" >> "$GITHUB_ENV"
+          docker run -d --name nats-conf --env-file "$RUNNER_TEMP/natsconf.env" -p 4223:4222 -p 8223:8222             -v "$PWD/deploy/compose/nats.conf:/etc/nats/nats.conf:ro"             nats@sha256:ac8f88a6494bffc2c2a5289a0ca61cb28a9145c11ba5677cf24265d07f46d8d4 -c /etc/nats/nats.conf
+          curl -fsS --retry 30 --retry-delay 1 --retry-all-errors 'http://127.0.0.1:8223/healthz?js-enabled-only=true' ||
+            { docker logs nats-conf; exit 1; }
       - name: create both databases and roles (deploy/compose/initdb/10-ussp.sql)
         run: |
           api_pw="$(openssl rand -hex 16)"; tsdb_pw="$(openssl rand -hex 16)"

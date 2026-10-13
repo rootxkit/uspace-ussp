@@ -164,6 +164,13 @@ additively within `/v1`.
   verifies forged tokens after a restart during an issuer's outage. A
   mismatch is refused, logged and counted (`jwks_cache_mac_mismatch`);
   without the key file nothing is stored or used from the store.
+  Only the processes that verify tokens (api, telemetry-ingest, rid-sp,
+  traffic-ws) write the bucket, each under its own NATS user's prefix
+  (`<user>.<issuer hash>`): `deploy/compose/nats.conf` denies every
+  user the other users' prefixes, denies monitor, dss-sync and
+  tsdb-writer the bucket and its creation (they no longer maintain it),
+  and denies everyone the stream's update, deletion, purge and message
+  deletion. Entries stored before this change are not read.
 - `GET /v1/admin/inputs` (additive): each monitor instance may carry
   `input_down_since`, `input_back_at`, `last_input_down_since` and
   `lost_link_suspended_until`; the monitor's state is `down` with a

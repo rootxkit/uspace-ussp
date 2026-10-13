@@ -96,6 +96,11 @@ type VerifierConfig struct {
 	// from USSP_JWKS_CACHE_KEY_FILE; NewVerifier refuses a Cache
 	// without it.
 	CacheKey []byte
+	// CacheWriter is the prefix of every key this process reads and
+	// writes in Cache: its NATS user, the only user nats.conf lets
+	// publish under it, so another process's credential cannot write
+	// this process's entries. Required with Cache.
+	CacheWriter string
 	// Logger, when set, says a refused stored JWKS.
 	Logger *slog.Logger
 }
@@ -158,6 +163,9 @@ func NewVerifier(ctx context.Context, cfg VerifierConfig) (*Verifier, error) {
 	}
 	if cfg.Cache != nil && len(cfg.CacheKey) != JWKSCacheKeyBytes {
 		return nil, core.Fieldf("USSP_JWKS_CACHE_KEY_FILE", "a stored JWKS is used only with a key of %d bytes that binds it", JWKSCacheKeyBytes)
+	}
+	if cfg.Cache != nil && !validWriter(cfg.CacheWriter) {
+		return nil, fmt.Errorf("jwks_cache: writer %q is not a NATS user name", cfg.CacheWriter)
 	}
 	if cfg.ProbeClient == nil {
 		cfg.ProbeClient = &http.Client{

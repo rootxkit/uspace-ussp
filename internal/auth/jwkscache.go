@@ -116,11 +116,26 @@ func jwksMAC(key []byte, storeKey string, c CachedJWKS) []byte {
 	return m.Sum(nil)
 }
 
-// JWKSCacheKey is an issuer's key in the store: a hash, since an issuer
-// URL holds characters a KV key may not.
-func JWKSCacheKey(issuer string) string {
+// JWKSCacheKey is an issuer's key in the store, under the prefix of the
+// process that writes it (its NATS user, the only one nats.conf lets
+// publish under that prefix): writer "." and a hash of the issuer, since
+// an issuer URL holds characters a KV key may not.
+func JWKSCacheKey(writer, issuer string) string {
 	h := sha256.Sum256([]byte(issuer))
-	return hex.EncodeToString(h[:16])
+	return writer + "." + hex.EncodeToString(h[:16])
+}
+
+// validWriter is a KV key token: a NATS user name of this deployment.
+func validWriter(w string) bool {
+	if w == "" {
+		return false
+	}
+	for _, r := range w {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 // cachedEco is, per issuer, the verifier built from its stored JWKS and
@@ -185,7 +200,7 @@ func (v *Verifier) persist(ctx context.Context, iss string, doc []byte, now time
 	v.saving[iss] = true
 	v.mu.Unlock()
 	entry := CachedJWKS{Issuer: iss, FetchedAt: now.UTC(), JWKS: doc}
-	entry.MAC = jwksMAC(v.cfg.CacheKey, JWKSCacheKey(iss), entry)
+	entry.MAC = jwksMAC(v.cfg.CacheKey, JWKSCacheKey(v.cfg.CacheWriter, iss), entry)
 	data, err := json.Marshal(entry)
 	if err != nil {
 		v.counters.Inc(CounterJWKSCacheSaveFailed)
@@ -198,7 +213,7 @@ func (v *Verifier) persist(ctx context.Context, iss string, doc []byte, now time
 	v.saves.Go(func() {
 		wctx, cancel := context.WithTimeout(wctx, jwksSaveTimeout)
 		defer cancel()
-		err := v.cfg.Cache.Put(wctx, JWKSCacheKey(iss), data)
+		err := v.cfg.Cache.Put(wctx, JWKSCacheKey(v.cfg.CacheWriter, iss), data)
 		v.mu.Lock()
 		defer v.mu.Unlock()
 		delete(v.saving, iss)
@@ -232,16 +247,17 @@ func (v *Verifier) restore(ctx context.Context) {
 		if v.IssuerReady(iss) || out.v[iss] != nil {
 			continue
 		}
-		data, found, err := v.cfg.Cache.Get(ctx, JWKSCacheKey(iss))
+		storeKey := JWKSCacheKey(v.cfg.CacheWriter, iss)
+		data, found, err := v.cfg.Cache.Get(ctx, storeKey)
 		if err != nil || !found {
 			continue
 		}
-		c, err := decodeCached(data, iss, v.cfg.CacheKey, JWKSCacheKey(iss))
+		c, err := decodeCached(data, iss, v.cfg.CacheKey, storeKey)
 		if errors.Is(err, errJWKSMAC) {
 			// Never used, whatever it holds: not written by this process.
 			v.counters.Inc(CounterJWKSCacheMACMismatch)
 			v.logger().LogAttrs(ctx, slog.LevelError, "stored JWKS refused: its MAC is not this process's",
-				slog.String("issuer", iss), slog.String("bucket_key", JWKSCacheKey(iss)))
+				slog.String("issuer", iss), slog.String("bucket_key", storeKey))
 			continue
 		}
 		if err != nil || now.Sub(c.FetchedAt) >= v.maxAge() || c.FetchedAt.After(now) {
