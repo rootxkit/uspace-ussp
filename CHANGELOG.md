@@ -25,6 +25,17 @@ additively within `/v1`.
 
 ### Fixed
 
+- traffic-ws no longer says a stream is live while its NATS link is
+  down (found by the console browser test, `console.spec.ts`, which
+  timed out with the console feed still `live` 60 s after NATS was
+  cut). It kept sending `console/status/v1` every 2 s with nothing
+  reaching it, so the kit showed the picture as live. Now every
+  traffic and alert stream is closed with 1013 at its next status frame
+  while the link is down, and one opened then is closed with 1013
+  before its first (spec 05 §6: the console freezes with its age
+  shown); the kit reconnects with its backoff once the link is back.
+  Counted as `traffic_ws_closed_bus_down`. Contract: the stream
+  descriptions say so; no schema change.
 - `USSP_SYSTEM_ID` is the authority's certificate code (audit M-2): one
   to eight upper-case letters and digits, refused at start otherwise,
   since the authority's `certificates.code` and `ussp-<code>-<nn>`
