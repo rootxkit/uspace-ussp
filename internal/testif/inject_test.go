@@ -42,12 +42,14 @@ func TestFrameOfMapsTheInjectedState(t *testing.T) {
 		t.Fatal(err)
 	}
 	ptr := func(v float64) *float64 { return &v }
-	ref := client.TakeoffLocation
 	ep := "e"
+	// The lab's states carry their height in the state's (v19) member,
+	// not in the position: F3411-22a has none to send
+	// (TestFrameOfTakesTheHeightFromThePosition).
 	want := client.TelemetryFrame{
 		Ts: time.Date(2026, 10, 13, 8, 0, 1, 500_000_000, time.UTC), Serial: "TEST-INJ-0001", Seq: 7, Epoch: &ep,
 		Position: client.TelemetryPosition{Lat: 41.7161, Lng: 44.8281}, AltWgs84M: ptr(652.5), AltPressureM: ptr(640),
-		HeightM: ptr(30.5), HeightRef: &ref, SpeedMs: ptr(1.9), TrackDeg: ptr(90), VspeedMs: ptr(0.2),
+		SpeedMs: ptr(1.9), TrackDeg: ptr(90), VspeedMs: ptr(0.2),
 		Status: client.TelemetryFrameStatusAirborne, AccuracyH: client.HA1m, AccuracyV: client.VA3m,
 		TimestampAccuracyS: ptr(0.1), OperatorPosition: op,
 	}
@@ -619,5 +621,39 @@ func TestInjectionFailsWhenAScheduledFirstFrameIsRefused(t *testing.T) {
 	}
 	if again := put(t, ts, "later", p); again.code != http.StatusConflict {
 		t.Errorf("the failed test is not held until its delete: %d", again.code)
+	}
+}
+
+// F3411-22a has height only in the position (RIDAircraftPosition.height;
+// its RIDAircraftState has no height): an injected state's height member,
+// the v19 place the interface file still carries, is not the 22a
+// position's height and is not sent. The SP then serves the special
+// height, as uss_qualifier expects for a value not injected. The twin: a
+// position height is sent with its reference.
+func TestFrameOfTakesTheHeightFromThePosition(t *testing.T) {
+	ts := time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
+	lat, lng := 41.7, 44.8
+	stateOnly := inj.RIDAircraftState{Timestamp: &ts, Position: &inj.RIDAircraftPosition{Lat: &lat, Lng: &lng},
+		Height: &inj.RIDHeight{Distance: 50, Reference: inj.RIDHeightReferenceTakeoffLocation}}
+	f, err := FrameOf(stateOnly, "S", "e", 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.HeightM != nil || f.HeightRef != nil {
+		t.Errorf("the state's (v19) height was sent as the position's: %v %v", *f.HeightM, *f.HeightRef)
+	}
+	inPos := inj.RIDAircraftState{Timestamp: &ts, Position: &inj.RIDAircraftPosition{Lat: &lat, Lng: &lng,
+		Height: &inj.RIDHeight{Distance: 30.5, Reference: inj.RIDHeightReferenceGroundLevel}},
+		Height: &inj.RIDHeight{Distance: 50, Reference: inj.RIDHeightReferenceTakeoffLocation}}
+	g, err := FrameOf(inPos, "S", "e", 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.HeightM == nil || *g.HeightM != 30.5 || g.HeightRef == nil || *g.HeightRef != client.GroundLevel {
+		t.Errorf("the position's height was not sent: %v %v", g.HeightM, g.HeightRef)
+	}
+	inPos.Position.Height.Distance = -1000 // F3411's special height: unknown
+	if s, err := FrameOf(inPos, "S", "e", 0, nil); err != nil || s.HeightM != nil || s.HeightRef != nil {
+		t.Errorf("the special position height is not unknown: %+v %v", s, err)
 	}
 }
