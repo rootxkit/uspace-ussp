@@ -19,22 +19,23 @@ import (
 
 // Counters of the RID injection (E-09).
 const (
-	CounterInjectionAccepted   = "testif_injection_accepted"
-	CounterInjectionRefused    = "testif_injection_refused"
-	CounterInjectionFailed     = "testif_injection_failed"
-	CounterInjectionConflict   = "testif_injection_conflict"
-	CounterInjectionFull       = "testif_injection_full"
-	CounterInjectionDeleted    = "testif_injection_deleted"
-	CounterFramesSent          = "testif_frames_sent"
-	CounterFramesBacklog       = "testif_frames_backlog"
-	CounterFramesRefused       = "testif_frames_refused"
-	CounterFramesSendFailed    = "testif_frames_send_failed"
-	CounterEndNotAcknowledged  = "testif_end_not_acknowledged"
-	CounterBindingsMade        = "testif_bindings_made"
-	CounterUserNotifications   = "testif_user_notifications_answered"
-	CounterInjectionBadRequest = "testif_injection_bad_request"
-	CounterInjectionFailedLive = "testif_injection_failed_in_flight"
-	CounterFramesNotAcked      = "testif_frames_not_acknowledged"
+	CounterInjectionAccepted    = "testif_injection_accepted"
+	CounterInjectionRefused     = "testif_injection_refused"
+	CounterInjectionFailed      = "testif_injection_failed"
+	CounterInjectionConflict    = "testif_injection_conflict"
+	CounterInjectionFull        = "testif_injection_full"
+	CounterInjectionDeleted     = "testif_injection_deleted"
+	CounterFramesSent           = "testif_frames_sent"
+	CounterFramesBacklog        = "testif_frames_backlog"
+	CounterFramesRefused        = "testif_frames_refused"
+	CounterFramesSendFailed     = "testif_frames_send_failed"
+	CounterEndNotAcknowledged   = "testif_end_not_acknowledged"
+	CounterBindingsMade         = "testif_bindings_made"
+	CounterUserNotifications    = "testif_user_notifications_answered"
+	CounterInjectionBadRequest  = "testif_injection_bad_request"
+	CounterInjectionFailedLive  = "testif_injection_failed_in_flight"
+	CounterFramesNotAcked       = "testif_frames_not_acknowledged"
+	CounterFlightEndedUndecided = "testif_flight_ended_undecided"
 )
 
 // maxTestIDBytes bounds a test id.
@@ -482,11 +483,22 @@ func (in *injector) fail(ctx context.Context, run *flightRun, ref *RefusalError)
 // for the ingest to decide on it.
 func (in *injector) end(ctx context.Context, run *flightRun, ack time.Duration) {
 	run.mu.Lock()
-	if run.ended || run.ok == 0 {
+	if run.ended {
 		run.mu.Unlock()
 		return
 	}
 	run.ended = true
+	if run.ok == 0 {
+		// No sample was decided accepted: there is nothing to end at, so
+		// no end frame goes, and that is said once, not left silent.
+		sent := run.sent
+		run.mu.Unlock()
+		in.count(CounterFlightEndedUndecided)
+		in.s.Logger.LogAttrs(ctx, slog.LevelWarn, "rid injection flight ended with no sample decided accepted: no end frame sent",
+			slog.String("test_id", run.t.id), slog.String("serial", run.p.serial),
+			slog.String("injection_id", run.p.injectionID), slog.Int("samples_sent", sent))
+		return
+	}
 	// At the last accepted sample, numbered after the last sent one (a
 	// refused frame's position is not repeated), and timed a millisecond
 	// after the last sent one: the end is no new measurement, so the

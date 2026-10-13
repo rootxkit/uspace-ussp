@@ -3,6 +3,7 @@ package testif
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"os"
 	"reflect"
@@ -710,5 +711,54 @@ func TestInjectionDoesNotWaitForAcknowledgementsBetweenSamples(t *testing.T) {
 	}
 	if n := ts.counters.Snapshot()[CounterFramesNotAcked]; n != 1 {
 		t.Errorf("%s = %d, want 1 (the last sample)", CounterFramesNotAcked, n)
+	}
+}
+
+// lockedBuffer is a log sink the injector's goroutines may write to.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string { l.mu.Lock(); defer l.mu.Unlock(); return l.b.String() }
+
+// A scheduled flight whose samples the ingest never decides ends with no
+// end frame (there is no accepted sample to end at): that is said, at
+// warn with the serial and the samples sent, and counted, not left
+// silent. The pair: a scheduled flight whose samples are decided ends
+// with its end frame and says nothing of the kind.
+func TestInjectionSaysAFlightEndedWithNoDecidedSample(t *testing.T) {
+	for _, silent := range []bool{true, false} {
+		p := labInjection(t)
+		p.RequestedFlights = p.RequestedFlights[:1]
+		f := newFakeUSSP(t)
+		f.silent = silent
+		ts := newTestServer(t, f, func(c *Config) { c.AckTimeoutS = 1 })
+		var logs lockedBuffer
+		ts.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+		clock := &heldClock{now: time.Date(2026, 10, 13, 7, 59, 58, 0, time.UTC), open: make(chan struct{})}
+		ts.inject.clock = clock
+		if res := putWithin(t, ts, "undecided", p, 5*time.Second); res.code != http.StatusOK {
+			t.Fatalf("silent %v: PUT %d %s", silent, res.code, res.body)
+		}
+		close(clock.open)
+		ts.inject.work.Wait()
+		frames := f.received()
+		ended := len(frames) > 0 && frames[len(frames)-1].End != nil && *frames[len(frames)-1].End
+		said := strings.Contains(logs.String(), "flight ended with no sample decided accepted")
+		n := ts.counters.Snapshot()[CounterFlightEndedUndecided]
+		if silent {
+			if ended || len(frames) == 0 || !said || n != 1 || !strings.Contains(logs.String(), "serial=") {
+				t.Errorf("undecided: %d frames, end frame %v, logged %v, %s = %d\n%s", len(frames), ended, said, CounterFlightEndedUndecided, n, logs.String())
+			}
+		} else if !ended || said || n != 0 {
+			t.Errorf("decided: end frame %v, logged %v, %s = %d", ended, said, CounterFlightEndedUndecided, n)
+		}
 	}
 }

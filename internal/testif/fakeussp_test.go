@@ -47,6 +47,9 @@ type fakeUSSP struct {
 	// ingest acknowledges accepted samples only with its periodic one;
 	// the first sample, a refusal and an end frame are answered.
 	quiet bool
+	// silent answers no frame at all: nothing the socket carries is
+	// ever decided.
+	silent bool
 	// seen, when set, gets one value per frame received.
 	seen           chan struct{}
 	frames         []client.TelemetryFrame
@@ -248,7 +251,7 @@ func (f *fakeUSSP) telemetry(w http.ResponseWriter, r *http.Request) {
 		} else {
 			body.Refused++
 		}
-		if quiet {
+		if quiet || f.silent {
 			continue
 		}
 		if !send() {
