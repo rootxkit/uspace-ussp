@@ -18,7 +18,9 @@ import (
 // (e) operator_location with its WGS84 altitude; the authorisation
 // number as operation_description, the Annex IV category and class, the
 // UA registration and our flight id as utm_id. A flight without an
-// intent has undefined classification and no description (E-01 pair).
+// intent has no eu_classification and no description (E-01 pair): the
+// standard reads the member's presence as the Classification Type
+// "European Union", and its absence as "Undeclared".
 func TestDetailsMapArticle8(t *testing.T) {
 	c := &clock{at: t0}
 	w := newWindow(c)
@@ -54,7 +56,7 @@ func TestDetailsMapArticle8(t *testing.T) {
 		t.Errorf("operator_id %v: the public part only", d.OperatorId)
 	case d.OperationDescription == nil || *d.OperationDescription != auth:
 		t.Errorf("operation_description %v", d.OperationDescription)
-	case *d.EuClassification.Category != f3411.Specific || *d.EuClassification.Class != f3411.Class2:
+	case d.EuClassification == nil || *d.EuClassification.Category != f3411.Specific || *d.EuClassification.Class != f3411.Class2:
 		t.Errorf("eu_classification %s", b)
 	case d.OperatorLocation == nil || d.OperatorLocation.Position.Lat != 41.71 || d.OperatorLocation.Altitude == nil ||
 		d.OperatorLocation.Altitude.Value != 470 || d.OperatorLocation.Altitude.Reference != f3411.W84:
@@ -70,7 +72,7 @@ func TestDetailsMapArticle8(t *testing.T) {
 		t.Fatalf("%d %s", code, b)
 	}
 	d = r.Details
-	if *d.EuClassification.Category != f3411.EUCategoryUndefined || *d.EuClassification.Class != f3411.EUClassUndefined ||
+	if d.EuClassification != nil ||
 		d.OperationDescription != nil || d.OperatorLocation != nil || d.UasId.RegistrationId != nil || *d.OperatorId != "GEO-TEST-0001" {
 		t.Errorf("without an intent: %s", b)
 	}
@@ -106,5 +108,27 @@ func TestClassificationTable(t *testing.T) {
 	}
 	if got := ClassificationOf(&IntentFacts{Category: "other"}); *got.Category != f3411.EUCategoryUndefined {
 		t.Errorf("%v", *got.Category)
+	}
+}
+
+// An intent that declares neither a category nor a class this table
+// maps declares no EU classification: eu_classification is left out
+// (Undeclared). One that declares either serves it, the other
+// undefined.
+func TestDetailsClassificationOnlyWhenDeclared(t *testing.T) {
+	v := View{ID: flightN(1), Current: sample(1, origin, t0)}
+	for name, c := range map[string]struct {
+		in   *IntentFacts
+		want bool
+	}{
+		"no intent":            {nil, false},
+		"nothing mapped":       {&IntentFacts{Category: "other"}, false},
+		"a category":           {&IntentFacts{Category: "open"}, true},
+		"a class, no category": {&IntentFacts{Category: "other", ClassLabel: ptr("C1")}, true},
+	} {
+		d := DetailsOf(v, c.in)
+		if (d.EuClassification != nil) != c.want {
+			t.Errorf("%s: eu_classification %v, want present %v", name, d.EuClassification, c.want)
+		}
 	}
 }

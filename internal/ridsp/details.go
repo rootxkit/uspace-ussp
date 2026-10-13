@@ -69,8 +69,9 @@ func ClassificationOf(in *IntentFacts) f3411.UAClassificationEU {
 // operator_location (the remote pilot's or take-off position of the
 // newest sample that carries one, with its WGS84 altitude when sent),
 // operation_description (the authorisation number) and
-// eu_classification. v.Recent are the flight's earlier samples; in is
-// the flight's intent, nil without one.
+// eu_classification when the intent declares a category or a class
+// (absent, the Classification Type is Undeclared). v.Recent are the
+// flight's earlier samples; in is the flight's intent, nil without one.
 func DetailsOf(v View, in *IntentFacts) f3411.RIDFlightDetails {
 	b := v.Current.Body
 	d := f3411.RIDFlightDetails{Id: v.ID}
@@ -94,8 +95,12 @@ func DetailsOf(v View, in *IntentFacts) f3411.RIDFlightDetails {
 	if loc := operatorLocationOf(v.Current, v.Recent); loc != nil {
 		d.OperatorLocation = loc
 	}
-	cls := ClassificationOf(in)
-	d.EuClassification = &cls
+	if cls := ClassificationOf(in); *cls.Category != f3411.EUCategoryUndefined || *cls.Class != f3411.EUClassUndefined {
+		// The member's presence is the Classification Type "European
+		// Union"; a flight that declares neither leaves it out
+		// (Undeclared), the F3411 file's reading.
+		d.EuClassification = &cls
+	}
 	return d
 }
 
