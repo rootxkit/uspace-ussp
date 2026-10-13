@@ -240,3 +240,36 @@ func (p Store) Sweep(ctx context.Context, keepDays int) error {
 	_, err := p.S.Queries().SweepCISNotifications(ctx, int32(max(1, keepDays)))
 	return err
 }
+
+var _ cis.DirectStore = Store{}
+
+// SaveDirect implements cis.DirectStore (UpsertCISDirect,
+// cis_direct_restrictions of migration 00028).
+func (p Store) SaveDirect(ctx context.Context, d cis.DirectStored) (bool, error) {
+	n, err := p.S.Queries().UpsertCISDirect(ctx, relational.UpsertCISDirectParams{
+		Identifier: d.Identifier, RestrictionID: d.RestrictionID, AnspRef: d.AnspRef, AnspVersion: d.AnspVersion,
+		State: d.State, Body: d.Body, Signature: d.Signature, Issuer: d.Issuer,
+	})
+	return n == 1, err
+}
+
+// LoadDirect implements cis.DirectStore.
+func (p Store) LoadDirect(ctx context.Context, maxRows int) ([]cis.DirectStored, error) {
+	rows, err := p.S.Queries().CISDirectRestrictions(ctx, int32(min(maxRows, 1<<30)))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]cis.DirectStored, 0, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		out = append(out, cis.DirectStored{Identifier: r.Identifier, RestrictionID: r.RestrictionID, AnspRef: r.AnspRef,
+			AnspVersion: r.AnspVersion, State: r.State, Body: r.Body, Signature: r.Signature, Issuer: r.Issuer, AgeS: r.AgeS})
+	}
+	return out, nil
+}
+
+// DeleteDirect implements cis.DirectStore.
+func (p Store) DeleteDirect(ctx context.Context, identifier string, anspVersion int64) error {
+	_, err := p.S.Queries().DeleteCISDirect(ctx, relational.DeleteCISDirectParams{Identifier: identifier, AnspVersion: anspVersion})
+	return err
+}

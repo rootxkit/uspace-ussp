@@ -380,6 +380,8 @@ test("each fake down, then NATS down: every input with its state and its time", 
     await expect(strip.first()).toContainText("since");
     await expect(page.getByTestId("strip-monitor")).not.toHaveAttribute("data-state", "up");
     await shot(page, "console-nats-down-en");
+    // traffic-ws closes its streams with 1013 while its bus is down
+    // (05 §6: the console freezes with age shown), so the feed is not live.
     await page.goto("/console");
     await expect(page.getByTestId("console-feed")).not.toHaveAttribute("data-connection", "live", { timeout: 60_000 });
     await shot(page, "console-map-nats-down-en");
@@ -389,6 +391,9 @@ test("each fake down, then NATS down: every input with its state and its time", 
   await page.goto("/console/inputs");
   await expect(page.getByTestId("strip-bus")).toHaveAttribute("data-state", "connected", { timeout: 60_000 });
   await expect(page.getByTestId("strip-monitor")).toHaveAttribute("data-state", "up", { timeout: 60_000 });
+  // The bus back: the same feed is live again (the presence pair).
+  await page.goto("/console");
+  await expect(page.getByTestId("console-feed")).toHaveAttribute("data-connection", "live", { timeout: 60_000 });
   await page.context().close();
 });
 

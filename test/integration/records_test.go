@@ -58,7 +58,7 @@ func recordBuilder(t *testing.T) *records.Builder {
 		t.Fatal(err)
 	}
 	t.Cleanup(st.Close)
-	return &records.Builder{Reader: recstore.Reader{S: st}, Series: recstore.Series{S: st}, USSPID: "USSP-DEV",
+	return &records.Builder{Reader: recstore.Reader{S: st}, Series: recstore.Series{S: st}, USSPID: "DEV01",
 		Policy: func() policy.Record { return policy.Record{Version: 1, Values: policy.Defaults()} }}
 }
 
