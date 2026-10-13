@@ -37,7 +37,7 @@ func newFakeIntents() *fakeIntents { return &fakeIntents{byID: map[string]*fakeI
 // pending_dss, otherwise authorised (accepted).
 func (fi *fakeIntents) decide(serial, operator string) (int, string, []client.IntentConflict, string) {
 	switch {
-	case operator != "GEO-TEST-WP21-0001":
+	case operator != "GEOTESTWP210001":
 		return http.StatusForbidden, "", nil, "operator_mismatch"
 	case serial == "BAD":
 		return http.StatusBadRequest, "", nil, "annex_iv_invalid"

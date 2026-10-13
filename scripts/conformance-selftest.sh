@@ -173,6 +173,19 @@ if handed_args | grep -q '^--qualifier-report$'; then fail "--qualifier-report h
 if grep -q "not run in this invocation" "$work/log"; then pass "the run says uss_qualifier was not run in this invocation"; else fail "no 'not run in this invocation': $(cat "$work/log")"; fi
 hook_rc 2 "a report that cannot be read is refused" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_QUALIFIER_REPORTS="F3411-SP=$work/none.json"
 hook_rc 2 "a report without its requirement is refused" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_QUALIFIER_REPORTS="$work/qualifier-report.json"
+# On the stack (not run here: it needs Docker) the interfaces are
+# checked at the URLs the target declares, as uss_qualifier reaches them
+# on the lab network, not through the lab Caddy's /test/* route: the
+# declaration is what is checked. Read from the hook itself.
+declared="$(sed -n 's/^  iface_\(injection\|observation\|planning\)=\(.*\)$/\2/p' "$hook" | tr '\n' ' ')"
+stack_call="$(sed -n '/^  stack_up$/,/^else$/p' "$hook" | grep '^  check_interfaces ' || true)"
+if [ "$stack_call" = '  check_interfaces "$iface_injection" "$iface_observation" "$iface_planning"' ] &&
+  [ "$declared" = "http://ussp:8087/test/rid/v1/injection http://ussp:8087/test/rid/v1/observation http://ussp:8087/test/flight_planning/v1 " ] &&
+  grep -qF 'code="$(lab_status "$url$path")"' "$hook"; then
+  pass "on the stack the declared interfaces are checked where they are declared, from the lab network"
+else
+  fail "on the stack the interfaces are not checked at their declared URLs: ${stack_call:-no call} (declared: $declared)"
+fi
 hook_rc 2 "CONFORMANCE_QUALIFIER other than on or off is refused" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_QUALIFIER=sometimes
 
 # ---- the suite's exit status, unchanged -----------------------------------------
@@ -233,6 +246,38 @@ if grep -q 'NOT CHECKED' "$work/log" || ! grep -q 'the suite passed' "$work/log"
 else
   pass "a complete run names nothing as not checked and passes"
 fi
+# A known failure (WP-21 R6 to R8): accepted by the suite's gate while it
+# fails only the recorded checks, never a pass. The pair: the same
+# failure the baseline does not record fails the run, and names nothing
+# as known failing. A known failure without its note or its failing
+# checks is refused before anything runs.
+cat >"$work/known.json" <<'JSON'
+{"format": "conformance-baseline/v1", "target": "ussp-conformance", "from_run": "r", "from_digest": "sha256:0",
+ "requirements": {"NAT-UNAUTH": {"status": "pass"},
+  "F3411-SP": {"status": "fail", "note": "WP-21 R6 (selftest)", "failing": ["uss_qualifier astm.f3411.v22a.NET0260,Table1,1a"]}}}
+JSON
+cat >"$work/report-fail.json" <<'JSON'
+{"requirements": [{"id": "NAT-UNAUTH", "role": "gate", "status": "pass"}, {"id": "F3411-SP", "role": "gate", "status": "fail"}]}
+JSON
+touch "$work/mark"
+hook_rc 0 "a known failure the suite's gate accepts" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_BASELINE="$work/known.json" FAKE_REPORT="$work/report-fail.json"
+if grep -q 'KNOWN FAILING, NOT A PASS: F3411-SP: WP-21 R6 (selftest)' "$work/log" && grep -q 'the verdict is not a pass' "$work/log" &&
+  ! grep -q 'the suite passed' "$work/log"; then
+  pass "a known failure is named as not a pass, with its note"
+else
+  fail "the known failure was not named"
+  sed 's/^/       /' "$work/log"
+fi
+info="$(find "$work/out" -name run-info.txt -newer "$work/mark" | sort | tail -n 1)"
+if [ -n "$info" ] && grep -q '^known failing F3411-SP: WP-21 R6 (selftest)' "$info"; then pass "run-info.txt names the known failure"; else fail "run-info.txt: ${info:-none}"; fi
+hook_rc 1 "a failure the baseline does not record fails the run" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_BASELINE="$bl" FAKE_REPORT="$work/report-fail.json" FAKE_RC=1
+if grep -q 'KNOWN FAILING' "$work/log"; then fail "an unrecorded failure was named known failing"; else pass "an unrecorded failure is not named known failing"; fi
+jq '.requirements["F3411-SP"].note = ""' "$work/known.json" >"$work/known-unnoted.json"
+jq '.requirements["F3411-SP"].failing = []' "$work/known.json" >"$work/known-unlisted.json"
+rm -f "$work/args"
+hook_rc 2 "a known failure without a note is refused" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_BASELINE="$work/known-unnoted.json"
+hook_rc 2 "a known failure without its failing checks is refused" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_BASELINE="$work/known-unlisted.json"
+if [ -e "$work/args" ]; then fail "the suite ran with a refused known failure"; else pass "the suite never ran with a refused known failure"; fi
 hook_rc 3 "the suite's exit 3 with a baseline comes back unchanged" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_BASELINE="$bl" FAKE_REPORT="$work/report-na.json" FAKE_RC=3
 hook_rc 0 "CONFORMANCE_BASELINE=none runs without one" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_BASELINE=none
 if handed_args | grep -q '^--baseline$'; then fail "--baseline given with none"; else pass "--baseline absent with none"; fi

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/rootxkit/uspace-core/regnum"
 	yaml "go.yaml.in/yaml/v3"
 )
 
@@ -62,12 +63,17 @@ type LatLngY struct {
 }
 
 var (
-	fixtureRegRe    = regexp.MustCompile(`^GEO-TEST-[A-Z0-9-]{1,40}$`)
+	// A test registration number the authority's registry can hold: GEOTEST
+	// then letters and digits, and valid under uspace-core regnum's
+	// default pattern (pending GCAA, spec 08 Q5), which refuses a hyphen
+	// (only the public part is registered, spec 06 §5). The lab registers
+	// it (uspace-lab conformance/fixtures/test-operators.yaml).
+	fixtureRegRe    = regexp.MustCompile(`^GEOTEST[A-Z0-9]{1,13}$`)
 	fixtureSerialRe = regexp.MustCompile(`^TEST[A-Z0-9-]{1,60}$`)
 	idTechs         = []string{"network", "direct", "both"}
 )
 
-// LoadFixture reads and checks the fixture: GEO-TEST-* and TEST* values
+// LoadFixture reads and checks the fixture: GEOTEST* and TEST* values
 // only (no production value in a fixture), a non-empty serial pool, the
 // contingency procedure and emergency contact reference, and an
 // identification technology table onto the request's enumeration.
@@ -97,7 +103,9 @@ func (f Fixture) validate() error {
 		bad("format is %q, want %s", f.Format, FixtureFormat)
 	}
 	if !fixtureRegRe.MatchString(f.Operator.RegistrationNumber) {
-		bad("operator.registration_number %q is not a GEO-TEST-* number", f.Operator.RegistrationNumber)
+		bad("operator.registration_number %q is not a GEOTEST* number", f.Operator.RegistrationNumber)
+	} else if v, err := regnum.NewValidator(""); err != nil || v.Validate(f.Operator.RegistrationNumber) != nil {
+		bad("operator.registration_number %q is not a number the authority's registry admits (uspace-core regnum)", f.Operator.RegistrationNumber)
 	}
 	if len(f.Serials) == 0 || len(f.Serials) > 256 {
 		bad("serials: 1 to 256 TEST* serials, got %d", len(f.Serials))

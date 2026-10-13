@@ -12,11 +12,20 @@ name: conformance
 # and so does an incomplete run (exit 3: a gate requirement not checked
 # that the baseline does not record) unless the dispatch says
 # allow_incomplete. The requirements the baseline accepts not applicable
-# (F3411-SP and F3548-SCD, blocked by the owner decision Q34; F3548-CP,
-# NAT-PRECONDITION, REG-NOPII) do not fail a tag's run, and are not a
+# (F3548-CP, NAT-PRECONDITION, REG-NOPII) do not fail a tag's run, and are not a
 # pass: each is a warning annotation "not checked (not a pass)" with its
 # reason, and the report's verdict stays incomplete. Nothing here writes
 # anywhere but the runner.
+#
+# Until WP-21's R6 to R8 are fixed (docs/RUNBOOKS/WP-21.md), F3411-SP and
+# F3548-SCD are recorded in the baseline as known failures: status fail,
+# the finding that tracks each, and the exact checks that fail. A tag's
+# run does not fail on them while they fail only those checks; a check
+# outside the list is a regression and fails it, and a qualifier run that
+# writes no report fails it as before. They are never a pass: each is a
+# warning annotation "known failing (not a pass)" with its note. When R6
+# to R8 pass, the baseline records them pass (the suite reports a known
+# failure that now passes, for that update).
 #
 # WP-21: the stack also runs the test-interfaces process (the testif
 # image, built from this commit) and the hook runs the lab's

@@ -28,6 +28,9 @@ x-go: &go
     migrate-timeseries: {condition: service_completed_successfully}
     nats: {condition: service_healthy}
 
+# No process here has USSP_JWKS_CACHE_KEY_FILE, so none stores or uses
+# a JWKS in jwks_cache (each says so at start); nats.conf still holds
+# the bucket's writers to the verifying processes' own prefixes.
 x-env: &env
   USSP_LOG_LEVEL: ${USSP_LOG_LEVEL:-info}
   USSP_SYSTEM_ID: ${USSP_SYSTEM_ID:-DEV01}

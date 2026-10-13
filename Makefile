@@ -84,6 +84,9 @@ cover:
 # Real PostgreSQL + PostGIS, TimescaleDB and NATS JetStream. The
 # USSP_TEST_* URLs come from the environment (CI) or, when unset, from
 # the stack of `make compose-deps` and the passwords in $(COMPOSE_ENV).
+# USSP_TEST_NATS_CONF_URL is a NATS started with deploy/compose/nats.conf
+# (the same compose NATS by default) on which its users' permissions are
+# exercised with the USSP_NATS_*_PASSWORD of $(COMPOSE_ENV).
 # Fails when a test fails and when zero tests ran: a suite that ran
 # nothing proves nothing. The suite runs one package at a time and its
 # alert scenarios fly for real time (WP-11: a 30 s hover, a 30 s
@@ -92,7 +95,7 @@ integration:
 	@set -a; if [ -f $(COMPOSE_ENV) ]; then . ./$(COMPOSE_ENV); fi; set +a; \
 	export USSP_TEST_PG_URL="$${USSP_TEST_PG_URL:-postgres://ussp_api:$${USSP_PG_API_PASSWORD}@127.0.0.1:57432/ussp_relational?sslmode=disable}"; \
 	export USSP_TEST_TS_URL="$${USSP_TEST_TS_URL:-postgres://ussp_api:$${USSP_PG_API_PASSWORD}@127.0.0.1:57432/ussp_timeseries?sslmode=disable}"; 	export USSP_TEST_TS_OWNER_URL="$${USSP_TEST_TS_OWNER_URL:-postgres://ussp_tsdb:$${USSP_PG_TSDB_PASSWORD}@127.0.0.1:57432/ussp_timeseries?sslmode=disable}"; \
-	export USSP_TEST_NATS_URL="$${USSP_TEST_NATS_URL:-nats://api:$${USSP_NATS_API_PASSWORD}@127.0.0.1:57422}"; \
+	export USSP_TEST_NATS_URL="$${USSP_TEST_NATS_URL:-nats://api:$${USSP_NATS_API_PASSWORD}@127.0.0.1:57422}"; 	export USSP_TEST_NATS_CONF_URL="$${USSP_TEST_NATS_CONF_URL:-nats://127.0.0.1:57422}"; \
 	rc=0; \
 	$(GO) test -tags integration -count=1 -p 1 -timeout 30m -v ./test/integration/... ./internal/bus/... ./internal/app/tsdbwriter/... 2>&1 | tee integration.log || rc=$$?; \
 	n=$$(grep -c '^--- PASS' integration.log || true); \

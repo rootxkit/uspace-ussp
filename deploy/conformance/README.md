@@ -30,7 +30,7 @@ push setting) and `issuer-jwks.json` to verify the signature
 | `target.yaml` | the USSP's conformance target in the lab's format (`conformance/targets/README.md` there): every host and secret a `${VAR}` the hook fills |
 | `authority-push-off.yaml` | the declaration that `openAuthorityFlights` is not applicable while `USSP_AUTHORITY_PUSH=off` (below) |
 | `compose.yaml` | the overlay on the lab's systems stack: `USSP_AUTHORITY_PUSH` on rid-sp; the `ussp-test-interfaces` service (profile `testif`, image `uspace-ussp-testif`, WP-21) and the lab Caddy's Caddyfile with `/test/*` routed to it |
-| `test-operator.yaml` | the test operator the hook seeds through the national API and test-interfaces is the client of (GEO-TEST/TEST values; the Annex IV items a flight plan lacks, pending GCAA) |
+| `test-operator.yaml` | the test operator the hook seeds through the national API and test-interfaces is the client of (GEOTEST/TEST values, the operator uspace-lab registers at its authority; the Annex IV items a flight plan lacks, pending GCAA) |
 | `chaos.sh` | one row of the chaos procedure against a running stack (`docs/RUNBOOKS/chaos.md`) |
 | `SOURCE` | the lab commit, the images it pins, the geoid's URL and digests |
 | `../../scripts/conformance.sh` | the hook (`make conformance`): validation, stack, declaration check, suite |
@@ -121,7 +121,8 @@ process (`cmd/test-interfaces`, image `uspace-ussp-testif`, PLAN D13)
 serves RID injection, RID observation and `flight_planning` v1 as an
 operator client of the published API; the hook seeds the test operator
 (`test-operator.yaml`) through the national API, declares the three
-interfaces in the target, checks each answers 401 without a credential,
+interfaces in the target, checks each answers 401 without a credential
+at its declared URL from the lab network (where uss_qualifier calls it),
 starts the lab's mock USS and runs `f3411-sp.yaml` (F3411-SP),
 `f3548-scd.yaml` (F3548-SCD) and `f3411-dp.yaml` (informative), folding
 each report into the suite's run. `CONFORMANCE_QUALIFIER=off` runs the

@@ -39,7 +39,7 @@ func planJSON(requestID, usage, serial string, priority int, latShift float64) s
 	  "uspace_flight_authorisation": {"uas_serial_number": "` + serial + `", "operation_category": "Open", "operation_mode": "Vlos",
 	    "uas_class": "C0", "identification_technologies": ["ASTMNetRID"], "connectivity_methods": ["cellular"],
 	    "endurance_minutes": 50, "emergency_procedure_url": "https://testdummy.interuss.org/emergency",
-	    "operator_id": "GEO-TEST-WP21-0001", "uas_id": "", "uas_type_certificate": ""}}}`
+	    "operator_id": "GEOTESTWP210001", "uas_id": "", "uas_type_certificate": ""}}}`
 }
 
 type upsertResult struct {
@@ -83,7 +83,7 @@ func TestPlanAuthorisedActivatedClosed(t *testing.T) {
 	}
 	for k, want := range map[string]any{"client_ref": "fp:" + planID + ":1", "uas_serial": "TEST-WP21-0001", "mode": "VLOS",
 		"category": "open", "class_label": "C0", "identification_technology": "network", "endurance_s": 3000.0,
-		"loss_of_c2_procedure": "https://testdummy.interuss.org/emergency", "operator_reg": "GEO-TEST-WP21-0001",
+		"loss_of_c2_procedure": "https://testdummy.interuss.org/emergency", "operator_reg": "GEOTESTWP210001",
 		"flight_type": "normal", "emergency_contact_ref": "TEST-EMERGENCY-CONTACT-0001"} {
 		if got := sent[k]; fmt.Sprint(got) != fmt.Sprint(want) {
 			t.Errorf("%s: %v, want %v", k, got, want)
@@ -137,7 +137,7 @@ func TestPlanRefusalsAreTheUSSPs(t *testing.T) {
 	if r := upsert(t, ts, "22222222-2222-4222-8222-222222222222", planJSON("c2", "Planned", "BAD", 0, 0)); r.Result != "Rejected" || !strings.Contains(r.Notes, "annex_iv_invalid") {
 		t.Errorf("invalid serial: %+v", r)
 	}
-	other := strings.Replace(planJSON("c3", "Planned", "TEST-WP21-0002", 0, 0), `"operator_id": "GEO-TEST-WP21-0001"`, `"operator_id": "CHEo5kut30e0mt01-qwe"`, 1)
+	other := strings.Replace(planJSON("c3", "Planned", "TEST-WP21-0002", 0, 0), `"operator_id": "GEOTESTWP210001"`, `"operator_id": "CHEo5kut30e0mt01-qwe"`, 1)
 	if r := upsert(t, ts, "33333333-3333-4333-8333-333333333333", other); r.Result != "Rejected" || !strings.Contains(r.Notes, "operator_mismatch") {
 		t.Errorf("another operator: %+v", r)
 	}
