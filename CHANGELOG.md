@@ -136,6 +136,48 @@ additively within `/v1`.
   `USSP_OCCURRENCE_BACKOFF_MAX_S` (600), pending GCAA. The fake
   authority follows the pinned contract. Lab run against the authority
   image: `scripts/lab-authority.sh`, docs/RUNBOOKS/WP-15.md Run 3.
+- A NATS outage no longer raises a false `lost_link` for every flight
+  (PLAN §15.2 Q35 a, found by the WP-19 chaos run). The monitor's own
+  input is its bus link: while it is down no `lost_link` is judged, the
+  outage is logged at error level as a monitoring outage and counted
+  (`monitor_input_outages`), and the silence of each flight counts from
+  the link's return, so a flight heard again is judged from its real
+  samples and one still silent loses its link `lost_link_s` after the
+  return. A real link loss with the bus up is raised as before, and a
+  sample clears it. A `lost_link` already raised is kept through the
+  outage.
+- A monitor restart longer than `lost_link_s` no longer raises
+  `lost_link` for every restored flight (Q35 review): a restored
+  tracker's silence counts from its restore (or the input's return,
+  whichever is later), so a flight heard after the restart raises none
+  and one still silent raises it `lost_link_s` after the restore.
+- A silent partition from NATS (unreachable, nothing closing the
+  connection) is seen within about 6 s (Q35 review): every process
+  pings NATS every 2 s and drops the connection as stale after two
+  unanswered pings (`bus.PingInterval`, `bus.MaxPingsOut`). With
+  nats.go's defaults (2 min, 2) the link stayed up for minutes, so the
+  monitor took its own blindness for the aircraft's silence.
+- A process started while a token service is down verifies that
+  service's tokens again (PLAN §15.2 Q35 b): each ecosystem issuer's
+  JWKS is stored in the new `jwks_cache` bucket when it is fetched
+  (rewritten hourly while it answers) and, when a start cannot fetch
+  it, the stored one verifies for at most `USSP_JWKS_CACHE_MAX_AGE_S`
+  from its fetch (default 86400, spec 05 §6, pending GCAA; 0 turns it
+  off). `/readyz` says `jwks` degraded with the stored keys' age rather
+  than down. New: `USSP_JWKS_CACHE_BUCKET_MAX_BYTES` (1 MiB).
+- `GET /v1/admin/inputs` (additive): each monitor instance may carry
+  `input_down_since`, `input_back_at`, `last_input_down_since` and
+  `lost_link_suspended_until`; the monitor's state is `down` with a
+  "monitoring outage" detail while an instance reports its input down.
+- A monitoring outage is recorded where it can be read while it lasts
+  (Q35 review). The status line goes to `monitor_status` on the bus
+  that is down, so nothing of the outage reached the console while it
+  lasted, and the return cleared its start. The monitor's own `/readyz`
+  now has an `input` entry: down "monitoring outage since T" while its
+  bus link is down, degraded with the outage's window during the grace,
+  up after with the last window. The status line keeps the window that
+  ended (`last_input_down_since` to `input_back_at`) until the next
+  outage, and the inputs page says it.
 - A restart of telemetry-ingest goes on with every flight in the air
   (WP-19, found by the chaos procedure's restart row): the running
   flights are saved in the new `flight_binding` bucket

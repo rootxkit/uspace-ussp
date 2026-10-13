@@ -2,11 +2,13 @@ package proc
 
 import (
 	"context"
+	"time"
 
 	coreauth "github.com/rootxkit/uspace-core/auth"
 	"github.com/rootxkit/uspace-core/core"
 
 	"github.com/rootxkit/uspace-ussp/internal/auth"
+	"github.com/rootxkit/uspace-ussp/internal/bus"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 )
 
@@ -48,8 +50,14 @@ func TokenVerifier(ctx context.Context, rt *Runtime, issuer *auth.Issuer) (auth.
 	}
 	// Each ecosystem issuer's counter set exists once its verifier is
 	// built, which Run does issuer by issuer; it is published then.
-	v, err := auth.NewVerifier(ctx, auth.VerifierConfig{Ecosystem: eco, Own: issuer,
-		OnBuilt: func(set string, c *core.Counters) { Publish(rt, set, c) }})
+	vc := auth.VerifierConfig{Ecosystem: eco, Own: issuer,
+		OnBuilt: func(set string, c *core.Counters) { Publish(rt, set, c) }}
+	if cfg.JWKSCacheMaxAgeS > 0 && rt.Bus != nil {
+		// The issuers' JWKS outlive the process (Q35 b).
+		vc.Cache = bus.KVStore{JS: rt.Bus.JetStream(), Bucket: bus.BucketJWKSCache}
+		vc.CacheMaxAge = time.Duration(cfg.JWKSCacheMaxAgeS) * time.Second
+	}
+	v, err := auth.NewVerifier(ctx, vc)
 	if err != nil {
 		return nil, "", err
 	}

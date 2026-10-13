@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -455,7 +456,50 @@ func (in *Inputs) monitor(ctx context.Context, now time.Time, missingS float64) 
 		out.State = "up"
 		out.Detail = fmt.Sprintf("%d monitor instance(s) writing their status", len(out.Instances))
 	}
+	// A monitoring outage an instance reports (PLAN §15.2 Q35): its own
+	// input is down, so it judges no lost_link; or it is back and a
+	// flight still silent is not judged lost before the grace ends. The
+	// status comes over the bus that is down, so an outage is mostly
+	// read once it ended, as its window (last_input_down_since to
+	// input_back_at); while it lasts the monitor's own /readyz says it,
+	// and here the status goes missing.
+	var down, suspended, ended []string
+	for i := range out.Instances {
+		st := &out.Instances[i].MonitorStatus
+		switch {
+		case st.InputDownSince != nil:
+			down = append(down, st.Instance+" since "+st.InputDownSince.UTC().Format(time.RFC3339))
+		case st.LostLinkSuspendedUntil != nil && now.Before(*st.LostLinkSuspendedUntil):
+			suspended = append(suspended, st.Instance+windowOf(st)+" until "+st.LostLinkSuspendedUntil.UTC().Format(time.RFC3339))
+		case st.InputBackAt != nil && st.LastInputDownSince != nil:
+			ended = append(ended, st.Instance+windowOf(st))
+		}
+	}
+	if len(down) > 0 && out.State == "up" {
+		out.State = "down"
+		out.Detail = "monitoring outage: the monitor's input is down (" + strings.Join(down, "; ") +
+			"): no lost_link is judged and samples are not received"
+	}
+	if len(suspended) > 0 && out.State == "up" {
+		out.Detail += "; after a monitoring outage, lost_link is judged again from the input's return plus lost_link_s (" +
+			strings.Join(suspended, "; ") + ")"
+	}
+	if len(ended) > 0 && out.State == "up" {
+		out.Detail += "; last " + strings.Join(ended, "; ")
+	}
 	return out
+}
+
+// windowOf is the outage that ended at st's input_back_at, as the
+// inputs page names it ("" without one).
+func windowOf(st *bus.MonitorStatus) string {
+	if st.InputBackAt == nil {
+		return ""
+	}
+	if st.LastInputDownSince == nil {
+		return ": monitoring outage ended at " + st.InputBackAt.UTC().Format(time.RFC3339)
+	}
+	return ": monitoring outage from " + st.LastInputDownSince.UTC().Format(time.RFC3339) + " to " + st.InputBackAt.UTC().Format(time.RFC3339)
 }
 
 // InputsView is GET /v1/admin/inputs. It reads one clock once, after

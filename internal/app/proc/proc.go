@@ -352,6 +352,7 @@ func TopologyOf(cfg config.Config) bus.Topology {
 			bus.BucketRIDSubscriptions: int64(cfg.RIDSubscriptionsBucketMaxBytes),
 			bus.BucketMonitorStatus:    int64(cfg.MonitorStatusBucketMaxBytes),
 			bus.BucketFlightBinding:    int64(cfg.FlightBindingBucketMaxBytes),
+			bus.BucketJWKSCache:        int64(cfg.JWKSCacheBucketMaxBytes),
 		},
 	})
 }
