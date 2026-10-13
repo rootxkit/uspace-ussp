@@ -23,9 +23,14 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
         -ldflags "-s -w -X github.com/rootxkit/uspace-ussp/internal/obs.Version=${VERSION} -X github.com/rootxkit/uspace-ussp/internal/obs.Commit=${COMMIT}" \
         -o "/out/ussp-${p}" "./cmd/${p}" || exit 1; \
     done
+# The mount point of the daily record bundles (USSP_RECORDS_DIR), given
+# to the image's non-root user: a new named volume starts as a copy of
+# it, so it is writable (deploy/compose/staging.yaml).
+RUN mkdir -p /dirs/var/lib/ussp/records
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/ /usr/bin/
+COPY --from=build --chown=65532:65532 /dirs/ /
 USER nonroot:nonroot
 EXPOSE 8080 8081 8082 8083 8084 8085 8086
 ENTRYPOINT ["/usr/bin/ussp-api"]

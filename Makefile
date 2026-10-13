@@ -30,7 +30,7 @@ COMMIT       ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 
 .PHONY: all build vet fmt fmt-check tools staticcheck lint tidy test race cover \
         integration generate fetch-standards check-generated check-schemas check-deps check-hostnames \
-        check-contracts secrets vulncheck image compose-deps compose-up compose-down \
+        check-contracts check-deploy secrets vulncheck image compose-deps compose-up compose-down \
         conformance conformance-selftest conformance-down ci clean migrate-up migrate-down migrate-status
 
 all: ci
@@ -128,6 +128,11 @@ check-hostnames:
 
 check-contracts:
 	scripts/check-contracts.sh
+
+# The staging compose, its settings and secrets, read back as compose
+# renders them (scripts/check-deploy.sh; CI job `deploy`).
+check-deploy:
+	scripts/check-deploy.sh
 
 # Secret scan of the history and of every file that could be committed
 # (tracked or untracked, not git-ignored), with .gitleaks.toml.
