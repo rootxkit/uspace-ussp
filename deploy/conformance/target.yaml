@@ -1,0 +1,58 @@
+# This USSP's conformance target for uspace-lab's conformance suite
+# (lab WP-L7, cmd/conformance; its conformance/targets/README.md has the
+# format). `make conformance` (scripts/conformance.sh) hands it to the
+# suite with an env file that fills every ${VAR}; nothing here is a
+# secret or a deployment's host, except the reserved .test names of the
+# lab's systems stack under `resolve`, which only redirect a dial and do
+# nothing for any other base URL.
+#
+# It differs from the lab's own conformance/targets/ussp.yaml in three
+# declared ways:
+#   - contract.overrides is the file scripts/conformance.sh writes: the
+#     lab's conformance/national/contracts/ussp.yaml as it is, plus
+#     deploy/conformance/authority-push-off.yaml when the target runs
+#     with USSP_AUTHORITY_PUSH=off (the product default, PLAN D12): the
+#     optional WS /v1/authority/flights is not served then, and its
+#     checks are not applicable, with that reason in the report;
+#   - ca_file and resolve, so the suite reaches the stack's TLS hosts at
+#     127.0.0.1 with the stack's CA (both empty for another target);
+#   - interfaces: none. This USSP exposes no InterUSS automated-testing
+#     interface (rid_injection, flight_planning), so F3411-SP and
+#     F3548-SCD are not applicable with that reason (deploy/conformance/
+#     README.md, "What is not run"; PLAN §15 Q34).
+system: ussp
+name: ${CONFORMANCE_TARGET_NAME:-ussp-conformance}
+role: own
+participant: ${USSP_CONFORMANCE_PARTICIPANT:-ussp-USSP-DEV-01}
+base_url: ${USSP_CONFORMANCE_BASE_URL}
+images:
+  ussp: ${USSP_IMAGE:-unrecorded}
+contract:
+  openapi: ${CONFORMANCE_USSP_OPENAPI}
+  schemas: ${CONFORMANCE_USSP_SCHEMAS}
+  overrides: ${USSP_CONFORMANCE_OVERRIDES}
+issuers:
+  ecosystem:
+    token_url: ${LAB_TOKEN_URL}
+    client_id: lab-01
+    secrets_json: ${LAB_SECRETS_JSON}
+    audience: ${USSP_CONFORMANCE_AUDIENCE:-}
+    offers: [police.query, cis.read]
+  operator:
+    # An operator machine client registered at the USSP (portal); none
+    # on a fresh stack, so the operator checks are not applicable.
+    token_url: ${USSP_CONFORMANCE_OPERATOR_TOKEN_URL:-}
+    client_id: ${USSP_CONFORMANCE_OPERATOR_CLIENT_ID:-}
+    secret_file: ${USSP_CONFORMANCE_OPERATOR_SECRET_FILE:-}
+    audience: ${USSP_CONFORMANCE_AUDIENCE:-}
+    offers: [ussp.intents, ussp.geo, ussp.telemetry, ussp.traffic]
+session:
+  bearer_file: ${USSP_CONFORMANCE_SESSION_FILE:-}
+ca_file: ${USSP_CONFORMANCE_CA_FILE:-}
+resolve:
+  ussp.uspace.test: ${USSP_CONFORMANCE_RESOLVE_IP:-}
+  lab.uspace.test: ${USSP_CONFORMANCE_RESOLVE_IP:-}
+fixtures:
+  operator: ${USSP_CONFORMANCE_OPERATOR:-}
+pages: []
+interfaces: {}

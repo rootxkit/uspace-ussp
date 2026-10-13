@@ -46,7 +46,10 @@ func TokenVerifier(ctx context.Context, rt *Runtime, issuer *auth.Issuer) (auth.
 			return nil, "", err
 		}
 	}
-	v, err := auth.NewVerifier(ctx, auth.VerifierConfig{Ecosystem: eco, Own: issuer})
+	// Each ecosystem issuer's counter set exists once its verifier is
+	// built, which Run does issuer by issuer; it is published then.
+	v, err := auth.NewVerifier(ctx, auth.VerifierConfig{Ecosystem: eco, Own: issuer,
+		OnBuilt: func(set string, c *core.Counters) { Publish(rt, set, c) }})
 	if err != nil {
 		return nil, "", err
 	}
@@ -54,12 +57,7 @@ func TokenVerifier(ctx context.Context, rt *Runtime, issuer *auth.Issuer) (auth.
 		Publish(rt, name, c)
 	}
 	rt.Health.Register(auth.DepJWKS, false, v.Probe)
-	rt.Go(ctx, func(ctx context.Context) {
-		v.Run(ctx)
-		if eco := v.CounterSets()[auth.CounterSetEcosystem]; eco != nil {
-			Publish(rt, auth.CounterSetEcosystem, eco)
-		}
-	})
+	rt.Go(ctx, v.Run)
 	own := v.OwnIssuer()
 	return v, own, nil
 }

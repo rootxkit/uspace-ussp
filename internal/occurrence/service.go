@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -18,15 +19,20 @@ import (
 )
 
 // Deliverer submits one report's bytes to the authority and returns its
-// reference. Nil while the authority publishes no POST /v1/occurrences
-// (errNoDeliverer).
+// reference (Client, the authority's POST /v1/occurrences). Nil without
+// an authority configured (errNoDeliverer).
 type Deliverer interface {
 	Submit(ctx context.Context, body []byte) (authorityRef string, err error)
 }
 
 // PermanentError is a refusal the authority will repeat (409, a 4xx on
-// the request itself): the report fails for good.
-type PermanentError struct{ Detail string }
+// the request itself, a body that does not map to its schema): the
+// report fails for good. Status is the authority's answer (0 when the
+// report was never sent).
+type PermanentError struct {
+	Status int
+	Detail string
+}
 
 func (e *PermanentError) Error() string { return "the authority refused the report: " + e.Detail }
 
@@ -38,11 +44,15 @@ type HoldProjector interface {
 
 // Counters of the Service.
 const (
-	CounterQueued      = "occurrence_reports_queued"
-	CounterNotBuilt    = "occurrence_reports_not_built"
-	CounterDelivered   = "occurrence_reports_delivered"
-	CounterRetried     = "occurrence_reports_retried"
-	CounterFailed      = "occurrence_reports_failed"
+	CounterQueued    = "occurrence_reports_queued"
+	CounterNotBuilt  = "occurrence_reports_not_built"
+	CounterDelivered = "occurrence_reports_delivered"
+	CounterRetried   = "occurrence_reports_retried"
+	CounterFailed    = "occurrence_reports_failed"
+	// CounterConflict counts the authority's 409 (report_ref_conflict):
+	// failed on the first answer with an alarm, never retried (spec 02
+	// §1 "Retries and conflicts").
+	CounterConflict    = "occurrence_reports_conflict"
 	CounterGaveUp      = "occurrence_reports_gave_up"
 	CounterStoreFailed = "occurrence_store_failed"
 	CounterHoldFailed  = "occurrence_holds_not_projected"
@@ -78,9 +88,14 @@ type Service struct {
 	Policy    func() policy.Values
 	// SystemID is this USSP's code; RecordsURL, when set, is the base of
 	// the evidence links (GET {RecordsURL}/v1/records/flights/{id}).
-	SystemID    string
-	RecordsURL  string
+	SystemID   string
+	RecordsURL string
+	// MaxAttempts bounds the tries of one report (DefaultMaxAttempts when
+	// 0); BackoffMax bounds the wait between two (DefaultBackoffMax when
+	// 0). Both are configuration (USSP_OCCURRENCE_MAX_ATTEMPTS,
+	// USSP_OCCURRENCE_BACKOFF_MAX_S).
 	MaxAttempts int
+	BackoffMax  time.Duration
 	Counters    *core.Counters
 	Logger      *slog.Logger
 }
@@ -400,13 +415,18 @@ func (s *Service) projectHoldsLoop(ctx context.Context) {
 	}
 }
 
-// Backoff is the wait before try attempts+1.
-func Backoff(attempts int) time.Duration {
-	d := DefaultBackoffMin
-	for i := 1; i < attempts && d < DefaultBackoffMax; i++ {
+// Backoff is the wait before try attempts+1, at most DefaultBackoffMax.
+func Backoff(attempts int) time.Duration { return backoff(attempts, DefaultBackoffMax) }
+
+func backoff(attempts int, ceiling time.Duration) time.Duration {
+	if ceiling <= 0 {
+		ceiling = DefaultBackoffMax
+	}
+	d := min(DefaultBackoffMin, ceiling)
+	for i := 1; i < attempts && d < ceiling; i++ {
 		d *= 2
 	}
-	return min(d, DefaultBackoffMax)
+	return min(d, ceiling)
 }
 
 // DeliverDue submits the due reports and returns how many the authority
@@ -443,14 +463,26 @@ func (s *Service) DeliverDue(ctx context.Context) int {
 			}
 		case errors.As(err, &perm):
 			s.count(CounterFailed)
-			_ = s.Store.Fail(sctx, q.ID, err.Error())
-			s.logger().LogAttrs(ctx, slog.LevelError, "occurrence report refused for good; it is on the console", slog.String("report_ref", q.Ref), obs.Err(err))
+			if perm.Status == http.StatusConflict {
+				// Deterministic: the same report again gets the same 409.
+				// Failed at once, an alarm to a person, never retried.
+				s.count(CounterConflict)
+			}
+			if ferr := s.Store.Fail(sctx, q.ID, err.Error()); ferr != nil {
+				s.count(CounterStoreFailed)
+			}
+			s.logger().LogAttrs(ctx, slog.LevelError, "occurrence report refused for good; it is on the console", slog.String("alarm", CounterFailed),
+				slog.String("report_ref", q.Ref), slog.Int("status", perm.Status), obs.Err(err))
 		case q.Attempts >= maxTries:
 			s.count(CounterGaveUp)
-			_ = s.Store.Fail(sctx, q.ID, fmt.Sprintf("gave up after %d tries: %v", q.Attempts, err))
+			if ferr := s.Store.Fail(sctx, q.ID, fmt.Sprintf("gave up after %d tries: %v", q.Attempts, err)); ferr != nil {
+				s.count(CounterStoreFailed)
+			}
+			s.logger().LogAttrs(ctx, slog.LevelError, "occurrence report not delivered after every try; it is on the console", slog.String("alarm", CounterGaveUp),
+				slog.String("report_ref", q.Ref), slog.Int("attempts", q.Attempts), obs.Err(err))
 		default:
 			s.count(CounterRetried)
-			if serr := s.Store.Retry(sctx, q.ID, err.Error(), Backoff(q.Attempts)); serr != nil {
+			if serr := s.Store.Retry(sctx, q.ID, err.Error(), backoff(q.Attempts, s.BackoffMax)); serr != nil {
 				s.count(CounterStoreFailed)
 			}
 			s.logger().LogAttrs(ctx, slog.LevelWarn, "occurrence report not delivered; tried again later", slog.String("report_ref", q.Ref), obs.Err(err))

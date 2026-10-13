@@ -1,0 +1,15 @@
+# oapi-codegen configuration for internal/occurrence/authclient: the one
+# operation of the authority's national API (api/clients/authority.yaml,
+# the pinned copy named in api/clients/SOURCE; reconciliation M11) that
+# takes this USSP's occurrence reports (376/2014 Art. 4, 02 F7):
+# POST /v1/occurrences, with the models it names (occurrence/v1, owned
+# by the authority, M14). The rest of the occurrences tag is the
+# authority's own case handling and is not generated. Run through
+# `make generate`; never edit the generated file.
+package: authclient
+generate:
+  client: true
+  models: true
+output-options:
+  include-operation-ids:
+    - createOccurrence

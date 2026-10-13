@@ -74,6 +74,7 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_RECORD_HOLDS_BUCKET_MAX_BYTES` | `all` |  | `16777216` | bytes | size bound of the record_holds bucket, reserved in the JetStream file store; a full bucket refuses puts |
 | `USSP_RID_DP_SUBSCRIPTIONS_BUCKET_MAX_BYTES` | `all` |  | `4194304` | bytes | size bound of the rid_dp_subscriptions bucket, reserved in the JetStream file store; a full bucket refuses puts |
 | `USSP_MONITOR_STATUS_BUCKET_MAX_BYTES` | `all` |  | `4194304` | bytes | size bound of the monitor_status bucket, reserved in the JetStream file store; a full bucket refuses puts |
+| `USSP_FLIGHT_BINDING_BUCKET_MAX_BYTES` | `all` |  | `67108864` | bytes | size bound of the flight_binding bucket, reserved in the JetStream file store; a full bucket refuses puts |
 | `USSP_SYSTEM_ID` | `api,rid-sp,monitor,dss-sync` |  | `USSP-DEV` |  | the USSP code from the authority's certificate (M8); never an audience |
 | `USSP_AUDIENCES` | `api,telemetry-ingest,rid-sp,traffic-ws` |  |  |  | hosts accepted as JWT aud, comma-separated: the public host and a lab alias (M18) |
 | `USSP_TOKEN_ISSUERS` | `api,telemetry-ingest,rid-sp,monitor,traffic-ws` |  |  |  | allow-listed token issuers as iss=jwks_url, comma-separated; the first is the token service for outgoing calls |
@@ -90,6 +91,8 @@ two differ (name, readers, requirement, default or unit). `ussp-<process>
 | `USSP_CIS_RECONCILE_S` | `api` |  | `60` | s | period of the conditional pull of every CIS dataset that bounds what a missed change notification costs (spec 02 F3: at most 60 s) |
 | `USSP_CERTIFICATE_ID` | `api` |  |  |  | the id of this USSP's certificate at the authority (32 hex characters), named by the Art. 7(6) operating-status notices; unset, no notice can be sent and /readyz says so |
 | `USSP_AUTHORITY_BASE_URL` | `api` |  |  |  | authority base URL (F8 registry, occurrences, status) |
+| `USSP_OCCURRENCE_MAX_ATTEMPTS` | `api` |  | `50` |  | tries of one occurrence report before it fails and is an alarm on the console; a timeout, 408, 429 or 5xx is tried again, a 409 or another 4xx never (spec 02 section 1; the bound is the spec's default, pending GCAA) |
+| `USSP_OCCURRENCE_BACKOFF_MAX_S` | `api` |  | `600` | s | the longest wait between two tries of an occurrence report, which doubles from 5 s (the spec's bounded backoff; the default is pending GCAA) |
 | `USSP_ANSP_BASE_URL` | `api` |  |  |  | ANSP base URL (Annex V coordination notices) |
 | `USSP_ANSP_STREAM_URL` | `monitor` |  |  |  | ANSP manned-traffic stream (F4, wss://<ansp>/v1/manned-traffic/stream): monitor reads it with a token of scope ansp.traffic and mTLS per USSP_MTLS_MODE, bootstraps from /v1/manned-traffic/snapshot, publishes its tracks on man.v1 (an echo of one of this USSP's own flights left out, PLAN §15 Q23) and reports it as ansp_feed on /readyz; unset means no manned traffic, shown as unavailable |
 | `USSP_MTLS_MODE` | `api,monitor` |  | `required` |  | mTLS towards the ANSP (M25): Annex V notices (api) and the manned-traffic stream (monitor); off only in the lab and on staging, and logged at error level |

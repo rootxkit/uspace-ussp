@@ -13,10 +13,14 @@
 // (POST /v1/certificates/{id}/status: started once, ceased only after a
 // start, restarted only after a cease; a retry with the same reference
 // and state answers 200 with the first notice, the same reference for
-// another state 409) and an occurrence inbox POST /v1/occurrences that
-// the authority's file does not have yet (spec 02 F7; the executable
-// reading of what WP-15 would send: 201 with an occurrence id, a repeat
-// of a report_ref with the same body 200, with another body 409).
+// another state 409) and the occurrence intake POST /v1/occurrences of
+// the pinned file (createOccurrence, spec 02 F7): a body without the
+// OccurrenceReport's required members or with a category, channel or
+// schema outside its enums 400; 201 with an OccurrenceReceipt; the same
+// report_ref with the same body 200 (replayed); with another body 409
+// report_ref_conflict. FailAfterCommit(n) stores the next n reports and
+// answers each 502, as an authority whose answer is lost after its
+// commit.
 package authority
 
 import (
@@ -94,6 +98,9 @@ type Fake struct {
 	purposes  []string
 	notices   []StatusNotice
 	reports   []Occurrence
+	// failAfter is how many of the next reports are stored and answered
+	// 502 (FailAfterCommit).
+	failAfter int
 }
 
 // StatusNotice is one operating-status notice the fake recorded.
@@ -107,9 +114,10 @@ type StatusNotice struct {
 
 // Occurrence is one occurrence report the fake received.
 type Occurrence struct {
-	ID        string
-	ReportRef string
-	Body      []byte
+	ID         string
+	ReportRef  string
+	Body       []byte
+	ReceivedAt time.Time
 }
 
 // New starts a fake.
@@ -131,6 +139,10 @@ func (f *Fake) AcceptBearer(tok string) { f.mu.Lock(); f.bearer = tok; f.mu.Unlo
 
 // Down makes every request answer 503 until Up.
 func (f *Fake) Down() { f.mu.Lock(); f.down = true; f.mu.Unlock() }
+
+// FailAfterCommit makes the next n occurrence reports be stored and
+// answered 502, as an authority whose answer is lost after its commit.
+func (f *Fake) FailAfterCommit(n int) { f.mu.Lock(); f.failAfter = n; f.mu.Unlock() }
 
 // Up ends Down.
 func (f *Fake) Up() { f.mu.Lock(); f.down = false; f.mu.Unlock() }
@@ -423,26 +435,42 @@ func writeStatus(w http.ResponseWriter, status int, x StatusNotice, replayed boo
 func (f *Fake) occurrence(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	var p struct {
-		ReportRef string `json:"report_ref"`
+		Schema        string     `json:"schema"`
+		ReportRef     string     `json:"report_ref"`
+		Channel       string     `json:"channel"`
+		Category      string     `json:"category"`
+		OccurredAt    *time.Time `json:"occurred_at"`
+		BecameAwareAt *time.Time `json:"became_aware_at"`
 	}
-	if err != nil || json.Unmarshal(body, &p) != nil || p.ReportRef == "" {
+	if err != nil || json.Unmarshal(body, &p) != nil || p.Schema != "occurrence/v1" || p.ReportRef == "" || len(p.ReportRef) > 128 ||
+		(p.Channel != "mandatory" && p.Channel != "voluntary") || p.OccurredAt == nil || p.BecameAwareAt == nil ||
+		!slices.Contains([]string{"airprox", "nonconformance_in_prohibited", "lost_link_in_uspace", "emergency", "other"}, p.Category) {
 		problem(w, http.StatusBadRequest, "validation")
 		return
 	}
 	f.requests["occurrences"]++
+	receipt := func(status int, x Occurrence, replayed bool) {
+		writeJSONStatus(w, status, map[string]any{"occurrence_id": x.ID, "report_ref": x.ReportRef, "received_at": x.ReceivedAt,
+			"within_72h": true, "state": "received", "replayed": replayed})
+	}
 	for _, x := range f.reports {
 		if x.ReportRef == p.ReportRef {
 			if !bytes.Equal(x.Body, body) {
-				problem(w, http.StatusConflict, "report_ref_reused")
+				problem(w, http.StatusConflict, "report_ref_conflict")
 				return
 			}
-			writeJSONStatus(w, http.StatusOK, map[string]any{"occurrence_id": x.ID})
+			receipt(http.StatusOK, x, true)
 			return
 		}
 	}
-	x := Occurrence{ID: fmt.Sprintf("OCC-%d", len(f.reports)+1), ReportRef: p.ReportRef, Body: body}
+	x := Occurrence{ID: fmt.Sprintf("OCC-%d", len(f.reports)+1), ReportRef: p.ReportRef, Body: body, ReceivedAt: time.Now().UTC()}
 	f.reports = append(f.reports, x)
-	writeJSONStatus(w, http.StatusCreated, map[string]any{"occurrence_id": x.ID})
+	if f.failAfter > 0 {
+		f.failAfter--
+		problem(w, http.StatusBadGateway, "bad_gateway")
+		return
+	}
+	receipt(http.StatusCreated, x, false)
 }
 
 func writeJSONStatus(w http.ResponseWriter, status int, v any) {

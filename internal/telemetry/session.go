@@ -45,8 +45,11 @@ func (a *ackState) acked() int64 {
 // order it was opened in, its client, what it was told, and the aircraft
 // it streams. Safe for concurrent use.
 type Session struct {
-	ID       uint64
-	Order    uint64
+	ID    uint64
+	Order uint64
+	// conn is the connection id the status frames carry: this process's
+	// instance and ID.
+	conn     string
 	ClientID string
 	Opened   time.Time
 
@@ -69,7 +72,7 @@ type Session struct {
 // in.
 func (in *Ingestor) NewSession(clientID string, now time.Time) *Session {
 	id := in.orders.take()
-	return &Session{ID: id, Order: id, ClientID: clientID, Opened: now, acks: map[string]*ackState{}, outcomes: map[string]uint64{},
+	return &Session{ID: id, Order: id, conn: "telemetry-" + in.instance + "-" + strconv.FormatUint(id, 10), ClientID: clientID, Opened: now, acks: map[string]*ackState{}, outcomes: map[string]uint64{},
 		aircraft: map[*aircraft]bool{}, windowStart: now, poke: make(chan struct{}, 1)}
 }
 
@@ -222,4 +225,4 @@ func (s *Session) Status(now time.Time) SessionStatus {
 func isDropped(reason string) bool { return reason == DroppedRate || reason == DroppedQueueFull }
 
 // connectionID is the session's id as the status frame names it.
-func (s *Session) connectionID() string { return "telemetry-" + strconv.FormatUint(s.ID, 10) }
+func (s *Session) connectionID() string { return s.conn }

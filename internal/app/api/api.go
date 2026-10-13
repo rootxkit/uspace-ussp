@@ -228,7 +228,10 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 		return err
 	}
 	recordsAPI := startRecords(ctx, rt, pol)
-	occurrences := startOccurrences(ctx, rt, current, kv)
+	occurrences, err := startOccurrences(ctx, rt, current, kv, tokens)
+	if err != nil {
+		return err
+	}
 	statusSvc, err := startStatus(ctx, rt, tokens)
 	if err != nil {
 		return err

@@ -1,6 +1,7 @@
 # Go
 coverage.out
 integration.log
+lab-authority.log
 /bin/
 
 # local secrets and state (make compose-up writes deploy/compose/.env)
