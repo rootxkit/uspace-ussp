@@ -113,6 +113,10 @@ type Options struct {
 	// Listening, when set, is called with the bound address once the
 	// listener is open.
 	Listening func(addr string)
+	// Addr, when set, is the listen address in place of
+	// cfg.Addr(spec.Process): a process outside the seven, which
+	// internal/config does not list (test-interfaces, D13).
+	Addr string
 }
 
 // Run runs the process described by spec with cfg until ctx ends, then
@@ -175,8 +179,12 @@ func Run(ctx context.Context, cfg config.Config, spec Spec, opts Options) error 
 		// The sign-in limits and the audit rows are api's (audit S7).
 		rt.Health.Register(DepClientAddress, false, ClientAddressProbe(watch, time.Now))
 	}
+	addr := cfg.Addr(spec.Process)
+	if opts.Addr != "" {
+		addr = opts.Addr
+	}
 	srv := httpx.NewServer(httpx.ServerOptions{
-		Name: spec.Process, Addr: cfg.Addr(spec.Process), Logger: logger,
+		Name: spec.Process, Addr: addr, Logger: logger,
 		Handler: httpx.Baseline(mux, logger, httpx.BaselineDeps{Counters: rt.Counters, MaxBodyBytes: int64(cfg.MaxBodyBytes),
 			TrustedProxies: proxies, ProxyWatch: watch}),
 		ReadHeaderTimeout: time.Duration(cfg.ReadHeaderTimeoutS) * time.Second,
