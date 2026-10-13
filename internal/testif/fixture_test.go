@@ -108,3 +108,20 @@ func TestFixtureOpenSubcategoryByClass(t *testing.T) {
 		}
 	}
 }
+
+// The committed profile fixture declares the open subcategory of a
+// class its table does not name (A3, pending GCAA), and the tests read
+// that file as committed: CI exercises the file the profile ships, not
+// a patched copy.
+func TestProfileFixtureIsCommitted(t *testing.T) {
+	f, err := LoadFixture(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.AnnexIV.OpenSubcategory != "A3" {
+		t.Errorf("deploy/conformance/test-operator.yaml annex_iv.open_subcategory is %q, want A3", f.AnnexIV.OpenSubcategory)
+	}
+	if got := profileFixture(t); filepath.Clean(got) != filepath.Clean(fixturePath) {
+		t.Errorf("the tests read %s, not the committed %s", got, fixturePath)
+	}
+}

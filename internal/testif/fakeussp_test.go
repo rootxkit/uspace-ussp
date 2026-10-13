@@ -281,23 +281,12 @@ func writeFile(t *testing.T, name, content string) string {
 	return p
 }
 
-// profileFixture is the conformance profile's fixture with the open
-// subcategory the test operator declares (annex_iv.open_subcategory, A3,
-// pending GCAA) when the file does not name one yet.
+// profileFixture is the conformance profile's fixture as committed
+// (TestProfileFixtureIsCommitted): the tests read the file the profile
+// ships, never a patched copy.
 func profileFixture(t *testing.T) string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("..", "..", "deploy", "conformance", "test-operator.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(b)
-	if !strings.Contains(s, "open_subcategory:") {
-		if !strings.Contains(s, "\nannex_iv:\n") {
-			t.Fatal("the fixture has no annex_iv block")
-		}
-		s = strings.Replace(s, "\nannex_iv:\n", "\nannex_iv:\n  open_subcategory: A3\n", 1)
-	}
-	return writeFile(t, "test-operator.yaml", s)
+	return fixturePath
 }
 
 func newTestServer(t *testing.T, f *fakeUSSP, edit func(*Config)) *testServer {
