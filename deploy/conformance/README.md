@@ -30,7 +30,7 @@ push setting) and `issuer-jwks.json` to verify the signature
 | `target.yaml` | the USSP's conformance target in the lab's format (`conformance/targets/README.md` there): every host and secret a `${VAR}` the hook fills |
 | `authority-push-off.yaml` | the declaration that `openAuthorityFlights` is not applicable while `USSP_AUTHORITY_PUSH=off` (below) |
 | `compose.yaml` | the overlay on the lab's systems stack: `USSP_AUTHORITY_PUSH` on rid-sp; the `ussp-test-interfaces` service (profile `testif`, image `uspace-ussp-testif`, WP-21) and the lab Caddy's Caddyfile with `/test/*` routed to it |
-| `test-operator.yaml` | the test operator the hook seeds through the national API and test-interfaces is the client of (GEO-TEST/TEST values; the Annex IV items a flight plan lacks, pending GCAA) |
+| `test-operator.yaml` | the test operator the hook seeds through the national API and test-interfaces is the client of (GEOTEST/TEST values, the operator uspace-lab registers at its authority; the Annex IV items a flight plan lacks, pending GCAA) |
 | `chaos.sh` | one row of the chaos procedure against a running stack (`docs/RUNBOOKS/chaos.md`) |
 | `SOURCE` | the lab commit, the images it pins, the geoid's URL and digests |
 | `../../scripts/conformance.sh` | the hook (`make conformance`): validation, stack, declaration check, suite |

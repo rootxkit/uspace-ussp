@@ -7,18 +7,20 @@
 # (USSP_TEST_INTERFACES_OPERATOR_FILE, internal/testif.LoadFixture).
 #
 # Every value is the lab's reading of Annex IV for a test operator,
-# pending GCAA: GEO-TEST-* and TEST* values only, no production value, no
+# pending GCAA: GEOTEST* and TEST* values only, no production value, no
 # secret (the admin's password and the client's secret are generated into
 # the stack's state directory by the hook and never written here).
 #
 # The registry must know the registration number and the serials for F8
-# validity to answer `valid`: that is the lab registry seed this brief is
-# blocked by ("Blocked by", the lab's fixtures). Until it lands the
-# registry answers `unknown`, the operator stays pending_validation and no
-# client can be created, which the first run records.
+# validity to answer `valid`: uspace-lab registers both
+# (conformance/fixtures/test-operators.yaml, the registry step of its
+# cmd/demo-seed), which scripts/conformance.sh runs at the lab's
+# authority before the seed. The number has no hyphen: the authority
+# validates it with uspace-core regnum, which refuses one, so the
+# GEO-TEST-WP21-0001 of the first run could never be registered.
 format: ussp-test-operator/v1
 operator:
-  registration_number: GEO-TEST-WP21-0001
+  registration_number: GEOTESTWP210001
   display_name: InterUSS test operator (WP-21)
   contact_email: test-operator@example.test
   admin_username: wp21.test.admin
