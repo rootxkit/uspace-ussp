@@ -132,3 +132,38 @@ func TestDetailsClassificationOnlyWhenDeclared(t *testing.T) {
 		}
 	}
 }
+
+// Art. 8(2)(b): the serial of a bound aircraft is served even when the
+// registry projection does not hold the aircraft yet (registered on the
+// session binding, or registry_unavailable): the session binding names
+// it, and on the authenticated basis the identification's registry id
+// is the bound serial (telemetry-ingest's drone id,
+// TestIdentificationThroughTheRegistry pins it). The registry's serial
+// wins when it has one; nothing is served on another basis.
+func TestDetailsServeTheBoundSerial(t *testing.T) {
+	bound := "CCH4FLG32FQPD3PLDCFB"
+	for name, c := range map[string]struct {
+		id   core.Identification
+		want string
+	}{
+		"not in the projection yet": {core.Identification{Status: core.IdentRegistered, Reason: core.ReasonSessionBinding,
+			Basis: core.BasisAuthenticated, RegistryUASID: &bound}, bound},
+		"registry unavailable": {core.Identification{Status: core.IdentUnknownOperator, Reason: core.ReasonRegistryUnavailable,
+			Basis: core.BasisAuthenticated, RegistryUASID: &bound}, bound},
+		"the registry's serial": {core.Identification{Status: core.IdentRegistered, Reason: core.ReasonSessionBinding,
+			Basis: core.BasisAuthenticated, RegistryUASID: &bound, Serial: ptr("TEST0001")}, "TEST0001"},
+		"as broadcast": {core.Identification{Status: core.IdentUnknownOperator, Reason: core.ReasonNotInRegistry,
+			Basis: core.BasisAsBroadcast, RegistryUASID: &bound}, ""},
+	} {
+		s := sample(1, origin, t0)
+		s.Body.Identification = c.id
+		d := DetailsOf(View{ID: flightN(1), Current: s}, nil)
+		got := ""
+		if d.UasId.SerialNumber != nil {
+			got = *d.UasId.SerialNumber
+		}
+		if got != c.want {
+			t.Errorf("%s: serial_number %q, want %q", name, got, c.want)
+		}
+	}
+}
