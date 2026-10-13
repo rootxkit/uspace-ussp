@@ -45,6 +45,16 @@ type Fake struct {
 	gets    int
 	// stream is the manned-traffic service's state (stream.go).
 	stream streamState
+	// direct is what GET /v1/restrictions/{id}/direct serves, by id.
+	direct      map[string]directDoc
+	directPulls int
+	directCred  bool
+}
+
+// directDoc is a signed restriction/direct/v1 body.
+type directDoc struct {
+	body []byte
+	sig  string
 }
 
 // Notice is one notice the fake inbox received.
@@ -82,6 +92,13 @@ func New() (*Fake, error) {
 			f.serveStream(w, r)
 		case r.URL.Path == "/v1/manned-traffic/snapshot" && r.Method == http.MethodGet:
 			f.serveSnapshot(w, r)
+		case strings.HasPrefix(r.URL.Path, "/v1/restrictions/") && strings.HasSuffix(r.URL.Path, "/direct") && r.Method == http.MethodGet:
+			if r.Header.Get("Authorization") != "" {
+				f.mu.Lock()
+				f.directCred = true
+				f.mu.Unlock()
+			}
+			f.serveDirect(w, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/restrictions/"), "/direct"))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -135,6 +152,43 @@ func (f *Fake) Notify(ctx context.Context, callback, restrictionID string, chang
 	}
 	_ = resp.Body.Close()
 	return resp.StatusCode, nil
+}
+
+// ServeDirect makes GET /v1/restrictions/{id}/direct, the pull_url of
+// the degraded direct delivery (uspace-ansp's getRestrictionDirect),
+// answer body with sig in X-JWS-Signature: the ANSP signs it with its
+// delivery key, which is also its publisher key; a test passes the key
+// the receiver verifies restrictions with, or another to see it
+// refused.
+func (f *Fake) ServeDirect(id string, body []byte, sig string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.direct == nil {
+		f.direct = map[string]directDoc{}
+	}
+	f.direct[id] = directDoc{body: body, sig: sig}
+}
+
+// DirectPulls is how many times GET /v1/restrictions/{id}/direct was
+// asked, and whether any carried an Authorization header.
+func (f *Fake) DirectPulls() (n int, withCredential bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.directPulls, f.directCred
+}
+
+func (f *Fake) serveDirect(w http.ResponseWriter, id string) {
+	f.mu.Lock()
+	d, ok := f.direct[id]
+	f.directPulls++
+	f.mu.Unlock()
+	if !ok {
+		problem(w, http.StatusNotFound, "not_found", "no such restriction")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-JWS-Signature", d.sig)
+	_, _ = w.Write(d.body)
 }
 
 func problem(w http.ResponseWriter, status int, slug, detail string) {

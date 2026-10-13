@@ -225,7 +225,7 @@ func (g *trafficRig) putIntent(op trafficOperator) {
 	now := time.Now().UTC()
 	body := map[string]any{
 		"intent_id": op.intent, "version": 2, "local_state": "activated", "uas_serial": op.serial, "operator_reg": "GEO-TEST-WP11",
-		"authorisation_number": "USSP-DEV-WP11-" + op.intent[:8], "flight_id": op.flight,
+		"authorisation_number": "DEV01-WP11-" + op.intent[:8], "flight_id": op.flight,
 		"volumes_amsl":         []any{map[string]any{"lower_amsl_m": 0, "upper_amsl_m": 2000, "undulation_m": 0, "lower_w84_m": 0, "upper_w84_m": 2000}},
 		"deviation_thresholds": map[string]any{"h_m": 50, "v_m": 15, "t_s": 60},
 		"volumes": []any{map[string]any{

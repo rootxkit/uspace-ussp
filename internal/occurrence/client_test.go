@@ -38,7 +38,7 @@ func builtBody(t *testing.T) []byte {
 	r := Report{Kind: KindAirprox, Channel: ChannelMandatory, FlaggedBy: "system", SourceKind: "alert", SourceRef: "pair:p@1",
 		Reporter: ReporterSystem, OccurredAt: t0.Add(-time.Minute), AwareAt: t0, FlightIDs: []string{flightA}}
 	h, v := 20.0, 5.0
-	if err := Build(&r, "USSP-DEV", []Aircraft{{Serial: "S1", OperatorReg: ptr("GEO87astrdge12k8-xyz"), FlightID: flightA}},
+	if err := Build(&r, "DEV01", []Aircraft{{Serial: "S1", OperatorReg: ptr("GEO87astrdge12k8-xyz"), FlightID: flightA}},
 		[]Manned{{ICAO24: "4ca1f0"}}, &Separation{HM: &h, VM: &v, At: t0}, "seen", []string{"https://ussp.test/v1/records/flights/" + flightA}); err != nil {
 		t.Fatal(err)
 	}

@@ -182,7 +182,7 @@ func newIntentRig(t *testing.T) *intentRig {
 	g.svc = &intent.Service{
 		Store: intentstore.Store{S: appStore(t)},
 		Decider: &intent.Decider{CIS: g.cis.eval, Integrity: g.cis.cache, Registry: g.reg, DSS: g.dss,
-			Weather: weatherAdapter{g.wx.svc}, SystemID: "USSP-DEV", Counters: g.counters},
+			Weather: weatherAdapter{g.wx.svc}, SystemID: "DEV01", Counters: g.counters},
 		Geoid: grid, Policy: func() policy.Record { return *g.pol.Load() }, Counters: g.counters, Logger: quiet(),
 		Projector: intent.BusProjector{KV: g.kv, Pub: bus.NewPublisher(conn, g.counters)},
 	}
@@ -380,7 +380,7 @@ func TestIntegrationIntentAuthorisedWithTheTenItems(t *testing.T) {
 		t.Errorf("%d members, the example has %d", len(r.body), len(example))
 	}
 	num := r.str("authorisation_number")
-	if !strings.HasPrefix(num, "USSP-DEV-"+number+"-") || len(num) != len("USSP-DEV-"+number+"-")+26 {
+	if !strings.HasPrefix(num, "DEV01-"+number+"-") || len(num) != len("DEV01-"+number+"-")+26 {
 		t.Fatalf("authorisation number %q", num)
 	}
 	th, _ := r.body["deviation_thresholds"].(map[string]any)

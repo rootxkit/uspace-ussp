@@ -33,7 +33,7 @@
 #   USSP_CONFORMANCE_AUTHORITY_PUSH on|off: USSP_AUTHORITY_PUSH of the target
 #                                   (stack default off, the product default)
 #   USSP_CONFORMANCE_SYSTEM_ID      USSP_SYSTEM_ID of the target (stack default:
-#                                   the lab's, USSP-DEV); must contain TEST or DEV
+#                                   the lab's, DEV01); must contain TEST or DEV
 #   USSP_CONFORMANCE_GROUND_DIR     a directory holding GeographicLib's
 #                                   egm2008-2_5.pgm (stack only; default
 #                                   local/conformance/ground)

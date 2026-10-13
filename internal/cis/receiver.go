@@ -105,12 +105,17 @@ type Notification struct {
 type ReceiverConfig struct {
 	Verifier CompactVerifier
 	// Senders are the allow-listed issuers, by iss.
-	Senders  map[string]Sender
-	Store    ReceiverStore
-	Trigger  func(Dataset, Hint)
-	Counters *core.Counters
-	Logger   *slog.Logger
-	Now      func() time.Time
+	Senders map[string]Sender
+	Store   ReceiverStore
+	Trigger func(Dataset, Hint)
+	// TriggerDirect queues the pull of an ANSP direct notification
+	// (Cache.TriggerDirect); false means it cannot be queued now and the
+	// receiver answers 503. Nil: the ANSP's notifications are read from
+	// the CISP only.
+	TriggerDirect func(DirectHint) bool
+	Counters      *core.Counters
+	Logger        *slog.Logger
+	Now           func() time.Time
 }
 
 // Receiver is POST /v1/cis/notifications.
@@ -182,6 +187,20 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpx.NewProblem(http.StatusBadRequest, httpx.SlugValidation, "", "the notification is not a "+ChangeSchema+" record", ferr).Write(w, r)
 		return
 	}
+	// The ANSP's degraded direct path (M4, M5): the record's version is
+	// the restriction's ansp_version, never a CIS dataset version, and
+	// the restriction is read from the ANSP's signed pull_url. It is
+	// queued before the delivery id is recorded, so a full queue is a
+	// 503 the ANSP retries, never a delivery recorded and dropped; a
+	// queued pull of a replay finds the version held and does nothing.
+	direct := sender.ANSP && ds == Restrictions && pullReasons[ch.Reason] && rc.cfg.TriggerDirect != nil &&
+		hostOf(ch.PullUrl) == sender.BaseHost && sender.BaseHost != ""
+	if direct && !rc.cfg.TriggerDirect(DirectHint{RestrictionID: claims.Subject, AnspVersion: ch.Version, FeatureIDs: ch.FeatureIds,
+		PullURL: ch.PullUrl, Issuer: claims.Issuer, Reason: ch.Reason, At: rc.cfg.Now()}) {
+		httpx.RetryAfter(w, 30*time.Second)
+		httpx.NewProblem(http.StatusServiceUnavailable, CounterDirectFull, "", "too many direct restrictions waiting to be pulled; retry").Write(w, r)
+		return
+	}
 	fresh, full, err := rc.cfg.Store.RememberJTI(ctx, claims.Issuer, claims.JTI, JTITTL, MaxLiveJTIs)
 	switch {
 	case err != nil:
@@ -215,15 +234,17 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h := Hint{Version: ch.Version, ETag: ch.Etag, Issuer: claims.Issuer, At: rc.cfg.Now()}
+	if sender.ANSP {
+		// Not a CIS dataset version: a CISP pull it asks for is never
+		// skipped as a replay because of it.
+		h.Version, h.ETag = 0, ""
+	}
 	switch host := hostOf(ch.PullUrl); {
 	case host != sender.BaseHost:
 		rc.cfg.Counters.Inc(CounterPullURLMismatch)
 		log.Warn("pull_url is not on the issuer's configured host; the dataset is read from the configured CISP",
 			slog.String("pull_url_host", short(host)))
 	case sender.ANSP:
-		// The ANSP's GET /v1/restrictions/{id} has no pinned contract
-		// here yet: the dataset is read from the CISP.
-		log.Info("ANSP direct notification; the dataset is read from the configured CISP")
 	default:
 		h.PullURL = ch.PullUrl
 	}
@@ -236,6 +257,11 @@ func (rc *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		rc.cfg.Counters.Inc(CounterWebhookStoreFailed)
 		log.Warn("CIS notification not logged; pulling anyway", obs.Err(err))
+	}
+	if direct {
+		log.Info("ANSP direct notification accepted; the restriction is pulled from its pull_url", slog.String("restriction_id", claims.Subject))
+		w.WriteHeader(http.StatusNoContent)
+		return
 	}
 	rc.cfg.Trigger(ds, h)
 	log.Info("CIS notification accepted; pull triggered")

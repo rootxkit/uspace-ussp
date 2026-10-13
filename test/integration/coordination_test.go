@@ -53,7 +53,7 @@ func newCoordRig(t *testing.T, controlled bool) *coordRig {
 	as := func() (coordination.Airspaces, bool) {
 		return coordination.Airspaces{Version: "3", Controlled: map[string]*bool{"UA-WP15": &controlled}}, true
 	}
-	n := &coordination.Notifier{Store: g.st, Airspaces: as, SystemID: "USSP-DEV", Counters: g.counters, Logger: quiet()}
+	n := &coordination.Notifier{Store: g.st, Airspaces: as, SystemID: "DEV01", Counters: g.counters, Logger: quiet()}
 	g.notifier = n
 	s := &coordination.Sender{Store: g.st, ANSP: client, Policy: func() policy.Values { return pol }, Counters: g.counters, Logger: quiet()}
 	go n.Run(ctx, 200*time.Millisecond)
@@ -101,7 +101,7 @@ func TestIntegrationCoordinationNonconformance(t *testing.T) {
 	a := seedFlight(t, "activated", nil, time.Now().Add(-5*time.Minute))
 	seedState(t, a.flightID, "conforming", "", time.Now().Add(-time.Minute), 0, 0)
 	stateA := seedState(t, a.flightID, "nonconforming", "above_upper", time.Now(), 3.5, 21.25)
-	refA := coordination.Ref("USSP-DEV", coordination.KindNonconformance, a.intentID, stateA)
+	refA := coordination.Ref("DEV01", coordination.KindNonconformance, a.intentID, stateA)
 	start := time.Now()
 	waitFor(t, 5*time.Second, "the nonconformance notice at the ANSP", func() bool { _, ok := g.noticeOf(refA); return ok })
 	t.Logf("nonconformance notice received by the fake ANSP %v after the state was recorded", time.Since(start).Round(time.Millisecond))
@@ -126,7 +126,7 @@ func TestIntegrationCoordinationNonconformance(t *testing.T) {
 	// console with its age and on /readyz.
 	b := seedFlight(t, "activated", nil, time.Now().Add(-5*time.Minute))
 	stateB := seedState(t, b.flightID, "contingent", "outside_volume_h", time.Now(), 80, 0)
-	refB := coordination.Ref("USSP-DEV", coordination.KindContingent, b.intentID, stateB)
+	refB := coordination.Ref("DEV01", coordination.KindContingent, b.intentID, stateB)
 	waitFor(t, 5*time.Second, "the contingent notice at the ANSP", func() bool { _, ok := g.noticeOf(refB); return ok })
 	waitFor(t, 10*time.Second, "the escalation", func() bool { st, _, _ := noticeState(t, refB); return st == "escalated" })
 	items, _, err := g.st.Open(ctx, 500)
@@ -173,7 +173,7 @@ func TestIntegrationCoordinationANSPDown(t *testing.T) {
 	g.fake.Down()
 	a := seedFlight(t, "activated", nil, time.Now().Add(-5*time.Minute))
 	stateA := seedState(t, a.flightID, "nonconforming", "threshold_exceeded", time.Now(), 120, 0)
-	ref := coordination.Ref("USSP-DEV", coordination.KindNonconformance, a.intentID, stateA)
+	ref := coordination.Ref("DEV01", coordination.KindNonconformance, a.intentID, stateA)
 	waitFor(t, 10*time.Second, "two failed tries", func() bool { _, n, _ := noticeState(t, ref); return n >= 2 })
 	st, n, lastErr := noticeState(t, ref)
 	if st != "pending" || lastErr == nil || !strings.Contains(*lastErr, "503") || g.counters.Get(coordination.CounterRetried) < 2 {
@@ -206,10 +206,10 @@ func TestIntegrationCoordinationANSPDown(t *testing.T) {
 func TestIntegrationCoordinationIntentNotices(t *testing.T) {
 	g := newCoordRig(t, true)
 	a := seedFlight(t, "activated", []string{"UA-WP15"}, time.Now().Add(-5*time.Minute))
-	refStart := coordination.Ref("USSP-DEV", coordination.KindIntentNotice, a.intentID, 0)
+	refStart := coordination.Ref("DEV01", coordination.KindIntentNotice, a.intentID, 0)
 	waitFor(t, 5*time.Second, "intent_notice", func() bool { _, ok := g.noticeOf(refStart); return ok })
 	endIntent(t, a.intentID)
-	refEnd := coordination.Ref("USSP-DEV", coordination.KindEnded, a.intentID, 0)
+	refEnd := coordination.Ref("DEV01", coordination.KindEnded, a.intentID, 0)
 	waitFor(t, 5*time.Second, "ended", func() bool { _, ok := g.noticeOf(refEnd); return ok })
 	if st, _, _ := noticeState(t, refStart); st != "received" {
 		t.Errorf("an informational notice is %s", st)

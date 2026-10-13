@@ -113,7 +113,7 @@ func newRig(t *testing.T, store *memStore, instance string) *rig {
 		Policy: func() policy.Record { return policy.Record{Version: 7, Values: r.pv} }, Ownership: own, InstanceID: instance,
 		Now: r.clk.Now, Authorisation: func(id string) string {
 			if id == intentA {
-				return "USSP-DEV-0001"
+				return "DEV01-0001"
 			}
 			return ""
 		},
@@ -221,7 +221,7 @@ func TestHeadOnRaisesOnBothFlightsWithThePeer(t *testing.T) {
 	if tc := a.Detail["t_cpa_s"].(float64); tc <= 0 || tc >= 60 {
 		t.Fatalf("t_cpa_s %v", tc)
 	}
-	if a.AuthorisationNumber == nil || *a.AuthorisationNumber != "USSP-DEV-0001" || a.IntentID == nil || *a.IntentID != intentA {
+	if a.AuthorisationNumber == nil || *a.AuthorisationNumber != "DEV01-0001" || a.IntentID == nil || *a.IntentID != intentA {
 		t.Fatalf("authorisation %+v", a)
 	}
 	if a.Detail["pair_id"] != rb[0].Detail["pair_id"] || a.Detail["t_cpa_s"] != rb[0].Detail["t_cpa_s"] {

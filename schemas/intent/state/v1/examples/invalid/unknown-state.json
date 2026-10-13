@@ -5,7 +5,7 @@
   "dss_state": "Accepted",
   "priority": 0,
   "exempt_art_1_3": false,
-  "authorisation_number": "USSP-DEV-GEOTESTOP0001-01M6BFP5G0Z7Z0SAGGV6APPASM",
+  "authorisation_number": "DEV01-GEOTESTOP0001-01M6BFP5G0Z7Z0SAGGV6APPASM",
   "operator_reg": "GEOTESTOP0001",
   "uas_serial": "TEST0001",
   "volumes": [
