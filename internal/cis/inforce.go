@@ -88,18 +88,27 @@ func (l Lift) String() string {
 // planned and active restrictions only, so absent is either an end or an
 // inconsistency: Cache.RestrictionLift tells them apart). LiftUnjudged
 // while the cache is stale or a dataset was never loaded: a stale CIS
-// lifts nothing.
+// lifts nothing, except a restriction the ANSP delivered directly
+// (Entry.Direct, H-2). That one is the ANSP's own signed document,
+// newer than what the CISP holds for it, and the CISP unreachable past
+// cis_stale_s is the case the direct path exists for: it is judged
+// however old the CISP's version is.
 func (e *Evaluator) RestrictionLift(id string) Lift {
-	if _, _, stale := e.Age(); stale {
-		return LiftUnjudged
-	}
+	_, _, stale := e.Age()
 	for _, en := range e.Snapshot().Entries(Restrictions) {
-		if en.Identifier == id {
-			if en.InForce() {
-				return LiftInForce
-			}
-			return LiftEnded
+		if en.Identifier != id {
+			continue
 		}
+		switch {
+		case stale && !en.Direct:
+			return LiftUnjudged
+		case en.InForce():
+			return LiftInForce
+		}
+		return LiftEnded
+	}
+	if stale {
+		return LiftUnjudged
 	}
 	return LiftAbsent
 }

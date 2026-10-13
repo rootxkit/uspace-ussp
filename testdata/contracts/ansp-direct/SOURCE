@@ -1,0 +1,10 @@
+# The ANSP's degraded direct delivery contract fixture, vendored read-only.
+# <system> <owner/repo> <commit> <path in that repo>, then <sha256> <file> per file.
+ansp rootxkit/uspace-ansp c21e63b7f2631c9f28786527820f0243901e5278 testdata/contract/direct
+c71706c7158c5c549694869f38b4eef1f7c4e88118132a3dc0b4797de3d43aa3  jwks.json
+a6e899300e435868659cbde35de5b9d2c1d083e78021a08a0b42f5edfece8bc6  activated.change.json
+963061e4e1b9182be2e973bc7735a58271858182458a21bcfdfa423788d93014  activated.direct.json
+b34a6242d433b91a9c85b677762523a3be8d74d65171977481a91df2fb5d2348  activated.direct.jws
+cd5d3b64860482e8a5a62992bdb01453b2b474be43ccd6652ba8ee75bcfdd7dc  ended.change.json
+a08c2f2afab59584235dea1b4e4089a6b3f2fb09d286309f3268fd18263249c7  ended.direct.json
+1795bd82771905989469bc9063226df650285cf4c41612d12bcef76c48a10c46  ended.direct.jws

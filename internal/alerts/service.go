@@ -347,7 +347,8 @@ func (s *Service) clears(l cis.Lift) bool {
 // otherwise. The intent keeps its state and its change_reason: a
 // withdrawn authorisation stays withdrawn (the operator files anew), only
 // the alert that the restriction is in force ends. A stale CIS clears
-// nothing. Every open notice is judged, MaxNoticeRepublish a page (the
+// nothing but a restriction the ANSP ended through its direct delivery
+// (cis.Evaluator.RestrictionLift, H-2). Every open notice is judged, MaxNoticeRepublish a page (the
 // pages past the first are counted). The clear is published on alrt.v1
 // and recorded from there; one that is not recorded yet is published
 // again by the next pass.

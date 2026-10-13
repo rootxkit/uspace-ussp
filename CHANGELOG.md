@@ -7,6 +7,51 @@ additively within `/v1`.
 
 ## [Unreleased]
 
+### Fixed
+
+- The ANSP's degraded direct delivery (spec 02 F2 failure rule,
+  cross-plan M4, M5; system audit 2026-10-05 H-2) was acknowledged and
+  discarded: the record's `version`, the restriction's `ansp_version`,
+  was read as the CIS restrictions version and skipped as a replay, and
+  the ANSP's `pull_url` was never followed. The receiver now hands an
+  ANSP restriction notification to the cache's direct path: it pulls
+  the ANSP's `GET /v1/restrictions/{id}/direct` (no credential; the
+  route is public and signed), verifies `X-JWS-Signature` with the
+  ANSP's publisher key (`USSP_CIS_PUBLISHER_KEYS` `ansp=`), checks the
+  body is the restriction, identifier and `ansp_version` the record
+  named, stores it (`cis_direct_restrictions`, migration 00028, so a
+  restart keeps it) and lays it over the CISP's restrictions version
+  until the CISP holds that `ansp_version` or a newer one. The
+  activation is in force on the Evaluator and in `cis_current`, and an
+  end delivered the same way lifts it. A full queue answers `503` before
+  the delivery id is recorded; a failed pull is retried. Contract
+  (cross-repo): the ANSP's `restriction/direct/v1` and its
+  `testdata/contract/direct` fixture, vendored in
+  `testdata/contracts/ansp-direct` at the uspace-ansp commit `SOURCE`
+  names. New variables `USSP_CIS_DIRECT_MAX` (500) and
+  `USSP_CIS_DIRECT_KEEP_S` (86400, pending GCAA).
+- A restriction the ANSP delivered directly is judged while the CIS is
+  stale (H-2 review). The CISP unreachable past `cis_stale_s` is the
+  case the direct path exists for, yet a stale CIS turned every
+  re-check into a `cis_stale` conflict (not judged) and every lift into
+  "unjudged", so a direct activation raised nothing and a direct end
+  cleared nothing. The re-check now judges the direct restrictions on a
+  stale or outdated CIS (`intent_recheck_direct_judged_stale`): one in
+  force over the volumes withdraws or marks the intent and raises
+  `restriction_activated`; finding none leaves the re-check owed. The
+  Evaluator's lift answers for a direct restriction whatever the
+  CISP's age, so its direct end clears the alert. The CISP's own
+  features stay unjudged on a stale CIS, and a new request is still
+  refused on one.
+- An ended direct restriction is kept past `USSP_CIS_DIRECT_KEEP_S`
+  while the CISP still holds an older version of it in force (H-2
+  review): dropping it put the CISP's older active row back in force
+  for a restriction the ANSP ended. It is dropped once the CISP's set no
+  longer holds it in force, or holds its version. Since an end can now
+  be held longer, the held set is bounded by `USSP_CIS_DIRECT_MAX`: past
+  it a further direct restriction is not applied, counted
+  (`cis_direct_full`), logged at error and retried.
+
 ### Security
 
 - The telemetry, traffic, alert and authority-flight streams judge the
