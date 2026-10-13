@@ -43,6 +43,14 @@ additively within `/v1`.
   CISP's age, so its direct end clears the alert. The CISP's own
   features stay unjudged on a stale CIS, and a new request is still
   refused on one.
+- An ended direct restriction is kept past `USSP_CIS_DIRECT_KEEP_S`
+  while the CISP still holds an older version of it in force (H-2
+  review): dropping it put the CISP's older active row back in force
+  for a restriction the ANSP ended. It is dropped once the CISP's set no
+  longer holds it in force, or holds its version. Since an end can now
+  be held longer, the held set is bounded by `USSP_CIS_DIRECT_MAX`: past
+  it a further direct restriction is not applied, counted
+  (`cis_direct_full`), logged at error and retried.
 
 ### Security
 

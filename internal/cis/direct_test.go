@@ -456,6 +456,17 @@ func TestDirectPullRetried(t *testing.T) {
 	}
 }
 
+// cispAt is the CISP's feature of the fixture's restriction at
+// ansp_version v in state, as the CISP serves it in its restrictions
+// version.
+func cispAt(v int64, state string) json.RawMessage {
+	f := prohibited(fixtureIdentifier)
+	f.extended = map[string]any{RestrictionMember: map[string]any{"id": fixtureRestriction, "ansp_ref": "ansp-01:" + fixtureRestriction,
+		"ansp_version": v, "state": state, "starts_at": "2026-10-02T12:00:00Z", "ends_at": "2026-10-02T16:00:00Z",
+		"ended_by": nil, "uspace_airspace_id": "GEOTU01"}}
+	return f.json()
+}
+
 // H-2 review: the ANSP delivers directly because the CISP does not hold
 // its version, and the CISP unreachable past cis_stale_s is the case
 // the path exists for. A signed direct document of the restrictions'
@@ -507,5 +518,84 @@ func TestDirectDeliveryJudgedOnAStaleCIS(t *testing.T) {
 	}
 	if l, st := g.state(); l != LiftEnded || st != "ended" {
 		t.Fatalf("the direct end on a stale CIS: %v %q", l, st)
+	}
+}
+
+// H-2 review: an ended direct restriction is kept past the keep period
+// while the CISP still holds an older version of it in force. Dropping
+// it would put the CISP's older active row back in force (and raise
+// again) for a restriction the ANSP ended. Once the CISP catches up (its
+// set no longer holds the restriction, or holds the end), the overlay is
+// dropped. The pair: with the CISP holding no row for it, an ended
+// overlay is dropped after the keep period as before.
+func TestEndedDirectKeptUntilTheCISPCatchesUp(t *testing.T) {
+	g := newDirectRig(t)
+	g.installCISP(7, cispAt(1, "active"))
+	for _, name := range []string{"activated", "ended"} {
+		if name == "ended" {
+			g.clk.advance(time.Hour - 9*time.Second)
+			for _, d := range ED318Datasets {
+				g.eval.confirm(d, g.clk.Now(), false)
+			}
+		}
+		g.ansp.serve(t, name)
+		if code := g.post(name); code != http.StatusNoContent {
+			t.Fatalf("%s: %d", name, code)
+		}
+		g.cache.drainDirect(t.Context())
+	}
+	if l, st := g.state(); l != LiftEnded || st != "ended" {
+		t.Fatalf("ended: %v %q", l, st)
+	}
+	g.clk.advance(DefaultDirectKeep + time.Hour)
+	for _, d := range ED318Datasets {
+		g.eval.confirm(d, g.clk.Now(), false)
+	}
+	g.cache.pruneDirect(t.Context())
+	if l, st := g.state(); l != LiftEnded || st != "ended" || len(g.direct.rows) != 1 {
+		t.Fatalf("past the keep period with the CISP's ansp_version 1 active: %v %q, stored %d", l, st, len(g.direct.rows))
+	}
+	// The CISP catches up: its next version no longer holds the
+	// restriction (its current set holds planned and active ones only).
+	g.installCISP(8)
+	g.cache.pruneDirect(t.Context())
+	if len(g.direct.rows) != 0 || g.cache.Counters().Get(CounterDirectExpired) != 1 {
+		t.Fatalf("not dropped once the CISP caught up: stored %d, counters %v", len(g.direct.rows), g.cache.Counters().Snapshot())
+	}
+	if l, _ := g.state(); l != LiftAbsent {
+		t.Fatalf("after the drop: %v", l)
+	}
+}
+
+// An end kept until the CISP catches up holds its place longer, so the
+// restrictions held from the direct path are bounded (E-10): at
+// USSP_CIS_DIRECT_MAX held, a further restriction is not applied,
+// counted and said, and stays pending (retried); with a place free it
+// is applied (the pair).
+func TestDirectHeldBounded(t *testing.T) {
+	g := newDirectRig(t)
+	g.cache.cfg.Direct.Max = 1
+	g.cache.mu.Lock()
+	g.cache.direct["DAROTHER"] = &directHeld{d: DirectRestriction{Identifier: "DAROTHER", AnspVersion: 1, State: "ended"},
+		entry: &Entry{Dataset: Restrictions, Identifier: "DAROTHER"}}
+	g.cache.mu.Unlock()
+	g.ansp.serve(t, "activated")
+	if code := g.post("activated"); code != http.StatusNoContent {
+		t.Fatalf("activated: %d", code)
+	}
+	g.cache.drainDirect(t.Context())
+	g.cache.mu.Lock()
+	_, held := g.cache.direct[fixtureIdentifier]
+	pending := len(g.cache.directPending)
+	g.cache.mu.Unlock()
+	if held || pending != 1 || g.cache.Counters().Get(CounterDirectFull) != 1 {
+		t.Fatalf("over the bound: held %v, pending %d, counters %v", held, pending, g.cache.Counters().Snapshot())
+	}
+	g.cache.mu.Lock()
+	delete(g.cache.direct, "DAROTHER")
+	g.cache.mu.Unlock()
+	g.cache.drainDirect(t.Context())
+	if l, st := g.state(); l != LiftInForce || st != "active" {
+		t.Fatalf("with a place free: %v %q", l, st)
 	}
 }

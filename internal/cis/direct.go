@@ -262,6 +262,10 @@ func (c *Cache) drainDirect(ctx context.Context) {
 // that is not the version named): counted, logged, dropped.
 var errDirectPermanent = errors.New("permanent")
 
+// errDirectHeldFull is a pull not applied because USSP_CIS_DIRECT_MAX
+// restrictions are held from the direct path already: retried.
+var errDirectHeldFull = errors.New("the direct restrictions held are at USSP_CIS_DIRECT_MAX")
+
 // ApplyDirect pulls h's pull_url, verifies the ANSP's signature over
 // the body, checks it is the restriction and version h names, stores it
 // and lays it over the CISP's restrictions version. A version at or
@@ -317,6 +321,18 @@ func (c *Cache) ApplyDirect(ctx context.Context, h DirectHint) error {
 		c.cfg.Counters.Inc(CounterDirectSuperseded)
 		log.Info("the CISP holds this restriction version or a newer one; the direct one is not applied")
 		return nil
+	}
+	c.mu.Lock()
+	full := c.direct[d.Identifier] == nil && len(c.direct) >= c.directMax()
+	c.mu.Unlock()
+	if full {
+		// Bounded (E-10): an end is held until the CISP catches up, so
+		// the held set can fill. Retried until the keep period ends;
+		// nothing is stored.
+		c.cfg.Counters.Inc(CounterDirectFull)
+		log.Error("direct restriction not applied: USSP_CIS_DIRECT_MAX direct restrictions are held already; retried",
+			slog.Int("held", c.directMax()))
+		return errDirectHeldFull
 	}
 	if ds := c.cfg.Direct.Store; ds != nil {
 		if _, err := ds.SaveDirect(ctx, DirectStored{Identifier: d.Identifier, RestrictionID: d.ID, AnspRef: d.AnspRef,
@@ -563,9 +579,15 @@ func (c *Cache) dropDirect(ctx context.Context) bool {
 	var drop []gone
 	c.mu.Lock()
 	base := map[string]int64{}
+	// baseInForce marks the identifiers the CISP's version holds in
+	// force, at whatever version.
+	baseInForce := map[string]bool{}
 	for _, e := range c.restrBaseEntries {
 		if e.Restriction != nil {
 			base[e.Identifier] = e.Restriction.AnspVersion
+		}
+		if e.InForce() {
+			baseInForce[e.Identifier] = true
 		}
 	}
 	for id, h := range c.direct {
@@ -573,7 +595,12 @@ func (c *Cache) dropDirect(ctx context.Context) bool {
 		switch {
 		case base[id] >= h.d.AnspVersion:
 			drop = append(drop, gone{id, h.d.AnspVersion, "superseded"})
-		case over && now.Sub(h.since) > keep:
+		case over && now.Sub(h.since) > keep && !baseInForce[id]:
+			// An end is kept past the keep period while the CISP still
+			// holds an older version in force: dropping it would put that
+			// older row back in force for a restriction the ANSP ended.
+			// It is dropped once the CISP's set no longer holds it in
+			// force (and when the CISP holds this version, above).
 			drop = append(drop, gone{id, h.d.AnspVersion, "kept long enough after its end"})
 		case !over && !h.d.EndsAt.IsZero() && now.Sub(h.d.EndsAt) > keep:
 			drop = append(drop, gone{id, h.d.AnspVersion, "kept long enough after its ends_at"})
