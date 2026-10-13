@@ -30,6 +30,19 @@ additively within `/v1`.
   `testdata/contracts/ansp-direct` at the uspace-ansp commit `SOURCE`
   names. New variables `USSP_CIS_DIRECT_MAX` (500) and
   `USSP_CIS_DIRECT_KEEP_S` (86400, pending GCAA).
+- A restriction the ANSP delivered directly is judged while the CIS is
+  stale (H-2 review). The CISP unreachable past `cis_stale_s` is the
+  case the direct path exists for, yet a stale CIS turned every
+  re-check into a `cis_stale` conflict (not judged) and every lift into
+  "unjudged", so a direct activation raised nothing and a direct end
+  cleared nothing. The re-check now judges the direct restrictions on a
+  stale or outdated CIS (`intent_recheck_direct_judged_stale`): one in
+  force over the volumes withdraws or marks the intent and raises
+  `restriction_activated`; finding none leaves the re-check owed. The
+  Evaluator's lift answers for a direct restriction whatever the
+  CISP's age, so its direct end clears the alert. The CISP's own
+  features stay unjudged on a stale CIS, and a new request is still
+  refused on one.
 
 ### Security
 

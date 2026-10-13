@@ -16,6 +16,7 @@ import (
 	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/geodesy"
 
+	"github.com/rootxkit/uspace-ussp/internal/cis"
 	"github.com/rootxkit/uspace-ussp/internal/obs"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
 )
@@ -175,6 +176,53 @@ func (d *Decider) assessCIS(n *Normalised, pol policy.Record, now time.Time) *As
 	return a
 }
 
+// assessDirect runs WP-7's step 4 on n over the restrictions the ANSP
+// delivered directly alone (cis.Entry.Direct; spec 02 F2 failure rule,
+// H-2). Each is the ANSP's own signed document, verified with its
+// publisher key and newer than what the CISP holds for it, so it is
+// judged whatever the CISP's age: the CISP unreachable past cis_stale_s
+// is the case the direct path exists for.
+func (d *Decider) assessDirect(n *Normalised, pol policy.Record, now time.Time) *Assessment {
+	a := &Assessment{n: n, pol: pol, now: now}
+	a.d = Decision{USpaceAirspaceIDs: []string{}, Conflicts: []Conflict{}, Conditions: []Condition{}}
+	if d.CIS == nil {
+		return a
+	}
+	for i := range n.Volumes {
+		v := &n.Volumes[i]
+		r := d.CIS.ZonesFor(v.BBox, v.Start, v.End)
+		if r.Error != "" {
+			return a
+		}
+		for _, c := range r.Zones {
+			if c.Entry == nil || !c.Entry.Direct || c.Entry.Dataset != cis.Restrictions {
+				continue
+			}
+			if ok, ov, nj := d.meets(c, v); ok {
+				d.zone(a, c, v, ov, nj)
+			}
+		}
+	}
+	return a
+}
+
+// directJudged reports whether the CIS was not judged only for its age
+// or its versions (stale, outdated), where a direct restriction of the
+// ANSP is still judged; a CIS that is unavailable is not judged at all.
+func directJudged(cs []Conflict) bool {
+	seen := false
+	for _, c := range cs {
+		if c.Kind != KindCIS {
+			continue
+		}
+		if c.Reason != ReasonCISStale && c.Reason != ReasonCISOutdated {
+			return false
+		}
+		seen = true
+	}
+	return seen
+}
+
 // affecting are the conflicts of a re-check that withdraw an
 // authorisation: what refuses or holds a request of the zones, the
 // restrictions and the U-space airspaces. A CIS conflict (stale,
@@ -274,6 +322,17 @@ func (s *Service) cisFindings(r *Record, pol policy.Record, now time.Time) cisFi
 		out.version = *a.d.CISVersionChecked
 	}
 	if why, bad := notJudged(a.d.Conflicts); bad {
+		// A stale or outdated CIS judges nothing of the CISP's, but a
+		// restriction the ANSP delivered directly is judged: one in force
+		// over the volumes withdraws the authorisation (H-2). Finding none
+		// says nothing of the rest, so the re-check stays owed.
+		if directJudged(a.d.Conflicts) {
+			if found := affecting(s.Decider.assessDirect(n, pol, now).d.Conflicts); len(found) > 0 {
+				s.count("recheck_direct_judged_stale")
+				out.found = found
+				return out
+			}
+		}
 		out.notJudged = why
 		return out
 	}

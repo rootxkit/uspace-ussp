@@ -455,3 +455,57 @@ func TestDirectPullRetried(t *testing.T) {
 		t.Fatal("a 404 is retried")
 	}
 }
+
+// H-2 review: the ANSP delivers directly because the CISP does not hold
+// its version, and the CISP unreachable past cis_stale_s is the case
+// the path exists for. A signed direct document of the restrictions'
+// publisher is judged however old the CISP's version is: the activation
+// is in force and the end lifts it with the CIS stale. What the CISP
+// alone says stays unjudged on a stale CIS (the pairs): its own active
+// restriction, and a restriction neither path holds.
+func TestDirectDeliveryJudgedOnAStaleCIS(t *testing.T) {
+	g := newDirectRig(t)
+	other := prohibited("DARCISP")
+	other.extended = map[string]any{RestrictionMember: map[string]any{"id": "01K6P0CISPONLY00000000000", "ansp_ref": "ansp-01:cisp",
+		"ansp_version": 1, "state": "active", "starts_at": "2026-10-02T12:00:00Z", "ends_at": "2026-10-02T16:00:00Z",
+		"ended_by": nil, "uspace_airspace_id": "GEOTU01"}}
+	g.installCISP(7, other.json())
+	if g.eval.RestrictionLift("DARCISP") != LiftInForce {
+		t.Fatalf("fresh: %v", g.eval.RestrictionLift("DARCISP"))
+	}
+	// The CISP unreachable: nothing has confirmed its versions for longer
+	// than the bound (the notifications are signed at the rig's time).
+	for _, d := range ED318Datasets {
+		g.eval.confirm(d, g.clk.Now().Add(-301*time.Second), false)
+	}
+	if _, _, stale := g.eval.Age(); !stale {
+		t.Fatal("the CIS is not stale")
+	}
+	if l, _ := g.state(); l != LiftUnjudged || g.eval.RestrictionLift("DARCISP") != LiftUnjudged {
+		t.Fatalf("stale, before the delivery: %v, the CISP's own %v", l, g.eval.RestrictionLift("DARCISP"))
+	}
+	g.ansp.serve(t, "activated")
+	if code := g.post("activated"); code != http.StatusNoContent {
+		t.Fatalf("activated: %d", code)
+	}
+	g.cache.drainDirect(t.Context())
+	if l, st := g.state(); l != LiftInForce || st != "active" {
+		t.Fatalf("the direct activation on a stale CIS: %v %q", l, st)
+	}
+	if g.eval.RestrictionLift("DARCISP") != LiftUnjudged {
+		t.Fatalf("the CISP's own restriction judged on a stale CIS: %v", g.eval.RestrictionLift("DARCISP"))
+	}
+	// The end, an hour later, the CISP still unreachable.
+	g.clk.advance(time.Hour - 9*time.Second)
+	g.ansp.serve(t, "ended")
+	if code := g.post("ended"); code != http.StatusNoContent {
+		t.Fatalf("ended: %d", code)
+	}
+	g.cache.drainDirect(t.Context())
+	if _, _, stale := g.eval.Age(); !stale {
+		t.Fatal("the CIS is not stale at the end")
+	}
+	if l, st := g.state(); l != LiftEnded || st != "ended" {
+		t.Fatalf("the direct end on a stale CIS: %v %q", l, st)
+	}
+}

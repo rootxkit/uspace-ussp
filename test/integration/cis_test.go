@@ -86,6 +86,8 @@ type cisRig struct {
 	senders  map[string]cis.Sender
 	srv      *httptest.Server
 	dead     atomic.Bool
+	// staleS overrides the cache's cis_stale_s (s; 0 keeps 300).
+	staleS   atomic.Int64
 	callback string
 	// hook is told every installed version (the api process's
 	// cis.v1 publish and standing re-check, WP-12); nil: nobody.
@@ -119,7 +121,12 @@ func newCISRig(t *testing.T, reconcile time.Duration) *cisRig {
 		g.fake.Signer.Issuer: {BaseHost: g.fake.Host()},
 		g.ansp.Signer.Issuer: {ANSP: true, BaseHost: g.ansp.Host()},
 	}
-	g.eval = cis.NewEvaluator(cis.EvaluatorConfig{StaleS: func() float64 { return 300 }, Counters: g.counters})
+	g.eval = cis.NewEvaluator(cis.EvaluatorConfig{StaleS: func() float64 {
+		if v := g.staleS.Load(); v > 0 {
+			return float64(v)
+		}
+		return 300
+	}, Counters: g.counters})
 	client, err := cis.NewClient(cis.ClientConfig{BaseURL: g.fake.URL(), Tokens: cisp.Tokens{}, HTTPClient: g.fake.Client()})
 	if err != nil {
 		t.Fatal(err)

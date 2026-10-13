@@ -38,6 +38,19 @@ import (
 // key, and the clearing pass leaves the alert open while the
 // restriction is in force.
 func TestIntegrationDegradedDirectRestrictionRaisesAndClears(t *testing.T) {
+	directScenario(t, false)
+}
+
+// The same scenario with the CISP down past cis_stale_s, the case the
+// ANSP delivers directly for (H-2 review): the CIS is stale before the
+// delivery and stays stale to the end, and the ANSP's signed direct
+// activation still raises restriction_activated and its direct end
+// still clears it. The absence pairs hold on the stale CIS too.
+func TestIntegrationDirectRestrictionWithTheCISPDownPastTheBound(t *testing.T) {
+	directScenario(t, true)
+}
+
+func directScenario(t *testing.T, cispDown bool) {
 	g := newIntentRig(t)
 	pol := policy.Record{Version: 1, Values: policy.Defaults()}
 	pol.Values.ActivationLeadS = 7200
@@ -66,6 +79,21 @@ func TestIntegrationDegradedDirectRestrictionRaisesAndClears(t *testing.T) {
 	id := c.str("intent_id")
 	if r := g.stack.call("PATCH", "/v1/intents/"+id, map[string]any{"action": "activate"}, bearer(token)); r.status != 200 || r.str("state") != "activated" {
 		t.Fatalf("activate: %d %s", r.status, r.raw)
+	}
+	stale := func() bool { _, _, st := g.cis.eval.Age(); return st }
+	if cispDown {
+		// The CISP unreachable longer than cis_stale_s (1 s here): every
+		// request it gets is a 503, and nothing confirms its versions.
+		g.cis.fake.Down()
+		t.Cleanup(g.cis.fake.Up)
+		g.cis.staleS.Store(1)
+		within(t, 10*time.Second, stale)
+	}
+	// What the CIS says of a restriction neither path holds: absent on
+	// a fresh CIS, not judged on a stale one.
+	none := cis.LiftAbsent
+	if cispDown {
+		none = cis.LiftUnjudged
 	}
 	log := &noticeLog{}
 	stop, err := conn.Listen("alrt.v1.restriction_activated.>", func(_ string, data []byte) {
@@ -134,7 +162,7 @@ func TestIntegrationDegradedDirectRestrictionRaisesAndClears(t *testing.T) {
 	refused := g.cis.counters.Get(cis.CounterDirectRefused)
 	notify(2, "restriction_activated")
 	within(t, 10*time.Second, func() bool { return g.cis.counters.Get(cis.CounterDirectRefused) > refused })
-	if n := len(log.of(id)); n != 0 || g.cis.eval.RestrictionLift(ident) != cis.LiftAbsent {
+	if n := len(log.of(id)); n != 0 || g.cis.eval.RestrictionLift(ident) != none {
 		t.Fatalf("a body the ANSP did not sign raised %d notices", n)
 	}
 	// The presence: the ANSP's signed body.
@@ -187,5 +215,8 @@ func TestIntegrationDegradedDirectRestrictionRaisesAndClears(t *testing.T) {
 	ms := log.of(id)
 	if last := ms[len(ms)-1]; last.Body.AlertID != raised.Body.AlertID || last.Body.State != "cleared" {
 		t.Fatalf("clear on the bus %+v", last.Body)
+	}
+	if cispDown && !stale() {
+		t.Fatal("the CIS was fresh again before the end: the scenario did not run on a stale CIS")
 	}
 }
