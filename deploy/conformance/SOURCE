@@ -1,0 +1,38 @@
+# What the conformance profile (deploy/conformance/, scripts/conformance.sh)
+# was written against and runs with (WP-19; LESSONS E-04, E-05). Bump a
+# line only after re-reading what it names at the new commit and
+# re-running `make conformance`; record the run in
+# docs/RUNBOOKS/conformance.md.
+#
+# key = value, read by .github/workflows/conformance.yml (lab_commit,
+# geoid_*).
+
+# uspace-lab: the suite (cmd/conformance, conformance/), its target
+# format (conformance/target/target.go), the contract overrides
+# (conformance/national/contracts/ussp.yaml) and the systems stack the
+# profile composes (deploy/compose.yaml, deploy/systems/, demo.env.example).
+lab_repo = https://github.com/rootxkit/uspace-lab.git
+lab_commit = 7fb2d45693c8a93c7485dd0aa0699e8359296aa5
+
+# What that lab commit pins, as read there (not re-pinned here: the lab
+# owns them, plan D5, never patched):
+#   deploy/compose.yaml         interuss/dss:v0.23.0@sha256:0781042bef785f6c968efd4b4e1e85854db9bf361116916d0673d2c89db91582
+#                               cockroachdb/cockroach:v24.1.3@sha256:1936a3bf5a7121bca0ae78094f87073b96a513369661279698f6ef3985d4eb63
+#   deploy/demo.env.example     timescale/timescaledb-ha:pg16@sha256:e9f34d8dd27621ec3933386eb07b70021d15b8116247362e0537bbff94ef0769
+#                               nats:2-alpine@sha256:ac8f88a6494bffc2c2a5289a0ca61cb28a9145c11ba5677cf24265d07f46d8d4
+#                               caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+#   conformance/uss_qualifier/SOURCE
+#                               interuss/monitoring v0.36.0, commit 0fabe238ef177f66266eba6048545ae1e6bbb4a0,
+#                               docker.io/interuss/monitoring@sha256:a771c82cda62b83be707e650ddd2550bbabf6790120c4a57f76153a8f5504bb7
+#                               (not run by this profile: the USSP exposes no InterUSS
+#                               automated-testing interface, README "What is not run")
+# The image under test is built from this checkout (deploy/Dockerfile) or
+# named by USSP_CONFORMANCE_IMAGE; its id is in every report.
+
+# GeographicLib's EGM2008 2.5' grid, the geoid every system of the stack
+# reads (USSP_GEOID_FILE). Not in git (75 MB); the workflow downloads the
+# archive and checks both digests, a laptop puts the file in
+# local/conformance/ground/ (README "Geoid").
+geoid_url = https://downloads.sourceforge.net/project/geographiclib/geoids-distrib/egm2008-2_5.tar.bz2
+geoid_archive_sha256 = d602e13446a4a4a23f39aecfe6a2a0760a1bc6c1b497482c2ebc9f7d513be699
+geoid_pgm_sha256 = fab040a55dfabe782be89a89b2ba7e4a73183513a9813e24a3f80e7b6ed61dbf

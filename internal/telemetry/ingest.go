@@ -2,6 +2,8 @@ package telemetry
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"log/slog"
 	"sync"
 	"time"
@@ -137,6 +139,12 @@ type Ingestor struct {
 	fleet  *fleet
 	stats  *clientStats
 	orders sessionOrder
+	// instance names this Ingestor in its sessions' connection ids:
+	// the session counter starts again at every process start, and a
+	// connection id must not name two connections (a client that kept
+	// the counters of the connection before a restart under its id read
+	// the new connection's as the same one; WP-19 restart row).
+	instance string
 }
 
 // New is an Ingestor of cfg.
@@ -153,7 +161,14 @@ func New(cfg Config) *Ingestor {
 	if cfg.Policy == nil {
 		cfg.Policy = func() policy.Record { return policy.Record{Values: policy.Defaults()} }
 	}
-	return &Ingestor{cfg: cfg, fleet: newFleet(cfg.MaxAircraft), stats: newClientStats()}
+	return &Ingestor{cfg: cfg, fleet: newFleet(cfg.MaxAircraft), stats: newClientStats(), instance: newInstance()}
+}
+
+// newInstance is eight random hex digits.
+func newInstance() string {
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
 }
 
 // Counters are the ingest's counters.

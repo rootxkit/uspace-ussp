@@ -31,7 +31,7 @@ COMMIT       ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 .PHONY: all build vet fmt fmt-check tools staticcheck lint tidy test race cover \
         integration generate fetch-standards check-generated check-schemas check-deps check-hostnames \
         check-contracts secrets vulncheck image compose-deps compose-up compose-down \
-        conformance ci clean migrate-up migrate-down migrate-status
+        conformance conformance-selftest conformance-down ci clean migrate-up migrate-down migrate-status
 
 all: ci
 
@@ -187,11 +187,24 @@ migrate-down:
 migrate-status:
 	@$(MIGRATE_ENV); GO=$(GO) scripts/migrate.sh relational status "$$rel" && GO=$(GO) scripts/migrate.sh timeseries status "$$ts"
 
-# The InterUSS DSS and uss_qualifier against this USSP: WP-19.
+# uspace-lab's conformance suite (WP-L7) against this USSP: this
+# checkout's image in the lab's systems stack with the InterUSS DSS, or
+# the target USSP_CONFORMANCE_BASE_URL names (deploy/conformance/README.md;
+# LAB_DIR is a uspace-lab checkout, default ../uspace-lab). The exit
+# status is the suite's: 0 pass, 1 fail, 2 configuration, 3 incomplete.
 conformance:
-	@echo "conformance: not implemented until WP-19 (deploy/conformance/)"; exit 1
+	GO=$(GO) scripts/conformance.sh run
 
-ci: build lint race check-generated check-schemas check-deps check-hostnames check-contracts vulncheck secrets integration
+# scripts/conformance.sh in each state, against a fake lab, suite and
+# target (no Docker); CI runs it.
+conformance-selftest:
+	scripts/conformance-selftest.sh
+
+# Removes a stack left by CONFORMANCE_KEEP=1 and checks nothing is left.
+conformance-down:
+	scripts/conformance.sh down
+
+ci: build lint race check-generated check-schemas check-deps check-hostnames check-contracts conformance-selftest vulncheck secrets integration
 
 clean:
 	rm -f coverage.out integration.log

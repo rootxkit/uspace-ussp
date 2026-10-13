@@ -74,11 +74,14 @@ type Separation struct {
 	At time.Time `json:"at"`
 }
 
-// Payload is occurrence/v1 as spec 04 §3.3 names its fields.
+// Payload is occurrence/v1 as the authority's OccurrenceReport names its
+// fields (api/clients/authority.yaml; the authority owns the schema,
+// M14): the class is category, which spec 04 §3.3 calls the type. It is
+// what the store queues; WireOf maps it to the generated request.
 type Payload struct {
 	Schema        string      `json:"schema"`
 	ReportRef     string      `json:"report_ref"`
-	Kind          string      `json:"kind"`
+	Category      string      `json:"category"`
 	Channel       string      `json:"channel"`
 	OccurredAt    time.Time   `json:"occurred_at"`
 	BecameAwareAt time.Time   `json:"became_aware_at"`
@@ -174,7 +177,7 @@ func Build(r *Report, systemID string, aircraft []Aircraft, manned []Manned, sep
 	}
 	intents := append([]string{}, r.IntentIDs...)
 	r.Ref = RefOf(systemID, r.SourceKind, r.SourceRef)
-	r.Payload = Payload{Schema: Schema, ReportRef: r.Ref, Kind: r.Kind, Channel: r.Channel, OccurredAt: r.OccurredAt.UTC(),
+	r.Payload = Payload{Schema: Schema, ReportRef: r.Ref, Category: r.Kind, Channel: r.Channel, OccurredAt: r.OccurredAt.UTC(),
 		BecameAwareAt: r.AwareAt.UTC(), Reporter: Reporter{Org: systemID, PersonRef: r.Reporter}, Aircraft: out, Manned: manned,
 		IntentRefs: intents, MinSeparation: sep, Narrative: narrative, EvidenceURLs: evidence, ReportedAt: r.AwareAt.UTC()}
 	var buf bytes.Buffer
@@ -191,4 +194,4 @@ func Build(r *Report, systemID string, aircraft []Aircraft, manned []Manned, sep
 }
 
 // errNoDeliverer is the reason a report is not sent.
-var errNoDeliverer = errors.New("the authority's published contract (api/clients/authority.yaml) has no POST /v1/occurrences: the report is queued, not sent (spec gap)")
+var errNoDeliverer = errors.New("no authority configured (USSP_AUTHORITY_BASE_URL and an outgoing token issuer): the report is queued, not sent")

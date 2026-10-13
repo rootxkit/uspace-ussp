@@ -20,7 +20,8 @@ files=(internal/national/gen/server.gen.go internal/national/client/client.gen.g
   internal/stdapi/f3411/server.gen.go internal/stdapi/f3411/client.gen.go
   internal/stdapi/f3548/server.gen.go internal/stdapi/f3548/client.gen.go
   internal/cis/cispclient/client.gen.go internal/registry/authclient/client.gen.go
-  internal/status/authclient/client.gen.go internal/coordination/anspclient/client.gen.go)
+  internal/status/authclient/client.gen.go internal/occurrence/authclient/client.gen.go
+  internal/coordination/anspclient/client.gen.go)
 # The sqlc packages are compared file by file, both ways: a stale file
 # left behind is as wrong as a missing one.
 sqlc_dirs=(internal/store/relational internal/store/timeseries)
