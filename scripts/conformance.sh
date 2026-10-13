@@ -587,8 +587,11 @@ run_qualifier() {
   QUALIFIER_MOCK_URL_REGEX='http://mock-.*'
   QUALIFIER_TOKEN_URL=http://lab-issuer:8080/oauth/token
   LAB_SECRETS_JSON="$state/issuer/client-secrets.json"
+  # The lab CA certificate (never its key): uss_qualifier and the mock
+  # USS query this USSP's /uss/flights over the lab's TLS.
+  QUALIFIER_CA_FILE="$(winpath "$state/demo/ca/ca.pem")"
   export QUALIFIER_DOCKER_NETWORK LAB_STATE_DIR QUALIFIER_PARTICIPANT QUALIFIER_TARGET_URL_REGEX QUALIFIER_DSS_URL QUALIFIER_DSS_HOST \
-    QUALIFIER_MOCK_RIDSP_URL QUALIFIER_MOCK_RIDDP_URL QUALIFIER_MOCK_SCD_URL QUALIFIER_MOCK_URL_REGEX QUALIFIER_TOKEN_URL LAB_SECRETS_JSON
+    QUALIFIER_MOCK_RIDSP_URL QUALIFIER_MOCK_RIDDP_URL QUALIFIER_MOCK_SCD_URL QUALIFIER_MOCK_URL_REGEX QUALIFIER_TOKEN_URL LAB_SECRETS_JSON QUALIFIER_CA_FILE
   docker compose --progress quiet -p "$project-qualifier" -f "$(winpath "$LAB_DIR/conformance/uss_qualifier/compose.yaml")" up -d >/dev/null ||
     die "the lab's mock USS did not start: docker compose -p $project-qualifier logs"
   unset MOCK_USS_AUTH_SPEC

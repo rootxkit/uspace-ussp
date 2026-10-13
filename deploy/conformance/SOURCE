@@ -12,7 +12,7 @@
 # (conformance/national/contracts/ussp.yaml) and the systems stack the
 # profile composes (deploy/compose.yaml, deploy/systems/, demo.env.example).
 lab_repo = https://github.com/rootxkit/uspace-lab.git
-lab_commit = 08cc2fda2cb34000a2e35b4957312bdc5c2f9fb6
+lab_commit = 0bcfc69fb0b84a6a8e66aceffe242e8d9e2398dc
 
 # What that lab commit pins, as read there (not re-pinned here: the lab
 # owns them, plan D5, never patched):
