@@ -4389,11 +4389,15 @@ components:
         input_down_since:
           type: string
           format: date-time
-          description: Present while the instance's own input (its bus link) is down, a monitoring outage, since when; no lost_link is judged meanwhile (PLAN §15.2 Q35). The monitor's state is then down.
+          description: Present while the instance's own input (its bus link) is down, a monitoring outage, since when; no lost_link is judged meanwhile (PLAN §15.2 Q35). The monitor's state is then down. The status is written over the bus, so it is rarely read while the outage lasts; the monitor's own /readyz (input) says it then, and here the instance's status goes missing.
         input_back_at:
           type: string
           format: date-time
           description: When the instance's input last came back after a monitoring outage; absent if it has not been down since the instance started.
+        last_input_down_since:
+          type: string
+          format: date-time
+          description: When the monitoring outage that ended at input_back_at began; absent when it was shorter than one read. With input_back_at it is the outage's window, kept until the next outage.
         lost_link_suspended_until:
           type: string
           format: date-time

@@ -260,6 +260,9 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime, o Options
 		From: func() time.Time { return time.Now().Add(-secs(current().Values.MonitorLiveMaxAgeS)) },
 	}
 	rt.Health.Register(DepTrk, true, fd.Probe)
+	// The monitoring outage, recorded in the process: the status line
+	// below goes over the bus that is down (Q35).
+	rt.Health.Register(DepInput, false, eng.InputProbe())
 	logger.Info("monitor conformance path", slog.String("cell_ownership", own.String()), slog.Any("track_subjects", subjects),
 		slog.String("instance", instance))
 	every := o.SummaryEvery

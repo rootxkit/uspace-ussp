@@ -24,12 +24,19 @@ type InputFunc func() (up bool, since time.Time)
 
 // Outage is the monitor's view of its own input as the status line and
 // the console say it: DownSince while it is down (a monitoring outage);
-// BackAt when it last came back; SuspendedUntil, while it is later
-// than now, the end of the grace after the return during which a flight
-// still silent is not yet judged lost (BackAt + lost_link_s).
+// BackAt when it last came back and LastDownSince when that outage began
+// (nil when it was shorter than a read); SuspendedUntil, while it is
+// later than now, the end of the grace after the return during which a
+// flight still silent is not yet judged lost (BackAt + lost_link_s).
+//
+// It is recorded here, in the process (Engine.InputProbe on the
+// monitor's own /readyz): the status line goes to monitor_status on the
+// bus that is down, so the outage reaches the console only once the bus
+// is back, as the window that ended.
 type Outage struct {
 	DownSince      *time.Time
 	BackAt         *time.Time
+	LastDownSince  *time.Time
 	SuspendedUntil *time.Time
 }
 
@@ -42,6 +49,9 @@ type inputWatch struct {
 	mu        sync.Mutex
 	downSince time.Time
 	backAt    time.Time
+	// lastDownSince is when the outage that ended at backAt began (zero
+	// when it was shorter than a read).
+	lastDownSince time.Time
 }
 
 // feed reads the input at now. A return between two reads (an outage
@@ -74,7 +84,7 @@ func (iw *inputWatch) feed(e *Engine, now time.Time, lostLinkS float64) conforma
 			// Down and back between two reads: counted, from unknown.
 			e.Counters.Inc(CounterInputOutage)
 		}
-		iw.backAt, iw.downSince = since, time.Time{}
+		iw.backAt, iw.lastDownSince, iw.downSince = since, from, time.Time{}
 		e.logger().LogAttrs(context.Background(), slog.LevelWarn,
 			"monitoring outage ended: lost_link is judged again from the input's return plus lost_link_s",
 			obs.Dependency("nats"), slog.Time("down_since", from.UTC()), slog.Time("back_at", since.UTC()),
@@ -100,10 +110,46 @@ func (iw *inputWatch) outage(now time.Time, lostLinkS float64) Outage {
 	if !iw.backAt.IsZero() {
 		b := iw.backAt.UTC()
 		o.BackAt = &b
+		if !iw.lastDownSince.IsZero() {
+			l := iw.lastDownSince.UTC()
+			o.LastDownSince = &l
+		}
 		if until := iw.backAt.Add(secs(lostLinkS)); now.Before(until) && o.DownSince == nil {
 			u := until.UTC()
 			o.SuspendedUntil = &u
 		}
 	}
 	return o
+}
+
+// DepInput is the monitor's own input on its /readyz: the local record
+// of a monitoring outage, which needs no bus.
+const DepInput = "input"
+
+// InputProbe is the readiness of the monitor's own input (DepInput):
+// down while it is down, saying since when and that no lost_link is
+// judged; degraded during the grace after its return, saying the
+// outage's window; up after, still saying the last window.
+func (e *Engine) InputProbe() obs.Probe {
+	return func(context.Context) (obs.State, string) {
+		o := e.Outage()
+		switch {
+		case o.DownSince != nil:
+			return obs.StateDown, "monitoring outage since " + o.DownSince.Format(time.RFC3339) +
+				": the monitor's input (its bus link) is down; no lost_link is judged and no sample is received"
+		case o.BackAt == nil:
+			return obs.StateUp, ""
+		case o.SuspendedUntil != nil:
+			return obs.StateDegraded, o.window() + "; lost_link is judged again from " + o.SuspendedUntil.Format(time.RFC3339)
+		}
+		return obs.StateUp, "last " + o.window()
+	}
+}
+
+// window names the outage that ended at BackAt.
+func (o Outage) window() string {
+	if o.LastDownSince == nil {
+		return "monitoring outage ended at " + o.BackAt.Format(time.RFC3339)
+	}
+	return "monitoring outage from " + o.LastDownSince.Format(time.RFC3339) + " to " + o.BackAt.Format(time.RFC3339)
 }

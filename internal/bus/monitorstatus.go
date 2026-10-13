@@ -47,8 +47,13 @@ type MonitorStatus struct {
 	// §15.2 Q35). InputBackAt is when it last came back, and
 	// LostLinkSuspendedUntil, while set, the end of the grace after that
 	// return (lost_link_s) before a flight still silent loses its link.
+	// LastInputDownSince is when the outage that ended at InputBackAt
+	// began. The status is written to this bucket, on the bus that is
+	// down, so an outage reaches a reader only after it ended, as that
+	// window; while it lasts the monitor's own /readyz says it.
 	InputDownSince         *time.Time `json:"input_down_since,omitempty"`
 	InputBackAt            *time.Time `json:"input_back_at,omitempty"`
+	LastInputDownSince     *time.Time `json:"last_input_down_since,omitempty"`
 	LostLinkSuspendedUntil *time.Time `json:"lost_link_suspended_until,omitempty"`
 }
 

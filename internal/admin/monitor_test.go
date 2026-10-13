@@ -41,4 +41,20 @@ func TestMonitorSaysAMonitoringOutage(t *testing.T) {
 	if m.State != "up" || strings.Contains(m.Detail, "outage") {
 		t.Fatalf("no outage: %+v", m)
 	}
+	// Q35 review: the outage is on the status line only once the bus is
+	// back, so the page says the window that ended, within the grace and
+	// after it.
+	from, to := now.Add(-2*time.Minute), now.Add(-5*time.Second)
+	window := "monitoring outage from " + from.Format(time.RFC3339) + " to " + to.Format(time.RFC3339)
+	m = status(func(s *bus.MonitorStatus) {
+		s.LastInputDownSince, s.InputBackAt, s.LostLinkSuspendedUntil = &from, &to, &until
+	}).
+		monitor(context.Background(), now, 60)
+	if m.State != "up" || !strings.Contains(m.Detail, window) || !strings.Contains(m.Detail, until.Format(time.RFC3339)) {
+		t.Fatalf("back, within the grace, with the window: %+v", m)
+	}
+	m = status(func(s *bus.MonitorStatus) { s.LastInputDownSince, s.InputBackAt = &from, &to }).monitor(context.Background(), now, 60)
+	if m.State != "up" || !strings.Contains(m.Detail, "last m1: "+window) {
+		t.Fatalf("after the grace, the last window: %+v", m)
+	}
 }

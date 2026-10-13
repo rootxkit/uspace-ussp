@@ -73,9 +73,18 @@ additively within `/v1`.
   off). `/readyz` says `jwks` degraded with the stored keys' age rather
   than down. New: `USSP_JWKS_CACHE_BUCKET_MAX_BYTES` (1 MiB).
 - `GET /v1/admin/inputs` (additive): each monitor instance may carry
-  `input_down_since`, `input_back_at` and `lost_link_suspended_until`;
-  the monitor's state is `down` with a "monitoring outage" detail while
-  an instance reports its input down.
+  `input_down_since`, `input_back_at`, `last_input_down_since` and
+  `lost_link_suspended_until`; the monitor's state is `down` with a
+  "monitoring outage" detail while an instance reports its input down.
+- A monitoring outage is recorded where it can be read while it lasts
+  (Q35 review). The status line goes to `monitor_status` on the bus
+  that is down, so nothing of the outage reached the console while it
+  lasted, and the return cleared its start. The monitor's own `/readyz`
+  now has an `input` entry: down "monitoring outage since T" while its
+  bus link is down, degraded with the outage's window during the grace,
+  up after with the last window. The status line keeps the window that
+  ended (`last_input_down_since` to `input_back_at`) until the next
+  outage, and the inputs page says it.
 - A restart of telemetry-ingest goes on with every flight in the air
   (WP-19, found by the chaos procedure's restart row): the running
   flights are saved in the new `flight_binding` bucket

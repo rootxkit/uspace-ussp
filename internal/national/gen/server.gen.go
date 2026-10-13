@@ -1669,12 +1669,15 @@ type AdminMonitorInstance struct {
 	// InputBackAt When the instance's input last came back after a monitoring outage; absent if it has not been down since the instance started.
 	InputBackAt *time.Time `json:"input_back_at,omitempty"`
 
-	// InputDownSince Present while the instance's own input (its bus link) is down, a monitoring outage, since when; no lost_link is judged meanwhile (PLAN §15.2 Q35). The monitor's state is then down.
+	// InputDownSince Present while the instance's own input (its bus link) is down, a monitoring outage, since when; no lost_link is judged meanwhile (PLAN §15.2 Q35). The monitor's state is then down. The status is written over the bus, so it is rarely read while the outage lasts; the monitor's own /readyz (input) says it then, and here the instance's status goes missing.
 	InputDownSince *time.Time `json:"input_down_since,omitempty"`
 	Instance       string     `json:"instance"`
 
 	// IntentActiveAgeS Absent while intent_active was never read (every flight unknown).
 	IntentActiveAgeS *float64 `json:"intent_active_age_s,omitempty"`
+
+	// LastInputDownSince When the monitoring outage that ended at input_back_at began; absent when it was shorter than one read. With input_back_at it is the outage's window, kept until the next outage.
+	LastInputDownSince *time.Time `json:"last_input_down_since,omitempty"`
 
 	// LostLinkSuspendedUntil Present within lost_link_s of the input's return; a flight still silent is not judged lost before it.
 	LostLinkSuspendedUntil *time.Time      `json:"lost_link_suspended_until,omitempty"`

@@ -2,6 +2,10 @@ package monitor
 
 import (
 	"context"
+	"errors"
+	"io"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -10,6 +14,7 @@ import (
 	"github.com/rootxkit/uspace-ussp/internal/cell"
 	"github.com/rootxkit/uspace-ussp/internal/conformance"
 	"github.com/rootxkit/uspace-ussp/internal/geo"
+	"github.com/rootxkit/uspace-ussp/internal/obs"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
 	"github.com/rootxkit/uspace-ussp/internal/traffic"
 )
@@ -206,4 +211,71 @@ func mustEncode(t *testing.T, st bus.MonitorStatus) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+// failingKV is monitor_status on a bus that is down: every put fails.
+type failingKV struct{ puts int }
+
+func (f *failingKV) Put(context.Context, string, []byte) error {
+	f.puts++
+	return errors.New("nats: connection closed")
+}
+
+// Q35 review: a monitoring outage is written to monitor_status, on the
+// bus that is down, so nothing of it reached anyone while it lasted, and
+// the return cleared its start. It is now recorded locally: the
+// monitor's own /readyz entry input says the outage and its start while
+// the bus is down (no bus needed), and says the outage window during the
+// grace after the return. The window stays on the status line
+// (last_input_down_since, input_back_at) once the bus takes it again.
+// With the input up all along the entry is up and nothing is said (the
+// pair).
+func TestScenarioMonitoringOutageRecordedLocally(t *testing.T) {
+	link := &busLink{}
+	g := newLinkedRig(t, link)
+	g.offer(flightA, ptr(intentA), origin, "Airborne")
+	waitFor(t, "conforming", func() bool { return g.lastState(flightA) == conformance.StateConforming })
+	probe := g.eng.InputProbe()
+	if st, detail := probe(context.Background()); st != obs.StateUp || detail != "" {
+		t.Fatalf("input up: %s %q", st, detail)
+	}
+	g.clk.Add(time.Second)
+	down := g.clk.Now()
+	link.set(false, down)
+	g.clk.Add(30 * time.Second)
+	g.ticks(2)
+
+	kv := &failingKV{}
+	w := &statusWriter{KV: kv, Counters: g.eng.Counters, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	w.write(context.Background(), StatusOf("m1", g.clk.Now(), g.eng.Summary(), traffic.Summary{}, nil, geo.Freshness{}, 0, true, 9, false, false))
+	if kv.puts != 1 || g.eng.Counters.Get(CounterStatusWriteFailed) != 1 {
+		t.Fatalf("the status write on the bus that is down: %d puts, %d failed", kv.puts, g.eng.Counters.Get(CounterStatusWriteFailed))
+	}
+	st, detail := probe(context.Background())
+	if st != obs.StateDown || !strings.Contains(detail, "monitoring outage since "+down.UTC().Format(time.RFC3339)) ||
+		!strings.Contains(detail, "no lost_link is judged") {
+		t.Fatalf("readiness during the outage: %s %q", st, detail)
+	}
+
+	back := g.clk.Now()
+	link.set(true, back)
+	g.ticks(2)
+	st, detail = probe(context.Background())
+	window := "monitoring outage from " + down.UTC().Format(time.RFC3339) + " to " + back.UTC().Format(time.RFC3339)
+	if st != obs.StateDegraded || !strings.Contains(detail, window) {
+		t.Fatalf("readiness in the grace: %s %q", st, detail)
+	}
+	line := StatusOf("m1", g.clk.Now(), g.eng.Summary(), traffic.Summary{}, nil, geo.Freshness{}, 0, true, 9, false, false)
+	if line.InputDownSince != nil || line.LastInputDownSince == nil || !line.LastInputDownSince.Equal(down) ||
+		line.InputBackAt == nil || !line.InputBackAt.Equal(back) {
+		t.Fatalf("the status line after the return does not carry the outage: %+v", line)
+	}
+	if _, err := bus.DecodeMonitorStatus(mustEncode(t, line)); err != nil {
+		t.Fatalf("the status line with the window does not read back: %v", err)
+	}
+	g.clk.Add(secs(policy.Defaults().LostLinkS))
+	g.ticks(2)
+	if st, detail := probe(context.Background()); st != obs.StateUp || !strings.Contains(detail, window) {
+		t.Fatalf("readiness after the grace: %s %q", st, detail)
+	}
 }
