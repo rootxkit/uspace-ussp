@@ -43,6 +43,12 @@ type fakeUSSP struct {
 	refuseAll      string // an outcome every frame gets, when set
 	refuseFromSeq  int64  // with refuseFrom, a sample from this seq on is refused_invalid (a teleport)
 	refuseFrom     bool
+	// quiet answers an accepted later sample with no status, as the
+	// ingest acknowledges accepted samples only with its periodic one;
+	// the first sample, a refusal and an end frame are answered.
+	quiet bool
+	// seen, when set, gets one value per frame received.
+	seen           chan struct{}
 	frames         []client.TelemetryFrame
 	bindings       []string
 	sockets        int
@@ -221,6 +227,9 @@ func (f *fakeUSSP) telemetry(w http.ResponseWriter, r *http.Request) {
 		}
 		f.mu.Lock()
 		f.frames = append(f.frames, msg.Body)
+		if f.seen != nil {
+			f.seen <- struct{}{}
+		}
 		outcome := "accepted"
 		switch {
 		case f.refuseAll != "":
@@ -230,6 +239,7 @@ func (f *fakeUSSP) telemetry(w http.ResponseWriter, r *http.Request) {
 		case !f.bound[msg.Body.Serial]:
 			outcome = "refused_unbound"
 		}
+		quiet := f.quiet && outcome == "accepted" && msg.Body.Seq > 0 && (msg.Body.End == nil || !*msg.Body.End)
 		f.mu.Unlock()
 		body.Outcomes[outcome]++
 		if outcome == "accepted" {
@@ -237,6 +247,9 @@ func (f *fakeUSSP) telemetry(w http.ResponseWriter, r *http.Request) {
 			body.AckedSeq[msg.Body.Serial] = msg.Body.Seq
 		} else {
 			body.Refused++
+		}
+		if quiet {
+			continue
 		}
 		if !send() {
 			return

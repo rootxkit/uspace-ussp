@@ -657,3 +657,52 @@ func TestFrameOfTakesTheHeightFromThePosition(t *testing.T) {
 		t.Errorf("the special position height is not unknown: %+v %v", s, err)
 	}
 }
+
+// The ingest acknowledges an accepted sample only with its periodic
+// status (every 2 s). A live flight's samples still go at their own
+// times: a sample's decision is waited for only until the next one is
+// due, never the whole acknowledgement bound (WP-21: waiting it put a
+// 1 Hz flight's samples seconds behind their timestamps). The refused
+// twin, a refusal read before the next sample, is
+// TestInjectionFailsOnARefusalInFlight.
+func TestInjectionDoesNotWaitForAcknowledgementsBetweenSamples(t *testing.T) {
+	f := newFakeUSSP(t)
+	f.quiet, f.seen = true, make(chan struct{}, 16)
+	ts := newTestServer(t, f, nil) // acknowledgement bound 5 s
+	p := labInjection(t)
+	p.RequestedFlights = p.RequestedFlights[:1]
+	t0 := time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
+	for i := range p.RequestedFlights[0].Telemetry {
+		at := t0.Add(time.Duration(i+1) * 200 * time.Millisecond)
+		p.RequestedFlights[0].Telemetry[i].Timestamp = &at
+	}
+	ts.inject.clock = &recordingClock{now: t0}
+	began := time.Now()
+	if res := put(t, ts, "quiet", p); res.code != http.StatusOK {
+		t.Fatalf("%d %s", res.code, res.body)
+	}
+	deadline := time.After(3 * time.Second) // under one 5 s bound for the three samples
+	for range 3 {
+		select {
+		case <-f.seen:
+		case <-deadline:
+			t.Fatalf("the samples waited for acknowledgements the ingest gives only every 2 s: %d sent", len(f.received()))
+		}
+	}
+	t.Logf("3 samples in %v", time.Since(began).Round(time.Millisecond))
+	frames := f.received()
+	for i, fr := range frames[:3] {
+		if fr.Backlog != nil || fr.End != nil {
+			t.Errorf("sample %d went late (backlog) or as the end", i)
+		}
+	}
+	// The last sample's decision is still read before the end frame,
+	// within the bound (the quiet fake never acknowledges it: counted).
+	ts.inject.work.Wait()
+	if fr := f.received(); len(fr) != 4 || fr[3].End == nil || !*fr[3].End {
+		t.Fatalf("no end frame after the samples: %+v", fr)
+	}
+	if n := ts.counters.Snapshot()[CounterFramesNotAcked]; n != 1 {
+		t.Errorf("%s = %d, want 1 (the last sample)", CounterFramesNotAcked, n)
+	}
+}

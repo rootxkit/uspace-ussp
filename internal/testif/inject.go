@@ -323,10 +323,11 @@ func (in *injector) start(ctx context.Context, t *injTest, plans []planned) erro
 // passed goes at once with backlog true. The first frame's decision is
 // reported through first when the PUT awaits it (first non-nil); else a
 // refusal of it fails the test as a later frame's does. The frame after
-// the last one is the end frame.
-// Every later frame's decision is read before the next frame goes: a
-// frame the ingest refuses fails the test (fail), and nothing is sent
-// past the refusal but the flight's end frame.
+// the last one is the end frame. An awaited first frame waits for its
+// decision; every other frame's decision is waited for at most until the
+// next frame is due (the last one's within the bound), so each goes at
+// its time, and a refusal the ingest reports fails the test (fail):
+// nothing is sent after it is read but the flight's end frame.
 func (in *injector) stream(ctx context.Context, run *flightRun, ack time.Duration, first func(error)) {
 	reported := first == nil
 	report := func(err error) {
@@ -347,54 +348,97 @@ func (in *injector) stream(ctx context.Context, run *flightRun, ack time.Duratio
 			f.Backlog = &b
 			in.count(CounterFramesBacklog)
 		}
-		if j == 0 {
+		if j == 0 && first != nil {
 			actx, cancel := context.WithTimeout(ctx, ack)
 			err := run.sess.sendAndWait(actx, f)
 			cancel()
-			awaitedFirst := !reported
-			report(err)
+			report(err) // the PUT fails with a refusal of it
 			if err != nil {
-				var ref *RefusalError
-				if !awaitedFirst && errors.As(err, &ref) {
-					// The PUT did not wait for this flight's first frame:
-					// its refusal fails the test in flight.
-					in.fail(ctx, run, ref)
-				}
 				return
 			}
 			// A refusal counted from here on is one in flight.
 			base, _, _ = run.sess.status()
-		} else {
-			if _, err := run.sess.send(ctx, f); err != nil {
-				in.count(CounterFramesSendFailed)
-				return
-			}
+			in.count(CounterFramesSent)
 			run.mu.Lock()
-			run.sent = j + 1
+			run.sent, run.ok = 1, 1
 			run.mu.Unlock()
-			actx, cancel := context.WithTimeout(ctx, ack)
-			err := run.sess.settle(actx, base, f.Serial)
-			cancel()
-			var ref *RefusalError
-			switch {
-			case errors.As(err, &ref):
-				in.fail(ctx, run, ref)
-				return
-			case errors.Is(err, errNotDecided):
-				// Not decided within the bound: the next frame's (or the
-				// end frame's) wait reads its decision with its own.
-				in.count(CounterFramesNotAcked)
-			case err != nil:
-				in.count(CounterFramesSendFailed)
-				return
-			}
+			continue
+		}
+		if j == 0 {
+			// A scheduled flight's first frame: a refusal counted from here
+			// on is this flight's.
+			base, _, _ = run.sess.status()
+		}
+		// The ingest acknowledges accepted samples with its periodic
+		// status (every 2 s) and a refusal at once. A sample's decision is
+		// waited for only until the next sample is due: each sample goes
+		// at its own time, as an operator's client sends them, and a
+		// refusal read by then fails the test (nothing goes after it).
+		// Waiting the whole bound put every sample of a 1 Hz flight up to
+		// 2 s behind its timestamp (WP-21, the second F3411-SP run).
+		if in.refused(ctx, run, base, f.Serial) {
+			return
+		}
+		if _, err := run.sess.send(ctx, f); err != nil {
+			in.count(CounterFramesSendFailed)
+			return
 		}
 		in.count(CounterFramesSent)
 		run.mu.Lock()
-		run.sent, run.ok = j+1, j+1
+		run.sent = j + 1
 		run.mu.Unlock()
+		wait := ack
+		if j+1 < len(run.p.frames) {
+			wait = min(ack, run.p.frames[j+1].Ts.Sub(in.clock.Now()))
+		}
+		if wait <= 0 {
+			continue // the next sample is due already (a past state)
+		}
+		actx, cancel := context.WithTimeout(ctx, wait)
+		err := run.sess.settle(actx, base, f.Serial)
+		cancel()
+		var ref *RefusalError
+		switch {
+		case errors.As(err, &ref):
+			in.fail(ctx, run, ref)
+			return
+		case errors.Is(err, errNotDecided):
+			// Not decided before the next sample is due: a later wait
+			// reads its decision with its own.
+			if j+1 == len(run.p.frames) {
+				in.count(CounterFramesNotAcked)
+			}
+		case err != nil:
+			in.count(CounterFramesSendFailed)
+			return
+		default:
+			run.mu.Lock()
+			run.ok = run.sent
+			run.mu.Unlock()
+		}
 	}
 	in.end(ctx, run, ack)
+}
+
+// refused reads the latest status of run's socket: a refusal since base
+// fails the test (true); otherwise, when the ingest has decided on every
+// frame the socket carried, those frames are the flight's accepted ones
+// (run.ok, the end frame's sample).
+func (in *injector) refused(ctx context.Context, run *flightRun, base ingestStatus, serial string) bool {
+	st, _, _ := run.sess.status()
+	if ref := refusedSince(st, base, serial); ref != nil {
+		in.fail(ctx, run, ref)
+		return true
+	}
+	run.sess.wmu.Lock()
+	carried := run.sess.sent
+	run.sess.wmu.Unlock()
+	if st.decided() >= carried {
+		run.mu.Lock()
+		run.ok = run.sent
+		run.mu.Unlock()
+	}
+	return false
 }
 
 // fail fails run's test on the ingest's refusal of a frame in flight:
