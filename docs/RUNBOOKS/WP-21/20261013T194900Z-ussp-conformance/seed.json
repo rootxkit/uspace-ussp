@@ -1,0 +1,19 @@
+{
+  "operator_id": "c8746e57-736d-408e-9865-c6aa4c9cdd53",
+  "operator_status": "active",
+  "validation_status": "valid",
+  "client_id": "op-xnw7ddmk78lqz37c",
+  "bound": [
+    "TEST-WP21-0001",
+    "TEST-WP21-0002",
+    "TEST-WP21-0003",
+    "TEST-WP21-0004",
+    "TEST-WP21-0005",
+    "TEST-WP21-0006",
+    "TEST-WP21-0007",
+    "TEST-WP21-0008"
+  ],
+  "not_bound": [],
+  "console_session": true,
+  "notes": []
+}

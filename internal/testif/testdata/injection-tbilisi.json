@@ -18,7 +18,7 @@
       ],
       "details_responses": [
         {"effective_after": "2026-10-13T07:59:00Z",
-         "details": {"id": "a3423b-213401-0023", "operator_id": "GEO-TEST-WP21-0001",
+         "details": {"id": "a3423b-213401-0023", "operator_id": "GEOTESTWP210001",
                      "operator_location": {"lat": 41.7151, "lng": 44.8271},
                      "operation_description": "uss_qualifier test flight",
                      "serial_number": "INTCJ123-4567-890",
