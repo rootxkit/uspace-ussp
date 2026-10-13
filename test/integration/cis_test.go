@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -92,6 +93,11 @@ type cisRig struct {
 	// hook is told every installed version (the api process's
 	// cis.v1 publish and standing re-check, WP-12); nil: nobody.
 	hook atomic.Pointer[cis.ChangeHook]
+	// What startCache builds a cache from, and stops it with.
+	client    *cis.Client
+	pubs      *coreauth.DetachedVerifier
+	reconcile time.Duration
+	stopCache func()
 }
 
 // newCISRig runs the CIS cache against the fake CISP and the real
@@ -121,18 +127,10 @@ func newCISRig(t *testing.T, reconcile time.Duration) *cisRig {
 		g.fake.Signer.Issuer: {BaseHost: g.fake.Host()},
 		g.ansp.Signer.Issuer: {ANSP: true, BaseHost: g.ansp.Host()},
 	}
-	g.eval = cis.NewEvaluator(cis.EvaluatorConfig{StaleS: func() float64 {
-		if v := g.staleS.Load(); v > 0 {
-			return float64(v)
-		}
-		return 300
-	}, Counters: g.counters})
 	client, err := cis.NewClient(cis.ClientConfig{BaseURL: g.fake.URL(), Tokens: cisp.Tokens{}, HTTPClient: g.fake.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	logs := &logBuffer{}
-	logger := obs.NewLogger(logs, "debug", "api")
 	g.srv = httptest.NewServer(g.receiverHandler())
 	t.Cleanup(g.srv.Close)
 	g.callback = g.srv.URL + cis.NotificationsPath
@@ -140,24 +138,8 @@ func newCISRig(t *testing.T, reconcile time.Duration) *cisRig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g.cache = cis.NewCache(cis.CacheConfig{Client: client, Publishers: pubs, Store: g.store, Evaluator: g.eval, Projector: g.proj, Counters: g.counters,
-		Logger: logger, CallbackURL: g.callback, ReconcileInterval: reconcile,
-		Direct: cis.DirectConfig{Client: &http.Client{Timeout: 5 * time.Second}, Store: g.store},
-		OnChange: func(ctx context.Context, c cis.Change) {
-			if h := g.hook.Load(); h != nil {
-				(*h)(ctx, c)
-			}
-		}})
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { defer close(done); g.cache.Run(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		<-done
-		if t.Failed() {
-			t.Logf("cache log:\n%s", logs.String())
-		}
-	})
+	g.client, g.pubs, g.reconcile = client, pubs, reconcile
+	g.startCache()
 	// Subscribed, and every dataset read once (the CISP has none yet).
 	g.waitFor("subscription and first reads", 10*time.Second, func() bool {
 		if len(g.fake.Subscriptions()) != 1 {
@@ -167,6 +149,50 @@ func newCISRig(t *testing.T, reconcile time.Duration) *cisRig {
 		return strings.HasPrefix(detail, "zones:0,uspace_airspace:0,restrictions:0")
 	})
 	return g
+}
+
+// startCache builds an Evaluator and a Cache on the rig's stores and
+// runs it (Warm first), as the api process does at its start.
+func (g *cisRig) startCache() {
+	t := g.t
+	g.eval = cis.NewEvaluator(cis.EvaluatorConfig{StaleS: func() float64 {
+		if v := g.staleS.Load(); v > 0 {
+			return float64(v)
+		}
+		return 300
+	}, Counters: g.counters})
+	logs := &logBuffer{}
+	logger := obs.NewLogger(logs, "debug", "api")
+	g.cache = cis.NewCache(cis.CacheConfig{Client: g.client, Publishers: g.pubs, Store: g.store, Evaluator: g.eval, Projector: g.proj, Counters: g.counters,
+		Logger: logger, CallbackURL: g.callback, ReconcileInterval: g.reconcile,
+		Direct: cis.DirectConfig{Client: &http.Client{Timeout: 5 * time.Second}, Store: g.store},
+		OnChange: func(ctx context.Context, c cis.Change) {
+			if h := g.hook.Load(); h != nil {
+				(*h)(ctx, c)
+			}
+		}})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	cache := g.cache
+	go func() { defer close(done); cache.Run(ctx) }()
+	var once sync.Once
+	g.stopCache = func() {
+		once.Do(func() {
+			cancel()
+			<-done
+			if t.Failed() {
+				t.Logf("cache log:\n%s", logs.String())
+			}
+		})
+	}
+	t.Cleanup(g.stopCache)
+}
+
+// restart stops the cache and starts a new one on the same database, as
+// a restart of the api process: a new Evaluator, warmed from the store.
+func (g *cisRig) restart() {
+	g.stopCache()
+	g.startCache()
 }
 
 // receiverHandler is a receiver on the shared store; while dead it

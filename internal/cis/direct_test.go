@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -569,14 +570,14 @@ func TestEndedDirectKeptUntilTheCISPCatchesUp(t *testing.T) {
 
 // An end kept until the CISP catches up holds its place longer, so the
 // restrictions held from the direct path are bounded (E-10): at
-// USSP_CIS_DIRECT_MAX held, a further restriction is not applied,
-// counted and said, and stays pending (retried); with a place free it
-// is applied (the pair).
+// USSP_CIS_DIRECT_MAX held, all of them in force, a further restriction
+// is not applied, counted and said, and stays pending (retried); with a
+// place free it is applied (the pair).
 func TestDirectHeldBounded(t *testing.T) {
 	g := newDirectRig(t)
 	g.cache.cfg.Direct.Max = 1
 	g.cache.mu.Lock()
-	g.cache.direct["DAROTHER"] = &directHeld{d: DirectRestriction{Identifier: "DAROTHER", AnspVersion: 1, State: "ended"},
+	g.cache.direct["DAROTHER"] = &directHeld{d: DirectRestriction{Identifier: "DAROTHER", AnspVersion: 1, State: "active"},
 		entry: &Entry{Dataset: Restrictions, Identifier: "DAROTHER"}}
 	g.cache.mu.Unlock()
 	g.ansp.serve(t, "activated")
@@ -586,10 +587,11 @@ func TestDirectHeldBounded(t *testing.T) {
 	g.cache.drainDirect(t.Context())
 	g.cache.mu.Lock()
 	_, held := g.cache.direct[fixtureIdentifier]
+	_, other := g.cache.direct["DAROTHER"]
 	pending := len(g.cache.directPending)
 	g.cache.mu.Unlock()
-	if held || pending != 1 || g.cache.Counters().Get(CounterDirectFull) != 1 {
-		t.Fatalf("over the bound: held %v, pending %d, counters %v", held, pending, g.cache.Counters().Snapshot())
+	if held || !other || pending != 1 || g.cache.Counters().Get(CounterDirectFull) != 1 || g.cache.Counters().Get(CounterDirectEvicted) != 0 {
+		t.Fatalf("over the bound: held %v, the active one kept %v, pending %d, counters %v", held, other, pending, g.cache.Counters().Snapshot())
 	}
 	g.cache.mu.Lock()
 	delete(g.cache.direct, "DAROTHER")
@@ -597,5 +599,149 @@ func TestDirectHeldBounded(t *testing.T) {
 	g.cache.drainDirect(t.Context())
 	if l, st := g.state(); l != LiftInForce || st != "active" {
 		t.Fatalf("with a place free: %v %q", l, st)
+	}
+}
+
+// H-2 review: with the held set full of kept ends, an activation used
+// to be refused, so the restriction it puts in force raised nothing. An
+// end is given up instead and the activation applied: first one the
+// CISP no longer holds in force, else the longest held whose older
+// version the CISP still holds in force (which refuses more, never
+// less); the evicted end leaves the store too, so a restart does not
+// load it back. The refusal, with every held restriction in force, is
+// TestDirectHeldBounded.
+func TestDirectActivationEvictsAKeptEnd(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		cisp    []string // identifiers the CISP's version holds active
+		held    []string // ended direct restrictions held, the first the longest
+		evicted string
+	}{
+		{name: "one the CISP no longer holds", cisp: []string{"DAREND1"}, held: []string{"DAREND1", "DAREND2"}, evicted: "DAREND2"},
+		{name: "the longest held, all in force at the CISP", cisp: []string{"DAREND1", "DAREND2"}, held: []string{"DAREND1", "DAREND2"}, evicted: "DAREND1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := newDirectRig(t)
+			var fs []json.RawMessage
+			for _, id := range tc.cisp {
+				f := prohibited(id)
+				f.extended = map[string]any{RestrictionMember: map[string]any{"id": "01K6P0" + id + "0000000000000", "ansp_ref": "ansp-01:" + id,
+					"ansp_version": 1, "state": "active", "starts_at": "2026-10-02T12:00:00Z", "ends_at": "2026-10-02T16:00:00Z",
+					"ended_by": nil, "uspace_airspace_id": "GEOTU01"}}
+				fs = append(fs, f.json())
+			}
+			g.installCISP(7, fs...)
+			g.cache.cfg.Direct.Max = len(tc.held)
+			g.cache.mu.Lock()
+			for i, id := range tc.held {
+				g.cache.direct[id] = &directHeld{d: DirectRestriction{Identifier: id, AnspVersion: 2, State: "ended"},
+					since: g.clk.Now().Add(-time.Duration(len(tc.held)-i) * time.Hour), entry: &Entry{Dataset: Restrictions, Identifier: id}}
+				g.direct.rows[id] = DirectStored{Identifier: id, AnspVersion: 2, State: "ended"}
+			}
+			g.cache.mu.Unlock()
+			g.ansp.serve(t, "activated")
+			if code := g.post("activated"); code != http.StatusNoContent {
+				t.Fatalf("activated: %d", code)
+			}
+			g.cache.drainDirect(t.Context())
+			if l, st := g.state(); l != LiftInForce || st != "active" {
+				t.Fatalf("the activation at the bound: %v %q, counters %v", l, st, g.cache.Counters().Snapshot())
+			}
+			g.cache.mu.Lock()
+			_, still := g.cache.direct[tc.evicted]
+			n, pending := len(g.cache.direct), len(g.cache.directPending)
+			g.cache.mu.Unlock()
+			if still || n != len(tc.held) || pending != 0 {
+				t.Errorf("%s still held %v, %d held, %d pending", tc.evicted, still, n, pending)
+			}
+			if _, stored := g.direct.rows[tc.evicted]; stored {
+				t.Errorf("%s is still stored", tc.evicted)
+			}
+			if _, stored := g.direct.rows[fixtureIdentifier]; !stored {
+				t.Error("the activation is not stored")
+			}
+			if c := g.cache.Counters(); c.Get(CounterDirectEvicted) != 1 || c.Get(CounterDirectFull) != 0 {
+				t.Errorf("counters %v", c.Snapshot())
+			}
+		})
+	}
+}
+
+// restartWithoutCISP builds the cache again on the rig's stores, as a
+// process started while the CISP is unreachable and before any CISP
+// version was stored: Warm loads the direct restrictions and nothing
+// else. It returns the changes the cache told its hook.
+func (g *directRig) restartWithoutCISP() *[]Change {
+	var mu sync.Mutex
+	changes := &[]Change{}
+	g.eval = NewEvaluator(EvaluatorConfig{StaleS: func() float64 { return 300 }, Now: g.clk.Now})
+	g.cache = NewCache(CacheConfig{Publishers: g.pubs, Store: g.store, Evaluator: g.eval, Projector: g.proj, Now: g.clk.Now,
+		Direct: DirectConfig{Client: &http.Client{Transport: g.ansp}, Store: g.direct},
+		OnChange: func(_ context.Context, c Change) {
+			mu.Lock()
+			defer mu.Unlock()
+			*changes = append(*changes, c)
+		}})
+	g.cache.Warm(context.Background())
+	return changes
+}
+
+// H-2 review: a process restarted during the CISP's outage, before any
+// CISP version was stored, loads the ANSP's direct restrictions from
+// the database, and they are judged: the warmed activation is in force
+// on the Evaluator and in the projection, the hooks are told (the
+// re-check that raises restriction_activated runs on it), and the CIS
+// stays stale, since the CISP's restrictions were never loaded. The
+// direct end delivered after the restart lifts it. The pair: with no
+// direct restriction stored, the restart installs nothing and tells no
+// restrictions change.
+func TestDirectWarmedAfterARestartWithoutTheCISP(t *testing.T) {
+	g := newDirectRig(t)
+	g.ansp.serve(t, "activated")
+	if code := g.post("activated"); code != http.StatusNoContent {
+		t.Fatalf("activated: %d", code)
+	}
+	g.cache.drainDirect(t.Context())
+	if len(g.direct.rows) != 1 {
+		t.Fatalf("stored %d", len(g.direct.rows))
+	}
+	changes := g.restartWithoutCISP()
+	if _, _, stale := g.eval.Age(); !stale {
+		t.Fatal("the CIS is not stale with no CISP version loaded")
+	}
+	if l, st := g.state(); l != LiftInForce || st != "active" {
+		t.Fatalf("the warmed direct activation: %v %q", l, st)
+	}
+	if g.projected() != "active" {
+		t.Fatalf("projected %q", g.projected())
+	}
+	told := false
+	for _, c := range *changes {
+		if c.Dataset == Restrictions && c.Reason == ChangeWarm && slices.Contains(c.FeatureIDs, fixtureIdentifier) {
+			told = true
+		}
+	}
+	if !told {
+		t.Fatalf("the hooks were not told the warmed restriction: %+v", *changes)
+	}
+	g.clk.advance(time.Hour - 9*time.Second)
+	g.ansp.serve(t, "ended")
+	if code := g.post("ended"); code != http.StatusNoContent {
+		t.Fatalf("ended: %d", code)
+	}
+	g.cache.drainDirect(t.Context())
+	if l, st := g.state(); l != LiftEnded || st != "ended" {
+		t.Fatalf("the direct end after the restart: %v %q", l, st)
+	}
+
+	empty := newDirectRig(t)
+	changes = empty.restartWithoutCISP()
+	if l, _ := empty.state(); l != LiftUnjudged {
+		t.Fatalf("a restart with nothing stored: %v", l)
+	}
+	for _, c := range *changes {
+		if c.Dataset == Restrictions {
+			t.Fatalf("a restrictions change told with nothing stored: %+v", c)
+		}
 	}
 }

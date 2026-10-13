@@ -72,6 +72,7 @@ const (
 	CounterDirectSuperseded = "cis_direct_superseded_by_cisp"
 	CounterDirectExpired    = "cis_direct_expired"
 	CounterDirectStoreFail  = "cis_direct_store_failed"
+	CounterDirectEvicted    = "cis_direct_evicted"
 )
 
 // DirectHint is what a verified ANSP notification says: the restriction
@@ -324,15 +325,45 @@ func (c *Cache) ApplyDirect(ctx context.Context, h DirectHint) error {
 	}
 	c.mu.Lock()
 	full := c.direct[d.Identifier] == nil && len(c.direct) >= c.directMax()
+	var evicted *directHeld
+	evictedInForce := false
+	if full {
+		// An end held is given up before a restriction is refused: a
+		// refused activation is a restriction in force that nobody is
+		// told of, an evicted end at worst an older version in force
+		// again, which refuses more, never less.
+		evicted, evictedInForce = c.evictableEnd(!directOver(d.State))
+		if evicted != nil {
+			delete(c.direct, evicted.d.Identifier)
+			full = false
+		}
+	}
 	c.mu.Unlock()
 	if full {
 		// Bounded (E-10): an end is held until the CISP catches up, so
-		// the held set can fill. Retried until the keep period ends;
-		// nothing is stored.
+		// the held set can fill. With no end to give up (or, for an
+		// end, none the CISP no longer holds in force) it is retried
+		// until the keep period ends; nothing is stored.
 		c.cfg.Counters.Inc(CounterDirectFull)
 		log.Error("direct restriction not applied: USSP_CIS_DIRECT_MAX direct restrictions are held already; retried",
 			slog.Int("held", c.directMax()))
 		return errDirectHeldFull
+	}
+	if evicted != nil {
+		c.cfg.Counters.Inc(CounterDirectEvicted)
+		lvl, why := slog.LevelWarn, "the CISP no longer holds it in force"
+		if evictedInForce {
+			lvl, why = slog.LevelError, "the CISP's older version of it is in force again"
+		}
+		log.Log(ctx, lvl, "an ended direct restriction was given up for this one at USSP_CIS_DIRECT_MAX: "+why,
+			slog.String("evicted", evicted.d.Identifier), slog.Int64("evicted_ansp_version", evicted.d.AnspVersion))
+		if ds := c.cfg.Direct.Store; ds != nil {
+			if err := ds.DeleteDirect(ctx, evicted.d.Identifier, evicted.d.AnspVersion); err != nil {
+				c.cfg.Counters.Inc(CounterDirectStoreFail)
+				log.Error("evicted direct restriction not deleted from the store; it is loaded again at the next start",
+					slog.String("evicted", evicted.d.Identifier), obs.Err(err))
+			}
+		}
 	}
 	if ds := c.cfg.Direct.Store; ds != nil {
 		if _, err := ds.SaveDirect(ctx, DirectStored{Identifier: d.Identifier, RestrictionID: d.ID, AnspRef: d.AnspRef,
@@ -351,6 +382,45 @@ func (c *Cache) ApplyDirect(ctx context.Context, h DirectHint) error {
 		slog.String("state", d.State), slog.String("reason", h.Reason))
 	c.reinstall(ctx)
 	return nil
+}
+
+// directOver says whether a direct restriction's state is over: ended
+// or cancelled.
+func directOver(state string) bool {
+	return state == string(cispclient.CisRestrictionStateEnded) || state == string(cispclient.CisRestrictionStateCancelled)
+}
+
+// evictableEnd is the end held from the direct path that is given up
+// first when the held set is full: one the CISP's version no longer
+// holds in force (dropping it changes nothing in force), else, when
+// inForceToo, one whose older version the CISP still holds in force;
+// the longest held first, then by identifier. inForce says which it is;
+// nil when there is none. The caller holds c.mu.
+func (c *Cache) evictableEnd(inForceToo bool) (h *directHeld, inForce bool) {
+	baseInForce := map[string]bool{}
+	for _, e := range c.restrBaseEntries {
+		if e.InForce() {
+			baseInForce[e.Identifier] = true
+		}
+	}
+	better := func(a, b *directHeld) bool {
+		if !a.since.Equal(b.since) {
+			return a.since.Before(b.since)
+		}
+		return a.d.Identifier < b.d.Identifier
+	}
+	for _, cand := range c.direct {
+		if !directOver(cand.d.State) {
+			continue
+		}
+		f := baseInForce[cand.d.Identifier]
+		switch {
+		case f && !inForceToo:
+		case h == nil, inForce && !f, inForce == f && better(cand, h):
+			h, inForce = cand, f
+		}
+	}
+	return h, inForce
 }
 
 // pullDirect reads raw (no credential), bounded.
@@ -591,7 +661,7 @@ func (c *Cache) dropDirect(ctx context.Context) bool {
 		}
 	}
 	for id, h := range c.direct {
-		over := h.d.State == string(cispclient.CisRestrictionStateEnded) || h.d.State == string(cispclient.CisRestrictionStateCancelled)
+		over := directOver(h.d.State)
 		switch {
 		case base[id] >= h.d.AnspVersion:
 			drop = append(drop, gone{id, h.d.AnspVersion, "superseded"})
