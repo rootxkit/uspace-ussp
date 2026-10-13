@@ -298,6 +298,18 @@ if [ "$rc" -eq 0 ] || ! grep -q 'the manifest says otherwise' <<<"$out"; then
   fail "restore-check accepted a dump that differs from its manifest: $(tail -n 1 <<<"$out")"
 fi
 echo "smoke: restore-check refuses a dump that differs from its manifest (exit $rc)"
+# A manifest whose KV export held another number of buckets than the one
+# kept (a bucket lost between the export and the check) is refused; the
+# files themselves still match it.
+cp -r "$work/backups" "$work/fewer-buckets"
+m="$(find "$work/fewer-buckets" -name 'manifest-*.json' | sort -r | head -n 1)"
+jq '.kv.buckets_with_keys += 1' "$m" >"$m.tmp" && mv "$m.tmp" "$m"
+rc=0
+out="$(USSP_COMPOSE_PROJECT="$project" "$deploy/restore-check.sh" "$work/fewer-buckets" 2>&1)" || rc=$?
+if [ "$rc" -eq 0 ] || ! grep -q 'buckets, the backup recorded' <<<"$out"; then
+  fail "restore-check accepted a KV export with another bucket count than its manifest: $(tail -n 1 <<<"$out")"
+fi
+echo "smoke: restore-check refuses a KV export whose bucket count differs from its manifest (exit $rc)"
 
 # ---- 7 -----------------------------------------------------------------------
 step "7. the stack removed (volumes kept), deployed again, read back"

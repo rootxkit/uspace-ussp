@@ -19,7 +19,8 @@
 #
 # It fails when a file differs from the manifest, when a restore fails,
 # when a restored schema version is not the one the manifest recorded,
-# when a KV value does not decode, or, with RESTORE_CHECK_EXPECT set
+# when the KV export holds another number of keys or of buckets than the
+# manifest recorded, when a KV value does not decode, or, with RESTORE_CHECK_EXPECT set
 # ("events=N,operator_accounts=M,operational_intents=K,telemetry=T", the
 # counts read from the live databases when the dump was taken), when a
 # count differs.
@@ -115,11 +116,17 @@ if ! jqr .value_b64 "$kv" | while IFS= read -r v; do printf '%s' "$v" | base64 -
 fi
 
 echo "restore-check: restored $stamp: events=$events operator_accounts=$operators operational_intents=$intents telemetry=$telemetry" \
-  "hypertables=$hypertables schema relational=$v_rel timeseries=$v_ts nats_kv_keys=$kv_lines nats_kv_buckets=$kv_buckets"
+  "hypertables=$hypertables schema relational=$v_rel timeseries=$v_ts nats_kv_keys=$kv_lines nats_kv_buckets_with_keys=$kv_buckets"
 
 [ "$v_rel" = "$(jqr .schema.relational "$manifest")" ] || die "the restored relational schema is at $v_rel, the backup recorded $(jqr .schema.relational "$manifest")"
 [ "$v_ts" = "$(jqr .schema.timeseries "$manifest")" ] || die "the restored time-series schema is at $v_ts, the backup recorded $(jqr .schema.timeseries "$manifest")"
 [ "$kv_lines" = "$(jqr .kv.keys "$manifest")" ] || die "the KV export holds $kv_lines keys, the backup recorded $(jqr .kv.keys "$manifest")"
+# The export has a line for every key, so it shows the buckets that held
+# one: the backup recorded how many did, and how many it listed.
+want_buckets="$(jqr '.kv.buckets_with_keys // empty' "$manifest")"
+[ -n "$want_buckets" ] || die "the manifest records no kv.buckets_with_keys (a backup older than this check): its KV export cannot be checked"
+[ "$kv_buckets" = "$want_buckets" ] || die "the KV export holds keys of $kv_buckets buckets, the backup recorded $want_buckets"
+[ "$want_buckets" -le "$(jqr .kv.buckets "$manifest")" ] || die "the manifest records $want_buckets buckets with keys of $(jqr .kv.buckets "$manifest") exported"
 [ "$hypertables" -gt 0 ] || die "the restored time series has no hypertable"
 if [ -n "$expect" ]; then
   got="events=$events,operator_accounts=$operators,operational_intents=$intents,telemetry=$telemetry"

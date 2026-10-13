@@ -24,7 +24,8 @@
 #   manifest-<stamp>.json         what was written: the database clock, the
 #                                 cutoff, chunks kept and left out, each
 #                                 file's bytes, SHA-256 and entries, each
-#                                 tree's schema version
+#                                 tree's schema version, and the KV export's
+#                                 keys, buckets and buckets with keys
 #
 # The dumps are taken inside the project's timescaledb container (the
 # server's own pg_dump). Each file is written under a .partial name and
@@ -193,8 +194,11 @@ if [ "$lines" != "$keys" ] || ! jq -e -s 'all(.[]; has("bucket") and has("key") 
   rm -f "$partial"
   die "the NATS KV export holds $lines valid lines for $keys keys; older backups kept"
 fi
+# The buckets the export holds a line of: the restore check counts them
+# from the file (an empty bucket has no line, so it cannot count those).
+with_keys="$(jq -s 'map(.bucket) | unique | length' "$partial")"
 mv "$partial" "$final"
-echo "backup: $final ($lines keys in $buckets buckets)"
+echo "backup: $final ($lines keys in $buckets buckets, $with_keys of them with keys)"
 files+=("$final")
 
 # The manifest, last: a stamp without one is incomplete.
@@ -202,10 +206,10 @@ partial="$dir/.manifest-$stamp.json.partial"
 {
   jq -n --arg stamp "$stamp" --arg db_now "$db_now" --arg cutoff "$cutoff" --argjson ts_days "$ts_days" \
     --argjson all "$all_chunks" --argjson out "$(grep -c . <<<"$old_chunks" || true)" \
-    --argjson v_rel "$v_rel" --argjson v_ts "$v_ts" --argjson kv "$lines" --argjson buckets "$buckets" \
+    --argjson v_rel "$v_rel" --argjson v_ts "$v_ts" --argjson kv "$lines" --argjson buckets "$buckets" --argjson with_keys "$with_keys" \
     '{stamp: $stamp, db_now: $db_now, ts_cutoff: $cutoff, ts_days: $ts_days,
       chunks: {all: $all, relations_left_out: $out}, schema: {relational: $v_rel, timeseries: $v_ts},
-      kv: {keys: $kv, buckets: $buckets}, files: {}}'
+      kv: {keys: $kv, buckets: $buckets, buckets_with_keys: $with_keys}, files: {}}'
 } > "$partial.base"
 cp "$partial.base" "$partial"
 for f in "${files[@]}"; do

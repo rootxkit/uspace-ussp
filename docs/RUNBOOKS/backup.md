@@ -21,7 +21,7 @@ On the host, as the deploy user, the backup and then its check:
 | `ussp_relational-<stamp>.dump` | the relational database whole, `pg_dump -Fc` |
 | `ussp_timeseries-<stamp>.dump` | the time series with the rows of the chunks of the last `USSP_BACKUP_TS_DAYS` days (7); older chunks and their compressed relations keep their definitions only. "The last 7 days" is the database's clock (`now()` in the container), never the host's |
 | `nats-kv-<stamp>.jsonl` | every JetStream KV bucket, one JSON line per key, read as the `backup` NATS user, which may read and may not write (`nats.staging.conf`) |
-| `manifest-<stamp>.json` | the database clock, the cutoff, each tree's schema version, each file's bytes, SHA-256 and entries; written last, so a stamp without it is incomplete |
+| `manifest-<stamp>.json` | the database clock, the cutoff, each tree's schema version, each file's bytes, SHA-256 and entries, the KV export's keys, buckets and buckets with keys; written last, so a stamp without it is incomplete |
 
 Each file is written under a `.partial` name and read back before it is
 kept (a dump must list with `pg_restore --list`; the KV export must hold
@@ -47,8 +47,11 @@ in the running container (the time series through
 `timescaledb_pre_restore()` / `post_restore()`), and prints what came
 back: audit events, operators, intents, telemetry rows, hypertables, both
 schema versions, KV keys. It fails on a file that differs, a failed
-restore, a schema version other than the manifest's, a KV value that does
-not decode, or counts other than `RESTORE_CHECK_EXPECT`. The scratch
+restore, a schema version other than the manifest's, a KV export with
+another number of keys or of buckets holding keys than the manifest's
+(`kv.keys`, `kv.buckets_with_keys`; a manifest without the latter, from
+before that check, is refused), a KV value that does not decode, or
+counts other than `RESTORE_CHECK_EXPECT`. The scratch
 databases are dropped afterwards, also on failure, and their absence is
 checked. They take about the databases' size again, for the length of the
 check.
