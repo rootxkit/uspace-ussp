@@ -46,6 +46,22 @@ type fakeUSSP struct {
 	sockets        int
 	tokens         int
 	intents        *fakeIntents
+	product        []byte // the snapshot's answer
+	bboxes         []string
+}
+
+// snapshot answers the staff session's bbox product.
+func (f *fakeUSSP) snapshot(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Authorization") != "Bearer console-session" {
+		problem(w, http.StatusForbidden, "forbidden", "an operator client subscribes by intent_id")
+		return
+	}
+	f.mu.Lock()
+	f.bboxes = append(f.bboxes, r.URL.Query().Get("bbox"))
+	b := f.product
+	f.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(b)
 }
 
 func newFakeUSSP(t *testing.T) *fakeUSSP {
@@ -87,6 +103,7 @@ func newFakeUSSP(t *testing.T) *fakeUSSP {
 		writeJSON(w, http.StatusCreated, client.SerialBinding{ClientId: "op-test", Serial: req.Serial, SerialFold: req.Serial, BoundAt: time.Now().UTC()})
 	})
 	mux.HandleFunc("GET /v1/telemetry", f.telemetry)
+	mux.HandleFunc("GET /v1/traffic/snapshot", f.snapshot)
 	f.intents = newFakeIntents()
 	f.intents.routes(mux)
 	f.srv = httptest.NewServer(mux)

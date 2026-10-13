@@ -36,6 +36,7 @@ type Server struct {
 	fixture    Fixture
 	inject     *injector
 	plan       *planner
+	observe    *observer
 
 	opMu       sync.Mutex
 	operatorID client.OperatorID // the test operator's id at the USSP, from GET /v1/accounts/me
@@ -51,7 +52,8 @@ func NewServer(cfg Config, g *Guard, u *USSP, counters *core.Counters, logger *s
 	s := &Server{Guard: g, USSP: u, Counters: counters, Logger: logger, cfg: cfg, fixture: fx}
 	s.inject = newInjector(s)
 	s.plan = newPlanner(s)
-	s.interfaces = append(s.interfaces, s.inject.iface(), s.plan.iface())
+	s.observe = newObserver(s)
+	s.interfaces = append(s.interfaces, s.inject.iface(), s.observe.iface(), s.plan.iface())
 	return s, nil
 }
 
