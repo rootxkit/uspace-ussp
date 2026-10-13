@@ -19,6 +19,10 @@ import (
 // reaches it.
 const DepUSSP = "ussp_api"
 
+// DepIssuerKeys is the readiness entry of the token issuers' keys: the
+// test listener is not ready while it cannot verify a token.
+const DepIssuerKeys = "issuer_keys"
+
 // retryAfter is the wait a 503 of the test listener names.
 const retryAfter = 5 * time.Second
 

@@ -60,23 +60,32 @@ type USSP struct {
 	CallTimeout time.Duration
 }
 
-// NewUSSP builds the USSP client of cfg; the operator secret is read
-// once, here.
-func NewUSSP(cfg Config) (*USSP, error) {
+// HTTPClient is the client of the USSP's published API: bounded by
+// timeout, trusting caFile's certificates when one is named.
+func HTTPClient(caFile string, timeout time.Duration) (*http.Client, error) {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
-	if cfg.CAFile != "" {
-		pem, err := os.ReadFile(cfg.CAFile)
+	if caFile != "" {
+		pem, err := os.ReadFile(caFile) //nolint:gosec // G304: the path is configuration (USSP_TEST_INTERFACES_CA_FILE)
 		if err != nil {
-			return nil, fmt.Errorf("USSP_TEST_INTERFACES_CA_FILE: %s cannot be read", cfg.CAFile)
+			return nil, fmt.Errorf("USSP_TEST_INTERFACES_CA_FILE: %s cannot be read", caFile)
 		}
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("USSP_TEST_INTERFACES_CA_FILE: %s holds no PEM certificate", cfg.CAFile)
+			return nil, fmt.Errorf("USSP_TEST_INTERFACES_CA_FILE: %s holds no PEM certificate", caFile)
 		}
 		tr.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
 	}
+	return &http.Client{Transport: tr, Timeout: timeout}, nil
+}
+
+// NewUSSP builds the USSP client of cfg; the operator secret is read
+// once, here.
+func NewUSSP(cfg Config) (*USSP, error) {
 	timeout := time.Duration(cfg.CallTimeoutS) * time.Second
-	hc := &http.Client{Transport: tr, Timeout: timeout}
+	hc, err := HTTPClient(cfg.CAFile, timeout)
+	if err != nil {
+		return nil, err
+	}
 	secret, err := readSecret(cfg.OperatorSecretFile)
 	if err != nil {
 		return nil, fmt.Errorf("USSP_TEST_INTERFACES_OPERATOR_SECRET_FILE: %w", err)

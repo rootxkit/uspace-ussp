@@ -75,8 +75,7 @@ for f in "${ifiles[@]}"; do
 done
 while IFS= read -r p; do
   name=${p#api/standards/interuss/}
-  if ! printf '%s
-' "${ifiles[@]}" | grep -qxF "$name"; then
+  if ! printf '%s\n' "${ifiles[@]}" | grep -qxF "$name"; then
     fail "$p has no section in $source_path"
   fi
 done < <(find api/standards/interuss -name '*.yaml' ! -name 'oapi-codegen.*' | sort)

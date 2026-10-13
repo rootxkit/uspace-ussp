@@ -7,7 +7,8 @@
 # nothing for any other base URL.
 #
 # It differs from the lab's own conformance/targets/ussp.yaml in three
-# declared ways:
+# declared ways (the fourth, rid_observation, the lab's target does not
+# name yet: a lab PR, brief WP-21 "Blocked by"):
 #   - contract.overrides is the file scripts/conformance.sh writes: the
 #     lab's conformance/national/contracts/ussp.yaml as it is, plus
 #     deploy/conformance/authority-push-off.yaml when the target runs
@@ -16,10 +17,14 @@
 #     checks are not applicable, with that reason in the report;
 #   - ca_file and resolve, so the suite reaches the stack's TLS hosts at
 #     127.0.0.1 with the stack's CA (both empty for another target);
-#   - interfaces: none. This USSP exposes no InterUSS automated-testing
-#     interface (rid_injection, flight_planning), so F3411-SP and
-#     F3548-SCD are not applicable with that reason (deploy/conformance/
-#     README.md, "What is not run"; PLAN §15 Q34).
+#   - interfaces: rid_injection, rid_observation and flight_planning,
+#     the InterUSS automated-testing interfaces of the test-interfaces
+#     process (docs/PLAN.md D13, §6.4; WP-21), each the base URL as
+#     uss_qualifier reaches it: on the stack http://ussp:8087/test/...
+#     on the lab network, filled by scripts/conformance.sh; an external
+#     target names its own. An unset one is not declared, and the hook
+#     checks that each declared one answers 401 without a credential
+#     before the suite runs.
 system: ussp
 name: ${CONFORMANCE_TARGET_NAME:-ussp-conformance}
 role: own
@@ -55,4 +60,7 @@ resolve:
 fixtures:
   operator: ${USSP_CONFORMANCE_OPERATOR:-}
 pages: []
-interfaces: {}
+interfaces:
+  rid_injection: ${USSP_CONFORMANCE_RID_INJECTION_URL:-}
+  rid_observation: ${USSP_CONFORMANCE_RID_OBSERVATION_URL:-}
+  flight_planning: ${USSP_CONFORMANCE_FLIGHT_PLANNING_URL:-}

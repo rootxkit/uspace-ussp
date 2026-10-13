@@ -48,6 +48,9 @@ type fakeUSSP struct {
 	intents        *fakeIntents
 	product        []byte // the snapshot's answer
 	bboxes         []string
+	operatorStatus string            // of the registered test operator
+	registered     map[string]string // admin username -> password
+	clientsMade    int
 }
 
 // snapshot answers the staff session's bbox product.
@@ -103,6 +106,61 @@ func newFakeUSSP(t *testing.T) *fakeUSSP {
 		writeJSON(w, http.StatusCreated, client.SerialBinding{ClientId: "op-test", Serial: req.Serial, SerialFold: req.Serial, BoundAt: time.Now().UTC()})
 	})
 	mux.HandleFunc("GET /v1/telemetry", f.telemetry)
+	f.registered = map[string]string{"staff.support": "staff-password-1"}
+	f.operatorStatus = "active"
+	mux.HandleFunc("POST /v1/accounts/operators", func(w http.ResponseWriter, r *http.Request) {
+		var reg client.OperatorRegistration
+		_ = json.NewDecoder(r.Body).Decode(&reg)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if _, ok := f.registered[reg.AdminUsername]; ok {
+			problem(w, http.StatusConflict, "operator_exists", "registered")
+			return
+		}
+		f.registered[reg.AdminUsername] = reg.AdminPassword
+		writeJSON(w, http.StatusCreated, client.Operator{Id: fakeOperatorID, RegistrationNumber: reg.RegistrationNumber, Status: client.OperatorStatus(f.operatorStatus)})
+	})
+	mux.HandleFunc("POST /v1/accounts/login", func(w http.ResponseWriter, r *http.Request) {
+		var l client.LoginRequest
+		_ = json.NewDecoder(r.Body).Decode(&l)
+		f.mu.Lock()
+		pw, ok := f.registered[l.Username]
+		f.mu.Unlock()
+		if !ok || pw != l.Password {
+			problem(w, http.StatusUnauthorized, "unauthenticated", "no such user or password")
+			return
+		}
+		tok, op := "portal-session", fakeOperatorID
+		s := client.Session{Token: tok, Realm: l.Realm, Roles: []string{"operator_admin"}, OperatorId: &op, ExpiresAt: time.Now().Add(time.Hour)}
+		if l.Realm == client.Console {
+			s = client.Session{Token: "console-session", Realm: l.Realm, Roles: []string{"support"}, ExpiresAt: time.Now().Add(time.Hour)}
+		}
+		writeJSON(w, http.StatusOK, s)
+	})
+	mux.HandleFunc("GET /v1/accounts/operators/{op}", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer portal-session" || r.PathValue("op") != fakeOperatorID {
+			problem(w, http.StatusNotFound, "not_found", "no operator")
+			return
+		}
+		f.mu.Lock()
+		st := f.operatorStatus
+		f.mu.Unlock()
+		v := "valid"
+		if st != "active" {
+			v = "unknown"
+		}
+		writeJSON(w, http.StatusOK, client.Operator{Id: fakeOperatorID, Status: client.OperatorStatus(st), ValidationStatus: &v})
+	})
+	mux.HandleFunc("POST /v1/accounts/operators/{op}/clients", func(w http.ResponseWriter, _ *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if f.operatorStatus != "active" {
+			problem(w, http.StatusForbidden, "operator_not_active", "no client before the operator is active")
+			return
+		}
+		f.clientsMade++
+		writeJSON(w, http.StatusCreated, client.ClientSecret{ClientId: "op-test", ClientSecret: "fresh-secret", Status: "active"})
+	})
 	mux.HandleFunc("GET /v1/traffic/snapshot", f.snapshot)
 	f.intents = newFakeIntents()
 	f.intents.routes(mux)

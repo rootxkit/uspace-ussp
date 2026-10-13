@@ -24,8 +24,9 @@ lab_commit = 7fb2d45693c8a93c7485dd0aa0699e8359296aa5
 #   conformance/uss_qualifier/SOURCE
 #                               interuss/monitoring v0.36.0, commit 0fabe238ef177f66266eba6048545ae1e6bbb4a0,
 #                               docker.io/interuss/monitoring@sha256:a771c82cda62b83be707e650ddd2550bbabf6790120c4a57f76153a8f5504bb7
-#                               (not run by this profile: the USSP exposes no InterUSS
-#                               automated-testing interface, README "What is not run")
+#                               run by this profile against the test-interfaces process
+#                               (WP-21: conformance/uss_qualifier/run-qualifier.sh and its
+#                               compose.yaml mock USS, at this lab commit)
 # The image under test is built from this checkout (deploy/Dockerfile) or
 # named by USSP_CONFORMANCE_IMAGE; its id is in every report.
 

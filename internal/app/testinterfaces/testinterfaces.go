@@ -9,6 +9,7 @@ package testinterfaces
 
 import (
 	"context"
+	"flag"
 	"io"
 	"log/slog"
 	"net/http"
@@ -33,9 +34,11 @@ func Main(ctx context.Context, args []string, stdout, stderr io.Writer, lookup c
 	if len(args) > 0 {
 		switch {
 		case args[0] == "--help" || args[0] == "-h" || args[0] == "help":
-			_, _ = io.WriteString(stdout, "usage: "+Binary+" [--help | healthcheck [path]]\n\n"+
+			_, _ = io.WriteString(stdout, "usage: "+Binary+" [--help | healthcheck [path] | seed --state-dir DIR [--console-user U --console-password-file F]]\n\n"+
 				"Configuration is read from the environment only (deploy/ENV.md, test-interfaces):\n\n"+testif.Help())
 			return proc.ExitOK
+		case args[0] == "seed":
+			return seed(ctx, args[1:], stdout, stderr, lookup)
 		case args[0] == "healthcheck" && len(args) <= 2:
 			path := "/healthz"
 			if len(args) == 2 {
@@ -96,6 +99,14 @@ func Routes(tc testif.Config) func(context.Context, *http.ServeMux, *proc.Runtim
 		if err != nil {
 			return err
 		}
+		// A test listener that cannot verify a token yet serves nothing
+		// but refusals: it is not ready until the issuers' keys are read
+		// (the hook waits for readiness before declaring the interfaces).
+		if p, ok := verifier.(interface {
+			Probe(context.Context) (obs.State, string)
+		}); ok {
+			rt.Health.Register(testif.DepIssuerKeys, true, p.Probe)
+		}
 		ussp, err := testif.NewUSSP(tc)
 		if err != nil {
 			return err
@@ -117,3 +128,56 @@ func Routes(tc testif.Config) func(context.Context, *http.ServeMux, *proc.Runtim
 		return nil
 	}
 }
+
+// seed is `ussp-test-interfaces seed`: the fixture's test operator at
+// the USSP through the national API (testif.Seed), behind the same gate.
+// It reads USSP_TEST_INTERFACES_USSP_BASE_URL, _CA_FILE and
+// _OPERATOR_FILE; the flags name the state directory and the staff user.
+// Exit 0 when it ran (what it could not do is in seed.json), 2 on the
+// gate or a usage error, 1 when the USSP refused or did not answer.
+func seed(ctx context.Context, args []string, stdout, stderr io.Writer, lookup config.LookupFunc) int {
+	logger := obs.NewLogger(stdout, "info", testif.Process)
+	errLog := obs.NewLogger(stderr, "info", testif.Process)
+	if err := testif.Gate(lookup); err != nil {
+		errLog.Error("refusing to seed", slog.String("error", err.Error()))
+		return proc.ExitConfig
+	}
+	fs := flag.NewFlagSet("seed", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	dir := fs.String("state-dir", "", "directory the session, client and seed result files are written to (0600)")
+	user := fs.String("console-user", "", "a staff user (ussp-api staff-add) for the console session")
+	pwFile := fs.String("console-password-file", "", "file holding that user's password")
+	if err := fs.Parse(args); err != nil || *dir == "" || fs.NArg() > 0 || (*user == "") != (*pwFile == "") {
+		errLog.Error("usage: " + Binary + " seed --state-dir DIR [--console-user U --console-password-file F]")
+		return proc.ExitConfig
+	}
+	get := func(k string) string { v, _ := lookup(k); return strings.TrimSpace(v) }
+	base := strings.TrimSuffix(get("USSP_TEST_INTERFACES_USSP_BASE_URL"), "/")
+	if base == "" {
+		errLog.Error("USSP_TEST_INTERFACES_USSP_BASE_URL is required to seed")
+		return proc.ExitConfig
+	}
+	fx, err := testif.LoadFixture(get("USSP_TEST_INTERFACES_OPERATOR_FILE"))
+	if err != nil {
+		errLog.Error("USSP_TEST_INTERFACES_OPERATOR_FILE", slog.String("error", err.Error()))
+		return proc.ExitConfig
+	}
+	hc, err := testif.HTTPClient(get("USSP_TEST_INTERFACES_CA_FILE"), seedTimeout)
+	if err != nil {
+		errLog.Error("seed", slog.String("error", err.Error()))
+		return proc.ExitConfig
+	}
+	res, err := testif.Seed(ctx, testif.SeedConfig{USSP: &testif.USSP{Base: base, HTTP: hc}, Fixture: fx, StateDir: *dir,
+		ConsoleUser: *user, ConsolePasswordFile: *pwFile}, logger)
+	if err != nil {
+		obs.Error(ctx, logger, "seed failed", err)
+		return proc.ExitFailed
+	}
+	logger.LogAttrs(ctx, slog.LevelInfo, "seeded", slog.String("operator_id", res.OperatorID), slog.String("operator_status", res.OperatorStatus),
+		slog.String("client_id", res.ClientID), slog.Int("bound", len(res.Bound)), slog.Bool("console_session", res.Console),
+		slog.Any("notes", res.Notes))
+	return proc.ExitOK
+}
+
+// seedTimeout bounds one call of the seed.
+const seedTimeout = 30 * time.Second
