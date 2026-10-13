@@ -102,7 +102,7 @@ func stackEnv(t *testing.T) map[string]string {
 		t.Fatal(err)
 	}
 	return map[string]string{
-		testif.VarSwitch: "on", testif.VarSystemID: "USSP-DEV",
+		testif.VarSwitch: "on", testif.VarSystemID: "DEV01",
 		"USSP_TEST_INTERFACES_ADDR":                 "127.0.0.1:0",
 		"USSP_TEST_INTERFACES_USSP_BASE_URL":        ussp.URL,
 		"USSP_TEST_INTERFACES_OPERATOR_CLIENT_ID":   "op-test",
