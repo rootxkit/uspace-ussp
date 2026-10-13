@@ -81,8 +81,8 @@
 # error, found before anything is built or started; 3 incomplete (a gate
 # requirement was not checked and the baseline does not record it not
 # applicable; the report says which and why). A gate requirement the
-# baseline records not applicable (F3411-SP and F3548-SCD, blocked by
-# the owner decision PLAN §15.2 Q34) does not make the exit 3, and is
+# baseline records not applicable (F3548-CP, NAT-PRECONDITION,
+# REG-NOPII) does not make the exit 3, and is
 # never a pass: the hook names each with the baseline's note, as a
 # warning annotation in a workflow, and the report's verdict stays
 # incomplete. A gate requirement the baseline records as a known failure
