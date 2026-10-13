@@ -107,7 +107,7 @@ shape() {
   local findings
   findings="$(jqr --argjson bounds "$bounds" -f scripts/deploy-shape.jq "$1")" || { echo "  the shape rules did not run"; return 1; }
   [ -z "$findings" ] && return 0
-  printf '  %s\n' "$findings"
+  while IFS= read -r line; do echo "  $line"; done <<<"$findings"
   return 1
 }
 
@@ -156,6 +156,8 @@ mutate "bounds over the store" '.services.nats.environment.NATS_MAX_FILE_STORE =
 mutate "a /healthz-only health check" '.services.monitor.healthcheck.test = ["CMD","/usr/bin/ussp-monitor","healthcheck"]' 'not /readyz'
 mutate "a published port" '.services.api.ports = [{"target": 8080, "published": "8080"}]' 'publishes a port'
 mutate "an image by tag" '.services.web.image = "ghcr.io/rootxkit/uspace-ussp-web:latest"' 'not pinned by digest'
+mutate "its own JWKS read over plain http" '.services["traffic-ws"].environment.USSP_TOKEN_ISSUERS |= sub("=https://ussp.example.test/"; "=http://ussp-api:8080/")' 'over plain http'
+mutate "its own host not mapped to Caddy" 'del(.services["telemetry-ingest"].extra_hosts)' 'is not mapped to the edge Caddy'
 
 # ---- the settings ------------------------------------------------------------
 

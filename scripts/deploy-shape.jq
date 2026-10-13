@@ -49,6 +49,16 @@ def say($s; $m): "\($s): \($m)";
         (($e.USSP_TRUSTED_PROXIES // "") | select(length > 0) | split(",")[]
           | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/32$") | not) | say($s; "USSP_TRUSTED_PROXIES names \(.), not one host"))),
 
+    # Every JWKS a process fetches is https (the verifier refuses plain
+    # http but for localhost); this USSP's own host resolves to the edge
+    # Caddy for the two processes that read its JWKS there.
+    (go[] as $s | select($m | present($s)) | ($svc[$s].environment.USSP_TOKEN_ISSUERS // "") | select(length > 0) | split(",")[]
+      | (split("=") | .[1] // "") as $j | select($j | startswith("https://") | not)
+      | say($s; "fetches the JWKS \($j) over plain http")),
+    (["telemetry-ingest", "traffic-ws"][] as $s | select($m | present($s))
+      | ($svc[$s].environment.USSP_TOKEN_ISSUERS // "" | split(",") | map(split("=") | .[1] // "" | capture("^https://(?<h>[^/:]+)").h) | last) as $own
+      | if ($svc[$s].extra_hosts // [] | map(tostring) | any(startswith($own)) | not) then say($s; "this USSP's own host \($own) is not mapped to the edge Caddy") else empty end),
+
     # The one-shots: each opens only the tree it migrates, and no NATS.
     ([["migrate", "USSP_PG_URL"], ["migrate-timeseries", "USSP_TS_URL"]][] as [$s, $d] | select($m | present($s))
       | ["USSP_PG_URL", "USSP_TS_URL", "USSP_NATS_URL"][] as $v

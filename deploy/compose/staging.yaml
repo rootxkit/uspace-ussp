@@ -124,9 +124,13 @@ x-env: &env
 # This USSP's own issuer, for the processes that verify its operator
 # tokens and portal sessions: api serves the JWKS and must not list
 # itself ("lists this USSP's own issuer"), so it is appended here for
-# telemetry-ingest and traffic-ws (deploy/ENV.md, web section), read on
-# the internal network from api.
-x-own-issuer: &own-issuer ${USSP_TOKEN_ISSUERS:?set in the settings file},https://${USSP_HOST:?this USSP's public host}=http://ussp-api:8080/.well-known/jwks.json
+# telemetry-ingest and traffic-ws (deploy/ENV.md, web section). The
+# verifier fetches a JWKS over https only (plain http is for localhost),
+# so they read api's through the edge Caddy, at this USSP's public host
+# mapped to Caddy's address (x-own-host).
+x-own-issuer: &own-issuer ${USSP_TOKEN_ISSUERS:?set in the settings file},https://${USSP_HOST:?this USSP's public host}=https://${USSP_HOST}/.well-known/jwks.json
+x-own-host: &own-host
+  - "${USSP_HOST}:${USSP_CADDY_IP}"
 
 x-probe: &probe
   interval: 10s
@@ -274,6 +278,7 @@ services:
   telemetry-ingest:
     <<: *go
     entrypoint: ["/usr/bin/ussp-telemetry-ingest"]
+    extra_hosts: *own-host
     networks:
       ussp: {}
       edge:
@@ -350,6 +355,7 @@ services:
   traffic-ws:
     <<: *go
     entrypoint: ["/usr/bin/ussp-traffic-ws"]
+    extra_hosts: *own-host
     networks:
       ussp: {}
       edge:

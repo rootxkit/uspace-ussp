@@ -21,3 +21,6 @@ services:
   rid-sp: *peers
   monitor: *peers
   dss-sync: *peers
+  # Both verify the ecosystem's tokens with the authority's JWKS.
+  telemetry-ingest: *peers
+  traffic-ws: *peers
