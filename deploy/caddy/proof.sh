@@ -199,12 +199,14 @@ else
   bad "client address: $(printf '%s' "$out" | head -n 1)"
 fi
 # A WebSocket upgrade reaches telemetry-ingest and traffic-ws with its
-# Origin and Upgrade headers intact (M22).
+# Origin and Upgrade headers intact (M22). Over HTTP/1.1, as a WebSocket
+# client sends it: an HTTP/2 request carries no Upgrade header, and a
+# curl built with OpenSSL negotiates h2 with Caddy unless told not to.
 # A fresh nonce, as a client draws one (RFC 6455 4.1).
 ws_key="$(openssl rand -base64 16)"
 for p in /v1/telemetry /v1/traffic /v1/alerts; do
   expect "upgrade" 200 "origin=[https://$host] upgrade=[websocket]" "$p" \
-    -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H "Origin: https://$host" \
+    --http1.1 -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H "Origin: https://$host" \
     -H 'Sec-WebSocket-Version: 13' -H "Sec-WebSocket-Key: $ws_key"
 done
 
