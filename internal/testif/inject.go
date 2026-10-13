@@ -151,8 +151,9 @@ func (in *injector) refuse(w http.ResponseWriter, r *http.Request, err error) {
 
 // createTest is PUT /tests/{test_id}: validate, plan every frame, bind the
 // serials, open one socket per flight, send each flight's first frame at
-// its time and answer once the ingest accepted every first frame due
-// within the acknowledgement bound (brief WP-21, RID injection).
+// its time and answer once the ingest decided on every first frame
+// already due (a past state, sent at once as backlog); a flight that
+// starts later is scheduled, not awaited (brief WP-21, RID injection).
 func (in *injector) createTest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("test_id")
 	if id == "" || len(id) > maxTestIDBytes {
@@ -233,8 +234,8 @@ func (in *injector) createTest(w http.ResponseWriter, r *http.Request) {
 }
 
 // start binds the serials, opens the sockets and starts the streams; it
-// returns once every first frame due within the acknowledgement bound
-// has been decided, and on any refusal ends what it started.
+// returns once every first frame already due has been decided, and on
+// any refusal ends what it started.
 func (in *injector) start(ctx context.Context, t *injTest, plans []planned) error {
 	token, err := in.s.USSP.OperatorToken(ctx)
 	if err != nil {
@@ -254,6 +255,15 @@ func (in *injector) start(ctx context.Context, t *injTest, plans []planned) erro
 		err error
 	}
 	results := make(chan first, len(plans))
+	// Every first frame already due is awaited: it goes at once and is
+	// decided within the acknowledgement bound. A flight starting later is
+	// accepted as scheduled, and a refusal of any of its frames, the
+	// first included, fails the test in flight (fail): the PUT is answered
+	// before then, as an operator's client files a flight before it flies
+	// (uss_qualifier reads the answer with a bound shorter than a flight's
+	// lead time, and retried a PUT that waited: WP-21 R7).
+	due := in.clock.Now()
+	awaited := 0
 	for i, p := range plans {
 		sess, err := dial(ctx, in.s.USSP, token)
 		if err != nil {
@@ -263,21 +273,20 @@ func (in *injector) start(ctx context.Context, t *injTest, plans []planned) erro
 		}
 		run := &flightRun{p: p, t: t, sess: sess, done: make(chan struct{})}
 		t.runs = append(t.runs, run)
+		var report func(error)
+		if !p.frames[0].Ts.After(due) {
+			awaited++
+			report = func(err error) { results <- first{i, err} }
+		}
 		in.work.Add(1)
 		go func() {
 			defer in.work.Done()
 			defer close(run.done)
-			in.stream(streamCtx, run, ack, func(err error) { results <- first{i, err} })
+			in.stream(streamCtx, run, ack, report)
 		}()
 	}
-	// Wait for every first frame due within the bound: a flight starting
-	// later is accepted as scheduled, its refusals counted and logged.
-	due := in.clock.Now().Add(ack)
 	var errs []error
-	for _, p := range plans {
-		if p.frames[0].Ts.After(due) {
-			continue
-		}
+	for range awaited {
 		select {
 		case r := <-results:
 			if r.err != nil {
@@ -312,12 +321,14 @@ func (in *injector) start(ctx context.Context, t *injTest, plans []planned) erro
 
 // stream sends a flight's frames at their times: a frame whose time has
 // passed goes at once with backlog true. The first frame's decision is
-// reported through first; the frame after the last one is the end frame.
+// reported through first when the PUT awaits it (first non-nil); else a
+// refusal of it fails the test as a later frame's does. The frame after
+// the last one is the end frame.
 // Every later frame's decision is read before the next frame goes: a
 // frame the ingest refuses fails the test (fail), and nothing is sent
 // past the refusal but the flight's end frame.
 func (in *injector) stream(ctx context.Context, run *flightRun, ack time.Duration, first func(error)) {
-	reported := false
+	reported := first == nil
 	report := func(err error) {
 		if !reported {
 			reported = true
@@ -340,8 +351,15 @@ func (in *injector) stream(ctx context.Context, run *flightRun, ack time.Duratio
 			actx, cancel := context.WithTimeout(ctx, ack)
 			err := run.sess.sendAndWait(actx, f)
 			cancel()
+			awaitedFirst := !reported
 			report(err)
 			if err != nil {
+				var ref *RefusalError
+				if !awaitedFirst && errors.As(err, &ref) {
+					// The PUT did not wait for this flight's first frame:
+					// its refusal fails the test in flight.
+					in.fail(ctx, run, ref)
+				}
 				return
 			}
 			// A refusal counted from here on is one in flight.

@@ -517,3 +517,107 @@ func TestInjectionFailsOnARefusalInFlight(t *testing.T) {
 	}
 
 }
+
+// heldClock holds every wait for a time after now until open is closed:
+// a flight scheduled later does not fly while it is held.
+type heldClock struct {
+	mu   sync.Mutex
+	now  time.Time
+	open chan struct{}
+}
+
+func (c *heldClock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
+
+func (c *heldClock) Until(ctx context.Context, t time.Time) error {
+	if t.After(c.Now()) {
+		select {
+		case <-c.open:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	c.mu.Lock()
+	if t.After(c.now) {
+		c.now = t
+	}
+	c.mu.Unlock()
+	return ctx.Err()
+}
+
+// putWithin runs the PUT and fails the test when it does not answer
+// within bound: the injection is answered before a later flight flies.
+func putWithin(t *testing.T, ts *testServer, id string, body any, bound time.Duration) *httptestResult {
+	t.Helper()
+	got := make(chan *httptestResult, 1)
+	go func() {
+		w := ts.do(t, http.MethodPut, BaseInjection+"/tests/"+id, ScopeInjectTestData, body)
+		got <- &httptestResult{code: w.Code, body: w.Body.Bytes()}
+	}()
+	select {
+	case r := <-got:
+		return r
+	case <-time.After(bound):
+		t.Fatalf("PUT %s not answered within %v", id, bound)
+		return nil
+	}
+}
+
+// A flight whose first state is later than now is scheduled, not
+// awaited: the PUT answers at once (uss_qualifier's read timeout is
+// shorter than the acknowledgement bound, and a PUT that waited for the
+// first state was retried and refused out of order, WP-21 R7). Its
+// frames then go at their times. The awaited twin, a first state in the
+// past refused on the real path, is TestInjectionFailsWithTheUSSPsReason.
+func TestInjectionAnswersBeforeALaterFlightFlies(t *testing.T) {
+	p := labInjection(t)
+	p.RequestedFlights = p.RequestedFlights[:1] // first state 08:00:00.5
+	f := newFakeUSSP(t)
+	ts := newTestServer(t, f, nil)
+	clock := &heldClock{now: time.Date(2026, 10, 13, 7, 59, 58, 0, time.UTC), open: make(chan struct{})} // within the acknowledgement bound of the first state
+	ts.inject.clock = clock
+	res := putWithin(t, ts, "later", p, 5*time.Second)
+	if res.code != http.StatusOK {
+		t.Fatalf("PUT %d %s", res.code, res.body)
+	}
+	if n := len(f.received()); n != 0 {
+		t.Fatalf("%d frames sent before the first state's time", n)
+	}
+	close(clock.open)
+	ts.inject.work.Wait()
+	frames := f.received()
+	if len(frames) != 4 || frames[0].Backlog != nil || frames[3].End == nil || !*frames[3].End {
+		t.Fatalf("the scheduled flight did not fly at its times: %+v", frames)
+	}
+}
+
+// The first frame of a scheduled flight refused after the PUT answered
+// fails the test in flight, as a later frame's refusal does: counted,
+// the test held until its delete.
+func TestInjectionFailsWhenAScheduledFirstFrameIsRefused(t *testing.T) {
+	p := labInjection(t)
+	p.RequestedFlights = p.RequestedFlights[:1]
+	f := newFakeUSSP(t)
+	ts := newTestServer(t, f, nil)
+	clock := &heldClock{now: time.Date(2026, 10, 13, 7, 59, 58, 0, time.UTC), open: make(chan struct{})} // within the acknowledgement bound of the first state
+	ts.inject.clock = clock
+	res := putWithin(t, ts, "later", p, 5*time.Second)
+	if res.code != http.StatusOK {
+		t.Fatalf("PUT %d %s", res.code, res.body)
+	}
+	f.mu.Lock()
+	f.refuseFrom, f.refuseFromSeq = true, 0
+	f.mu.Unlock()
+	close(clock.open)
+	ts.inject.work.Wait()
+	if n := ts.counters.Snapshot()[CounterInjectionFailedLive]; n != 1 {
+		t.Errorf("%s = %d, want 1", CounterInjectionFailedLive, n)
+	}
+	for _, fr := range f.received() {
+		if fr.Seq > 0 {
+			t.Errorf("a frame past the refused first one was sent: seq %d", fr.Seq)
+		}
+	}
+	if again := put(t, ts, "later", p); again.code != http.StatusConflict {
+		t.Errorf("the failed test is not held until its delete: %d", again.code)
+	}
+}
