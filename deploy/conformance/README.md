@@ -121,7 +121,8 @@ process (`cmd/test-interfaces`, image `uspace-ussp-testif`, PLAN D13)
 serves RID injection, RID observation and `flight_planning` v1 as an
 operator client of the published API; the hook seeds the test operator
 (`test-operator.yaml`) through the national API, declares the three
-interfaces in the target, checks each answers 401 without a credential,
+interfaces in the target, checks each answers 401 without a credential
+at its declared URL from the lab network (where uss_qualifier calls it),
 starts the lab's mock USS and runs `f3411-sp.yaml` (F3411-SP),
 `f3548-scd.yaml` (F3548-SCD) and `f3411-dp.yaml` (informative), folding
 each report into the suite's run. `CONFORMANCE_QUALIFIER=off` runs the

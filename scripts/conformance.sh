@@ -416,6 +416,11 @@ PY
     say "CISP and ANSP up after $(($(date +%s) - t0)) s"
   fi
   lab_host="$(val LAB_HOST)"
+  # The declared interfaces are probed from the lab network, where
+  # uss_qualifier reaches them, by a container of the lab's own Caddy
+  # image (pinned by digest in the lab's env; busybox wget).
+  probe_image="$(val CADDY_IMAGE)"
+  case "$probe_image" in *@sha256:*) ;; *) die "the lab's CADDY_IMAGE is not pinned by digest: $probe_image" ;; esac
   # The interfaces as uss_qualifier reaches them on the lab network
   # (the alias ussp of test-interfaces): the target's `interfaces`.
   participant="ussp-$sid-01"
@@ -558,17 +563,37 @@ testif_up() {
 # check_interfaces <rid_injection url> <rid_observation url> <flight_planning url>:
 # every declared interface must answer a call without a credential 401
 # (as WP-19's push check: a target cannot declare what it does not
-# serve). An empty URL is not declared and not called.
+# serve), at the URL it is declared at: on the stack, from the lab
+# network (http://ussp:8087/test/..., where uss_qualifier calls it; the
+# lab Caddy's /test/* route is not what the target declares), for an
+# external target from here. An empty URL is not declared and not
+# called.
 check_interfaces() {
   local name url path code pair
   for pair in "rid_injection|$1|/user_notifications?after=2026-01-01T00:00:00Z" "rid_observation|$2|/display_data?view=41.71,44.82,41.72,44.83" "flight_planning|$3|/status"; do
     IFS='|' read -r name url path <<<"$pair"
     [ -n "$url" ] || continue
-    code="$(curl -sS -o "$(winpath "$state/iface-probe.body")" -w '%{http_code}' --max-time 10 --retry 10 --retry-delay 1 --retry-connrefused \
-      "${curl_tls[@]}" "$url$path")" || code="no answer"
+    if [ -z "$external" ]; then
+      code="$(lab_status "$url$path")"
+    else
+      code="$(curl -sS -o "$(winpath "$state/iface-probe.body")" -w '%{http_code}' --max-time 10 --retry 10 --retry-delay 1 --retry-connrefused \
+        "${curl_tls[@]}" "$url$path")" || code="no answer"
+    fi
     [ "$code" = 401 ] || die "the target declares $name at $url, but $path without a credential answered $code (want 401)"
-    say "interface $name declared and served: $path without a credential answered 401"
+    say "interface $name declared and served at $url: $path without a credential answered 401"
   done
+}
+
+# lab_status <url>: the HTTP status a GET of url without a credential
+# gets from a container on the stack's lab network, or "no answer". wget
+# exits non-zero on any status but 2xx, a 401 included, so its exit
+# status says nothing here: the status line it printed is the answer,
+# and without one (no route, no container, a timeout) there is none.
+lab_status() {
+  local out code
+  out="$(docker run --rm --network "${project}_lab" --entrypoint wget "$probe_image" -S -q -O /dev/null -T 10 "$1" 2>&1)" || true
+  code="$(printf '%s\n' "$out" | sed -n 's|^ *HTTP/[0-9.]* \([0-9][0-9][0-9]\).*|\1|p' | tail -n 1)"
+  echo "${code:-no answer}"
 }
 
 # run_qualifier: the lab's mock USS beside the stack and its
@@ -757,9 +782,8 @@ if [ -z "$external" ]; then
   trap teardown EXIT
   stack_up
   check_push_declaration "$base"
-  # Declared as uss_qualifier reaches them (the lab network); checked as
-  # the host reaches them, through the lab Caddy's /test/* route.
-  check_interfaces "$base/test/rid/v1/injection" "$base/test/rid/v1/observation" "$base/test/flight_planning/v1"
+  # Checked where they are declared: as uss_qualifier reaches them.
+  check_interfaces "$iface_injection" "$iface_observation" "$iface_planning"
   if [ "$qualifier" = on ]; then
     run_qualifier
   else

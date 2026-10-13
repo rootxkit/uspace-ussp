@@ -173,6 +173,19 @@ if handed_args | grep -q '^--qualifier-report$'; then fail "--qualifier-report h
 if grep -q "not run in this invocation" "$work/log"; then pass "the run says uss_qualifier was not run in this invocation"; else fail "no 'not run in this invocation': $(cat "$work/log")"; fi
 hook_rc 2 "a report that cannot be read is refused" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_QUALIFIER_REPORTS="F3411-SP=$work/none.json"
 hook_rc 2 "a report without its requirement is refused" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_QUALIFIER_REPORTS="$work/qualifier-report.json"
+# On the stack (not run here: it needs Docker) the interfaces are
+# checked at the URLs the target declares, as uss_qualifier reaches them
+# on the lab network, not through the lab Caddy's /test/* route: the
+# declaration is what is checked. Read from the hook itself.
+declared="$(sed -n 's/^  iface_\(injection\|observation\|planning\)=\(.*\)$/\2/p' "$hook" | tr '\n' ' ')"
+stack_call="$(sed -n '/^  stack_up$/,/^else$/p' "$hook" | grep '^  check_interfaces ' || true)"
+if [ "$stack_call" = '  check_interfaces "$iface_injection" "$iface_observation" "$iface_planning"' ] &&
+  [ "$declared" = "http://ussp:8087/test/rid/v1/injection http://ussp:8087/test/rid/v1/observation http://ussp:8087/test/flight_planning/v1 " ] &&
+  grep -qF 'code="$(lab_status "$url$path")"' "$hook"; then
+  pass "on the stack the declared interfaces are checked where they are declared, from the lab network"
+else
+  fail "on the stack the interfaces are not checked at their declared URLs: ${stack_call:-no call} (declared: $declared)"
+fi
 hook_rc 2 "CONFORMANCE_QUALIFIER other than on or off is refused" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_QUALIFIER=sometimes
 
 # ---- the suite's exit status, unchanged -----------------------------------------
