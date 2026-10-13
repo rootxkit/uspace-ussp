@@ -74,9 +74,12 @@ type injector struct {
 
 	mu    sync.Mutex
 	tests map[string]*injTest
-	ctx   context.Context // the server's lifetime: a test's streams outlive its PUT
-	work  sync.WaitGroup
-	seq   uint64
+	// held is the serialKey of every serial a test flies, from its PUT
+	// until its streams have ended after its delete: each test its own.
+	held map[string]bool
+	ctx  context.Context // the server's lifetime: a test's streams outlive its PUT
+	work sync.WaitGroup
+	seq  uint64
 }
 
 type injTest struct {
@@ -84,7 +87,8 @@ type injTest struct {
 	flights     []inj.TestFlight
 	runs        []*flightRun
 	cancel      context.CancelFunc
-	reserved    bool // a PUT is still building it
+	reserved    bool     // a PUT is still building it
+	serials     []string // serialKey of every serial it flies (in held)
 }
 
 // flightRun is one injected flight on its socket.
@@ -100,7 +104,7 @@ type flightRun struct {
 }
 
 func newInjector(s *Server) *injector {
-	return &injector{s: s, clock: wallClock{}, tests: map[string]*injTest{}, ctx: context.Background()}
+	return &injector{s: s, clock: wallClock{}, tests: map[string]*injTest{}, held: map[string]bool{}, ctx: context.Background()}
 }
 
 func (in *injector) iface() iface {
@@ -177,21 +181,29 @@ func (in *injector) createTest(w http.ResponseWriter, r *http.Request) {
 	}
 	in.seq++
 	version := strconv.FormatInt(in.clock.Now().UnixMilli(), 36) + strconv.FormatUint(in.seq, 36)
+	// The serials are chosen under the lock against every held test's,
+	// so two tests never fly one serial (each its own of the pool).
+	plans, err := planFlights(params, version, in.s.fixture.Serials, in.held, cfg.MaxFlightsPerTest, cfg.MaxStatesFlight)
+	if err != nil {
+		in.mu.Unlock()
+		in.refuse(w, r, err)
+		return
+	}
 	t := &injTest{id: id, version: version, flights: params.RequestedFlights, reserved: true}
+	for _, p := range plans {
+		k := serialKey(p.serial)
+		t.serials = append(t.serials, k)
+		in.held[k] = true
+	}
 	in.tests[id] = t
 	in.mu.Unlock()
 	release := func() {
 		in.mu.Lock()
 		delete(in.tests, id)
 		in.mu.Unlock()
+		in.unhold(t)
 	}
 
-	plans, err := planFlights(params, version, in.s.fixture.Serials, cfg.MaxFlightsPerTest, cfg.MaxStatesFlight)
-	if err != nil {
-		release()
-		in.refuse(w, r, err)
-		return
-	}
 	if err := in.start(r.Context(), t, plans); err != nil {
 		release()
 		in.refuse(w, r, err)
@@ -385,6 +397,7 @@ func (in *injector) deleteTest(w http.ResponseWriter, r *http.Request) {
 	delete(in.tests, id)
 	in.mu.Unlock()
 	in.stop(r.Context(), t)
+	in.unhold(t)
 	in.count(CounterInjectionDeleted)
 	writeJSON(w, http.StatusOK, inj.DeleteTestResponse{InjectedFlights: t.flights})
 }
@@ -427,6 +440,16 @@ func (in *injector) run(ctx context.Context) {
 	in.mu.Unlock()
 	for _, t := range tests {
 		in.stop(context.WithoutCancel(ctx), t)
+		in.unhold(t)
 	}
 	in.work.Wait()
+}
+
+// unhold frees t's serials once its streams have ended.
+func (in *injector) unhold(t *injTest) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	for _, k := range t.serials {
+		delete(in.held, k)
+	}
 }

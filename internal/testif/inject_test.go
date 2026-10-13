@@ -359,3 +359,69 @@ func TestUserNotifications(t *testing.T) {
 		t.Errorf("another scope: %d", w.Code)
 	}
 }
+
+// serialsOf is the serials the frames of a test's version flew.
+func serialsOf(f *fakeUSSP, version string) []string {
+	var out []string
+	frames := f.received()
+	for i := range frames {
+		fr := &frames[i]
+		if fr.Epoch != nil && strings.HasPrefix(*fr.Epoch, "t"+version+"-") && !slices.Contains(out, fr.Serial) {
+			out = append(out, fr.Serial)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// Each held test has its own serials: a second test without serials
+// takes the next of the pool, not the first test's; a serial a held test
+// flies is refused for another, before any side effect; once a test is
+// deleted its serials are free again. The single-test twin is
+// TestInjectionStreamsTheFlightsAndEnds.
+func TestInjectionGivesEachTestItsOwnSerial(t *testing.T) {
+	f := newFakeUSSP(t)
+	ts := newTestServer(t, f, nil)
+	version := func(res *httptestResult) string {
+		t.Helper()
+		var ch inj.ChangeTestResponse
+		if res.code != http.StatusOK || json.Unmarshal(res.body, &ch) != nil {
+			t.Fatalf("PUT %d %s", res.code, res.body)
+		}
+		return ch.Version
+	}
+	a := version(put(t, ts, "a", labInjection(t)))
+	pooled := labInjection(t)
+	pooled.RequestedFlights = pooled.RequestedFlights[1:] // names no serial
+	b := version(put(t, ts, "b", pooled))
+	ts.inject.work.Wait()
+	if got := serialsOf(f, a); !slices.Equal(got, []string{"TEST-INJ-0001", "TEST-WP21-0001"}) {
+		t.Errorf("test a flew %v", got)
+	}
+	if got := serialsOf(f, b); !slices.Equal(got, []string{"TEST-WP21-0002"}) {
+		t.Errorf("test b flew %v, want the pool's next serial, not test a's", got)
+	}
+	own := labInjection(t)
+	own.RequestedFlights = own.RequestedFlights[:1] // TEST-INJ-0001, which test a flies
+	sockets := f.sockets
+	if res := put(t, ts, "c", own); res.code != http.StatusBadRequest || !strings.Contains(string(res.body), "another held test") {
+		t.Errorf("a serial test a flies: %d %s", res.code, res.body)
+	}
+	f.mu.Lock()
+	if f.sockets != sockets {
+		t.Errorf("the refused test opened %d sockets", f.sockets-sockets)
+	}
+	f.mu.Unlock()
+	if w := ts.do(t, http.MethodDelete, BaseInjection+"/tests/a/"+a, ScopeInjectTestData, nil); w.Code != http.StatusOK {
+		t.Fatalf("DELETE %d %s", w.Code, w.Body)
+	}
+	c := version(put(t, ts, "c", own))
+	d := version(put(t, ts, "d", pooled))
+	ts.inject.work.Wait()
+	if got := serialsOf(f, c); !slices.Equal(got, []string{"TEST-INJ-0001"}) {
+		t.Errorf("test c flew %v once test a was deleted", got)
+	}
+	if got := serialsOf(f, d); !slices.Equal(got, []string{"TEST-WP21-0001"}) {
+		t.Errorf("test d flew %v, want the serial test a freed", got)
+	}
+}
