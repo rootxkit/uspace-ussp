@@ -138,3 +138,25 @@ names. The browser reaches traffic-ws's `WS /v1/traffic` and
 `WS /v1/alerts` on the same origin, so its origin belongs in
 `USSP_WS_ALLOWED_ORIGINS`, and traffic-ws lists this USSP's own issuer
 (with api's JWKS) in `USSP_TOKEN_ISSUERS` to verify portal sessions.
+
+## Staging (deploy/compose/staging.yaml)
+
+The staging shape sets the listeners, `USSP_TRUSTED_PROXIES` (the edge
+Caddy's and web's addresses, one host each), the key files, the records
+directory, `USSP_WRITER_HOLD_ROWS` and every `USSP_*_STREAM_MAX_BYTES` /
+`USSP_*_BUCKET_MAX_BYTES` itself; the operator's settings are
+`deploy/compose/ussp.env.example`, which names every variable above, and
+the secrets (DSNs, NATS URLs, `USSP_CERTIFICATE_ID`, the client secret)
+come from the secrets directory (`docs/RUNBOOKS/deploy.md`).
+
+Memory, the droplet's share for this system: the limits add up to
+2112 MiB with the two one-shots (timescaledb 512, api 256, monitor 256,
+telemetry-ingest 224, web 224, nats 128, tsdb-writer 128, rid-sp 96,
+traffic-ws 96, dss-sync 64, migrate 64 each), GOMEMLIMIT about 80 % of
+each Go limit. JetStream bounds reserve 2640 MiB of a 3072 MiB store.
+Measured once, idle after the staging smoke's single operator flight
+(2026-10-13, Docker Desktop, `docker stats`): 219 MiB for the USSP's
+containers (timescaledb 71, web 43, api 35, nats 17, monitor 12,
+telemetry-ingest 10, tsdb-writer 10, traffic-ws 8, rid-sp 7, dss-sync 4).
+Not measured yet: a 2 vCPU / 3.8 GB VM at idle and with 100 simulated
+drones.
