@@ -45,6 +45,7 @@ type fakeUSSP struct {
 	bindings       []string
 	sockets        int
 	tokens         int
+	intents        *fakeIntents
 }
 
 func newFakeUSSP(t *testing.T) *fakeUSSP {
@@ -86,6 +87,8 @@ func newFakeUSSP(t *testing.T) *fakeUSSP {
 		writeJSON(w, http.StatusCreated, client.SerialBinding{ClientId: "op-test", Serial: req.Serial, SerialFold: req.Serial, BoundAt: time.Now().UTC()})
 	})
 	mux.HandleFunc("GET /v1/telemetry", f.telemetry)
+	f.intents = newFakeIntents()
+	f.intents.routes(mux)
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
 	return f
