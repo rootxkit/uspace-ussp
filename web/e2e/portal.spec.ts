@@ -113,7 +113,7 @@ test("S-M1 and S-M3: register, client, intent, decision, geo, traffic, alert ack
   const intentId = page.url().split("/").pop() ?? "";
   const decision = page.getByTestId("decision");
   await expect(decision).toHaveAttribute("data-decision", "authorised");
-  await expect(page.getByTestId("authorisation-number")).toContainText(`USSP-DEV-${number}-`);
+  await expect(page.getByTestId("authorisation-number")).toContainText(`DEV01-${number}-`);
   await expect(page.getByTestId("thresholds")).toContainText("m");
   await expect(page.getByTestId("volumes-amsl")).toContainText("580");
   await expect(page.getByTestId("no-conflicts")).toBeVisible();

@@ -226,6 +226,49 @@ func TestRecheckOnAStaleCISChangesNothing(t *testing.T) {
 	}
 }
 
+// H-2: a restriction the ANSP delivered directly (signed with its own
+// key, spec 02 F2 failure rule) is judged while the CIS is stale. The
+// CISP being unreachable past cis_stale_s is exactly when the ANSP
+// delivers directly, so a direct activation over an intent withdraws it
+// with the notice that raises restriction_activated. The CISP's own
+// features stay unjudged on a stale CIS (the pair): one alone is not
+// judged, and so is a direct restriction that is not in force, since a
+// stale CIS cannot say that nothing else applies.
+func TestRecheckOnAStaleCISJudgesTheANSPsDirectRestriction(t *testing.T) {
+	g := newRig()
+	s, st, _ := newService(g)
+	d, _, err := submit(t, s, baseRequest())
+	if err != nil || d.State != StateAccepted {
+		t.Fatalf("%v %+v", err, d)
+	}
+	g.cis.basis.Stale = true
+	g.cis.features = []cis.ZoneCandidate{restriction(t, "TRS010", "active").candidate(t)}
+	if r, err := s.Recheck(t.Context(), d.IntentID, Cause{Kind: CauseRestriction}); err != nil || r.Outcome != RecheckNotJudged || st.byID[d.IntentID].Version != 1 {
+		t.Fatalf("the CISP's restriction on a stale CIS: %+v %v", r, err)
+	}
+	ended := restriction(t, "TRS011", "ended").candidate(t)
+	ended.Entry.Direct = true
+	g.cis.features = []cis.ZoneCandidate{ended}
+	if r, err := s.Recheck(t.Context(), d.IntentID, Cause{Kind: CauseRestriction}); err != nil || r.Outcome != RecheckNotJudged || st.byID[d.IntentID].Version != 1 {
+		t.Fatalf("a direct restriction not in force on a stale CIS: %+v %v", r, err)
+	}
+	direct := restriction(t, "TRS012", "active").candidate(t)
+	direct.Entry.Direct = true
+	g.cis.features = []cis.ZoneCandidate{restriction(t, "TRS010", "active").candidate(t), direct}
+	r, err := s.Recheck(t.Context(), d.IntentID, Cause{Kind: CauseRestriction})
+	if err != nil || r.Outcome != RecheckWithdrawn || r.Notice == nil || r.Notice.RestrictionID != "TRS012" {
+		t.Fatalf("the ANSP's direct activation on a stale CIS: %+v %v", r, err)
+	}
+	rec := st.byID[d.IntentID]
+	if rec.LocalState != StateWithdrawn || rec.Version != 2 ||
+		slices.ContainsFunc(rec.Decision.Conflicts, func(c Conflict) bool { return c.Ref == "TRS010" }) {
+		t.Fatalf("withdrawn %s v%d %+v", rec.LocalState, rec.Version, rec.Decision.Conflicts)
+	}
+	if g.counters.Get("intent_recheck_direct_judged_stale") != 1 {
+		t.Fatalf("counters %v", g.counters.Snapshot())
+	}
+}
+
 // A new PROHIBITED zone withdraws as a restriction does (PLAN §15.1
 // Q20), and a U-space airspace published since the authorisation over
 // an intent authorised outside one withdraws it too: the DSS

@@ -61,7 +61,7 @@ func TestOutgoingTokens(t *testing.T) {
 	if err := os.WriteFile(secret, []byte("s3cret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Config{TokenIssuers: []string{"https://auth.example=https://auth.example/jwks"}, TokenClientSecretFile: secret, SystemID: "USSP-DEV"}
+	cfg := config.Config{TokenIssuers: []string{"https://auth.example=https://auth.example/jwks"}, TokenClientSecretFile: secret, SystemID: "DEV01"}
 	if o, err := outgoingTokens(cfg); o == nil || err != nil {
 		t.Fatalf("configured: %v %v", o, err)
 	}

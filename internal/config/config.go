@@ -102,7 +102,7 @@ type Config struct {
 	MonitorStatusBucketMaxBytes    int    `env:"USSP_MONITOR_STATUS_BUCKET_MAX_BYTES" default:"4194304" by:"all" min:"1048576" max:"1099511627776" unit:"bytes" help:"size bound of the monitor_status bucket, reserved in the JetStream file store; a full bucket refuses puts"`
 	FlightBindingBucketMaxBytes    int    `env:"USSP_FLIGHT_BINDING_BUCKET_MAX_BYTES" default:"67108864" by:"all" min:"1048576" max:"1099511627776" unit:"bytes" help:"size bound of the flight_binding bucket, reserved in the JetStream file store; a full bucket refuses puts"`
 
-	SystemID                string   `env:"USSP_SYSTEM_ID" default:"USSP-DEV" by:"api,rid-sp,monitor,dss-sync" help:"the USSP code from the authority's certificate (M8); never an audience"`
+	SystemID                string   `env:"USSP_SYSTEM_ID" default:"DEV01" by:"api,rid-sp,monitor,dss-sync" help:"the USSP code from the authority's certificate (M8); never an audience"`
 	Audiences               []string `env:"USSP_AUDIENCES" by:"api,telemetry-ingest,rid-sp,traffic-ws" help:"hosts accepted as JWT aud, comma-separated: the public host and a lab alias (M18)"`
 	TokenIssuers            []string `env:"USSP_TOKEN_ISSUERS" by:"api,telemetry-ingest,rid-sp,monitor,traffic-ws" kind:"issuers" help:"allow-listed token issuers as iss=jwks_url, comma-separated; the first is the token service for outgoing calls"`
 	CISNotifyIssuers        []string `env:"USSP_CIS_NOTIFY_ISSUERS" by:"api" kind:"issuers" help:"issuers of CIS change notifications (the CISP, the ANSP) as iss=jwks_url, comma-separated"`
@@ -113,6 +113,8 @@ type Config struct {
 	CISBBox                 string   `env:"USSP_CIS_BBOX" by:"api" help:"box of the CIS change subscription as min_lng,min_lat,max_lng,max_lat in WGS84 degrees; empty is everywhere"`
 	CISPublisherKeys        []string `env:"USSP_CIS_PUBLISHER_KEYS" by:"api" kind:"issuers" help:"JWKS of the CIS publishers as authority=jwks_url,ansp=jwks_url: a dataset version is used only when its X-Publisher-Signature verifies with its publisher's key (the authority for zones, uspace_airspace and ussp_list, the ANSP for restrictions); otherwise it is held"`
 	CISPublisherSigMaxAgeS  int      `env:"USSP_CIS_PUBLISHER_SIG_MAX_AGE_S" default:"31622400" by:"api" min:"300" max:"315360000" unit:"s" help:"how old the iat of a publisher signature may be when this USSP first reads its version; the CISP forwards the signature made at publication, so it is as old as the version (default 366 days)"`
+	CISDirectMax            int      `env:"USSP_CIS_DIRECT_MAX" default:"500" by:"api" min:"1" max:"100000" help:"restrictions held from the ANSP's degraded direct delivery (02 F2 failure rule, M5) and pulls waiting for it; past it a direct notification is answered 503 and the ANSP retries, and with as many held a further one is not applied and is retried (E-10)"`
+	CISDirectKeepS          int      `env:"USSP_CIS_DIRECT_KEEP_S" default:"86400" by:"api" min:"60" max:"2592000" unit:"s" help:"how long a direct restriction that is over (ended, cancelled, past ends_at) is kept (an end longer, while the CISP still holds an older version of it in force), and how long a pull that fails is retried; pending GCAA: the spec names no figure, the default is spec 02 F3's 24 h notification retry window"`
 	CISReconcileS           int      `env:"USSP_CIS_RECONCILE_S" default:"60" by:"api" min:"5" max:"60" unit:"s" help:"period of the conditional pull of every CIS dataset that bounds what a missed change notification costs (spec 02 F3: at most 60 s)"`
 	CertificateID           string   `env:"USSP_CERTIFICATE_ID" by:"api" help:"the id of this USSP's certificate at the authority (32 hex characters), named by the Art. 7(6) operating-status notices; unset, no notice can be sent and /readyz says so"`
 	AuthorityBaseURL        string   `env:"USSP_AUTHORITY_BASE_URL" by:"api" kind:"url" help:"authority base URL (F8 registry, occurrences, status)"`
@@ -235,6 +237,12 @@ func (c Config) validate() error {
 		// CLAUDE.md rule 10: two trees, two databases, never one.
 		errs = append(errs, &core.FieldError{Field: "USSP_TS_URL", Reason: "must name a different database from USSP_PG_URL"})
 	}
+	if !systemIDRe.MatchString(c.SystemID) {
+		// The authority refuses any other code (its certificates.code
+		// and the ussp-<code>-<nn> client id, M8, M24): a USSP named
+		// otherwise could never be certified or issued a token there.
+		errs = append(errs, core.Fieldf("USSP_SYSTEM_ID", "must be the authority's certificate code: one to eight upper-case letters A-Z and digits"))
+	}
 	if c.CertificateID != "" && !certificateIDRe.MatchString(c.CertificateID) {
 		errs = append(errs, core.Fieldf("USSP_CERTIFICATE_ID", "must be the 32 hexadecimal characters of the authority's certificate id"))
 	}
@@ -248,6 +256,10 @@ func (c Config) validate() error {
 	}
 	return errors.Join(errs...)
 }
+
+// systemIDRe is the authority's certificate code (uspace-authority
+// internal/certs codePattern, M8).
+var systemIDRe = regexp.MustCompile(`^[A-Z0-9]{1,8}$`)
 
 // certificateIDRe is the authority's CertificateID (its OpenAPI).
 var certificateIDRe = regexp.MustCompile(`^[0-9a-f]{32}$`)

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -30,7 +31,7 @@ func TestDefaultsLoadFromAnEmptyEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c.LogLevel != "info" || c.MaxBodyBytes != 1<<20 || c.ShutdownTimeoutS != 15 || c.APIAddr != ":8080" ||
-		c.TSDBWriterAddr != ":8086" || c.MTLSMode != "required" || c.AuthorityPush != "off" || c.SystemID != "USSP-DEV" {
+		c.TSDBWriterAddr != ":8086" || c.MTLSMode != "required" || c.AuthorityPush != "off" || c.SystemID != "DEV01" {
 		t.Fatalf("defaults: %+v", c)
 	}
 }
@@ -201,6 +202,27 @@ func TestCertificateID(t *testing.T) {
 	}
 	for _, bad := range []string{"0123456789ABCDEF0123456789ABCDEF", "123", "0123456789abcdef0123456789abcdeg"} {
 		if _, err := LoadFrom(env(map[string]string{"USSP_CERTIFICATE_ID": bad})); err == nil || !strings.Contains(err.Error(), "USSP_CERTIFICATE_ID") {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+}
+
+// USSP_SYSTEM_ID is the authority's certificate code (audit M-2: the
+// authority refuses USSP-DEV, so the old default could never be
+// certified there). E-01 pair: the default and valid codes load, and
+// the default derives a client id of the authority's form.
+func TestSystemIDIsTheAuthoritysCode(t *testing.T) {
+	c, err := LoadFrom(env(nil))
+	if err != nil || !regexp.MustCompile(`^ussp-[A-Z0-9]{1,8}-[0-9]{2}$`).MatchString("ussp-"+c.SystemID+"-01") {
+		t.Fatalf("default %q: %v", c.SystemID, err)
+	}
+	for _, good := range []string{"DEV01", "STG01", "A", "ABCD1234"} {
+		if c, err := LoadFrom(env(map[string]string{"USSP_SYSTEM_ID": good})); err != nil || c.SystemID != good {
+			t.Errorf("%q: %v", good, err)
+		}
+	}
+	for _, bad := range []string{"USSP-DEV", "dev01", "ABCDEFGHI", "A B", "ÄBC", "STG_01"} {
+		if _, err := LoadFrom(env(map[string]string{"USSP_SYSTEM_ID": bad})); err == nil || !strings.Contains(err.Error(), "USSP_SYSTEM_ID") {
 			t.Errorf("%q: %v", bad, err)
 		}
 	}

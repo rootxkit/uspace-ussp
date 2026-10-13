@@ -43,7 +43,7 @@ system: ussp
 scopes:
   openAuthorityFlights: [rid.display_provider]
 EOF
-echo 'USSP_SYSTEM_ID=USSP-DEV' >"$lab/deploy/demo.env.example"
+echo 'USSP_SYSTEM_ID=DEV01' >"$lab/deploy/demo.env.example"
 
 # ---- a fake suite: records its arguments and env file, exits FAKE_RC ------------
 suite="$work/suite.sh"
@@ -115,16 +115,16 @@ hook_rc() {
 # What the fake suite was handed (empty when it did not run).
 handed_overrides() { if [ -f "$work/env" ]; then sed -n 's/^USSP_CONFORMANCE_OVERRIDES=//p' "$work/env"; fi; }
 handed_args() { if [ -f "$work/args" ]; then cat "$work/args"; fi; }
-ext=(USSP_CONFORMANCE_BASE_URL="$target" USSP_CONFORMANCE_SYSTEM_ID=USSP-TEST-01)
+ext=(USSP_CONFORMANCE_BASE_URL="$target" USSP_CONFORMANCE_SYSTEM_ID=TEST01)
 
 # ---- configuration errors: exit 2, nothing run ---------------------------------
 rm -f "$work/args"
 hook_rc 2 "LAB_DIR that does not exist is refused" LAB_DIR="$work/nowhere"
 hook_rc 2 "an external target without its push declared is refused" "${ext[@]}"
 hook_rc 2 "a push value other than on or off is refused" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=maybe
-hook_rc 2 "a production-shaped system id is refused" USSP_CONFORMANCE_BASE_URL="$target" USSP_CONFORMANCE_SYSTEM_ID=USSP-GE-01 USSP_CONFORMANCE_AUTHORITY_PUSH=off
+hook_rc 2 "a production-shaped system id is refused" USSP_CONFORMANCE_BASE_URL="$target" USSP_CONFORMANCE_SYSTEM_ID=GE01 USSP_CONFORMANCE_AUTHORITY_PUSH=off
 hook_rc 2 "an empty system id is refused" USSP_CONFORMANCE_BASE_URL="$target" USSP_CONFORMANCE_SYSTEM_ID= USSP_CONFORMANCE_AUTHORITY_PUSH=off
-hook_rc 2 "a base URL that is not http(s) is refused" USSP_CONFORMANCE_BASE_URL=ftp://x USSP_CONFORMANCE_SYSTEM_ID=USSP-DEV USSP_CONFORMANCE_AUTHORITY_PUSH=off
+hook_rc 2 "a base URL that is not http(s) is refused" USSP_CONFORMANCE_BASE_URL=ftp://x USSP_CONFORMANCE_SYSTEM_ID=DEV01 USSP_CONFORMANCE_AUTHORITY_PUSH=off
 if [ -e "$work/args" ]; then fail "the suite ran on a configuration error"; else pass "the suite never ran on a configuration error"; fi
 
 # ---- the push declaration -------------------------------------------------------
