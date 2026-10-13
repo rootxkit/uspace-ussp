@@ -7,6 +7,33 @@ additively within `/v1`.
 
 ## [Unreleased]
 
+### Added
+
+- The InterUSS automated-testing interfaces `uss_qualifier` drives
+  (WP-21, PLAN D13 and §6.4): `cmd/test-interfaces`
+  (`ussp-test-interfaces`, image `uspace-ussp-testif`) serves RID
+  injection, RID observation and `flight_planning` v1 from the pinned
+  InterUSS files (`api/standards/interuss/`, automated_testing_interfaces
+  `17502448`) on its own listener. It is an operator client of this
+  USSP's published API and nothing else: an injected flight is
+  `telemetry/v1` on `WS /v1/telemetry` at its timestamps, a flight plan
+  an `intent/request/v1` on `/v1/intents` whose decision is the plan's
+  result, an observation `GET /v1/traffic/snapshot` with a staff
+  session. It refuses to start (exit 2) without `USSP_TEST_INTERFACES=on`
+  and a `USSP_SYSTEM_ID` containing `TEST` or `DEV`, admits only the
+  pinned files' scopes (outside the catalogue), and is not in the
+  production image or compose. `ussp-test-interfaces seed` creates the
+  conformance profile's test operator (`deploy/conformance/test-operator.yaml`)
+  through the national API. scd v1 is not built.
+- `make conformance` runs the test-interfaces process in the stack,
+  checks every declared interface answers 401 without a credential, runs
+  the lab's `uss_qualifier` `f3411-sp.yaml`, `f3548-scd.yaml` and
+  `f3411-dp.yaml` with its mock USS and folds the reports into the run
+  (`CONFORMANCE_QUALIFIER=off` skips them); the `conformance` workflow
+  does the same with a raised step timeout. CI builds, pushes and signs
+  the testif image and checks the production image has no
+  `ussp-test-interfaces` (`scripts/check-images.sh`).
+
 ### Security
 
 - The telemetry, traffic, alert and authority-flight streams judge the
