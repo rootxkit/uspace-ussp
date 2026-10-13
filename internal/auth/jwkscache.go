@@ -3,17 +3,23 @@ package auth
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	coreauth "github.com/rootxkit/uspace-core/auth"
+	"github.com/rootxkit/uspace-core/core"
 )
 
 // Counters of the persisted JWKS (PLAN §15.2 Q35 b).
@@ -28,6 +34,11 @@ const (
 	// CounterJWKSCacheRefused counts stored JWKS not used: unreadable,
 	// for another issuer, or older than CacheMaxAge.
 	CounterJWKSCacheRefused = "jwks_cache_refused"
+	// CounterJWKSCacheMACMismatch counts stored JWKS refused because
+	// their MAC is missing or is not this process's under CacheKey:
+	// written by someone without the key (any user of the NATS account
+	// can write a KV bucket), or altered since. Never used.
+	CounterJWKSCacheMACMismatch = "jwks_cache_mac_mismatch"
 	// CounterJWKSCacheExpired counts tokens refused because the only keys
 	// of their issuer are a stored JWKS past CacheMaxAge.
 	CounterJWKSCacheExpired = "jwks_cache_expired"
@@ -53,11 +64,56 @@ type JWKSStore interface {
 	Put(ctx context.Context, key string, value []byte) error
 }
 
-// CachedJWKS is one issuer's JWKS as the store holds it.
+// CachedJWKS is one issuer's JWKS as the store holds it. JWKS is the
+// document exactly as fetched (base64 on the wire, so the bytes the MAC
+// covers are the bytes read back); MAC is HMAC-SHA256 under the
+// process's CacheKey over the store key, the issuer, FetchedAt and JWKS
+// (jwksMAC).
 type CachedJWKS struct {
-	Issuer    string          `json:"issuer"`
-	FetchedAt time.Time       `json:"fetched_at"`
-	JWKS      json.RawMessage `json:"jwks"`
+	Issuer    string    `json:"issuer"`
+	FetchedAt time.Time `json:"fetched_at"`
+	JWKS      []byte    `json:"jwks"`
+	MAC       []byte    `json:"mac"`
+}
+
+// JWKSCacheKeyBytes is the length of the key that binds a stored JWKS.
+const JWKSCacheKeyBytes = 32
+
+// maxJWKSCacheKeyFileBytes bounds the key file read.
+const maxJWKSCacheKeyFileBytes = 1024
+
+// LoadJWKSCacheKey reads the key that binds this process's stored JWKS:
+// a file holding the base64 of exactly JWKSCacheKeyBytes bytes
+// (USSP_JWKS_CACHE_KEY_FILE). It never says what the file holds.
+func LoadJWKSCacheKey(path string) ([]byte, error) {
+	f, err := os.Open(path) //nolint:gosec // the path is the operator's configuration
+	if err != nil {
+		return nil, core.Fieldf("USSP_JWKS_CACHE_KEY_FILE", "%q cannot be read", path)
+	}
+	defer func() { _ = f.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(f, maxJWKSCacheKeyFileBytes+1))
+	if err != nil || len(raw) > maxJWKSCacheKeyFileBytes {
+		return nil, core.Fieldf("USSP_JWKS_CACHE_KEY_FILE", "%q cannot be read or is over %d bytes", path, maxJWKSCacheKeyFileBytes)
+	}
+	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(raw)))
+	if err != nil || len(key) != JWKSCacheKeyBytes {
+		return nil, core.Fieldf("USSP_JWKS_CACHE_KEY_FILE", "must hold the base64 of exactly %d bytes", JWKSCacheKeyBytes)
+	}
+	return key, nil
+}
+
+// jwksMAC is the MAC of a stored JWKS: HMAC-SHA256 under key over a
+// domain tag, the store key it is written under, the issuer, the fetch
+// time and the document, each length-prefixed, so an entry can be moved
+// neither to another key nor to another issuer.
+func jwksMAC(key []byte, storeKey string, c CachedJWKS) []byte {
+	m := hmac.New(sha256.New, key)
+	for _, part := range [][]byte{[]byte("uspace-ussp/jwks_cache/v1"), []byte(storeKey), []byte(c.Issuer),
+		[]byte(c.FetchedAt.UTC().Format(time.RFC3339Nano)), c.JWKS} {
+		m.Write(binary.BigEndian.AppendUint64(nil, uint64(len(part))))
+		m.Write(part)
+	}
+	return m.Sum(nil)
 }
 
 // JWKSCacheKey is an issuer's key in the store: a hash, since an issuer
@@ -92,6 +148,13 @@ func (s storedJWKS) RoundTrip(r *http.Request) (*http.Response, error) {
 		Body: io.NopCloser(strings.NewReader(string(body))), Request: r}, nil
 }
 
+func (v *Verifier) logger() *slog.Logger {
+	if v.cfg.Logger != nil {
+		return v.cfg.Logger
+	}
+	return slog.New(slog.DiscardHandler)
+}
+
 func (v *Verifier) maxAge() time.Duration {
 	if v.cfg.CacheMaxAge > 0 {
 		return v.cfg.CacheMaxAge
@@ -121,7 +184,9 @@ func (v *Verifier) persist(ctx context.Context, iss string, doc []byte, now time
 	}
 	v.saving[iss] = true
 	v.mu.Unlock()
-	data, err := json.Marshal(CachedJWKS{Issuer: iss, FetchedAt: now.UTC(), JWKS: doc})
+	entry := CachedJWKS{Issuer: iss, FetchedAt: now.UTC(), JWKS: doc}
+	entry.MAC = jwksMAC(v.cfg.CacheKey, JWKSCacheKey(iss), entry)
+	data, err := json.Marshal(entry)
 	if err != nil {
 		v.counters.Inc(CounterJWKSCacheSaveFailed)
 		v.mu.Lock()
@@ -171,7 +236,14 @@ func (v *Verifier) restore(ctx context.Context) {
 		if err != nil || !found {
 			continue
 		}
-		c, err := decodeCached(data, iss)
+		c, err := decodeCached(data, iss, v.cfg.CacheKey, JWKSCacheKey(iss))
+		if errors.Is(err, errJWKSMAC) {
+			// Never used, whatever it holds: not written by this process.
+			v.counters.Inc(CounterJWKSCacheMACMismatch)
+			v.logger().LogAttrs(ctx, slog.LevelError, "stored JWKS refused: its MAC is not this process's",
+				slog.String("issuer", iss), slog.String("bucket_key", JWKSCacheKey(iss)))
+			continue
+		}
 		if err != nil || now.Sub(c.FetchedAt) >= v.maxAge() || c.FetchedAt.After(now) {
 			v.counters.Inc(CounterJWKSCacheRefused)
 			continue
@@ -227,13 +299,21 @@ func (v *Verifier) cachedAt(iss string) (time.Time, bool) {
 	return at, ok
 }
 
-func decodeCached(data []byte, iss string) (CachedJWKS, error) {
+// errJWKSMAC is a stored JWKS whose MAC is missing or wrong.
+var errJWKSMAC = errors.New("the MAC is not this process's")
+
+// decodeCached reads a stored entry and checks its MAC under key before
+// anything it says is believed.
+func decodeCached(data []byte, iss string, key []byte, storeKey string) (CachedJWKS, error) {
 	var c CachedJWKS
 	if len(data) > maxCachedJWKSBytes {
 		return c, errors.New("over the bound")
 	}
 	if err := json.Unmarshal(data, &c); err != nil {
 		return c, err
+	}
+	if len(key) != JWKSCacheKeyBytes || !hmac.Equal(c.MAC, jwksMAC(key, storeKey, c)) {
+		return CachedJWKS{}, errJWKSMAC
 	}
 	if c.Issuer != iss || c.FetchedAt.IsZero() || len(c.JWKS) == 0 {
 		return c, errors.New("not this issuer's")

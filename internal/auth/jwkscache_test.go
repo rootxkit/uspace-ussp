@@ -1,8 +1,12 @@
 package auth
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -36,14 +40,51 @@ func (s *memJWKS) Put(_ context.Context, key string, value []byte) error {
 	return nil
 }
 
+// testCacheKey is the key of the processes of these tests;
+// otherCacheKey one they do not hold.
+var (
+	testCacheKey  = bytes.Repeat([]byte{0x5a}, JWKSCacheKeyBytes)
+	otherCacheKey = bytes.Repeat([]byte{0xa5}, JWKSCacheKeyBytes)
+)
+
+// cacheKeyFor is testCacheKey with a store, nil without.
+func cacheKeyFor(store JWKSStore) []byte {
+	if store == nil {
+		return nil
+	}
+	return testCacheKey
+}
+
 // cachedVerifier is newVerifier with the store (nil: none).
 func cachedVerifier(t *testing.T, eco *ecosystem, c *clock, store JWKSStore) *Verifier {
 	t.Helper()
 	cfg := coreauth.Config{Audiences: []string{ownHost, labAlias}, StrictSessionClaims: true, Now: c.fn(),
 		Issuers: map[string]coreauth.IssuerConfig{eco.URL: {JWKSURL: eco.JWKS}}}
-	v, err := NewVerifier(context.Background(), VerifierConfig{Ecosystem: cfg, RetryInterval: 10 * time.Millisecond, Cache: store})
+	v, err := NewVerifier(context.Background(), VerifierConfig{Ecosystem: cfg, RetryInterval: 10 * time.Millisecond,
+		Cache: store, CacheKey: cacheKeyFor(store)})
 	mustNoErr(t, err)
 	return v
+}
+
+// sealed is entry as a process holding key writes it under storeKey.
+func sealed(t *testing.T, key []byte, storeKey string, entry CachedJWKS) []byte {
+	t.Helper()
+	entry.MAC = jwksMAC(key, storeKey, entry)
+	data, err := json.Marshal(entry)
+	mustNoErr(t, err)
+	return data
+}
+
+// forger is an issuer that says it is iss and signs with a key of its
+// own (key A, not the ecosystem's): a leaked credential's planted keys.
+func forger(t *testing.T, iss string) (*coreauth.Issuer, []byte) {
+	t.Helper()
+	k, _, _ := testKeys(t)
+	f, err := coreauth.NewIssuer(iss, k, signingKey(t, k).KID)
+	mustNoErr(t, err)
+	doc, err := json.Marshal(f.JWKS())
+	mustNoErr(t, err)
+	return f, doc
 }
 
 // startDuringOutage is a process started while the token service is
@@ -146,14 +187,119 @@ func TestAStoredJWKSThatDoesNotReadIsRefused(t *testing.T) {
 		"no fetch time":  {Issuer: eco.URL, JWKS: json.RawMessage(`{"keys":[]}`)},
 	} {
 		store := &memJWKS{}
-		data, err := json.Marshal(value)
-		mustNoErr(t, err)
-		mustNoErr(t, store.Put(ctx, JWKSCacheKey(eco.URL), data))
+		// Written by this process (its MAC verifies): what it says is
+		// then checked.
+		mustNoErr(t, store.Put(ctx, JWKSCacheKey(eco.URL), sealed(t, testCacheKey, JWKSCacheKey(eco.URL), value)))
 		eco.Down()
 		v := startDuringOutage(t, eco, c, store)
 		if v.cached.Load() != nil || v.Counters().Get(CounterJWKSCacheRefused) != 1 {
 			t.Fatalf("%s: used (%v)", name, v.Counters().Snapshot())
 		}
+	}
+}
+
+// Any user of the NATS account can write jwks_cache, so a leaked
+// process credential could plant a JWKS of its own keys under an
+// issuer's key: a verifier restarted during that issuer's outage would
+// then accept the tokens those keys sign. A stored JWKS is used only
+// when its MAC verifies under the process's own key. Planted (no MAC,
+// another key's MAC, a genuine entry moved from another key, a genuine
+// entry with its keys replaced): refused, counted, and the forged token
+// refused. The pair: the genuine entry restores and verifies the
+// issuer's token, and still not the forged one.
+func TestAPlantedJWKSIsRefusedAndAGenuineOneRestores(t *testing.T) {
+	c := newClock(t0())
+	ctx := context.Background()
+	eco := newEcosystem(t)
+	genuine := &memJWKS{}
+	first := cachedVerifier(t, eco, c, genuine)
+	mustNoErr(t, first.BuildEcosystem(ctx))
+	first.saves.Wait()
+	raw, found, err := genuine.Get(ctx, JWKSCacheKey(eco.URL))
+	if err != nil || !found {
+		t.Fatalf("nothing stored: %v", err)
+	}
+	var stored CachedJWKS
+	mustNoErr(t, json.Unmarshal(raw, &stored))
+	eco.Down()
+	c.Add(time.Minute)
+
+	forged, forgedKeys := forger(t, eco.URL)
+	forgedToken := func() string {
+		tok, err := forged.Issue("forged", ownHost, nil, 10*time.Minute, c.Now())
+		mustNoErr(t, err)
+		return tok
+	}
+	plant := CachedJWKS{Issuer: eco.URL, FetchedAt: c.Now(), JWKS: forgedKeys}
+	unsealed, err := json.Marshal(plant)
+	mustNoErr(t, err)
+	swapped := stored
+	swapped.JWKS = forgedKeys
+	swappedData, err := json.Marshal(swapped)
+	mustNoErr(t, err)
+	for name, data := range map[string][]byte{
+		"no MAC":                    unsealed,
+		"another key's MAC":         sealed(t, otherCacheKey, JWKSCacheKey(eco.URL), plant),
+		"moved from another key":    sealed(t, testCacheKey, JWKSCacheKey("https://other.test"), plant),
+		"the keys of a genuine one": swappedData,
+	} {
+		store := &memJWKS{}
+		mustNoErr(t, store.Put(ctx, JWKSCacheKey(eco.URL), data))
+		v := startDuringOutage(t, eco, c, store)
+		if v.cached.Load() != nil || v.Counters().Get(CounterJWKSCacheMACMismatch) != 1 || v.Counters().Get(CounterJWKSCacheRestored) != 0 {
+			t.Fatalf("%s: used (%v)", name, v.Counters().Snapshot())
+		}
+		_, err := v.Verify(ctx, forgedToken())
+		if te := tokenErr(t, err); te.Counter != CounterJWKSUnavailable {
+			t.Fatalf("%s: a forged token: %+v", name, te)
+		}
+	}
+
+	v := startDuringOutage(t, eco, c, genuine)
+	if v.Counters().Get(CounterJWKSCacheRestored) != 1 || v.Counters().Get(CounterJWKSCacheMACMismatch) != 0 {
+		t.Fatalf("the genuine entry was not restored: %v", v.Counters().Snapshot())
+	}
+	if cl, err := v.Verify(ctx, eco.token(t, "cisp-01", ownHost, nil, c.Now())); err != nil || cl.Subject != "cisp-01" {
+		t.Fatalf("the issuer's token with the genuine stored keys: %v %+v", err, cl)
+	}
+	if _, err := v.Verify(ctx, forgedToken()); err == nil {
+		t.Fatal("a forged token verified with the genuine stored keys")
+	}
+}
+
+// A store is used only with the key that binds it; the key file holds
+// the base64 of exactly 32 bytes, and an error never repeats what the
+// file holds.
+func TestTheJWKSCacheKeyIsRequiredAndRead(t *testing.T) {
+	cfg := coreauth.Config{Audiences: []string{ownHost}}
+	if _, err := NewVerifier(context.Background(), VerifierConfig{Ecosystem: cfg, Cache: &memJWKS{}}); err == nil ||
+		!strings.Contains(err.Error(), "USSP_JWKS_CACHE_KEY_FILE") {
+		t.Fatalf("a store without a key: %v", err)
+	}
+	if _, err := NewVerifier(context.Background(), VerifierConfig{Ecosystem: cfg, Cache: &memJWKS{}, CacheKey: testCacheKey}); err != nil {
+		t.Fatalf("a store with a key: %v", err)
+	}
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		mustNoErr(t, os.WriteFile(p, []byte(body), 0o600))
+		return p
+	}
+	key, err := LoadJWKSCacheKey(write("good", base64.StdEncoding.EncodeToString(testCacheKey)+"\n"))
+	if err != nil || !bytes.Equal(key, testCacheKey) {
+		t.Fatalf("a good key file: %v", err)
+	}
+	for name, body := range map[string]string{
+		"short":    base64.StdEncoding.EncodeToString(testCacheKey[:16]),
+		"not b64":  "not base64 at all",
+		"too long": strings.Repeat("A", 2048),
+	} {
+		if _, err := LoadJWKSCacheKey(write(name, body)); err == nil || strings.Contains(err.Error(), body) {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	if _, err := LoadJWKSCacheKey(filepath.Join(dir, "absent")); err == nil {
+		t.Fatal("an absent key file was read")
 	}
 }
 

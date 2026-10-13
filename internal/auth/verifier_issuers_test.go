@@ -44,7 +44,7 @@ func newTwoIssuersWith(t *testing.T, store JWKSStore) *twoIssuers {
 		f.authority.URL: {JWKSURL: f.authority.JWKS},
 		f.lab.URL:       {JWKSURL: f.lab.JWKS},
 	}}
-	f.v, err = NewVerifier(context.Background(), VerifierConfig{Ecosystem: cfg, RetryInterval: 10 * time.Millisecond, Cache: store,
+	f.v, err = NewVerifier(context.Background(), VerifierConfig{Ecosystem: cfg, RetryInterval: 10 * time.Millisecond, Cache: store, CacheKey: cacheKeyFor(store),
 		OnBuilt: func(set string, _ *core.Counters) { f.mu.Lock(); f.built = append(f.built, set); f.mu.Unlock() }})
 	mustNoErr(t, err)
 	return f

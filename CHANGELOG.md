@@ -156,6 +156,14 @@ additively within `/v1`.
   from its fetch (default 86400, spec 05 §6, pending GCAA; 0 turns it
   off). `/readyz` says `jwks` degraded with the stored keys' age rather
   than down. New: `USSP_JWKS_CACHE_BUCKET_MAX_BYTES` (1 MiB).
+  Every stored JWKS is bound by an HMAC-SHA256 under the process's own
+  key (`USSP_JWKS_CACHE_KEY_FILE`, the base64 of 32 bytes) over its
+  bucket key, issuer, fetch time and document, and is used only when
+  that MAC verifies: any user of the NATS account can write a bucket,
+  so a leaked process credential could otherwise plant a JWKS that
+  verifies forged tokens after a restart during an issuer's outage. A
+  mismatch is refused, logged and counted (`jwks_cache_mac_mismatch`);
+  without the key file nothing is stored or used from the store.
 - `GET /v1/admin/inputs` (additive): each monitor instance may carry
   `input_down_since`, `input_back_at`, `last_input_down_since` and
   `lost_link_suspended_until`; the monitor's state is `down` with a

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"slices"
@@ -88,6 +89,15 @@ type VerifierConfig struct {
 	// most CacheMaxAge (DefaultJWKSCacheMaxAge, 05 §6) from its fetch.
 	Cache       JWKSStore
 	CacheMaxAge time.Duration
+	// CacheKey binds every JWKS this process writes to Cache with an
+	// HMAC, checked before a stored one is used: any user of the NATS
+	// account can write the bucket, so an entry without this process's
+	// MAC is refused (jwks_cache_mac_mismatch). JWKSCacheKeyBytes long,
+	// from USSP_JWKS_CACHE_KEY_FILE; NewVerifier refuses a Cache
+	// without it.
+	CacheKey []byte
+	// Logger, when set, says a refused stored JWKS.
+	Logger *slog.Logger
 }
 
 // Verifier verifies every token this system accepts with core's
@@ -145,6 +155,9 @@ type Verifier struct {
 func NewVerifier(ctx context.Context, cfg VerifierConfig) (*Verifier, error) {
 	if cfg.RetryInterval <= 0 {
 		cfg.RetryInterval = DefaultRetryInterval
+	}
+	if cfg.Cache != nil && len(cfg.CacheKey) != JWKSCacheKeyBytes {
+		return nil, core.Fieldf("USSP_JWKS_CACHE_KEY_FILE", "a stored JWKS is used only with a key of %d bytes that binds it", JWKSCacheKeyBytes)
 	}
 	if cfg.ProbeClient == nil {
 		cfg.ProbeClient = &http.Client{
