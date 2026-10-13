@@ -66,9 +66,16 @@ func (iw *inputWatch) feed(e *Engine, now time.Time, lostLinkS float64) conforma
 	defer iw.mu.Unlock()
 	if !up {
 		if iw.downSince.IsZero() {
+			// The input is read after now was taken, so a since after now
+			// is the link going down in between, not a time in the
+			// future: only one after the clock read here is too.
+			read := e.now()
+			if read.Before(now) {
+				read = now
+			}
 			iw.downSince = since
-			if iw.downSince.IsZero() || iw.downSince.After(now) {
-				iw.downSince = now
+			if iw.downSince.IsZero() || iw.downSince.After(read) {
+				iw.downSince = read
 			}
 			e.Counters.Inc(CounterInputOutage)
 			e.logger().LogAttrs(context.Background(), slog.LevelError,

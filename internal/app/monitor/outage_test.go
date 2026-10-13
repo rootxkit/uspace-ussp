@@ -204,6 +204,44 @@ func TestAnOutageBetweenTwoReadsIsSeen(t *testing.T) {
 	}
 }
 
+// A tick takes its now before it reads the input, so the link can go
+// down between the two: its since is after the tick's now, and is when
+// the outage began. It was taken for a time in the future and replaced
+// by the tick's now, an outage said as starting before it did (the
+// intermittent failure of the Q35 scenario, whose clock moves between a
+// tick's two reads). Only a since after the clock read with the input
+// is in the future.
+func TestAnOutageThatBeganAfterTheTicksNowStartsAtItsSince(t *testing.T) {
+	t0 := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	clk := newClock(t0)
+	e := &Engine{Now: clk.Now}
+	e.init()
+	link := &busLink{}
+	link.set(true, t0.Add(-time.Minute))
+	e.iw.input = link.Link
+	tickNow := clk.Now()
+	clk.Add(time.Second)
+	link.set(false, clk.Now())
+	if f := e.iw.feed(e, tickNow, 15); !f.Down {
+		t.Fatalf("the input is down: %+v", f)
+	}
+	if o := e.iw.outage(clk.Now(), 15); o.DownSince == nil || !o.DownSince.Equal(t0.Add(time.Second)) {
+		t.Fatalf("down since %v, want %v", o.DownSince, t0.Add(time.Second))
+	}
+
+	// The pair: a since later than the clock itself is in the future and
+	// is said as the clock's now.
+	e2 := &Engine{Now: clk.Now}
+	e2.init()
+	link2 := &busLink{}
+	link2.set(false, clk.Now().Add(time.Hour))
+	e2.iw.input = link2.Link
+	e2.iw.feed(e2, tickNow, 15)
+	if o := e2.iw.outage(clk.Now(), 15); o.DownSince == nil || !o.DownSince.Equal(clk.Now()) {
+		t.Fatalf("a future since: down since %v, want the clock's %v", o.DownSince, clk.Now())
+	}
+}
+
 func mustEncode(t *testing.T, st bus.MonitorStatus) []byte {
 	t.Helper()
 	b, err := bus.EncodeMonitorStatus(st)
