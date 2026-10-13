@@ -1,0 +1,12 @@
+conformance 20261013T224233Z-ussp-conformance: ussp-conformance (ussp) at https://ussp.uspace.test:9543: fail, 5 pass, 2 fail, 4 not applicable
+  fail           F3411-SP             21/17/0  1 failed check(s); 22 failed check(s); 25 failed check(s); and 1 more
+  fail           F3548-SCD            15/2/0  1 failed check(s); 9 failed check(s)
+  not_applicable NAT-PRECONDITION     0/0/0  no check of this run applied (decided by national.stale_precondition)
+  not_applicable REG-NOPII            0/0/1  the target file supplies no operator token (the contract states no scope)
+  not_applicable F3548-CP             0/0/1  uss_qualifier v0.36.0 has no constraint processing requirement set (requirements/astm/f3548/v21 holds dss_provider and scd only)
+  not_applicable A11Y-PUBLIC          (informative) 0/0/1  the target file names no public page
+  pass           NAT-UNAUTH           46/0/1
+  pass           NAT-SCOPE            2/0/15
+  pass           NAT-NOTFOUND         2/0/5
+  pass           NAT-INVALID          3/0/15
+  pass           NAT-SUCCESS          3/0/30

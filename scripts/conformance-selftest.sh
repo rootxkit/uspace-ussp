@@ -283,13 +283,15 @@ hook_rc 0 "CONFORMANCE_BASELINE=none runs without one" "${ext[@]}" USSP_CONFORMA
 if handed_args | grep -q '^--baseline$'; then fail "--baseline given with none"; else pass "--baseline absent with none"; fi
 
 # The repository's own baseline: the default, valid, and F3411-SP and
-# F3548-SCD accepted only as blocked by Q34, never as a pass.
+# F3548-SCD recorded as known failures tracked by WP-21's findings (R6,
+# R7; R8) with their failing checks, never as a pass.
 repo_bl="$here/deploy/conformance/baseline.json"
-for id in F3411-SP F3548-SCD; do
-  if jq -e --arg id "$id" '.requirements[$id] | .status == "not_applicable" and (.note | test("Q34"))' "$repo_bl" >/dev/null; then
-    pass "deploy/conformance/baseline.json records $id not applicable, blocked by Q34"
+for pair in "F3411-SP|R6" "F3411-SP|R7" "F3548-SCD|R8"; do
+  id="${pair%%|*}"; r="${pair#*|}"
+  if jq -e --arg id "$id" --arg r "$r" '.requirements[$id] | .status == "fail" and (.note | test("WP-21")) and (.note | contains($r + " ")) and (.note | test("not a pass")) and ((.failing // []) | length > 0)' "$repo_bl" >/dev/null; then
+    pass "deploy/conformance/baseline.json records $id known failing, tracked by WP-21 $r, with its failing checks"
   else
-    fail "deploy/conformance/baseline.json: $id is not recorded not applicable with Q34"
+    fail "deploy/conformance/baseline.json: $id is not recorded known failing with WP-21 $r and its failing checks"
   fi
 done
 hook_rc 0 "the repository's baseline is the default and valid" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off

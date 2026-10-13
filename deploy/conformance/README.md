@@ -150,12 +150,18 @@ the run incomplete (exit 3), and one that passed in it and does not
 pass now is a regression (exit 1). Without it a release tag's run could
 never be green while Q34 is open.
 
-It accepts, each with its note: `F3411-SP` and `F3548-SCD`, **blocked
-by the owner decision Q34**; `F3548-CP` (nothing upstream to run);
-`NAT-PRECONDITION` and `REG-NOPII` (fixtures, open). None of them is a
-pass: the report's verdict stays `incomplete`, and the hook prints
-`NOT CHECKED, NOT A PASS: <id>: <note>` for each, as a warning
-annotation in the workflow and in `run-info.txt`. The hook refuses a
-baseline that records a requirement not applicable without a note. A
+It accepts not applicable, each with its note: `F3548-CP` (nothing
+upstream to run); `NAT-PRECONDITION` and `REG-NOPII` (fixtures, open).
+None of them is a pass: the report's verdict stays `incomplete`, and the
+hook prints `NOT CHECKED, NOT A PASS: <id>: <note>` for each, as a
+warning annotation in the workflow and in `run-info.txt`. It records
+`F3411-SP` and `F3548-SCD` (run against the test interfaces since WP-21,
+no longer blocked by Q34) as **known failures**, tracked by WP-21's R6,
+R7 and R8 (`docs/RUNBOOKS/WP-21.md`), with the checks that fail: the
+suite fails the run on any other failing check, and the hook prints
+`KNOWN FAILING, NOT A PASS: <id>: <note>` for each, as a warning
+annotation and in `run-info.txt`. The hook refuses a baseline that
+records a requirement not applicable without a note, or a known failure
+without its note or its failing checks. A
 change to it is a reviewed change: rewrite it from a new reviewed report
 only, and drop an entry when its blocker is resolved.
