@@ -12,7 +12,10 @@
 # unchanged, 0, 1 and 3 alike; the reviewed baseline is handed to the
 # suite and refused when it accepts a requirement not applicable without
 # saying why, and a gate requirement it accepts is named as not a pass
-# while a run that checked everything names none.
+# while a run that checked everything names none; a declared InterUSS
+# interface that answers 401 without a credential runs the suite and one
+# that does not stops it, and uss_qualifier reports made elsewhere are
+# handed to the suite (WP-21).
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 hook="$here/scripts/conformance.sh"
@@ -67,7 +70,12 @@ import http.server, os, sys
 code_file = sys.argv[1]
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        code = int(open(code_file).read().strip()) if self.path == "/v1/authority/flights" else 404
+        if self.path == "/v1/authority/flights":
+            code = int(open(code_file).read().strip())
+        else:
+            # The InterUSS test interfaces refuse a call without a
+            # credential; anything else is not served.
+            code = 401 if self.path.startswith("/test/") else 404
         self.send_response(code)
         self.send_header("Content-Type", "application/problem+json")
         self.end_headers()
@@ -95,6 +103,8 @@ hook_rc() {
   local rc=0
   env -u USSP_CONFORMANCE_BASE_URL -u USSP_CONFORMANCE_AUTHORITY_PUSH -u USSP_CONFORMANCE_SYSTEM_ID \
     -u CONFORMANCE_ENV -u CONFORMANCE_ALLOW_INCOMPLETE -u CONFORMANCE_KEEP -u CONFORMANCE_BASELINE \
+    -u CONFORMANCE_QUALIFIER -u CONFORMANCE_QUALIFIER_REPORTS -u USSP_CONFORMANCE_RID_INJECTION_URL \
+    -u USSP_CONFORMANCE_RID_OBSERVATION_URL -u USSP_CONFORMANCE_FLIGHT_PLANNING_URL \
     LAB_DIR="$lab" CONFORMANCE_SUITE_BIN="$suite" CONFORMANCE_OUT="$work/out" \
     FAKE_ARGS="$work/args" FAKE_ENV="$work/env" "$@" "$hook" run >"$work/log" 2>&1 || rc=$?
   if [ "$rc" = "$want" ]; then pass "$what (exit $rc)"; else
@@ -136,6 +146,34 @@ hook_rc 1 "declared off, the target answers 401 (the push is on): stopped" "${ex
 echo 404 >"$work/code"
 hook_rc 1 "declared on, the target answers 404 (the push is off): stopped" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=on
 if [ -e "$work/args" ]; then fail "the suite ran on a false declaration"; else pass "the suite never ran on a false declaration"; fi
+
+# ---- the InterUSS interfaces (WP-21) --------------------------------------------
+echo 404 >"$work/code"
+hook_rc 0 "a declared interface that answers 401 without a credential: the suite runs" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off \
+  USSP_CONFORMANCE_FLIGHT_PLANNING_URL="$target/test/flight_planning/v1" USSP_CONFORMANCE_RID_INJECTION_URL="$target/test/rid/v1/injection"
+if grep -q "interface flight_planning declared and served" "$work/log" && grep -q "interface rid_injection declared and served" "$work/log"; then
+  pass "both declarations were checked"
+else
+  fail "the declarations were not checked: $(cat "$work/log")"
+fi
+rm -f "$work/args"
+hook_rc 1 "a declared interface that is not served (404): stopped" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off \
+  USSP_CONFORMANCE_RID_INJECTION_URL="$target/not/served"
+if [ -e "$work/args" ]; then fail "the suite ran on a false interface declaration"; else pass "the suite never ran on a false interface declaration"; fi
+echo '{"report": {}}' >"$work/qualifier-report.json"
+hook_rc 0 "a uss_qualifier report made elsewhere is folded in" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off \
+  CONFORMANCE_QUALIFIER_REPORTS="F3411-SP=$work/qualifier-report.json"
+if handed_args | grep -q '^--qualifier-report$' && handed_args | grep -q 'F3411-SP=.*qualifier-report.json$'; then
+  pass "--qualifier-report F3411-SP handed to the suite"
+else
+  fail "--qualifier-report missing: $(handed_args | tr '\n' ' ')"
+fi
+hook_rc 0 "without reports, none is handed" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off
+if handed_args | grep -q '^--qualifier-report$'; then fail "--qualifier-report handed unasked"; else pass "--qualifier-report absent"; fi
+if grep -q "not run in this invocation" "$work/log"; then pass "the run says uss_qualifier was not run in this invocation"; else fail "no 'not run in this invocation': $(cat "$work/log")"; fi
+hook_rc 2 "a report that cannot be read is refused" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_QUALIFIER_REPORTS="F3411-SP=$work/none.json"
+hook_rc 2 "a report without its requirement is refused" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_QUALIFIER_REPORTS="$work/qualifier-report.json"
+hook_rc 2 "CONFORMANCE_QUALIFIER other than on or off is refused" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_QUALIFIER=sometimes
 
 # ---- the suite's exit status, unchanged -----------------------------------------
 for rc in 1 3 0; do

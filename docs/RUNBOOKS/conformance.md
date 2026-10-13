@@ -30,6 +30,18 @@ applicable), Go 1.27.1, Docker Desktop 28.5.1 on Windows 11.
 
 ## Runs
 
+### 2026-10-13, the first run with uss_qualifier (WP-21)
+
+`make conformance` on `3aa257b` with the test interfaces and the lab's
+`uss_qualifier` v0.36.0 (`docs/RUNBOOKS/WP-21.md`, record
+`docs/RUNBOOKS/WP-21/20261013T163501Z-ussp-conformance/`): exit 1.
+`F3411-SP` fail (6 injections answered 503: the test operator has no
+client, the registry not validating it), `F3548-SCD` fail (no scenario:
+the lab's qualifier environment lacks a scope), both regressions against
+the baseline, which keeps them not applicable until they pass;
+NAT-UNAUTH, NAT-SCOPE, NAT-NOTFOUND, NAT-INVALID, NAT-SUCCESS pass;
+NAT-PRECONDITION, REG-NOPII, F3548-CP not applicable as before.
+
 ### 2026-10-05, a release tag's run, gated on the reviewed baseline
 
 Workflow run 37325524348, dispatched on `8f5b9b0` with

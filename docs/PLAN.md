@@ -255,7 +255,10 @@ Dependency rules: `internal/*` packages import `uspace-core` freely and
 each other only downward in this order: `config, obs, httpx, cell, policy`
 ← `store, bus, auth` ← `cis, registry, sources, accounts` ← `intent, flights,
 telemetry` ← `conformance, traffic, geo, alerts, ridsp, dss, peers, manned`
-← `coordination, records, occurrence, status, weather, admin, national`.
+← `coordination, records, occurrence, status, weather, admin, national`
+← `testif` (D13: of `national` only its generated client, and none of
+`telemetry, flights, ridsp, intent, dss, conformance, traffic, store, bus`;
+those seven safety packages never name the test interfaces).
 No package imports a `cmd/`. `web/` imports nothing from Go: it consumes
 generated types only. A cycle is a build failure (`scripts/check-deps.sh`
 runs `go list -deps` against this order).

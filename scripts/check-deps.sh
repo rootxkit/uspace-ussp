@@ -5,6 +5,11 @@
 # and is imported only by cmd/; nothing imports cmd/. A package outside
 # the table fails until it is added to it here and in the plan. Go
 # itself refuses cycles; this enforces the direction.
+#
+# internal/testif (the test-interfaces process, D13) sits above the
+# national API's client and imports no safety package, no store and no
+# bus, and of internal/national only the generated client: it reaches the
+# USSP as an operator does, through the published API (brief WP-21).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 GO=${GO:-go}
@@ -17,7 +22,13 @@ declare -A layer=(
   [intent]=3 [flights]=3 [telemetry]=3
   [conformance]=4 [traffic]=4 [geo]=4 [alerts]=4 [ridsp]=4 [dss]=4 [peers]=4 [manned]=4
   [coordination]=5 [records]=5 [occurrence]=5 [status]=5 [weather]=5 [admin]=5 [national]=5
-  [app]=6 [testfakes]=6
+  [testif]=6 [testfakes]=6
+  [app]=7
+)
+
+# Packages a layer would allow but a package must not import (D13).
+declare -A forbidden=(
+  [testif]="telemetry flights ridsp intent dss conformance traffic store bus"
 )
 
 top() { # the first path element under internal/, or "" outside internal/
@@ -54,6 +65,18 @@ while read -r pkg imports; do
       continue
     fi
     [ "$from" = "$to" ] && continue
+    if [ -n "${forbidden[$from]+x}" ]; then
+      if [[ " ${forbidden[$from]} " == *" $to "* ]]; then
+        echo "check-deps: $pkg imports $imp; internal/$from never imports internal/$to (docs/PLAN.md D13)" >&2
+        status=1
+        continue
+      fi
+      if [ "$from" = testif ] && [ "$to" = national ] && [ "$imp" != "$module/internal/national/client" ]; then
+        echo "check-deps: $pkg imports $imp; internal/testif imports only internal/national/client of the national API (D13)" >&2
+        status=1
+        continue
+      fi
+    fi
     if [ -z "${layer[$to]+x}" ]; then
       echo "check-deps: internal/$to is not in the import order (docs/PLAN.md §4)" >&2
       status=1
@@ -64,11 +87,29 @@ while read -r pkg imports; do
   done
 done <<<"$listing"
 
+# No test branch in a safety package (D13, T12): the packages that judge
+# never name the test interfaces, so nothing there can tell an injected
+# flight or a test plan from an operator's.
+safety=(telemetry flights ridsp intent dss conformance traffic)
+pattern='testif|test_interfaces|inject'
+for p in "${safety[@]}"; do
+  if [ ! -d "internal/$p" ]; then
+    echo "check-deps: internal/$p is missing; the test-branch check reads the wrong tree" >&2
+    status=1
+    continue
+  fi
+  if hits="$(grep -rniE "$pattern" "internal/$p")"; then
+    echo "check-deps: internal/$p names the test interfaces ($pattern), a test branch in a safety package (D13):" >&2
+    echo "$hits" >&2
+    status=1
+  fi
+done
+
 if [ "$checked" -eq 0 ]; then
   echo "check-deps: no package listed; nothing was checked" >&2
   exit 1
 fi
 if [ "$status" -eq 0 ]; then
-  echo "check-deps: $checked packages follow the import order of docs/PLAN.md §4"
+  echo "check-deps: $checked packages follow the import order of docs/PLAN.md §4; internal/{$(IFS=,; echo "${safety[*]}")} name no test interface"
 fi
 exit "$status"

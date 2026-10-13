@@ -1,0 +1,19 @@
+# oapi-codegen configuration for internal/stdapi/interuss/ridobservation (docs/PLAN.md
+# D13, §6.4; brief WP-21): the Remote ID display data observation types
+# (rid/v1/commons.yaml), types only, beside the server of
+# oapi-codegen.ridobservation.server.yaml.
+# All of it comes from the pinned InterUSS automated-testing interface files in
+# api/standards/interuss/ (SOURCE). Every file of the package is generated
+# into the same Go package, so each sibling file's references resolve to
+# the package itself ("-"); enum values are prefixed with their type
+# because the siblings reuse value names. Run through scripts/generate.sh;
+# never edit the output.
+package: ridobservation
+generate:
+  models: true
+import-mapping:
+  commons.yaml: "-"
+compatibility:
+  always-prefix-enum-values: true
+output-options:
+  skip-prune: true

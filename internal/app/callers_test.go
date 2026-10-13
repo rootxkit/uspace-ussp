@@ -63,8 +63,9 @@ func TestOnlyTheMigrateSubcommandMigrates(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("migrator called from %v, want only %v (store.go is Store.Migrate delegating to the pool, and nothing calls Store.Migrate)", got, want)
 	}
-	if got := callers(t, regexp.MustCompile(`func main\(\)`), "cmd"); len(got) != 8 {
-		t.Fatalf("the cmd/ walk found %d mains, want 8: %v", len(got), got)
+	// The seven processes, ussp-dev and test-interfaces (D13).
+	if got := callers(t, regexp.MustCompile(`func main\(\)`), "cmd"); len(got) != 9 {
+		t.Fatalf("the cmd/ walk found %d mains, want 9: %v", len(got), got)
 	}
 }
 

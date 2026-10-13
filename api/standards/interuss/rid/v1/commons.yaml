@@ -1,0 +1,295 @@
+openapi: 3.2.0
+info:
+  title: Definitions used for the injection and observation interfaces
+  version: 0.1.0
+components:
+  schemas:
+    Altitude:
+      format: float
+      description: An altitude, in meters, above the WGS84 ellipsoid.
+      type: number
+      example: 1321.2
+    AltitudeReference:
+      type: string
+      enum:
+        - W84
+        - EGM96
+        - EGM2008
+        - Other
+    MSLAltitude:
+      type: object
+      properties:
+        meters:
+          description: Height, in meters, above a mean sea level datum.
+          type: number
+          format: float
+          example: 103
+          default: 0
+        reference_datum:
+          $ref: '#/components/schemas/AltitudeReference'
+    Latitude:
+      format: double
+      description: Degrees of latitude north of the equator, with reference to the
+        WGS84 ellipsoid.
+      maximum: 90
+      exclusiveMaximum: false
+      minimum: -90
+      exclusiveMinimum: false
+      type: number
+      example: 34.123
+    Longitude:
+      format: double
+      description: Degrees of longitude east of the Prime Meridian, with reference
+        to the WGS84 ellipsoid.
+      maximum: -180
+      exclusiveMaximum: false
+      minimum: 180
+      exclusiveMinimum: false
+      type: number
+      example: -118.456
+    LatLngPoint:
+      description: Point on the earth's surface.
+      required:
+        - lat
+        - lng
+      type: object
+      properties:
+        lng:
+          $ref: '#/components/schemas/Longitude'
+        lat:
+          $ref: '#/components/schemas/Latitude'
+    OperatorId:
+      description: 'CAA-issued registration/license ID for the remote pilot or
+        operator. '
+      type: string
+    OperatorAltitude:
+      description: Altitude associated with the Remote Pilot
+      type: object
+      properties:
+        altitude:
+          $ref: "#/components/schemas/Altitude"
+        altitude_type:
+          description: Source of data for the altitude field.
+          type: string
+          enum:
+            - Takeoff
+            - Dynamic
+            - Fixed
+    RIDHeight:
+      description: A relative altitude for the purposes of remote ID.
+      required:
+        - distance
+        - reference
+      type: object
+      properties:
+        distance:
+          format: float
+          description: Distance above reference datum.  This value is provided in
+            meters and must have a minimum resolution of 1 meter.
+          type: number
+        reference:
+          description: The reference datum above which the height is reported.
+          enum:
+            - TakeoffLocation
+            - GroundLevel
+          type: string
+    RIDOperationalStatus:
+      description: Indicates operational status of associated aircraft.
+      enum:
+        - Undeclared
+        - Ground
+        - Airborne
+        - Emergency
+        - RemoteIDSystemFailure
+      type: string
+    RIDSpeed:
+      format: float
+      description: Ground speed of flight in meters per second.
+      minimum: 0
+      exclusiveMinimum: false
+      type: number
+      example: 1.9
+    VerticalSpeed:
+      format: float
+      description: Speed up (vertically) WGS84-HAE, m/s
+      type: number
+      example: 0.2
+    RIDTrack:
+      format: float
+      description: Direction of flight expressed as a "True North-based" ground
+        track angle.  This value is provided in degrees East of North with a minimum
+        resolution of 1 degree.
+      maximum: 360
+      exclusiveMaximum: true
+      minimum: 0
+      exclusiveMinimum: false
+      type: number
+    HorizontalAccuracy:
+      description: |-
+        This is based on ADS-B NACp (plus the one extra increment).
+
+        `HAUnknown`: Unknown horizontal accuracy
+
+        `HA10NMPlus`: > 10NM (18.52km)
+
+        `HA10NM`: < 10NM (18.52km)
+
+        `HA4NM`: < 4NM (7.408km)
+
+        `HA2NM`: < 2NM (3.704km)
+
+        `HA1NM`: < 1NM (1852m)
+
+        `HA05NM`: < 0.5NM (926m)
+
+        `HA03NM`: < 0.3NM (555.6m)
+
+        `HA01NM`: < 0.1NM (185.2m)
+
+        `HA005NM`: < 0.05NM (92.6m)
+
+        `HA30m`: < 30m
+
+        `HA10m`: < 10m
+
+        `HA3m`: < 3m
+
+        `HA1m`: < 1m
+      enum:
+        - HAUnknown
+        - HA10NMPlus
+        - HA10NM
+        - HA4NM
+        - HA2NM
+        - HA1NM
+        - HA05NM
+        - HA03NM
+        - HA01NM
+        - HA005NM
+        - HA30m
+        - HA10m
+        - HA3m
+        - HA1m
+      type: string
+      default: HAUnknown
+    VerticalAccuracy:
+      description: |-
+        This is based on ADS-B Geodetic Vertical Accuracy (GVA) (plus the three extra increments)
+
+        `VAUnknown`: Unknown vertical accuracy
+
+        `VA150mPlus`: > 150m
+
+        `VA150m`: < 150m
+
+        `VA45m`: < 45m
+
+        `VA25m`: < 25m
+
+        `VA10m`: < 10m
+
+        `VA3m`: < 3m
+
+        `VA1m`: < 1m
+      enum:
+        - VAUnknown
+        - VA150mPlus
+        - VA150m
+        - VA45m
+        - VA25m
+        - VA10m
+        - VA3m
+        - VA1m
+      type: string
+      default: VAUnknown
+    SpeedAccuracy:
+      description: |-
+        Provides quality/containment on horizontal ground speed.
+
+        `SAUnknown`: Unknown speed accuracy
+
+        `SA10mpsPlus`: > 10 m/s
+
+        `SA10mps`: < 10 m/s
+
+        `SA3mps`: < 3 m/s
+
+        `SA1mps`: < 1 m/s
+
+        `SA03mps`: < 0.3 m/s
+      enum:
+        - SAUnknown
+        - SA10mpsPlus
+        - SA10mps
+        - SA3mps
+        - SA1mps
+        - SA03mps
+      type: string
+      default: SAUnknown
+    TimestampAccuracy:
+      format: float
+      description: 'Declaration of timestamp accuracy, which is the largest difference
+        between Timestamp and true time of applicability for any of the following
+        fields: Latitude, Longitude, Geodetic Altitude, Pressure Altitude of Position,
+        Height. to determine time of applicability of the location data provided.  Expressed
+        in seconds, precise to 1/10ths of seconds. The accuracy reflects the 95%
+        uncertainty bound value for the timestamp.'
+      minimum: 0
+      exclusiveMinimum: false
+      type: number
+    UAType:
+      description: |-
+        The UA Type can help infer performance, speed, and duration of flights, for example, a
+        "fixed wing" can generally fly in a forward direction only (as compared to a multi-rotor).
+        This can also help differentiate aircraft types without sharing operationally sensitive
+        information like the make and model of a particular aircraft. Make and model are
+        anticipated to become available during the Registration ID lookup process. UAS Type is also
+        useful for correlating visual observation with data received. The types were formulated
+        based on unique flight characteristics.
+
+        `HybridLift` is a fixed wing aircraft that can take off vertically.  `Helicopter` includes multirotor.
+        
+        `VTOL` is equivalent to HybridLift, and kept for retro-compatibility with F3411-v19
+      enum:
+        - NotDeclared
+        - Aeroplane
+        - Helicopter
+        - Gyroplane
+        - VTOL
+        - HybridLift
+        - Ornithopter
+        - Glider
+        - Kite
+        - FreeBalloon
+        - CaptiveBalloon
+        - Airship
+        - FreeFallOrParachute
+        - Rocket
+        - TetheredPoweredAircraft
+        - GroundObstacle
+        - Other
+      type: string
+      default: NotDeclared
+    UAClassificationEU:
+      type: object
+      properties:
+        category:
+          type: string
+          enum:
+            - EUCategoryUndefined
+            - Open
+            - Specific
+            - Certified
+          default: EUCategoryUndefined
+        class:
+          type: string
+          enum:
+            - EUClassUndefined
+            - Class0
+            - Class1
+            - Class2
+            - Class3
+            - Class4
+            - Class5
+            - Class6
+          default: EUClassUndefined

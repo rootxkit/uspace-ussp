@@ -1,0 +1,26 @@
+# oapi-codegen configuration for internal/stdapi/interuss/ridinjection (docs/PLAN.md
+# D13, §6.4; brief WP-21): the Remote ID test data injection types
+# (rid/v1/injection.yaml and rid/v1/commons.yaml), types only. The file
+# declares the path parameters of PUT /tests/{test_id} and DELETE
+# /tests/{test_id}/{version} as "in: query", from which no server can be
+# generated (oapi-codegen refuses the operations); internal/testif serves
+# those two routes on the pinned path shape with these types, and the
+# operations are left out here.
+# All of it comes from the pinned InterUSS automated-testing interface files in
+# api/standards/interuss/ (SOURCE). Every file of the package is generated
+# into the same Go package, so each sibling file's references resolve to
+# the package itself ("-"); enum values are prefixed with their type
+# because the siblings reuse value names. Run through scripts/generate.sh;
+# never edit the output.
+package: ridinjection
+generate:
+  models: true
+import-mapping:
+  commons.yaml: "-"
+compatibility:
+  always-prefix-enum-values: true
+output-options:
+  skip-prune: true
+  exclude-operation-ids:
+    - createTest
+    - deleteTest

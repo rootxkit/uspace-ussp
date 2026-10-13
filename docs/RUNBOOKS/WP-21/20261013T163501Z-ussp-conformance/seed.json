@@ -1,0 +1,12 @@
+{
+  "operator_id": "a5601d46-c903-4964-8537-e3bd95717aaa",
+  "operator_status": "pending_validation",
+  "validation_status": "unknown",
+  "client_id": "unavailable",
+  "bound": [],
+  "not_bound": [],
+  "console_session": true,
+  "notes": [
+    "the operator is pending_validation, not active: no client can be created (the registry must answer valid for GEO-TEST-WP21-0001; the lab registry seed, brief WP-21 'Blocked by')"
+  ]
+}
