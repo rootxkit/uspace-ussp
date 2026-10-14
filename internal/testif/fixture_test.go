@@ -3,6 +3,7 @@ package testif
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -56,5 +57,71 @@ func TestFixtureRefusesWhatIsNotATestOperator(t *testing.T) {
 		if _, err := LoadFixture(p); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+}
+
+// annex_iv.open_subcategory is one of A1, A2 and A3 or absent (an open
+// plan is then refused, TestPlanOpenSubcategoryIsTheFixtures).
+func TestFixtureOpenSubcategory(t *testing.T) {
+	b, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The profile's file without the member, whether it names one or not.
+	bare := regexp.MustCompile(`(?m)^\s*open_subcategory:.*\n`).ReplaceAllString(string(b), "")
+	if f, err := LoadFixture(writeFile(t, "bare.yaml", bare)); err != nil || f.AnnexIV.OpenSubcategory != "" {
+		t.Fatalf("a fixture without open_subcategory: %+v %v", f.AnnexIV, err)
+	}
+	for v, ok := range map[string]bool{"A3": true, "A1": true, "A4": false, "a3": false, "STS-01": false} {
+		s := strings.Replace(bare, "\nannex_iv:\n", "\nannex_iv:\n  open_subcategory: "+v+"\n", 1)
+		p := filepath.Join(t.TempDir(), "f.yaml")
+		if err := os.WriteFile(p, []byte(s), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		f, err := LoadFixture(p)
+		if (err == nil) != ok || ok && f.AnnexIV.OpenSubcategory != v {
+			t.Errorf("open_subcategory %s: %v", v, err)
+		}
+	}
+}
+
+// annex_iv.open_subcategory_by_class names class labels of
+// intent/request/v1 only, each onto A1, A2 or A3: the profile's table is
+// read as declared, and a table naming another class or subcategory is
+// refused at load, not at the first plan.
+func TestFixtureOpenSubcategoryByClass(t *testing.T) {
+	f, err := LoadFixture(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.AnnexIV.OpenSubcategoryByClass; len(got) != 3 || got["C0"] != "A1" || got["C1"] != "A1" || got["C2"] != "A2" {
+		t.Errorf("the profile's table: %v", got)
+	}
+	b, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for table, ok := range map[string]bool{"{C0: A1}": true, "{C7: A1}": false, "{C0: A4}": false, "{Other: A3}": false} {
+		s := regexp.MustCompile(`(?m)^(\s*open_subcategory_by_class:).*$`).ReplaceAllString(string(b), "${1} "+table)
+		if _, err := LoadFixture(writeFile(t, "f.yaml", s)); (err == nil) != ok {
+			t.Errorf("open_subcategory_by_class %s: %v", table, err)
+		}
+	}
+}
+
+// The committed profile fixture declares the open subcategory of a
+// class its table does not name (A3, pending GCAA), and the tests read
+// that file as committed: CI exercises the file the profile ships, not
+// a patched copy.
+func TestProfileFixtureIsCommitted(t *testing.T) {
+	f, err := LoadFixture(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.AnnexIV.OpenSubcategory != "A3" {
+		t.Errorf("deploy/conformance/test-operator.yaml annex_iv.open_subcategory is %q, want A3", f.AnnexIV.OpenSubcategory)
+	}
+	if got := profileFixture(t); filepath.Clean(got) != filepath.Clean(fixturePath) {
+		t.Errorf("the tests read %s, not the committed %s", got, fixturePath)
 	}
 }

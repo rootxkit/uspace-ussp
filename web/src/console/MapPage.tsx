@@ -15,7 +15,7 @@ import { AgeLegend, IdentificationLegend, TrackLegend } from "@rootxkit/uspace-u
 import { createTrackStore, subscribeFrame, useFeed, useNowMs, useStore, type ConsoleFrame } from "@rootxkit/uspace-ui/live";
 import type { BBox } from "@rootxkit/uspace-ui/map";
 import type { Trust } from "@rootxkit/uspace-ui/model";
-import { FeedStatusBar } from "@rootxkit/uspace-ui/status";
+import { FeedStatusBar, ThresholdsPanel } from "@rootxkit/uspace-ui/status";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@rootxkit/uspace-ui/ui";
 import { useRouter } from "next/navigation";
 import { useRuntimeConfig } from "@/components/Providers";
@@ -101,6 +101,8 @@ export function ConsoleMapPage() {
           <TrackLegend counts={trustCounts} />
           <IdentificationLegend />
           {feed.staleAfterS !== null && <AgeLegend staleAfterS={feed.staleAfterS} />}
+          {/* The CPA thresholds the monitor judges with, as the status frame carries them (audit M-5). */}
+          <ThresholdsPanel thresholds={feed.extras.thresholds} evaluationPeriodS={feed.extras.evaluationPeriodS} policyVersion={feed.policyVersion} />
         </div>
       </div>
       <section aria-labelledby="console-tracks-heading">

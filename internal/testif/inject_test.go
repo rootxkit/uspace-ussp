@@ -3,6 +3,7 @@ package testif
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"os"
 	"reflect"
@@ -42,12 +43,14 @@ func TestFrameOfMapsTheInjectedState(t *testing.T) {
 		t.Fatal(err)
 	}
 	ptr := func(v float64) *float64 { return &v }
-	ref := client.TakeoffLocation
 	ep := "e"
+	// The lab's states carry their height in the state's (v19) member,
+	// not in the position: F3411-22a has none to send
+	// (TestFrameOfTakesTheHeightFromThePosition).
 	want := client.TelemetryFrame{
 		Ts: time.Date(2026, 10, 13, 8, 0, 1, 500_000_000, time.UTC), Serial: "TEST-INJ-0001", Seq: 7, Epoch: &ep,
 		Position: client.TelemetryPosition{Lat: 41.7161, Lng: 44.8281}, AltWgs84M: ptr(652.5), AltPressureM: ptr(640),
-		HeightM: ptr(30.5), HeightRef: &ref, SpeedMs: ptr(1.9), TrackDeg: ptr(90), VspeedMs: ptr(0.2),
+		SpeedMs: ptr(1.9), TrackDeg: ptr(90), VspeedMs: ptr(0.2),
 		Status: client.TelemetryFrameStatusAirborne, AccuracyH: client.HA1m, AccuracyV: client.VA3m,
 		TimestampAccuracyS: ptr(0.1), OperatorPosition: op,
 	}
@@ -183,6 +186,12 @@ func TestInjectionStreamsTheFlightsAndEnds(t *testing.T) {
 	}
 	if one[0].Status != client.TelemetryFrameStatusGround {
 		t.Error("the earliest state is not sent first")
+	}
+	// The end frame is no new measurement: its sample is the last one's
+	// a millisecond later, not the time it was sent (the states here are
+	// a day old), so the SP's last timestamp stays the injected one.
+	if !one[3].Ts.Equal(one[2].Ts.Add(time.Millisecond)) || one[3].Position != one[2].Position {
+		t.Errorf("end frame at %s %+v, want the last state's %s + 1 ms at %+v", one[3].Ts, one[3].Position, one[2].Ts, one[2].Position)
 	}
 	if two := bySerial["TEST-WP21-0001"]; len(two) != 2 || two[1].End == nil || !*two[1].End {
 		t.Errorf("flight 2 frames %+v", two)
@@ -516,4 +525,240 @@ func TestInjectionFailsOnARefusalInFlight(t *testing.T) {
 		t.Errorf("the delete of the ended flight sent %d more frames", got-n)
 	}
 
+}
+
+// heldClock holds every wait for a time after now until open is closed:
+// a flight scheduled later does not fly while it is held.
+type heldClock struct {
+	mu   sync.Mutex
+	now  time.Time
+	open chan struct{}
+}
+
+func (c *heldClock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
+
+func (c *heldClock) Until(ctx context.Context, t time.Time) error {
+	if t.After(c.Now()) {
+		select {
+		case <-c.open:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	c.mu.Lock()
+	if t.After(c.now) {
+		c.now = t
+	}
+	c.mu.Unlock()
+	return ctx.Err()
+}
+
+// putWithin runs the PUT and fails the test when it does not answer
+// within bound: the injection is answered before a later flight flies.
+func putWithin(t *testing.T, ts *testServer, id string, body any, bound time.Duration) *httptestResult {
+	t.Helper()
+	got := make(chan *httptestResult, 1)
+	go func() {
+		w := ts.do(t, http.MethodPut, BaseInjection+"/tests/"+id, ScopeInjectTestData, body)
+		got <- &httptestResult{code: w.Code, body: w.Body.Bytes()}
+	}()
+	select {
+	case r := <-got:
+		return r
+	case <-time.After(bound):
+		t.Fatalf("PUT %s not answered within %v", id, bound)
+		return nil
+	}
+}
+
+// A flight whose first state is later than now is scheduled, not
+// awaited: the PUT answers at once (uss_qualifier's read timeout is
+// shorter than the acknowledgement bound, and a PUT that waited for the
+// first state was retried and refused out of order, WP-21 R7). Its
+// frames then go at their times. The awaited twin, a first state in the
+// past refused on the real path, is TestInjectionFailsWithTheUSSPsReason.
+func TestInjectionAnswersBeforeALaterFlightFlies(t *testing.T) {
+	p := labInjection(t)
+	p.RequestedFlights = p.RequestedFlights[:1] // first state 08:00:00.5
+	f := newFakeUSSP(t)
+	ts := newTestServer(t, f, nil)
+	clock := &heldClock{now: time.Date(2026, 10, 13, 7, 59, 58, 0, time.UTC), open: make(chan struct{})} // within the acknowledgement bound of the first state
+	ts.inject.clock = clock
+	res := putWithin(t, ts, "later", p, 5*time.Second)
+	if res.code != http.StatusOK {
+		t.Fatalf("PUT %d %s", res.code, res.body)
+	}
+	if n := len(f.received()); n != 0 {
+		t.Fatalf("%d frames sent before the first state's time", n)
+	}
+	close(clock.open)
+	ts.inject.work.Wait()
+	frames := f.received()
+	if len(frames) != 4 || frames[0].Backlog != nil || frames[3].End == nil || !*frames[3].End {
+		t.Fatalf("the scheduled flight did not fly at its times: %+v", frames)
+	}
+}
+
+// The first frame of a scheduled flight refused after the PUT answered
+// fails the test in flight, as a later frame's refusal does: counted,
+// the test held until its delete.
+func TestInjectionFailsWhenAScheduledFirstFrameIsRefused(t *testing.T) {
+	p := labInjection(t)
+	p.RequestedFlights = p.RequestedFlights[:1]
+	f := newFakeUSSP(t)
+	ts := newTestServer(t, f, nil)
+	clock := &heldClock{now: time.Date(2026, 10, 13, 7, 59, 58, 0, time.UTC), open: make(chan struct{})} // within the acknowledgement bound of the first state
+	ts.inject.clock = clock
+	res := putWithin(t, ts, "later", p, 5*time.Second)
+	if res.code != http.StatusOK {
+		t.Fatalf("PUT %d %s", res.code, res.body)
+	}
+	f.mu.Lock()
+	f.refuseFrom, f.refuseFromSeq = true, 0
+	f.mu.Unlock()
+	close(clock.open)
+	ts.inject.work.Wait()
+	if n := ts.counters.Snapshot()[CounterInjectionFailedLive]; n != 1 {
+		t.Errorf("%s = %d, want 1", CounterInjectionFailedLive, n)
+	}
+	for _, fr := range f.received() {
+		if fr.Seq > 0 {
+			t.Errorf("a frame past the refused first one was sent: seq %d", fr.Seq)
+		}
+	}
+	if again := put(t, ts, "later", p); again.code != http.StatusConflict {
+		t.Errorf("the failed test is not held until its delete: %d", again.code)
+	}
+}
+
+// F3411-22a has height only in the position (RIDAircraftPosition.height;
+// its RIDAircraftState has no height): an injected state's height member,
+// the v19 place the interface file still carries, is not the 22a
+// position's height and is not sent. The SP then serves the special
+// height, as uss_qualifier expects for a value not injected. The twin: a
+// position height is sent with its reference.
+func TestFrameOfTakesTheHeightFromThePosition(t *testing.T) {
+	ts := time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
+	lat, lng := 41.7, 44.8
+	stateOnly := inj.RIDAircraftState{Timestamp: &ts, Position: &inj.RIDAircraftPosition{Lat: &lat, Lng: &lng},
+		Height: &inj.RIDHeight{Distance: 50, Reference: inj.RIDHeightReferenceTakeoffLocation}}
+	f, err := FrameOf(stateOnly, "S", "e", 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.HeightM != nil || f.HeightRef != nil {
+		t.Errorf("the state's (v19) height was sent as the position's: %v %v", *f.HeightM, *f.HeightRef)
+	}
+	inPos := inj.RIDAircraftState{Timestamp: &ts, Position: &inj.RIDAircraftPosition{Lat: &lat, Lng: &lng,
+		Height: &inj.RIDHeight{Distance: 30.5, Reference: inj.RIDHeightReferenceGroundLevel}},
+		Height: &inj.RIDHeight{Distance: 50, Reference: inj.RIDHeightReferenceTakeoffLocation}}
+	g, err := FrameOf(inPos, "S", "e", 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.HeightM == nil || *g.HeightM != 30.5 || g.HeightRef == nil || *g.HeightRef != client.GroundLevel {
+		t.Errorf("the position's height was not sent: %v %v", g.HeightM, g.HeightRef)
+	}
+	inPos.Position.Height.Distance = -1000 // F3411's special height: unknown
+	if s, err := FrameOf(inPos, "S", "e", 0, nil); err != nil || s.HeightM != nil || s.HeightRef != nil {
+		t.Errorf("the special position height is not unknown: %+v %v", s, err)
+	}
+}
+
+// The ingest acknowledges an accepted sample only with its periodic
+// status (every 2 s). A live flight's samples still go at their own
+// times: a sample's decision is waited for only until the next one is
+// due, never the whole acknowledgement bound (WP-21: waiting it put a
+// 1 Hz flight's samples seconds behind their timestamps). The refused
+// twin, a refusal read before the next sample, is
+// TestInjectionFailsOnARefusalInFlight.
+func TestInjectionDoesNotWaitForAcknowledgementsBetweenSamples(t *testing.T) {
+	f := newFakeUSSP(t)
+	f.quiet, f.seen = true, make(chan struct{}, 16)
+	ts := newTestServer(t, f, nil) // acknowledgement bound 5 s
+	p := labInjection(t)
+	p.RequestedFlights = p.RequestedFlights[:1]
+	t0 := time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
+	for i := range p.RequestedFlights[0].Telemetry {
+		at := t0.Add(time.Duration(i+1) * 200 * time.Millisecond)
+		p.RequestedFlights[0].Telemetry[i].Timestamp = &at
+	}
+	ts.inject.clock = &recordingClock{now: t0}
+	began := time.Now()
+	if res := put(t, ts, "quiet", p); res.code != http.StatusOK {
+		t.Fatalf("%d %s", res.code, res.body)
+	}
+	deadline := time.After(3 * time.Second) // under one 5 s bound for the three samples
+	for range 3 {
+		select {
+		case <-f.seen:
+		case <-deadline:
+			t.Fatalf("the samples waited for acknowledgements the ingest gives only every 2 s: %d sent", len(f.received()))
+		}
+	}
+	t.Logf("3 samples in %v", time.Since(began).Round(time.Millisecond))
+	frames := f.received()
+	for i, fr := range frames[:3] {
+		if fr.Backlog != nil || fr.End != nil {
+			t.Errorf("sample %d went late (backlog) or as the end", i)
+		}
+	}
+	// The last sample's decision is still read before the end frame,
+	// within the bound (the quiet fake never acknowledges it: counted).
+	ts.inject.work.Wait()
+	if fr := f.received(); len(fr) != 4 || fr[3].End == nil || !*fr[3].End {
+		t.Fatalf("no end frame after the samples: %+v", fr)
+	}
+	if n := ts.counters.Snapshot()[CounterFramesNotAcked]; n != 1 {
+		t.Errorf("%s = %d, want 1 (the last sample)", CounterFramesNotAcked, n)
+	}
+}
+
+// lockedBuffer is a log sink the injector's goroutines may write to.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string { l.mu.Lock(); defer l.mu.Unlock(); return l.b.String() }
+
+// A scheduled flight whose samples the ingest never decides ends with no
+// end frame (there is no accepted sample to end at): that is said, at
+// warn with the serial and the samples sent, and counted, not left
+// silent. The pair: a scheduled flight whose samples are decided ends
+// with its end frame and says nothing of the kind.
+func TestInjectionSaysAFlightEndedWithNoDecidedSample(t *testing.T) {
+	for _, silent := range []bool{true, false} {
+		p := labInjection(t)
+		p.RequestedFlights = p.RequestedFlights[:1]
+		f := newFakeUSSP(t)
+		f.silent = silent
+		ts := newTestServer(t, f, func(c *Config) { c.AckTimeoutS = 1 })
+		var logs lockedBuffer
+		ts.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+		clock := &heldClock{now: time.Date(2026, 10, 13, 7, 59, 58, 0, time.UTC), open: make(chan struct{})}
+		ts.inject.clock = clock
+		if res := putWithin(t, ts, "undecided", p, 5*time.Second); res.code != http.StatusOK {
+			t.Fatalf("silent %v: PUT %d %s", silent, res.code, res.body)
+		}
+		close(clock.open)
+		ts.inject.work.Wait()
+		frames := f.received()
+		ended := len(frames) > 0 && frames[len(frames)-1].End != nil && *frames[len(frames)-1].End
+		said := strings.Contains(logs.String(), "flight ended with no sample decided accepted")
+		n := ts.counters.Snapshot()[CounterFlightEndedUndecided]
+		if silent {
+			if ended || len(frames) == 0 || !said || n != 1 || !strings.Contains(logs.String(), "serial=") {
+				t.Errorf("undecided: %d frames, end frame %v, logged %v, %s = %d\n%s", len(frames), ended, said, CounterFlightEndedUndecided, n, logs.String())
+			}
+		} else if !ended || said || n != 0 {
+			t.Errorf("decided: end frame %v, logged %v, %s = %d", ended, said, CounterFlightEndedUndecided, n)
+		}
+	}
 }

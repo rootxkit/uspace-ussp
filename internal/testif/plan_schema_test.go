@@ -101,6 +101,7 @@ func TestAnnexIVMappingIsTheSchemas(t *testing.T) {
 	check("mode", slices.Collect(maps.Values(modes)))
 	check("class_label", slices.Collect(maps.Values(classes)))
 	check("flight_type", []string{flightTypeNormal, flightTypeSpecial})
+	check("subcategory", openSubcategories)
 	fx, err := LoadFixture(fixturePath)
 	if err != nil {
 		t.Fatal(err)

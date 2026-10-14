@@ -18,14 +18,16 @@ USSP_WEB_API_URL=http://127.0.0.1:8080 USSP_WEB_SESSION_SECURE=false pnpm dev
 
 ## The kit
 
-`@rootxkit/uspace-ui` is the GitHub Release asset of `v0.1.0`, pinned by
+`@rootxkit/uspace-ui` is the GitHub Release asset of `v1.0.0`, pinned by
 URL in `package.json`; `pnpm-lock.yaml` records its sha512 integrity and
 `--frozen-lockfile` refuses other bytes (uspace-ui `docs/CONSUMING.md`
-§1). Its signed build provenance was checked before pinning:
+§1). Its `SHA256SUMS` and its signed build provenance were checked before
+pinning:
 
 ```
-gh release download v0.1.0 --repo rootxkit/uspace-ui --pattern 'rootxkit-uspace-ui-0.1.0.tgz'
-gh attestation verify rootxkit-uspace-ui-0.1.0.tgz --repo rootxkit/uspace-ui \
+gh release download v1.0.0 --repo rootxkit/uspace-ui
+sha256sum -c SHA256SUMS
+gh attestation verify rootxkit-uspace-ui-1.0.0.tgz --repo rootxkit/uspace-ui \
   --signer-workflow rootxkit/uspace-ui/.github/workflows/release.yml
 ```
 
@@ -87,9 +89,17 @@ source with its state and time, read from `GET /v1/admin/inputs`.
   `font-src 'self'`, `worker-src blob:`), fonts through `next/font/local`
   from the kit, the basemap at `/basemap/` from the deployment; the
   browser tests check that nothing leaves the origin.
-- The kit 0.1.0 has no drawing tool (KIT: pending uspace-ui): an outline
-  is points clicked on the map or typed; a circle is shown as its centre
-  and radius in words (drawing it would need geometry here).
+- An outline is drawn with the kit's `DrawLayer` (a click adds a vertex
+  or places the centre, a drag moves one) and typed with its
+  `OutlineFields`, at most the contract's 1000 vertices. A circle is
+  shown as its centre with its centre and radius in words: the kit draws
+  a circle's outline only when the API drew it, and this API draws none
+  (`docs/PLAN.md` §15.1 Q28).
+- The console's map and the portal's traffic page show the CPA
+  thresholds in force with the kit's `ThresholdsPanel`, as the traffic
+  stream's `console/status/v1` carries them (`thresholds{}`,
+  `evaluation_period_s`, the policy version); a frame without them says
+  so, and nothing is defaulted.
 
 ## Configuration (read at request time)
 

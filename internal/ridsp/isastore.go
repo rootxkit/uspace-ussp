@@ -39,6 +39,9 @@ type PlanStore interface {
 	// Enqueue queues an outbox item, idempotent by kind, entity and
 	// version (store.Enqueue).
 	Enqueue(ctx context.Context, kind, entityID string, version int64, payload any) (bool, error)
+	// EnqueueHeld is Enqueue with the item due hold after it is queued
+	// (store.EnqueueHeld).
+	EnqueueHeld(ctx context.Context, kind, entityID string, version int64, payload any, hold time.Duration) (bool, error)
 }
 
 // WorkStore is the relational database as the ISA worker sees it.

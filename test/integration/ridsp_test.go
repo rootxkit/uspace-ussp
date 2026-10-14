@@ -366,7 +366,21 @@ func TestIntegrationRIDSPNetworkIdentification(t *testing.T) {
 	}
 
 	r.fact(id, flights.EventEnded, at)
-	took = within(t, 20*time.Second, func() bool { _, ok := r.dss.ISAs()[isa.Id]; return !ok })
+	ended := time.Now()
+	// NET0610: the flight stays discoverable for the near-real-time
+	// period after it ends. The delete is queued, due a Horizon after the
+	// end, and the ISA is still in the DSS meanwhile; then it goes.
+	within(t, 20*time.Second, func() bool {
+		return count(t, relOwner(t), "SELECT count(*) FROM dss_outbox WHERE kind = 'isa_delete' AND entity_id = $1 AND done_at IS NULL AND next_at > now() + interval '30 seconds'", isa.Id) == 1
+	})
+	if _, ok := r.dss.ISAs()[isa.Id]; !ok {
+		t.Fatal("the ISA was deleted when the flight ended: a Display Provider no longer finds its last minute")
+	}
+	within(t, sp.Horizon+30*time.Second, func() bool { _, ok := r.dss.ISAs()[isa.Id]; return !ok })
+	took = time.Since(ended)
+	if took < sp.Horizon-10*time.Second {
+		t.Fatalf("ISA deleted %v after the flight ended, before the near-real-time period", took)
+	}
 	t.Logf("ISA deleted %v after the flight ended", took.Round(time.Millisecond))
 	within(t, 10*time.Second, func() bool { return dp.count() >= 2 })
 	dp.mu.Lock()

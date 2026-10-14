@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -84,7 +85,7 @@ func TestPlanAuthorisedActivatedClosed(t *testing.T) {
 	for k, want := range map[string]any{"client_ref": "fp:" + planID + ":1", "uas_serial": "TEST-WP21-0001", "mode": "VLOS",
 		"category": "open", "class_label": "C0", "identification_technology": "network", "endurance_s": 3000.0,
 		"loss_of_c2_procedure": "https://testdummy.interuss.org/emergency", "operator_reg": "GEOTESTWP210001",
-		"flight_type": "normal", "emergency_contact_ref": "TEST-EMERGENCY-CONTACT-0001"} {
+		"flight_type": "normal", "emergency_contact_ref": "TEST-EMERGENCY-CONTACT-0001", "subcategory": "A1"} {
 		if got := sent[k]; fmt.Sprint(got) != fmt.Sprint(want) {
 			t.Errorf("%s: %v, want %v", k, got, want)
 		}
@@ -308,5 +309,77 @@ func TestPlansAreBounded(t *testing.T) {
 	}
 	if ts.plan.recall("00000000-0000-4000-8000-000000000000") != nil {
 		t.Error("the oldest plan is still remembered")
+	}
+}
+
+// Annex IV item 4 asks an open-category flight for its subcategory,
+// which FlightAuthorisationData does not carry: the test operator
+// declares it (annex_iv.open_subcategory, pending GCAA). A fixture that
+// declares none refuses an open plan before any call, naming the item;
+// a specific plan needs none and is filed without one (E-01 pair with
+// TestPlanAuthorisedActivatedClosed, where C0 is sent as A1).
+func TestPlanOpenSubcategoryIsTheFixtures(t *testing.T) {
+	f := newFakeUSSP(t)
+	raw := filepath.Join("..", "..", "deploy", "conformance", "test-operator.yaml")
+	b, err := os.ReadFile(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	without := writeFile(t, "no-subcategory.yaml", regexp.MustCompile(`(?m)^\s*open_subcategory(_by_class)?:.*\n`).ReplaceAllString(string(b), ""))
+	ts := newTestServer(t, f, func(c *Config) { c.OperatorFile = without })
+	r := upsert(t, ts, planID, planJSON("open", "Planned", "TEST-WP21-0001", 0, 0))
+	if r.Result != "Rejected" || !strings.Contains(r.Notes, "annex_iv.open_subcategory") {
+		t.Fatalf("an open plan without a declared subcategory: %+v", r)
+	}
+	f.intents.mu.Lock()
+	n := len(f.intents.posts)
+	f.intents.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("%d intents filed for an open plan without a subcategory", n)
+	}
+	specific := strings.Replace(planJSON("specific", "Planned", "TEST-WP21-0001", 0, 0), `"operation_category": "Open"`, `"operation_category": "Specific"`, 1)
+	if r := upsert(t, ts, "1e1e1e1e-1e1e-4e1e-8e1e-1e1e1e1e1e1e", specific); r.Result != "Completed" {
+		t.Fatalf("a specific plan: %+v", r)
+	}
+	f.intents.mu.Lock()
+	post := f.intents.posts[0]
+	f.intents.mu.Unlock()
+	var sent map[string]any
+	if err := json.Unmarshal(post, &sent); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := sent["subcategory"]; ok || sent["category"] != "specific" {
+		t.Errorf("a specific plan names a subcategory: %s", post)
+	}
+}
+
+// Annex IV item 4 in the open category is the subcategory, derived from
+// the plan's uas_class by the fixture's table (annex_iv.
+// open_subcategory_by_class, the spec's defaults pending GCAA: C0 and C1
+// A1, C2 A2), and the fixture's open_subcategory (A3) for any class the
+// table does not name. Each class is sent as its own subcategory, not
+// the fixture's one value for every plan.
+func TestPlanOpenSubcategoryFromClass(t *testing.T) {
+	f := newFakeUSSP(t)
+	ts := newTestServer(t, f, nil)
+	want := map[string]string{"C0": "A1", "C1": "A1", "C2": "A2", "C3": "A3", "C4": "A3", "C5": "A3", "C6": "A3", "Other": "A3"}
+	i := 0
+	for class, sub := range want {
+		body := strings.Replace(planJSON("c"+class, "Planned", "TEST-WP21-0001", 0, float64(i)*0.01), `"uas_class": "C0"`, `"uas_class": "`+class+`"`, 1)
+		id := fmt.Sprintf("%08d-0000-4000-8000-00000000c1a5", i)
+		i++
+		if r := upsert(t, ts, id, body); r.Result != "Completed" {
+			t.Fatalf("%s: %+v", class, r)
+		}
+		f.intents.mu.Lock()
+		post := f.intents.posts[len(f.intents.posts)-1]
+		f.intents.mu.Unlock()
+		var sent map[string]any
+		if err := json.Unmarshal(post, &sent); err != nil {
+			t.Fatal(err)
+		}
+		if sent["subcategory"] != sub {
+			t.Errorf("uas_class %s: subcategory %v, want %s", class, sent["subcategory"], sub)
+		}
 	}
 }

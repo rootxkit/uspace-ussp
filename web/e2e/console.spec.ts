@@ -98,6 +98,11 @@ test("S-M5: an unacknowledged alert escalates and appears; the supervisor closes
   // The live map by viewport: the two aircraft, live.
   await expect(page.getByTestId("console-feed")).toHaveAttribute("data-connection", "live");
   await expect(page.locator('[data-testid="console-track-row"][data-state="live"]').first()).toBeVisible({ timeout: 30_000 });
+  // The CPA thresholds in force, as the status frame carries them (audit M-5).
+  const thresholds = page.locator('[data-panel="thresholds"]');
+  await expect(thresholds).toHaveAttribute("data-thresholds", "present");
+  await expect(thresholds.locator('[data-threshold="cpa_vertical_min_m"]')).toContainText(/\d m$/);
+  await expect(thresholds.locator('[data-threshold="cpa_clear_after_s"]')).toContainText(/\d s$/);
   // escalation_after_s (30 s) after the raise, the escalation appears.
   // This run's alert (the database keeps every earlier run's too).
   const esc = page.getByTestId("escalations-table").locator('[data-testid="admin-alert-row"][data-kind="proximity"][data-escalated="true"]').and(page.locator(ours)).first();
@@ -141,6 +146,32 @@ test("S-M5: an unacknowledged alert escalates and appears; the supervisor closes
   expect(String(a["client_id"])).toMatch(/^op-/);
   expect(offOrigin()).toEqual([]);
   await page.context().close();
+});
+
+// The pair of the thresholds shown above: a status frame without
+// thresholds{} and evaluation_period_s (traffic-ws's frames, rewritten in
+// the browser's WebSocket route) shows none and says so; nothing is
+// defaulted (INV-03).
+test("a status frame without thresholds shows none and says so", async ({ browser, request }) => {
+  const page = await english(browser);
+  await page.routeWebSocket(/\/v1\/traffic(\?|$)/, (ws) => {
+    const server = ws.connectToServer();
+    server.onMessage((message) => {
+      if (typeof message !== "string") return ws.send(message);
+      const frame = JSON.parse(message) as { schema?: string; body?: Record<string, unknown> };
+      if (frame.schema === "console/status/v1" && frame.body !== undefined) {
+        delete frame.body["thresholds"];
+        delete frame.body["evaluation_period_s"];
+      }
+      ws.send(JSON.stringify(frame));
+    });
+  });
+  await signIn(page, await staff(request, "supervisor"));
+  await expect(page.getByTestId("console-feed")).toHaveAttribute("data-connection", "live");
+  const thresholds = page.locator('[data-panel="thresholds"]');
+  await expect(thresholds).toHaveAttribute("data-thresholds", "absent");
+  await expect(thresholds.locator("[data-thresholds-none]")).toHaveText("The system sends no thresholds in its status; none is assumed.");
+  await expect(thresholds.locator("[data-threshold]")).toHaveCount(0);
 });
 
 test("a source switched off shows who and when, its tracks show source_disabled and age out; a support viewer gets 403", async ({ browser, request }) => {

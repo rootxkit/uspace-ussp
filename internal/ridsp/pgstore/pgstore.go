@@ -90,6 +90,11 @@ func (p PlanStore) Enqueue(ctx context.Context, kind, entityID string, version i
 	return store.Enqueue(ctx, p.Q, kind, entityID, version, payload)
 }
 
+// EnqueueHeld implements ridsp.PlanStore.
+func (p PlanStore) EnqueueHeld(ctx context.Context, kind, entityID string, version int64, payload any, hold time.Duration) (bool, error) {
+	return store.EnqueueHeld(ctx, p.Q, kind, entityID, version, payload, hold)
+}
+
 // WorkStore is ridsp.WorkStore on the relational database.
 type WorkStore struct{ S *store.Store }
 

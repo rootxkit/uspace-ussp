@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import AxeBuilder from "./axe";
 import { expect, test, type Page } from "@playwright/test";
 import { control, sameOrigin, unique, utcInput } from "./helpers";
@@ -87,11 +88,13 @@ test("S-M1 and S-M3: register, client, intent, decision, geo, traffic, alert ack
     [TBILISI.lat + D, TBILISI.lng + D],
     [TBILISI.lat + D, TBILISI.lng - D],
   ] as const) {
-    await page.getByLabel("Latitude (WGS84 degrees)").fill(String(lat));
-    await page.getByLabel("Longitude (WGS84 degrees)").fill(String(lng));
-    await page.getByRole("button", { name: "Add the point" }).click();
+    const n = (await page.locator("[data-vertex]").count()) + 1;
+    await page.getByLabel(`New point ${n}: latitude (degrees, WGS84)`, { exact: true }).fill(String(lat));
+    await page.getByLabel(`New point ${n}: longitude (degrees, WGS84)`, { exact: true }).fill(String(lng));
+    await page.getByRole("button", { name: "Add point" }).click();
   }
-  await expect(page.getByTestId("outline-points").locator("li")).toHaveCount(4);
+  await expect(page.locator("[data-vertex]")).toHaveCount(4);
+  await expect(page.locator("[data-vertex-count]")).toHaveText("4 of at most 1000 points");
   await fill(page, /^UAS serial number/, serial);
   await page.getByLabel(/^Category/).selectOption("specific");
   await fill(page, /^Lower altitude/, "600");
@@ -146,6 +149,13 @@ test("S-M1 and S-M3: register, client, intent, decision, geo, traffic, alert ack
   await expect(prox).toBeVisible();
   await expect(prox).toContainText("Converging aircraft");
   await expect(prox).toContainText("Authenticated");
+  // The CPA thresholds the monitor judges with, as the status frame
+  // carries them, with their policy version (audit M-5).
+  const thresholds = page.locator('[data-panel="thresholds"]');
+  await expect(thresholds).toHaveAttribute("data-thresholds", "present");
+  await expect(thresholds.locator('[data-threshold="cpa_horizontal_min_m"]')).toContainText(/\d m$/);
+  await expect(thresholds.locator('[data-threshold="cpa_tcpa_max_s"]')).toContainText(/\d s$/);
+  await expect(thresholds).toContainText("Policy version ");
   await shot(page, "traffic-en");
 
   // The alert stream: acknowledged, recorded with the time.
@@ -174,6 +184,17 @@ test("S-M1 and S-M3: register, client, intent, decision, geo, traffic, alert ack
 
   expect(offOrigin()).toEqual([]);
   await shot(page, "traffic-ka");
+});
+
+// The editor's vertex bound is the contract's (the kit's DrawLayer and
+// OutlineFields need the API's, no default).
+test("the outline's vertex bound is api/openapi.yaml's", () => {
+  const spec = readFileSync(new URL("../../api/openapi.yaml", import.meta.url), "utf8");
+  const volume = spec.slice(spec.indexOf("    IntentVolume4D:"), spec.indexOf("    GeoLimit:"));
+  const bound = /outline_polygon:[\s\S]*?vertices:[\s\S]*?maxItems: (\d+)/.exec(volume)?.[1];
+  const editor = readFileSync(new URL("../src/portal/intents/VolumeEditor.tsx", import.meta.url), "utf8");
+  expect(bound).toBeDefined();
+  expect(/export const MAX_VERTICES = (\d+);/.exec(editor)?.[1]).toBe(bound);
 });
 
 test("the pages in both languages, Noto Sans Georgian, the CSP, nothing off the origin", async ({ browser }) => {
@@ -233,6 +254,17 @@ test("accessibility of the sign-in, intents form and traffic pages (axe, WCAG 2.
   await page.getByLabel("Password").fill(pass);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/intents$/);
+  // The kit's drawing tool with a circle: its centre and radius in words,
+  // and the outline said not drawn (this API draws none, PLAN Q28).
+  await page.goto("/intents/new");
+  await page.getByRole("radio", { name: "Circle" }).check();
+  await page.getByLabel("Centre: latitude (degrees, WGS84)", { exact: true }).fill("41.7");
+  await page.getByLabel("Centre: longitude (degrees, WGS84)", { exact: true }).fill("44.8");
+  await page.getByLabel("Radius (m)", { exact: true }).fill("500");
+  await expect(page.locator("[data-circle-words]")).toHaveText("Circle: centre 41.7, 44.8 (degrees, WGS84); radius 500 m");
+  await expect(page.locator("[data-circle-outline]")).toHaveText("The system draws a circle's outline; until it has, the map shows its centre only.");
+  const circle = await new AxeBuilder(page).analyze();
+  expect(circle.violations, JSON.stringify(circle.violations.map((v) => v.id))).toEqual([]);
   for (const path of ["/intents/new", "/traffic", "/geo", "/alerts", "/clients"]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();

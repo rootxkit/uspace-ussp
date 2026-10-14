@@ -168,7 +168,7 @@ func SessionExtent(p core.LatLon, radiusM float64) (f3411.Volume3D, error) {
 // together (B-05): the first fact of a flight that is not ended plans
 // its ISA (dss_isas) and queues isa_put; a later fact that brings an
 // intent to a session ISA queues the intent's extent; ended queues
-// isa_delete for an ISA that is not deleted.
+// isa_delete for an ISA that is not deleted, due Horizon after the end.
 type Planner struct {
 	Policy   func() policy.Values
 	Counters *core.Counters
@@ -206,7 +206,11 @@ func (p *Planner) Plan(ctx context.Context, st PlanStore, b flights.Body) error 
 		if !found || cur.DeletedAt != nil {
 			return nil
 		}
-		_, err := st.Enqueue(ctx, store.OutboxISADelete, cur.ISAID, 0, ISADelete{ISAID: cur.ISAID, FlightID: b.FlightID})
+		// F3411-22a NET0610: the flight stays discoverable for
+		// NetMaxNearRealTimeDataPeriod after it ends; /uss/flights serves
+		// its last position that long, so the ISA a Display Provider
+		// finds it by is deleted only once the Horizon has passed.
+		_, err := st.EnqueueHeld(ctx, store.OutboxISADelete, cur.ISAID, 0, ISADelete{ISAID: cur.ISAID, FlightID: b.FlightID}, Horizon)
 		return err
 	}
 	ended, err := st.FlightEnded(ctx, b.FlightID)
