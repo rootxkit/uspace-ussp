@@ -12,6 +12,9 @@
 #   api/standards/f3548-v21.yaml  -> internal/stdapi/f3548/{server,client}.gen.go
 #                       (oapi-codegen, api/standards/oapi-codegen.<std>.<side>.yaml;
 #                       the types are uspace-core's f3411 and f3548, D3)
+#   api/standards/interuss/** -> internal/stdapi/interuss/<package>/*.gen.go
+#                       (scripts/generate-interuss.sh: the InterUSS
+#                       automated-testing interfaces of test-interfaces, D13)
 #   api/clients/cisp.yaml -> internal/cis/cispclient/client.gen.go
 #                       (oapi-codegen, api/oapi-codegen.cisp.yaml; the
 #                       pinned copy of the CISP's OpenAPI, M11)
@@ -71,6 +74,9 @@ for std in f3411:f3411-v22a f3548:f3548-v21; do
     gen "api/standards/oapi-codegen.$pkg.$side.yaml" "internal/stdapi/$pkg/$side.gen.go" "api/standards/$file.yaml"
   done
 done
+
+# The InterUSS automated-testing interfaces (test-interfaces only, D13).
+OUT_DIR="$out" GO="$GO" "$root/scripts/generate-interuss.sh"
 
 # The sibling national APIs this system calls, from the pinned copies
 # in api/clients/ (scripts/check-contracts.sh compares them with their

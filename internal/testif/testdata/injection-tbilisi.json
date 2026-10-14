@@ -1,0 +1,40 @@
+{
+  "requested_flights": [
+    {
+      "injection_id": "edb7695f-8737-4b9f-91f8-e2afbb333f41",
+      "aircraft_type": "Helicopter",
+      "telemetry": [
+        {"timestamp": "2026-10-13T08:00:01.5Z", "timestamp_accuracy": 0.1, "operational_status": "Airborne",
+         "position": {"lat": 41.7161, "lng": 44.8281, "alt": 652.5, "accuracy_h": "HA1m", "accuracy_v": "VA3m", "extrapolated": false, "pressure_altitude": 640},
+         "track": 90, "speed": 1.9, "speed_accuracy": "SA1mps", "vertical_speed": 0.2,
+         "height": {"distance": 30.5, "reference": "TakeoffLocation"}},
+        {"timestamp": "2026-10-13T08:00:02.5Z", "timestamp_accuracy": 0.1, "operational_status": "Airborne",
+         "position": {"lat": 41.7162, "lng": 44.8282, "alt": -1000, "accuracy_h": "HA1m", "accuracy_v": "VA3m"},
+         "track": 361, "speed": 255, "speed_accuracy": "SA1mps", "vertical_speed": 63,
+         "height": {"distance": -1000, "reference": "GroundLevel"}},
+        {"timestamp": "2026-10-13T08:00:00.5Z", "operational_status": "Ground",
+         "position": {"lat": 41.7160, "lng": 44.8280, "alt": 622},
+         "track": 0, "speed": 0, "vertical_speed": 0}
+      ],
+      "details_responses": [
+        {"effective_after": "2026-10-13T07:59:00Z",
+         "details": {"id": "a3423b-213401-0023", "operator_id": "GEOTESTWP210001",
+                     "operator_location": {"lat": 41.7151, "lng": 44.8271},
+                     "operation_description": "uss_qualifier test flight",
+                     "serial_number": "INTCJ123-4567-890",
+                     "uas_id": {"serial_number": "TEST-INJ-0001", "registration_id": ""},
+                     "eu_classification": {"category": "EUCategoryOpen", "class": "EUClass1"}}}
+      ]
+    },
+    {
+      "injection_id": "1f6f2a5b-5a0c-4c7e-8a3b-0f8d7c6b5a49",
+      "telemetry": [
+        {"timestamp": "2026-10-13T08:00:01Z", "operational_status": "Emergency",
+         "position": {"lat": 41.7171, "lng": 44.8301, "alt": 640.25}, "track": 180, "speed": 3, "vertical_speed": -0.5}
+      ],
+      "details_responses": [
+        {"effective_after": "2026-10-13T07:59:00Z", "details": {"id": "b2"}}
+      ]
+    }
+  ]
+}

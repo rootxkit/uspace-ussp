@@ -255,7 +255,10 @@ Dependency rules: `internal/*` packages import `uspace-core` freely and
 each other only downward in this order: `config, obs, httpx, cell, policy`
 ← `store, bus, auth` ← `cis, registry, sources, accounts` ← `intent, flights,
 telemetry` ← `conformance, traffic, geo, alerts, ridsp, dss, peers, manned`
-← `coordination, records, occurrence, status, weather, admin, national`.
+← `coordination, records, occurrence, status, weather, admin, national`
+← `testif` (D13: of `national` only its generated client, and none of
+`telemetry, flights, ridsp, intent, dss, conformance, traffic, store, bus`;
+those seven safety packages never name the test interfaces).
 No package imports a `cmd/`. `web/` imports nothing from Go: it consumes
 generated types only. A cycle is a build failure (`scripts/check-deps.sh`
 runs `go list -deps` against this order).
@@ -562,7 +565,7 @@ T4 (inter-system impersonation), T5 (token service outage), T6 (PII), T8
 | Production ingest refuses `trust: simulated` and `source: sitl` at the schema validator; the lab's simulated operator uses an ordinary client credential and is `authenticated` like any operator (T11). | `internal/telemetry` |
 | The InterUSS test interfaces (D13, §6.4) are never in production: a separate image (`uspace-ussp-testif`) that the production image, compose and Caddy snippet do not contain or route (tests read the files); the binary exits 2 before opening a listener without `USSP_TEST_INTERFACES=on` and a `USSP_SYSTEM_ID` containing `TEST` or `DEV`, and prints `on` at error level every status period; its scopes are outside the catalogue, so no production route can admit them; it holds a test operator's credential from a file and reaches the USSP only through the published API (T11, T12). | `cmd/test-interfaces`, `internal/testif`, `deploy/` |
 | Audit: every write, token issuance and refusal, source switch, policy change, PII-bearing record export is an `events` row with actor and purpose; role `ussp_app` has no `UPDATE`/`DELETE` on `events`, `telemetry`, `conformance_states` (T7). | `migrations/relational`, `internal/store` |
-| Public repo: gitleaks in CI and pre-commit; `.env.example` only; fixtures use `GEO-TEST-*` numbers and `TEST*` serials; a CI grep for `chikox.net` outside `deploy/staging/` fails; SBOM and cosign on images; `SECURITY.md`. | `.github/workflows`, `deploy/` |
+| Public repo: gitleaks in CI and pre-commit; `.env.example` only; fixtures use `GEOTEST*` registration numbers (no hyphen: the authority's registry, uspace-core `regnum`, refuses one, so a `GEO-TEST-*` number can never be registered; WP-21 R9) and `TEST*` serials; a CI grep for `chikox.net` outside `deploy/staging/` fails; SBOM and cosign on images; `SECURITY.md`. | `.github/workflows`, `deploy/` |
 | `web/`: no credential in browser code, cookies `uspace_session` / `uspace_csrf` (`HttpOnly; Secure; SameSite=Strict`, `X-CSRF-Token`; M21), WebSocket upgrade authenticated by the cookie plus an `Origin` allow-list (M22), the kit's CSP (`connect-src 'self'`, `font-src 'self'`, `worker-src blob:`), fonts via `next/font/local`, no third-party tile or font request (M38), no geometry import (ESLint rule), no DB/NATS client. | `web/` |
 
 ---

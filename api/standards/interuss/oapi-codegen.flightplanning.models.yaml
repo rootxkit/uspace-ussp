@@ -1,0 +1,42 @@
+# oapi-codegen configuration for internal/stdapi/interuss/flightplanning (docs/PLAN.md
+# D13, §6.4; brief WP-21): the flight_planning v1 types of the sibling
+# files (flight_planning/v1/*.yaml but flight_planning.yaml), types only,
+# beside the server of oapi-codegen.flightplanning.server.yaml. Format uuid
+# maps to string.
+# All of it comes from the pinned InterUSS automated-testing interface files in
+# api/standards/interuss/ (SOURCE). Every file of the package is generated
+# into the same Go package, so each sibling file's references resolve to
+# the package itself ("-"); enum values are prefixed with their type
+# because the siblings reuse value names. Run through scripts/generate.sh;
+# never edit the output.
+package: flightplanning
+generate:
+  models: true
+import-mapping:
+  ./astm_f3548v21.yaml: "-"
+  astm_f3548v21.yaml: "-"
+  ./au.yaml: "-"
+  au.yaml: "-"
+  ./flight_planning.yaml: "-"
+  flight_planning.yaml: "-"
+  ./geotemporal.yaml: "-"
+  geotemporal.yaml: "-"
+  ./operator.yaml: "-"
+  operator.yaml: "-"
+  ./telemetry.yaml: "-"
+  telemetry.yaml: "-"
+  ./uas.yaml: "-"
+  uas.yaml: "-"
+  ./user_notification.yaml: "-"
+  user_notification.yaml: "-"
+  ./uspace.yaml: "-"
+  uspace.yaml: "-"
+compatibility:
+  always-prefix-enum-values: true
+output-options:
+  skip-prune: true
+  type-mapping:
+    string:
+      formats:
+        uuid:
+          type: string

@@ -3,3 +3,4 @@
 *.ico binary
 *.png binary
 api/standards/*.yaml -text
+api/standards/interuss/**/*.yaml -text

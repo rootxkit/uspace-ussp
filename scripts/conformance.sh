@@ -52,7 +52,31 @@
 #                                   (default deploy/conformance/baseline.json;
 #                                   none: no baseline, every requirement not
 #                                   checked makes the run incomplete, exit 3)
+#   CONFORMANCE_EXERCISED           the minimum passed checks of each known failure
+#                                   of the baseline (default
+#                                   deploy/conformance/exercised.json)
 #   CONFORMANCE_SUITE_BIN           a built cmd/conformance (default: built from LAB_DIR)
+#   CONFORMANCE_QUALIFIER           on (default) | off: the uss_qualifier steps (WP-21).
+#                                   On the stack: the test operator seeded, the
+#                                   test-interfaces process (uspace-ussp-testif, built
+#                                   from this checkout) declared and checked, the lab's
+#                                   mock USS beside it and run-qualifier.sh f3411-sp.yaml,
+#                                   f3548-scd.yaml and f3411-dp.yaml, each report folded
+#                                   into the suite's run; off runs the national suite
+#                                   alone and says the InterUSS suites were not run in
+#                                   this invocation
+#   CONFORMANCE_QUALIFIER_REPORTS   REQ=report.json[,REQ=report.json]: reports of
+#                                   uss_qualifier runs made elsewhere, folded in beside
+#                                   the stack's (for an external target, the only way)
+#   USSP_CONFORMANCE_RID_INJECTION_URL, USSP_CONFORMANCE_RID_OBSERVATION_URL,
+#   USSP_CONFORMANCE_FLIGHT_PLANNING_URL
+#                                   an external target's declared InterUSS interfaces
+#                                   (as uss_qualifier reaches them); each must answer 401
+#                                   without a credential before the suite runs
+#   USSP_CONFORMANCE_TESTIF_IMAGE   the test-interfaces image (stack; default: built
+#                                   from this checkout's deploy/Dockerfile target testif)
+#   QUALIFIER_TIMEOUT_S             bound on one uss_qualifier run (the lab's
+#                                   run-qualifier.sh; default 3600)
 #   GO                              the go command (default go)
 #
 # Exit status, the suite's: 0 pass; 1 a gate requirement failed (or the
@@ -60,11 +84,22 @@
 # error, found before anything is built or started; 3 incomplete (a gate
 # requirement was not checked and the baseline does not record it not
 # applicable; the report says which and why). A gate requirement the
-# baseline records not applicable (F3411-SP and F3548-SCD, blocked by
-# the owner decision PLAN §15.2 Q34) does not make the exit 3, and is
+# baseline records not applicable (F3548-CP, NAT-PRECONDITION,
+# REG-NOPII) does not make the exit 3, and is
 # never a pass: the hook names each with the baseline's note, as a
 # warning annotation in a workflow, and the report's verdict stays
-# incomplete. A failure
+# incomplete. A gate requirement the baseline records as a known failure
+# (status fail, a note saying where it is tracked and the failing checks:
+# F3411-SP and F3548-SCD until WP-21's R6 to R8 are fixed) does not fail
+# the run while it fails exactly those checks (the suite's gate: a check
+# outside the list is a regression), and is never a pass either: the
+# hook names each "KNOWN FAILING, NOT A PASS" with the note, as a
+# warning annotation in a workflow. The suite's gate flags only failures
+# outside the list, so a run that exercises nothing (no injection
+# reaches the USSP) would fail only listed checks: each known failure
+# also needs at least the passed checks deploy/conformance/exercised.json
+# records for it, or the run is 1 ("EXERCISED TOO LITTLE"), and a known
+# failure the exercised file does not bound is refused (2). A failure
 # of the stack itself is 1 and names its step. Secrets stay in files:
 # none is printed, put on a command line or written to the reports.
 set -euo pipefail
@@ -98,6 +133,7 @@ out="$(abspath "${CONFORMANCE_OUT:-local/conformance/reports}")"
 external="${USSP_CONFORMANCE_BASE_URL:-}"
 baseline="${CONFORMANCE_BASELINE:-deploy/conformance/baseline.json}"
 if [ "$baseline" != none ]; then baseline="$(abspath "$baseline")"; fi
+exercised="$(abspath "${CONFORMANCE_EXERCISED:-deploy/conformance/exercised.json}")"
 
 # ---- validation (no side effect before it has passed) -------------------------
 
@@ -129,6 +165,21 @@ validate() {
     local unnoted
     unnoted="$(jq -r '.requirements | to_entries[] | select(.value.status == "not_applicable" and ((.value.note // "") == "")) | .key' "$baseline")"
     [ -z "$unnoted" ] || usage "$baseline records not applicable without a note saying why: $(echo "$unnoted" | tr '\n' ' ')"
+    # A known failure says where it is tracked and which checks fail: an
+    # empty list would accept any failure of the requirement.
+    local untracked
+    untracked="$(jq -r '.requirements | to_entries[] | select(.value.status == "fail" and (((.value.note // "") == "") or (((.value.failing // []) | length) == 0))) | .key' "$baseline")"
+    [ -z "$untracked" ] || usage "$baseline records a known failure without a note saying where it is tracked or without its failing checks: $(echo "$untracked" | tr '\n' ' ')"
+    # A known failure says how much of it must still run: the gate alone
+    # passes a run whose only failures are listed, a run that exercised
+    # nothing among them.
+    [ -r "$exercised" ] || usage "CONFORMANCE_EXERCISED $exercised is not readable"
+    jq -e '.format == "ussp-conformance-exercised/v1" and (.requirements | type == "object")' "$exercised" >/dev/null 2>&1 ||
+      usage "$exercised is not a ussp-conformance-exercised/v1 file with requirements"
+    local unbounded
+    unbounded="$(jq -r --slurpfile ex "$exercised" '.requirements | to_entries[] | select(.value.status == "fail")
+      | select(($ex[0].requirements[.key].min_passed // null) as $m | ($m | type) != "number" or $m < 1 or ($m | floor) != $m) | .key' "$baseline")"
+    [ -z "$unbounded" ] || usage "$exercised records no minimum passed checks (an integer of at least 1) for the known failures: $(echo "$unbounded" | tr '\n' ' ')"
   fi
   if [ -n "$external" ]; then
     case "$external" in http://* | https://*) ;; *) usage "USSP_CONFORMANCE_BASE_URL $external is not an http(s) URL" ;; esac
@@ -157,6 +208,29 @@ validate() {
         *) docker image inspect "$ansp_image" >/dev/null 2>&1 || usage "CONFORMANCE_SYSTEMS=all needs the ANSP image $ansp_image, which the lab's deploy/demo-up.sh builds; it is not here" ;;
       esac
     fi
+  fi
+  qualifier="${CONFORMANCE_QUALIFIER:-on}"
+  case "$qualifier" in on | off) ;; *) usage "CONFORMANCE_QUALIFIER is $qualifier: want on or off" ;; esac
+  extra_reports=()
+  if [ -n "${CONFORMANCE_QUALIFIER_REPORTS:-}" ]; then
+    local pair pairs
+    IFS=',' read -r -a pairs <<<"$CONFORMANCE_QUALIFIER_REPORTS"
+    for pair in "${pairs[@]}"; do
+      case "$pair" in
+        ?*=?*) [ -r "${pair#*=}" ] || usage "CONFORMANCE_QUALIFIER_REPORTS: ${pair#*=} is not readable" ;;
+        *) usage "CONFORMANCE_QUALIFIER_REPORTS: $pair is not REQ=report.json" ;;
+      esac
+      extra_reports+=("$pair")
+    done
+  fi
+  if [ -z "$external" ] && [ "$qualifier" = on ]; then
+    for f in conformance/uss_qualifier/run-qualifier.sh conformance/uss_qualifier/compose.yaml conformance/uss_qualifier/f3411-sp.yaml \
+      conformance/uss_qualifier/f3548-scd.yaml conformance/uss_qualifier/f3411-dp.yaml deploy/systems/Caddyfile \
+      conformance/fixtures/test-operators.yaml cmd/demo-seed/main.go sim/sitl.env.example; do
+      [ -f "$LAB_DIR/$f" ] || usage "LAB_DIR $LAB_DIR has no $f: the uss_qualifier steps need the lab's WP-L7 configurations (CONFORMANCE_QUALIFIER=off skips them)"
+    done
+    command -v timeout >/dev/null 2>&1 || usage "timeout is required for the uss_qualifier steps (CONFORMANCE_QUALIFIER=off skips them)"
+    command -v jq >/dev/null 2>&1 || usage "jq is required for the uss_qualifier steps (CONFORMANCE_QUALIFIER=off skips them)"
   fi
   push="${USSP_CONFORMANCE_AUTHORITY_PUSH:-off}"
   case "$push" in on | off) ;; *) usage "USSP_CONFORMANCE_AUTHORITY_PUSH is $push: want on or off" ;; esac
@@ -234,7 +308,34 @@ stack_up() {
   fi
   image_id="$(docker image inspect -f '{{.Id}}' "$image")" || die "no image $image"
   say "image under test $image ($image_id)"
+  # The test-interfaces image (D13): a separate target of the same
+  # Dockerfile, never part of the image under test.
+  testif_image="${USSP_CONFORMANCE_TESTIF_IMAGE:-}"
+  if [ -z "$testif_image" ]; then
+    local tc
+    tc="$(git rev-parse HEAD)"
+    testif_image="uspace-ussp-testif:conformance-${tc:0:12}"
+    if ! git diff --quiet HEAD -- cmd internal migrations go.mod go.sum deploy/Dockerfile; then testif_image="$testif_image-dirty"; fi
+    docker build -q -f deploy/Dockerfile --target testif --build-arg "VERSION=${tc:0:7}" --build-arg "COMMIT=$tc" -t "$testif_image" . >/dev/null ||
+      die "docker build of $testif_image failed"
+  fi
+  testif_image_id="$(docker image inspect -f '{{.Id}}' "$testif_image")" || die "no image $testif_image"
+  # The image under test has no ussp-test-interfaces, the testif image
+  # has (D13; the same check as CI's image jobs).
+  scripts/check-images.sh "$image" "$testif_image" >"$state/check-images.log" 2>&1 ||
+    { cat "$state/check-images.log" >&2; die "the image check failed (above)"; }
+  say "test-interfaces image $testif_image ($testif_image_id); the image under test has no ussp-test-interfaces"
 
+  # What the seeds created lives in the stack's databases, which a run
+  # removes (down -v): on a stack with no volume yet, the records of an
+  # earlier run's seeds (the lab's seed-state.json, the test operator's
+  # client, secret and sessions) name rows that no longer exist, and the
+  # seeds would skip creating them. They are removed; the keys, the CA
+  # and the passwords the stack is started with are kept.
+  if [ -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$project")" ]; then
+    rm -f "$state/demo/seed-state.json"
+    rm -rf "$testif_state"
+  fi
   mkdir -p "$state/demo" "$state/issuer/public"
   # The lab's demo.env with this run's values: the state outside the lab
   # checkout, the ground directory, the port, the image. Overridden keys
@@ -252,7 +353,14 @@ stack_up() {
     echo "USSP_GO_IMAGE=$image"
     if [ -n "${USSP_CONFORMANCE_SYSTEM_ID:-}" ]; then echo "USSP_SYSTEM_ID=$USSP_CONFORMANCE_SYSTEM_ID"; fi
     echo "USSP_CONFORMANCE_AUTHORITY_PUSH=$push"
+    echo "USSP_TESTIF_IMAGE=$testif_image"
+    echo "USSP_CONFORMANCE_CADDYFILE=$(winpath "$state/Caddyfile")"
+    echo "USSP_CONFORMANCE_CA_PEM=$(winpath "$state/demo/ca/ca.pem")"
+    echo "USSP_TESTIF_STATE_DIR=$(winpath "$testif_state")"
+    echo "USSP_TESTIF_OPERATOR_FILE=$(winpath "$here/deploy/conformance/test-operator.yaml")"
   } >"$stack_env"
+  mkdir -p "$testif_state"
+  write_caddyfile "$state/Caddyfile"
   val() { sed -n "s/^$1=//p" "$stack_env" | tail -n 1; }
 
   printf '%s
@@ -302,21 +410,27 @@ PY
     [ "$code" = 0 ] || die "$m exited $code: docker compose -p $project logs $m"
   done
   say "USSP healthy and migrated after $(($(date +%s) - t0)) s"
+  # The authority before the test operator's seed when the qualifier
+  # runs: the USSP admits the operator, and creates its client, only when
+  # the authority's registry answers F8 validity `valid`, so the lab's
+  # registry seed of the operator (uspace-lab
+  # conformance/fixtures/test-operators.yaml) runs at the authority
+  # first. The chaos procedure (systems all) starts it here too: the
+  # CISP's api refuses to start until the authority's JWKS answers.
+  if [ "$systems" = all ] || [ "$qualifier" = on ]; then
+    authority_up
+  fi
+  if [ "$qualifier" = on ]; then
+    registry_seed
+  fi
+  testif_up
 
   ussp_host="$(val USSP_HOST)"
   if [ "$systems" = all ]; then
-    # The other three systems, for the chaos procedure
-    # (docs/RUNBOOKS/chaos.md): the authority first, because the CISP's
-    # api refuses to start until the authority's JWKS answers (the lab's
-    # demo-up.sh does the same). curl's own bounded retry waits for it.
-    local ah others
-    ah="$(val AUTHORITY_HOST)"
+    # The other two systems, for the chaos procedure
+    # (docs/RUNBOOKS/chaos.md).
+    local others
     t0="$(date +%s)"
-    # shellcheck disable=SC2046 # one argument per service
-    dc up -d $(dc config --services | grep '^authority-') >/dev/null || die "the authority did not start"
-    curl -sS -o "$(winpath "$state/authority-jwks.json")" --fail --max-time 5 --retry 60 --retry-delay 2 --retry-all-errors \
-      --cacert "$(winpath "$state/demo/ca/ca.pem")" --ssl-no-revoke --resolve "$ah:$port:127.0.0.1" "https://$ah:$port/.well-known/jwks.json" ||
-      die "the authority's JWKS did not answer through the lab Caddy: docker compose -p $project logs authority-api"
     others="$(dc config --services | grep -E '^(cisp|ansp)-' | tr '\n' ' ')"
     # The CISP's api and the ANSP's each refuse to start until the
     # other's JWKS answers, so one of them restarts once or twice and
@@ -329,9 +443,20 @@ PY
       # shellcheck disable=SC2086 # one argument per service
       dc up -d --wait --wait-timeout 300 $others >/dev/null || die "the CISP or the ANSP did not become healthy: docker compose -p $project ps"
     fi
-    say "authority, CISP and ANSP up after $(($(date +%s) - t0)) s"
+    say "CISP and ANSP up after $(($(date +%s) - t0)) s"
   fi
   lab_host="$(val LAB_HOST)"
+  # The declared interfaces are probed from the lab network, where
+  # uss_qualifier reaches them, by a container of the lab's own Caddy
+  # image (pinned by digest in the lab's env; busybox wget).
+  probe_image="$(val CADDY_IMAGE)"
+  case "$probe_image" in *@sha256:*) ;; *) die "the lab's CADDY_IMAGE is not pinned by digest: $probe_image" ;; esac
+  # The interfaces as uss_qualifier reaches them on the lab network
+  # (the alias ussp of test-interfaces): the target's `interfaces`.
+  participant="ussp-$sid-01"
+  iface_injection=http://ussp:8087/test/rid/v1/injection
+  iface_observation=http://ussp:8087/test/rid/v1/observation
+  iface_planning=http://ussp:8087/test/flight_planning/v1
   ca="$state/demo/ca/ca.pem"
   base="https://$ussp_host:$port"
   {
@@ -342,6 +467,10 @@ PY
     echo "USSP_CONFORMANCE_CA_FILE=$(winpath "$ca")"
     echo "USSP_CONFORMANCE_RESOLVE_IP=127.0.0.1"
     echo "USSP_IMAGE=$image@$image_id"
+    echo "USSP_CONFORMANCE_PARTICIPANT=$participant"
+    echo "USSP_CONFORMANCE_RID_INJECTION_URL=$iface_injection"
+    echo "USSP_CONFORMANCE_RID_OBSERVATION_URL=$iface_observation"
+    echo "USSP_CONFORMANCE_FLIGHT_PLANNING_URL=$iface_planning"
   } >"$state/suite.env"
   suite_env="$state/suite.env"
   sign_key="$state/issuer/signing-key.pem"
@@ -366,6 +495,203 @@ check_push_declaration() {
     die "USSP_AUTHORITY_PUSH is declared $push, but GET /v1/authority/flights without a credential answered $code (want $want)"
   fi
   say "USSP_AUTHORITY_PUSH=$push confirmed: /v1/authority/flights without a credential answered $code"
+}
+
+# ---- the test interfaces (WP-21) --------------------------------------------------------
+
+testif_state="$state/testif"
+
+# write_caddyfile <out>: the lab Caddy's Caddyfile with /test/* on the
+# USSP host routed to the test-interfaces process, before every other
+# handle of that host. The lab's file is not changed; a Caddyfile
+# without the USSP host's block is refused rather than run without the
+# route.
+write_caddyfile() {
+  local src="$LAB_DIR/deploy/systems/Caddyfile" dst="$1"
+  [ -f "$src" ] || die "the lab has no deploy/systems/Caddyfile"
+  awk '
+    { print }
+    /^\{\$USSP_HOST\} \{$/ { inblock = 1; next }
+    inblock && /^\timport no_metrics$/ {
+      print "\t# uspace-ussp scripts/conformance.sh (WP-21): the InterUSS test interfaces"
+      print "\t@testif path /test/*"
+      print "\thandle @testif {"
+      print "\t\treverse_proxy ussp-test-interfaces:8087"
+      print "\t}"
+      inblock = 0; done = 1
+    }
+    END { if (!done) exit 3 }
+  ' "$src" >"$dst.tmp" || die "the lab's Caddyfile has no {\$USSP_HOST} block with 'import no_metrics': the /test/* route cannot be added"
+  mv "$dst.tmp" "$dst"
+}
+
+# authority_up: the lab's authority, waited for through the lab Caddy
+# (curl's own bounded retry; its JWKS answers once the api is up).
+authority_up() {
+  local ah t0
+  ah="$(val AUTHORITY_HOST)"
+  t0="$(date +%s)"
+  # shellcheck disable=SC2046 # one argument per service
+  dc up -d $(dc config --services | grep '^authority-') >/dev/null || die "the authority did not start"
+  curl -sS -o "$(winpath "$state/authority-jwks.json")" --fail --max-time 5 --retry 60 --retry-delay 2 --retry-all-errors \
+    --cacert "$(winpath "$state/demo/ca/ca.pem")" --ssl-no-revoke --resolve "$ah:$port:127.0.0.1" "https://$ah:$port/.well-known/jwks.json" ||
+    die "the authority's JWKS did not answer through the lab Caddy: docker compose -p $project logs authority-api"
+  say "authority up after $(($(date +%s) - t0)) s"
+}
+
+# registry_seed: the lab's registry step (cmd/demo-seed --steps registry)
+# at the authority, through its console API: the lab's operators, the
+# scenarios' aircraft and the test operators of
+# conformance/fixtures/test-operators.yaml with their serials, before
+# the USSP is asked about them. Built, not `go run`, so its status is
+# its own; its log is kept in the state directory (it names no secret).
+registry_seed() {
+  local dir t0
+  dir="$state/bin"
+  mkdir -p "$dir"
+  (cd "$LAB_DIR" && "$GO" build -o "$(winpath "$dir/demo-seed.exe")" ./cmd/demo-seed) || die "could not build the lab's cmd/demo-seed in $LAB_DIR"
+  t0="$(date +%s)"
+  (cd "$LAB_DIR" && "$dir/demo-seed.exe" --env "$(winpath "$stack_env")" --lab sim/sitl.env.example --steps registry \
+    --test-operators conformance/fixtures/test-operators.yaml scenarios/*.yaml) >"$state/registry-seed.log" 2>&1 ||
+    { tail -n 20 "$state/registry-seed.log" >&2; die "the lab's registry seed failed (above; $state/registry-seed.log)"; }
+  say "lab registry seeded at the authority after $(($(date +%s) - t0)) s"
+}
+
+# testif_up: the test operator seeded through the national API (a staff
+# user by `ussp-api staff-add` for the console session), then the
+# test-interfaces process. Passwords are generated into the state
+# directory; none is printed or put on a command line.
+testif_up() {
+  mkdir -p "$testif_state"
+  chmod 700 "$testif_state" 2>/dev/null || true
+  local staff=wp21.staff.support log
+  if [ ! -s "$testif_state/staff-password" ]; then
+    (umask 077 && "$py" -c 'import secrets; print("Wp21-" + secrets.token_urlsafe(24))' >"$testif_state/staff-password") ||
+      die "could not write the staff password"
+  fi
+  # staff-add reads the password on stdin; a second run on the same
+  # stack finds the user, which is not a failure here.
+  if ! log="$(dc exec -T ussp-api /usr/bin/ussp-api staff-add "$staff" support <"$testif_state/staff-password" 2>&1)"; then
+    case "$log" in
+      *exists*) say "staff user $staff exists" ;;
+      *) echo "conformance: ussp-api staff-add said: $log" >&2; die "could not add the staff user for the console session" ;;
+    esac
+  fi
+  dc run --rm --no-deps -T -v "$(winpath "$testif_state"):/state" ussp-test-interfaces \
+    seed --state-dir /state --console-user "$staff" --console-password-file /state/staff-password >"$state/seed.log" 2>&1 ||
+    { tail -n 20 "$state/seed.log" >&2; die "the test operator's seed failed (above; $state/seed.log)"; }
+  [ -s "$testif_state/seed.json" ] || die "the seed wrote no seed.json"
+  USSP_TESTIF_OPERATOR_CLIENT_ID="$(tr -d '\r\n' <"$testif_state/operator-client-id")"
+  export USSP_TESTIF_OPERATOR_CLIENT_ID
+  say "test operator: $(jq -c '{operator_status, validation_status, client_id, bound: (.bound | length), console_session}' "$(winpath "$testif_state/seed.json")")"
+  jq -r '.notes[]' "$(winpath "$testif_state/seed.json")" | while IFS= read -r n; do say "test operator: $n"; done
+  dc up -d --wait --wait-timeout 120 ussp-test-interfaces >/dev/null ||
+    { dc logs --no-color --tail 20 ussp-test-interfaces >&2 || true; die "test-interfaces did not become healthy"; }
+  say "test-interfaces healthy ($testif_image)"
+}
+
+# check_interfaces <rid_injection url> <rid_observation url> <flight_planning url>:
+# every declared interface must answer a call without a credential 401
+# (as WP-19's push check: a target cannot declare what it does not
+# serve), at the URL it is declared at: on the stack, from the lab
+# network (http://ussp:8087/test/..., where uss_qualifier calls it; the
+# lab Caddy's /test/* route is not what the target declares), for an
+# external target from here. An empty URL is not declared and not
+# called.
+check_interfaces() {
+  local name url path code pair
+  for pair in "rid_injection|$1|/user_notifications?after=2026-01-01T00:00:00Z" "rid_observation|$2|/display_data?view=41.71,44.82,41.72,44.83" "flight_planning|$3|/status"; do
+    IFS='|' read -r name url path <<<"$pair"
+    [ -n "$url" ] || continue
+    if [ -z "$external" ]; then
+      code="$(lab_status "$url$path")"
+    else
+      code="$(curl -sS -o "$(winpath "$state/iface-probe.body")" -w '%{http_code}' --max-time 10 --retry 10 --retry-delay 1 --retry-connrefused \
+        "${curl_tls[@]}" "$url$path")" || code="no answer"
+    fi
+    [ "$code" = 401 ] || die "the target declares $name at $url, but $path without a credential answered $code (want 401)"
+    say "interface $name declared and served at $url: $path without a credential answered 401"
+  done
+}
+
+# lab_status <url>: the HTTP status a GET of url without a credential
+# gets from a container on the stack's lab network, or "no answer". wget
+# exits non-zero on any status but 2xx, a 401 included, so its exit
+# status says nothing here: the status line it printed is the answer,
+# and without one (no route, no container, a timeout) there is none.
+lab_status() {
+  local out code
+  out="$(docker run --rm --network "${project}_lab" --entrypoint wget "$probe_image" -S -q -O /dev/null -T 10 "$1" 2>&1)" || true
+  code="$(printf '%s\n' "$out" | sed -n 's|^ *HTTP/[0-9.]* \([0-9][0-9][0-9]\).*|\1|p' | tail -n 1)"
+  echo "${code:-no answer}"
+}
+
+# run_qualifier: the lab's mock USS beside the stack and its
+# run-qualifier.sh for each configuration the target's interfaces allow;
+# every report is folded into the suite's run. A run that writes no
+# report fails the hook (after the suite), never passes as not run.
+qreports=()
+qualifier_failed=0
+run_qualifier() {
+  local qdir secret req cfg pair t0 rc
+  qdir="$out/qualifier-$(date -u +%Y%m%dT%H%M%SZ)"
+  mkdir -p "$qdir"
+  secret="$(jq -r '."lab-01" // empty' "$(winpath "$state/issuer/client-secrets.json")")"
+  [ -n "$secret" ] || die "the issuer's client-secrets.json has no lab-01"
+  MOCK_USS_AUTH_SPEC="ClientIdClientSecret(token_endpoint=http://lab-issuer:8080/oauth/token,client_id=lab-01,client_secret=${secret},send_request_as_data=true)"
+  export MOCK_USS_AUTH_SPEC
+  QUALIFIER_DOCKER_NETWORK="${project}_lab"
+  LAB_STATE_DIR="$(winpath "$state/issuer")"
+  QUALIFIER_PARTICIPANT="$participant"
+  QUALIFIER_TARGET_URL_REGEX="https://${ussp_host//./\\.}(:[0-9]+)?/.*"
+  QUALIFIER_DSS_URL=http://dss:8082
+  QUALIFIER_DSS_HOST=dss
+  QUALIFIER_MOCK_RIDSP_URL=http://mock-ridsp
+  QUALIFIER_MOCK_RIDDP_URL=http://mock-riddp
+  QUALIFIER_MOCK_SCD_URL=http://mock-scd
+  QUALIFIER_MOCK_URL_REGEX='http://mock-.*'
+  QUALIFIER_TOKEN_URL=http://lab-issuer:8080/oauth/token
+  LAB_SECRETS_JSON="$state/issuer/client-secrets.json"
+  # The lab CA certificate (never its key): uss_qualifier and the mock
+  # USS query this USSP's /uss/flights over the lab's TLS.
+  QUALIFIER_CA_FILE="$(winpath "$state/demo/ca/ca.pem")"
+  export QUALIFIER_DOCKER_NETWORK LAB_STATE_DIR QUALIFIER_PARTICIPANT QUALIFIER_TARGET_URL_REGEX QUALIFIER_DSS_URL QUALIFIER_DSS_HOST \
+    QUALIFIER_MOCK_RIDSP_URL QUALIFIER_MOCK_RIDDP_URL QUALIFIER_MOCK_SCD_URL QUALIFIER_MOCK_URL_REGEX QUALIFIER_TOKEN_URL LAB_SECRETS_JSON QUALIFIER_CA_FILE
+  docker compose --progress quiet -p "$project-qualifier" -f "$(winpath "$LAB_DIR/conformance/uss_qualifier/compose.yaml")" up -d >/dev/null ||
+    die "the lab's mock USS did not start: docker compose -p $project-qualifier logs"
+  unset MOCK_USS_AUTH_SPEC
+  say "mock USS up ($project-qualifier on $QUALIFIER_DOCKER_NETWORK)"
+  for pair in "F3411-SP|f3411-sp.yaml|$iface_injection" "F3548-SCD|f3548-scd.yaml|$iface_planning" "F3411-DP|f3411-dp.yaml|$iface_observation"; do
+    IFS='|' read -r req cfg QUALIFIER_TARGET_INTERFACE_URL <<<"$pair"
+    export QUALIFIER_TARGET_INTERFACE_URL
+    if [ -z "$QUALIFIER_TARGET_INTERFACE_URL" ]; then
+      say "uss_qualifier $cfg: the target declares no interface for $req; not run"
+      continue
+    fi
+    rc=0
+    t0="$(date +%s)"
+    "$LAB_DIR/conformance/uss_qualifier/run-qualifier.sh" "$cfg" "$qdir/$req" >"$qdir/$req.log" 2>&1 || rc=$?
+    if [ "$rc" -ne 0 ] || [ ! -s "$qdir/$req/qualifier/report.json" ]; then
+      tail -n 20 "$qdir/$req.log" >&2
+      say "uss_qualifier $cfg wrote no report (exit $rc, $(($(date +%s) - t0)) s; $qdir/$req.log): $req is not judged by this run"
+      qualifier_failed=1
+      continue
+    fi
+    say "uss_qualifier $cfg finished after $(($(date +%s) - t0)) s: $(grep 'uss_qualifier exited' "$qdir/$req.log" | tail -n 1)"
+    qreports+=("$req=$qdir/$req/qualifier/report.json")
+  done
+}
+
+# qualifier_down: remove the mock USS project and check nothing is left.
+qualifier_down() {
+  local log
+  [ "${qualifier:-off}" = on ] && [ -z "$external" ] || return 0
+  log="$(docker compose -p "$project-qualifier" down -v --remove-orphans 2>&1)" || echo "conformance: docker compose down ($project-qualifier) said: $log" >&2
+  if [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$project-qualifier")" ]; then
+    echo "conformance: the mock USS project $project-qualifier left containers behind" >&2
+    docker ps -a --filter "label=com.docker.compose.project=$project-qualifier" >&2
+    return 1
+  fi
 }
 
 # ---- the suite --------------------------------------------------------------------------
@@ -404,6 +730,10 @@ run_suite() {
   if [ -n "${sign_key:-}" ] && [ -s "$sign_key" ]; then args+=(--sign-key "$(winpath "$sign_key")"); fi
   if [ "${CONFORMANCE_ALLOW_INCOMPLETE:-}" = 1 ]; then args+=(--allow-incomplete); fi
   if [ "$baseline" != none ]; then args+=(--baseline "$(winpath "$baseline")"); fi
+  local r
+  for r in "${qreports[@]}" "${extra_reports[@]}"; do
+    args+=(--qualifier-report "${r%%=*}=$(winpath "${r#*=}")")
+  done
   mkdir -p "$out"
   rc=0
   "$bin" "${args[@]}" || rc=$?
@@ -418,6 +748,33 @@ not_checked() {
   if [ "$baseline" != none ]; then bl="$(cat "$baseline")"; fi
   jq -r --argjson bl "$bl" '.requirements[]? | select(.role == "gate" and .status == "not_applicable")
     | [.id, (($bl.requirements // {})[.id] | select(.status == "not_applicable") | .note) // ""] | @tsv' "$1"
+}
+
+# known_failing <report.json>: the gate requirements that failed in the
+# run and that the baseline records as known failures, one
+# "<id><TAB><the baseline's note>" per line.
+known_failing() {
+  local bl='{}'
+  if [ "$baseline" != none ]; then bl="$(cat "$baseline")"; fi
+  jq -r --argjson bl "$bl" '.requirements[]? | select(.role == "gate" and .status == "fail")
+    | select((($bl.requirements // {})[.id].status // "") == "fail")
+    | [.id, ($bl.requirements[.id].note // "")] | @tsv' "$1"
+}
+
+# under_exercised <report.json>: the baseline's known failures that the
+# run judged with fewer passed checks than the exercised file requires,
+# one "<id><TAB><passed><TAB><minimum>" per line. One the report does
+# not name counts as 0 passed; one the run did not check (not
+# applicable) is not judged here: it is not checked, named above.
+under_exercised() {
+  jq -r --slurpfile bl "$baseline" --slurpfile ex "$exercised" '
+    (.requirements // []) as $r
+    | $bl[0].requirements | to_entries[] | select(.value.status == "fail") | .key as $id
+    | ([$r[] | select(.id == $id)][0]) as $q
+    | select(($q.status // "") != "not_applicable")
+    | (($q.outcomes.pass // 0) | if type == "number" then . else 0 end) as $p
+    | $ex[0].requirements[$id].min_passed as $m
+    | select($p < $m) | [$id, $p, $m] | @tsv' "$1"
 }
 
 # ---- main -------------------------------------------------------------------------------
@@ -475,15 +832,27 @@ if [ -z "$external" ]; then
       say "CONFORMANCE_KEEP=1: the stack $project is left running (scripts/conformance.sh down removes it)"
       exit "$rc"
     fi
+    if ! qualifier_down; then [ "$rc" -ne 0 ] || rc=1; fi
     if ! down; then [ "$rc" -ne 0 ] || rc=1; fi
     exit "$rc"
   }
   trap teardown EXIT
   stack_up
   check_push_declaration "$base"
+  # Checked where they are declared: as uss_qualifier reaches them.
+  check_interfaces "$iface_injection" "$iface_observation" "$iface_planning"
+  if [ "$qualifier" = on ]; then
+    run_qualifier
+  else
+    say "CONFORMANCE_QUALIFIER=off: uss_qualifier (F3411-SP, F3548-SCD, F3411-DP) not run in this invocation"
+  fi
 else
   if [ -n "${USSP_CONFORMANCE_CA_FILE:-}" ]; then curl_tls+=(--cacert "$USSP_CONFORMANCE_CA_FILE" --ssl-no-revoke); fi
   check_push_declaration "$external"
+  check_interfaces "${USSP_CONFORMANCE_RID_INJECTION_URL:-}" "${USSP_CONFORMANCE_RID_OBSERVATION_URL:-}" "${USSP_CONFORMANCE_FLIGHT_PLANNING_URL:-}"
+  if [ "${#extra_reports[@]}" -eq 0 ]; then
+    say "external target: this hook runs no uss_qualifier against it (CONFORMANCE_QUALIFIER_REPORTS folds reports made elsewhere): not run in this invocation"
+  fi
 fi
 suite_rc=0
 run_suite
@@ -495,7 +864,7 @@ if [ -z "$external" ]; then
   fi
 fi
 # The run's provenance beside its report (E-05): what ran against what.
-run_dir="$(find "$out" -mindepth 1 -maxdepth 1 -type d -newermt "@$started" 2>/dev/null | sort | tail -n 1)"
+run_dir="$(find "$out" -mindepth 1 -maxdepth 1 -type d ! -name 'qualifier-*' -newermt "@$started" 2>/dev/null | sort | tail -n 1)"
 if [ -n "$run_dir" ] && [ -f "$run_dir/report.json" ]; then
   {
     echo "uspace-ussp $(git rev-parse HEAD)$(git diff --quiet HEAD || echo ' (dirty)')"
@@ -506,6 +875,9 @@ if [ -n "$run_dir" ] && [ -f "$run_dir/report.json" ]; then
     echo "system id $sid"
     echo "suite exit $suite_rc"
     echo "baseline ${baseline#"$here"/}"
+    echo "test-interfaces image ${testif_image:-not built here}${testif_image_id:+ $testif_image_id}"
+    echo "uss_qualifier ${qualifier:-on}: reports ${qreports[*]:-none}${extra_reports[*]:+ ${extra_reports[*]}}"
+    if [ "$qualifier_failed" = 1 ]; then echo "uss_qualifier: a configuration wrote no report (the hook exits 1)"; fi
   } >"$run_dir/run-info.txt"
   if [ -z "$external" ] && [ -f "$state/issuer/public/jwks.json" ]; then cp "$state/issuer/public/jwks.json" "$run_dir/issuer-jwks.json"; fi
 else
@@ -514,8 +886,9 @@ fi
 # A gate requirement not checked is never a pass, even when the
 # baseline accepts it: each is named with the reason it is not checked.
 blocked=0
+known=0
 if [ -n "$run_dir" ] && [ -f "$run_dir/report.json" ] && [ "$baseline" != none ]; then
-  if ! nc="$(not_checked "$run_dir/report.json")"; then
+  if ! nc="$(not_checked "$(winpath "$run_dir/report.json")")"; then
     say "could not read the requirements of $run_dir/report.json"
     [ "$suite_rc" -ne 0 ] || suite_rc=1
     nc=""
@@ -531,10 +904,48 @@ if [ -n "$run_dir" ] && [ -f "$run_dir/report.json" ] && [ "$baseline" != none ]
       say "NOT CHECKED: $id (no baseline records it not applicable: the run is incomplete)"
     fi
   done <<<"$nc"
+  # A known failure the suite did not count as a regression is not a
+  # pass: each is named with where it is tracked.
+  if ! kf="$(known_failing "$(winpath "$run_dir/report.json")")"; then
+    say "could not read the requirements of $run_dir/report.json"
+    [ "$suite_rc" -ne 0 ] || suite_rc=1
+    kf=""
+  fi
+  while IFS=$'\t' read -r id note; do
+    [ -n "$id" ] || continue
+    known=$((known + 1))
+    say "KNOWN FAILING, NOT A PASS: $id: $note (recorded failing by ${baseline#"$here"/})"
+    if [ "${GITHUB_ACTIONS:-}" = true ]; then echo "::warning title=conformance: $id known failing (not a pass)::$note"; fi
+    echo "known failing $id: $note" >>"$run_dir/run-info.txt"
+  done <<<"$kf"
+  # A known failure that ran too little to say anything is a failure:
+  # the gate cannot tell it from a run that tested nothing.
+  if ! ue="$(under_exercised "$(winpath "$run_dir/report.json")")"; then
+    say "could not read the requirements of $run_dir/report.json"
+    [ "$suite_rc" -ne 0 ] || suite_rc=1
+    ue=""
+  fi
+  while IFS=$'\t' read -r id passed min; do
+    [ -n "$id" ] || continue
+    say "EXERCISED TOO LITTLE: $id: $passed passed checks, the minimum is $min (${exercised#"$here"/}): the run did not exercise it; exit 1"
+    if [ "${GITHUB_ACTIONS:-}" = true ]; then echo "::error title=conformance: $id exercised too little::$passed passed checks, the minimum is $min"; fi
+    echo "exercised too little $id: $passed passed checks, minimum $min" >>"$run_dir/run-info.txt"
+    if [ "$suite_rc" -eq 0 ] || [ "$suite_rc" -eq 3 ]; then suite_rc=1; fi
+  done <<<"$ue"
+elif [ "$baseline" != none ] && [ "$(jq '[.requirements[] | select(.status == "fail")] | length' "$baseline")" != 0 ]; then
+  # Without a report the known failures' minimums cannot be read: not a pass.
+  say "no report of this run: the known failures of ${baseline#"$here"/} could not be checked for their minimum passed checks; exit 1"
+  if [ "$suite_rc" -eq 0 ] || [ "$suite_rc" -eq 3 ]; then suite_rc=1; fi
+fi
+if [ "$qualifier_failed" = 1 ] && [ "$suite_rc" -ne 1 ]; then
+  say "a uss_qualifier configuration wrote no report: its requirement was not judged; exit 1, whatever the suite said ($suite_rc)"
+  suite_rc=1
 fi
 case "$suite_rc" in
   0)
-    if [ "$blocked" -gt 0 ]; then
+    if [ "$known" -gt 0 ]; then
+      say "the suite exited 0 after $(($(date +%s) - started)) s with $known gate requirements failing as the reviewed baseline records them (no regression) and $blocked not checked: the verdict is not a pass; report under $out"
+    elif [ "$blocked" -gt 0 ]; then
       say "the suite exited 0 after $(($(date +%s) - started)) s with $blocked gate requirements not checked, each accepted by the reviewed baseline: the verdict is incomplete, not a pass; report under $out"
     elif [ "${CONFORMANCE_ALLOW_INCOMPLETE:-}" = 1 ]; then
       say "the suite exited 0 after $(($(date +%s) - started)) s: a pass, or an incomplete run accepted by CONFORMANCE_ALLOW_INCOMPLETE=1 (the report says which); report under $out"

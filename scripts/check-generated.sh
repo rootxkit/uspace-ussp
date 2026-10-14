@@ -25,6 +25,10 @@ files=(internal/national/gen/server.gen.go internal/national/client/client.gen.g
 # The sqlc packages are compared file by file, both ways: a stale file
 # left behind is as wrong as a missing one.
 sqlc_dirs=(internal/store/relational internal/store/timeseries)
+# The InterUSS packages: their *.gen.go files, both ways (doc.go and the
+# tests are hand-written).
+interuss_dirs=(internal/stdapi/interuss/ridinjection internal/stdapi/interuss/ridobservation
+  internal/stdapi/interuss/flightplanning)
 
 OUT_DIR="$scratch" "$root/scripts/generate.sh" >/dev/null
 
@@ -46,7 +50,13 @@ for d in "${sqlc_dirs[@]}"; do
     status=1
   fi
 done
+for d in "${interuss_dirs[@]}"; do
+  if ! diff -ru -x doc.go -x '*_test.go' "$root/$d" "$scratch/$d"; then
+    echo "out of date: $d (run make generate and commit the result)"
+    status=1
+  fi
+done
 if [ "$status" -eq 0 ]; then
-  echo "check-generated: ${#files[@]} files and ${#sqlc_dirs[@]} sqlc packages up to date: ${files[*]} ${sqlc_dirs[*]}"
+  echo "check-generated: ${#files[@]} files, ${#sqlc_dirs[@]} sqlc packages and ${#interuss_dirs[@]} InterUSS packages up to date: ${files[*]} ${sqlc_dirs[*]} ${interuss_dirs[*]}"
 fi
 exit "$status"

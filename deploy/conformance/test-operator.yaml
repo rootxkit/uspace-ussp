@@ -1,0 +1,57 @@
+# The test operator of the conformance profile (docs/PLAN.md D13, §6.4;
+# brief WP-21): the operator whose client the test-interfaces process is.
+# scripts/conformance.sh seeds it at stack start through the national API
+# (POST /v1/accounts/operators, then the client and the serial bindings
+# with the operator_admin's portal session), never by SQL; the process
+# reads the serial pool and the Annex IV items below
+# (USSP_TEST_INTERFACES_OPERATOR_FILE, internal/testif.LoadFixture).
+#
+# Every value is the lab's reading of Annex IV for a test operator,
+# pending GCAA: GEOTEST* and TEST* values only, no production value, no
+# secret (the admin's password and the client's secret are generated into
+# the stack's state directory by the hook and never written here).
+#
+# The registry must know the registration number and the serials for F8
+# validity to answer `valid`: uspace-lab registers both
+# (conformance/fixtures/test-operators.yaml, the registry step of its
+# cmd/demo-seed), which scripts/conformance.sh runs at the lab's
+# authority before the seed. The number has no hyphen: the authority
+# validates it with uspace-core regnum, which refuses one, so the
+# GEO-TEST-WP21-0001 of the first run could never be registered.
+format: ussp-test-operator/v1
+operator:
+  registration_number: GEOTESTWP210001
+  display_name: InterUSS test operator (WP-21)
+  contact_email: test-operator@example.test
+  admin_username: wp21.test.admin
+client:
+  scopes: [ussp.telemetry, ussp.intents, ussp.traffic]
+# The serials an injected flight without its own serial flies under, and
+# the ones the hook binds at seed time.
+serials:
+  - TEST-WP21-0001
+  - TEST-WP21-0002
+  - TEST-WP21-0003
+  - TEST-WP21-0004
+  - TEST-WP21-0005
+  - TEST-WP21-0006
+  - TEST-WP21-0007
+  - TEST-WP21-0008
+# The intent/request/v1 items the flight_planning FlightPlan carries no
+# member for (pending GCAA).
+annex_iv:
+  contingency:
+    procedure: "Test operator: land at the nearest safe place in the volume and report to the USSP (pending GCAA)"
+    landing_sites: []
+  emergency_contact_ref: TEST-EMERGENCY-CONTACT-0001
+  pilot_ref: ""
+  takeoff: null
+  landing: null
+# FlightAuthorisationData identification_technologies -> the request's
+# identification_technology (network, direct or both). An entry the table
+# does not name refuses the plan (Rejected), never a guess.
+identification_technologies:
+  ASTMNetRID: network
+  NetworkRemoteID: network
+  ASTMDirectRID: direct
+  DirectRemoteID: direct
