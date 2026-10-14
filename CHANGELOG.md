@@ -36,6 +36,14 @@ additively within `/v1`.
 
 ### Fixed
 
+- `records` on `/readyz` was degraded from 01:00 to 02:00 UTC on a
+  fresh start (`records: day <date> missing`, the CI staging smoke):
+  the daily job read its seven days back from now−25 h and the alarm
+  from now−26 h, so the alarm's first day was one the job never built.
+  `records.Window` now gives both one first day; the job reads one day
+  more than the alarm between 01:00 and 02:00. Pinned at every hour's
+  boundary, across DST changes and UTC midnight, with the database
+  clock in UTC and in zones with DST.
 - The nightly backup lost held flights older than the time-series
   window (`USSP_BACKUP_TS_DAYS`, 7 days, pending GCAA) and every daily
   record bundle: it left the rows of the older chunks out whatever
