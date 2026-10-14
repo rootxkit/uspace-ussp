@@ -220,6 +220,33 @@ if grep -qF 'CONFORMANCE_QUALIFIER=off with CONFORMANCE_ALLOW_INCOMPLETE=1' "$wo
 hook_rc 0 "CONFORMANCE_QUALIFIER=off alone runs the suite" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_QUALIFIER=off
 if [ -e "$work/args" ]; then pass "the suite ran with the InterUSS suites off"; else fail "the suite did not run with CONFORMANCE_QUALIFIER=off alone"; fi
 
+# ---- the workflow's guard of the same combination -------------------------------
+# The conformance workflow refuses qualifier off with allow_incomplete in
+# its first step, before the lab and the geoid grid are fetched: the
+# step's script (between its inputs-guard markers) is run here with each
+# combination, and its inputs are the ones `make conformance` is given.
+wf="$here/.github/workflows/conformance.yml"
+guard="$work/inputs-guard.sh"
+awk '/# inputs-guard:begin/ { on = 1; next } /# inputs-guard:end/ { on = 0 } on { sub(/^ +/, ""); print }' "$wf" >"$guard"
+if [ ! -s "$guard" ]; then
+  fail "the conformance workflow has no inputs guard (# inputs-guard:begin ... end)"
+else
+  guard_rc() { # <want> <label> <qualifier> <allow_incomplete>
+    local rc=0
+    env CONFORMANCE_QUALIFIER="$3" CONFORMANCE_ALLOW_INCOMPLETE="$4" bash "$guard" >"$work/guard.log" 2>&1 || rc=$?
+    if [ "$rc" = "$1" ]; then pass "the workflow's guard: $2 (exit $rc)"; else fail "the workflow's guard: $2: exit $rc, want $1: $(tail -n 1 "$work/guard.log")"; fi
+  }
+  guard_rc 1 "qualifier off with allow_incomplete is refused" off 1
+  if grep -qF 'qualifier off with allow_incomplete' "$work/guard.log"; then pass "the guard's refusal names both inputs"; else fail "the guard's refusal does not name both inputs: $(tail -n 1 "$work/guard.log")"; fi
+  guard_rc 0 "qualifier off alone runs" off ""
+  guard_rc 0 "allow_incomplete alone runs" on 1
+  guard_rc 0 "the defaults run" on ""
+fi
+for v in "CONFORMANCE_ALLOW_INCOMPLETE: \${{ inputs.allow_incomplete && '1' || '' }}" "CONFORMANCE_QUALIFIER: \${{ inputs.qualifier || 'on' }}"; do
+  n="$(grep -cF -- "$v" "$wf" || true)"
+  if [ "$n" -eq 2 ]; then pass "the guard and make conformance read $v"; else fail "$v is in the workflow $n times, want 2 (the guard and make conformance)"; fi
+done
+
 # ---- the reviewed baseline ------------------------------------------------------
 bl="$work/baseline.json"
 cat >"$bl" <<'JSON'

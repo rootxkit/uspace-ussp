@@ -9,7 +9,8 @@
 #   scripts/check-deploy.sh
 #
 # Needs docker compose (only the CLI: nothing is started here but the
-# pinned shellcheck container), jq and openssl. Nothing secret is
+# pinned shellcheck container and stand-in containers of the pinned
+# nats-box that serve nothing), jq and openssl. Nothing secret is
 # printed: the rendered compose holds the throwaway secrets gen-secrets.sh writes into a
 # temporary directory, and only names and counts are shown.
 set -euo pipefail
@@ -271,6 +272,63 @@ else
   bad "teardown.sh: ${out:-no output}"
   docker rm -f "$(docker ps -aq --filter "label=com.docker.compose.project=$tproject")" >/dev/null 2>&1 || true
 fi
+
+# ---- backup.sh: the records volume at api's USSP_RECORDS_DIR ----------------
+
+# The record bundles are read from the named volume api has at its own
+# USSP_RECORDS_DIR, whatever the path: stand-in containers of a project
+# of their own (the pinned nats-box, asleep; nothing in them answers a
+# query), so the run stops at its first query, after the volume is
+# found. An api whose USSP_RECORDS_DIR is another path than the volume's,
+# and one without it, are refused before anything is read; the presence
+# names the volume and the directory. The containers and the volume are
+# removed afterwards, also on failure, and their absence checked.
+bproject="uspace-ussp-backup-check-$$"
+bvol="$bproject-records"
+bimage="${NATS_BOX_IMAGE:-natsio/nats-box:0.18.0@sha256:abdc9f9f0120bb8adfbf674eb037d1551db55356eb198b7bd4ffed377f6950a6}"
+# shellcheck disable=SC2317 # run by the EXIT trap and below
+backup_check_down() {
+  local ids
+  ids="$(docker ps -aq --filter "label=com.docker.compose.project=$bproject" 2>/dev/null)"
+  if [ -n "$ids" ]; then printf '%s\n' "$ids" | xargs docker rm -f >/dev/null 2>&1 || true; fi
+  docker volume rm -f "$bvol" >/dev/null 2>&1 || true
+}
+trap 'backup_check_down; cleanup' EXIT
+bservice() { # <service> [docker run args...]: a stand-in container of the project
+  local svc="$1"; shift
+  MSYS_NO_PATHCONV=1 docker run -d --label "com.docker.compose.project=$bproject" \
+    --label "com.docker.compose.service=$svc" "$@" "$bimage" sleep 600 >/dev/null
+}
+docker volume create "$bvol" >/dev/null
+bservice timescaledb
+bservice nats
+backup_records() { # <label> <want: past or the refusal> [api's docker run args...]
+  local label="$1" want="$2" rc=0 out
+  shift 2
+  docker rm -f "$(docker ps -aq --filter "label=com.docker.compose.project=$bproject" --filter "label=com.docker.compose.service=api")" >/dev/null 2>&1 || true
+  bservice api "$@"
+  out="$(USSP_COMPOSE_PROJECT="$bproject" USSP_SECRETS_DIR="$work/secrets" deploy/backup.sh "$work/backup-records" 2>&1)" || rc=$?
+  if [ "$rc" -ne 0 ] && grep -qF -- "$want" <<<"$out"; then
+    ok "backup.sh: $label (exit $rc: $want)"
+  else
+    bad "backup.sh: $label: exit $rc, want '$want': $(tail -n 2 <<<"$out" | tr '\n' ' ')"
+  fi
+}
+backup_records "the bundles are read from the volume at api's USSP_RECORDS_DIR" \
+  "the record bundles are read from the volume $bvol at api's USSP_RECORDS_DIR /srv/bundles" \
+  -e USSP_RECORDS_DIR=/srv/bundles -v "$bvol:/srv/bundles"
+backup_records "a volume at another path than api's USSP_RECORDS_DIR is refused" \
+  "api has no named volume at its USSP_RECORDS_DIR /srv/bundles" \
+  -e USSP_RECORDS_DIR=/srv/bundles -v "$bvol:/var/lib/ussp/records"
+backup_records "an api without USSP_RECORDS_DIR is refused" \
+  "api has no USSP_RECORDS_DIR" -v "$bvol:/var/lib/ussp/records"
+backup_check_down
+if [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$bproject")" ] && ! docker volume inspect "$bvol" >/dev/null 2>&1; then
+  ok "backup.sh's stand-in containers and volume removed"
+else
+  bad "backup.sh's stand-in containers or volume are still present ($bproject)"
+fi
+trap cleanup EXIT
 
 # ---- restore-check.sh: the KV export against the topology -------------------
 

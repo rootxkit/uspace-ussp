@@ -32,6 +32,19 @@ a running USSP always has them). Then stamps older than
 `USSP_BACKUP_KEEP_DAYS` (14) are removed. Both figures are national
 choices (spec 05 §4), **pending GCAA**, and are settings.
 
+**The held-data ceiling.** "Whatever their age" is bounded. A hold keeps
+a flight's telemetry from the removal of the remote pilot's position,
+not from the hypertables' retention: telemetry's chunks are dropped
+after `telemetry_retention_days` (the policy row, 90 by default), held
+rows with the rest, and the conformance samples and traffic products
+after their own 90 days (timeseries migration 00002). The oldest stamp
+kept is `USSP_BACKUP_KEEP_DAYS` old. So the oldest held row any backup
+can give back is `telemetry_retention_days + USSP_BACKUP_KEEP_DAYS` old:
+90 + 14 = 104 days with the defaults, **pending GCAA** like both
+figures. Older, a held flight's rows are in no backup and no longer in
+the database; its record in that day's bundle (`records-<stamp>.tar`
+holds every bundle) is what remains.
+
 Off the host: `USSP_BACKUP_REMOTE` (an rclone remote and path) copies
 each file and compares the copy's size. Which account holds the copies
 is the owner's open question; without it the run says the files stayed on

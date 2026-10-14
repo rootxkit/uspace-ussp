@@ -36,6 +36,27 @@ additively within `/v1`.
 
 ### Fixed
 
+- `records` on `/readyz` was degraded from 01:00 to 02:00 UTC on a
+  fresh start (`records: day <date> missing`, the CI staging smoke):
+  the daily job read its seven days back from now−25 h and the alarm
+  from now−26 h, so the alarm's first day was one the job never built.
+  `records.Window` now gives both one first day; the job reads one day
+  more than the alarm between 01:00 and 02:00. Pinned at every hour's
+  boundary, across DST changes and UTC midnight, with the database
+  clock in UTC and in zones with DST.
+- The days without a record bundle were a `timestamptz` series in the
+  database session's `TimeZone`: a zone that skipped a day
+  (Pacific/Apia, 2011-12-30) left it out, so it was neither built nor
+  alarmed. `MissingRecordDays` now steps UTC dates by whole days.
+- The images job on `main` failed after the push: `scripts/check-images.sh`
+  read the pushed production image's entrypoint with `docker image
+  inspect`, which does not pull, so a digest that was only in GHCR was
+  reported as an image that does not run. It now pulls each image that
+  is not here first; the self-test checks one from a local registry.
+- `deploy/backup.sh` looked for the records volume at
+  `/var/lib/ussp/records` whatever api's `USSP_RECORDS_DIR` said. It now
+  reads `USSP_RECORDS_DIR` from the running api container and backs up
+  the named volume mounted there, and refuses an api without it.
 - The nightly backup lost held flights older than the time-series
   window (`USSP_BACKUP_TS_DAYS`, 7 days, pending GCAA) and every daily
   record bundle: it left the rows of the older chunks out whatever
@@ -46,6 +67,10 @@ additively within `/v1`.
   cutoff) and `records-<stamp>.tar` (every bundle `record_bundles`
   names, read back against its SHA-256); `deploy/restore-check.sh`
   applies and counts both, and refuses a manifest without them.
+  The held rows are not kept forever: telemetry's retention drops their
+  chunks like any other, so the oldest held row a backup can give back
+  is `telemetry_retention_days + USSP_BACKUP_KEEP_DAYS` old, 90 + 14 =
+  104 days with the defaults (pending GCAA; `docs/RUNBOOKS/backup.md`).
 - The ANSP's degraded direct delivery (spec 02 F2 failure rule,
   cross-plan M4, M5; system audit 2026-10-05 H-2) was acknowledged and
   discarded: the record's `version`, the restriction's `ansp_version`,

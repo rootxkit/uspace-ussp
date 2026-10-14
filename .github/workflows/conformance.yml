@@ -76,6 +76,22 @@ jobs:
     # QUALIFIER_TIMEOUT_S each (the step's bound below).
     timeout-minutes: 200
     steps:
+      # qualifier off with allow_incomplete would pass having judged none
+      # of the InterUSS requirements: refused here, before the lab and
+      # the geoid grid are fetched (scripts/conformance.sh refuses it
+      # too). scripts/conformance-selftest.sh runs this script.
+      - name: refuse qualifier off with allow_incomplete
+        env:
+          CONFORMANCE_ALLOW_INCOMPLETE: ${{ inputs.allow_incomplete && '1' || '' }}
+          CONFORMANCE_QUALIFIER: ${{ inputs.qualifier || 'on' }}
+        run: |
+          # inputs-guard:begin
+          if [ "$CONFORMANCE_QUALIFIER" = off ] && [ "${CONFORMANCE_ALLOW_INCOMPLETE:-}" = 1 ]; then
+            echo "::error title=conformance inputs::qualifier off with allow_incomplete is refused: the run would pass without the InterUSS suites having judged anything (use one or the other)"
+            exit 1
+          fi
+          echo "inputs: qualifier $CONFORMANCE_QUALIFIER, allow_incomplete ${CONFORMANCE_ALLOW_INCOMPLETE:-0}"
+          # inputs-guard:end
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: read deploy/conformance/SOURCE
         id: src

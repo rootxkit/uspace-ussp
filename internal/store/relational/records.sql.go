@@ -93,10 +93,10 @@ func (q *Queries) InsertRecordBundle(ctx context.Context, arg InsertRecordBundle
 }
 
 const missingRecordDays = `-- name: MissingRecordDays :many
-SELECT d::date AS day
-FROM generate_series($1::date, $2::date, interval '1 day') AS d
-WHERE NOT EXISTS (SELECT 1 FROM record_bundles b WHERE b.date = d::date)
-ORDER BY d
+SELECT ($1::date + i)::date AS day
+FROM generate_series(0, $2::date - $1::date) AS i
+WHERE NOT EXISTS (SELECT 1 FROM record_bundles b WHERE b.date = $1::date + i)
+ORDER BY i
 `
 
 type MissingRecordDaysParams struct {
@@ -104,7 +104,10 @@ type MissingRecordDaysParams struct {
 	LastDay  pgtype.Date `json:"last_day"`
 }
 
-// The days from first to last (inclusive) without a bundle.
+// The days from first to last (inclusive) without a bundle. Date plus
+// whole days, never a timestamptz series: that one steps through the
+// session's TimeZone and skips a day a zone skipped (Pacific/Apia's
+// 2011-12-30), which would then be neither built nor alarmed.
 func (q *Queries) MissingRecordDays(ctx context.Context, arg MissingRecordDaysParams) ([]pgtype.Date, error) {
 	rows, err := q.db.Query(ctx, missingRecordDays, arg.FirstDay, arg.LastDay)
 	if err != nil {

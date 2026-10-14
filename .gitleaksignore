@@ -13,3 +13,8 @@
 # The sample nonce of RFC 6455 section 1.3 ("the sample nonce"), sent as
 # Sec-WebSocket-Key by the conformance hook's push probe (WP-19).
 5d173e3db44a297bf89984a83655ecaae4b5c757:scripts/conformance.sh:generic-api-key:328
+#
+# The session time zones of the missing-days test ("UTC", "Pacific/Apia",
+# "America/Santiago", "Asia/Tbilisi" after a variable named tz), read as a
+# generic API key; zone names, no secret.
+4e96638d2b6352dbc51486e488284f9ac27c85e3:test/integration/records_days_test.go:generic-api-key:40

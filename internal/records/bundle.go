@@ -62,8 +62,9 @@ type BundleStore interface {
 const (
 	BuildAfter = 25 * time.Hour
 	MissAfter  = 26 * time.Hour
-	// CatchUpDays is how many days back a bundle missed (api down at
-	// 01:00) is still built, and a missing one still alarmed.
+	// CatchUpDays is how many days back a missing bundle is alarmed
+	// (Probe), and a bundle missed (api down at 01:00) still built:
+	// Window gives both their days.
 	CatchUpDays = 7
 	// MaxBundleFlights bounds one bundle; a day with more is refused
 	// whole (B-13: refused, never thinned) and stays missing.
@@ -118,6 +119,19 @@ func Day(t time.Time) time.Time {
 	return time.Date(y, m, dd, 0, 0, 0, 0, time.UTC)
 }
 
+// Window is the days the job and its alarm read at now, UTC days, one
+// first day for both: the alarm (Probe) reads first to missed, the
+// CatchUpDays days whose bundle is MissAfter their start; the job
+// (BuildDue) reads first to due, the days BuildAfter their start. Due
+// is missed or the day after it (from 01:00 to 02:00 UTC), so every day
+// the alarm can name is one the job builds. Reading each window back
+// from its own last day instead left the alarm's first day out of the
+// job's from 01:00 to 02:00, raised on a fresh start.
+func Window(now time.Time) (first, due, missed time.Time) {
+	missed = Day(now.Add(-MissAfter))
+	return missed.AddDate(0, 0, -(CatchUpDays - 1)), Day(now.Add(-BuildAfter)), missed
+}
+
 // Run builds the due bundles every every until ctx ends.
 func (d *Daily) Run(ctx context.Context, every time.Duration) {
 	if every <= 0 {
@@ -137,9 +151,9 @@ func (d *Daily) Run(ctx context.Context, every time.Duration) {
 	}
 }
 
-// BuildDue builds every day of the last CatchUpDays that is due
-// (BuildAfter its start, on the database clock) and has no bundle, and
-// returns how many it built.
+// BuildDue builds every day of Window that is due (BuildAfter its
+// start, on the database clock) and has no bundle, and returns how many
+// it built.
 func (d *Daily) BuildDue(ctx context.Context) (int, error) {
 	if d.Dir == "" {
 		return 0, nil
@@ -148,8 +162,8 @@ func (d *Daily) BuildDue(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	last := Day(now.Add(-BuildAfter))
-	missing, err := d.Store.MissingDays(ctx, last.AddDate(0, 0, -(CatchUpDays-1)), last)
+	first, due, _ := Window(now)
+	missing, err := d.Store.MissingDays(ctx, first, due)
 	if err != nil {
 		return 0, err
 	}
@@ -311,9 +325,9 @@ func (d *Daily) Open(ctx context.Context, day time.Time) (Bundle, *os.File, erro
 }
 
 // Probe is the readiness of the daily bundles: degraded for every day of
-// the last CatchUpDays that has no bundle MissAfter its start ("records:
-// day <date> missing", an alarm on this side); unknown when the table
-// cannot be read. Without a records directory no bundle is built: said
+// its Window (the last CatchUpDays) that has no bundle MissAfter its
+// start ("records: day <date> missing", an alarm on this side); unknown
+// when the table cannot be read. Without a records directory no bundle is built: said
 // on every answer, and degraded as soon as a flight of those days is
 // left without one.
 func (d *Daily) Probe() obs.Probe {
@@ -322,9 +336,8 @@ func (d *Daily) Probe() obs.Probe {
 		if err != nil {
 			return obs.StateUnknown, "the record bundles cannot be read: " + clip(err.Error())
 		}
-		last := Day(now.Add(-MissAfter))
+		first, _, last := Window(now)
 		if d.Dir == "" {
-			first := last.AddDate(0, 0, -(CatchUpDays - 1))
 			fs, err := d.Store.DayFlights(ctx, first, last.AddDate(0, 0, 1), time.Unix(0, 0).UTC(), "00000000-0000-0000-0000-000000000000", 1)
 			if err != nil {
 				return obs.StateUnknown, "the flights cannot be read: " + clip(err.Error())
@@ -334,7 +347,7 @@ func (d *Daily) Probe() obs.Probe {
 			}
 			return obs.StateUp, "USSP_RECORDS_DIR is not set: no daily record bundle is built (no flight to bundle yet)"
 		}
-		missing, err := d.Store.MissingDays(ctx, last.AddDate(0, 0, -(CatchUpDays-1)), last)
+		missing, err := d.Store.MissingDays(ctx, first, last)
 		if err != nil {
 			return obs.StateUnknown, "the record bundles cannot be read: " + clip(err.Error())
 		}

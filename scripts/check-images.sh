@@ -21,6 +21,16 @@ command -v docker >/dev/null 2>&1 || { echo "check-images: docker is required" >
 # the production check would pass for that reason alone.
 export MSYS_NO_PATHCONV=1
 
+# The images job checks what it pushed, by digest: docker run would pull
+# it, docker image inspect does not, and an image that is not here is
+# not an image that does not run. Each is pulled when it is not here.
+for img in "$prod" "$testif"; do
+  if ! docker image inspect "$img" >/dev/null 2>&1; then
+    docker pull -q "$img" >/dev/null || { echo "check-images: $img is not here and cannot be pulled" >&2; exit 1; }
+    echo "check-images: $img pulled"
+  fi
+done
+
 probe() { # probe <image>: the --help output of ussp-test-interfaces in it, or the failure
   docker run --rm --network none --entrypoint /usr/bin/ussp-test-interfaces "$1" --help 2>&1
 }
