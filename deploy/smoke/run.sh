@@ -275,6 +275,18 @@ pg_q ussp_timeseries "INSERT INTO telemetry (flight_id, captured_at, ts, rx_ts, 
   SELECT '$held_id', now() - d * interval '1 day', now() - d * interval '1 day', now() - d * interval '1 day', 'gnss',
          ST_SetSRID(ST_MakePoint(44.8, 41.7), 4326), 'c5:smoke'
   FROM (VALUES (10), (11)) AS v(d)" >/dev/null
+# Their chunks compressed, as telemetry's compression policy leaves every
+# chunk older than 7 days on a host that has run for a week: the held
+# export reads them from compressed chunks and the restore check writes
+# them back into one (the path a real backup takes, not only the
+# uncompressed one). Every chunk holding a held row must be compressed.
+pg_q ussp_timeseries "SELECT count(compress_chunk(c, if_not_compressed => true))
+  FROM show_chunks('telemetry', older_than => interval '7 days') AS c" >/dev/null
+held_chunks="$(pg_q ussp_timeseries "SELECT count(*) || ' ' || coalesce(bool_and(ch.is_compressed), false)
+  FROM (SELECT DISTINCT tableoid::regclass::text AS c FROM telemetry WHERE flight_id = '$held_id') AS h
+  JOIN timescaledb_information.chunks ch ON format('%I.%I', ch.chunk_schema, ch.chunk_name) = h.c")"
+[ "$held_chunks" = "2 true" ] || fail "the held flight's two chunks are not both compressed before the backup ($held_chunks)"
+echo "smoke: the held flight's 2 chunks before the window are compressed"
 recent="$(pg_q ussp_timeseries "SELECT count(*) FROM telemetry WHERE captured_at >= now() - interval '7 days'")"
 held_old="$(pg_q ussp_timeseries "SELECT count(*) FROM telemetry WHERE flight_id = '$held_id' AND captured_at < now() - interval '7 days'")"
 all_rows="$(pg_q ussp_timeseries "SELECT count(*) FROM telemetry")"
