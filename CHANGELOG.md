@@ -48,6 +48,11 @@ additively within `/v1`.
   database session's `TimeZone`: a zone that skipped a day
   (Pacific/Apia, 2011-12-30) left it out, so it was neither built nor
   alarmed. `MissingRecordDays` now steps UTC dates by whole days.
+- The images job on `main` failed after the push: `scripts/check-images.sh`
+  read the pushed production image's entrypoint with `docker image
+  inspect`, which does not pull, so a digest that was only in GHCR was
+  reported as an image that does not run. It now pulls each image that
+  is not here first; the self-test checks one from a local registry.
 - The nightly backup lost held flights older than the time-series
   window (`USSP_BACKUP_TS_DAYS`, 7 days, pending GCAA) and every daily
   record bundle: it left the rows of the older chunks out whatever
