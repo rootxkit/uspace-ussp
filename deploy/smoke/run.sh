@@ -28,8 +28,10 @@
 #       registration, sign-in, client, serial, token, an intent authorised
 #       and activated, telemetry acknowledged; it must pass, not skip;
 #    6. a backup (deploy/backup.sh) with the writers paused, a telemetry
-#       row older than the time-series window among the rows: the restore
-#       check must give back every count but that row, and must refuse
+#       row older than the time-series window among the rows, and two of a
+#       held flight (one an occurrence report names): the restore
+#       check must give back every count but the unheld row, with the held
+#       rows and every record bundle, and must refuse
 #       counts that differ and a file that differs from its manifest;
 #    7. the whole stack stopped and removed (volumes kept), deployed again,
 #       and the operator's intent read back after it;
@@ -260,15 +262,36 @@ pg_q ussp_timeseries "INSERT INTO telemetry (flight_id, captured_at, rx_ts, time
 # The writers paused, so nothing changes between the counts and the dump.
 writers=(api telemetry-ingest rid-sp monitor traffic-ws dss-sync tsdb-writer)
 dc pause "${writers[@]}" >/dev/null 2>&1
+# A held flight from before the window: an occurrence report (delivered,
+# so nothing sends it) names it, and its two telemetry rows 10 days back
+# must come back from the restore whatever their age (the presence),
+# beside the unheld row above that must not (the absence).
+held_id="$(pg_q ussp_relational "SELECT gen_random_uuid()")"
+pg_q ussp_relational "INSERT INTO occurrence_reports (report_ref, kind, became_aware_at, deadline_at, payload, source_kind, source_ref,
+    channel, flagged_by, reporter_ref, flight_ids, state, submitted_at, authority_ref)
+  VALUES ('smoke-held', 'other', now(), now() + interval '72 hours', '{}', 'flight', '$held_id',
+    'voluntary', 'supervisor', 'system', ARRAY['$held_id'::uuid], 'delivered', now(), 'smoke')" >/dev/null
+pg_q ussp_timeseries "INSERT INTO telemetry (flight_id, captured_at, ts, rx_ts, time_source, geom, cell5)
+  SELECT '$held_id', now() - d * interval '1 day', now() - d * interval '1 day', now() - d * interval '1 day', 'gnss',
+         ST_SetSRID(ST_MakePoint(44.8, 41.7), 4326), 'c5:smoke'
+  FROM (VALUES (10), (11)) AS v(d)" >/dev/null
 recent="$(pg_q ussp_timeseries "SELECT count(*) FROM telemetry WHERE captured_at >= now() - interval '7 days'")"
+held_old="$(pg_q ussp_timeseries "SELECT count(*) FROM telemetry WHERE flight_id = '$held_id' AND captured_at < now() - interval '7 days'")"
 all_rows="$(pg_q ussp_timeseries "SELECT count(*) FROM telemetry")"
-expect="events=$(pg_q ussp_relational "SELECT count(*) FROM events"),operator_accounts=$(pg_q ussp_relational "SELECT count(*) FROM operator_accounts"),operational_intents=$(pg_q ussp_relational "SELECT count(*) FROM operational_intents"),telemetry=$recent"
-echo "smoke: live counts with the writers paused: $expect (telemetry $all_rows rows in all, $recent in the window)"
+bundles="$(pg_q ussp_relational "SELECT count(*) FROM record_bundles")"
+held_flights="$(pg_q ussp_relational "SELECT count(DISTINCT f) FROM occurrence_reports, unnest(flight_ids) AS f")"
+expect="events=$(pg_q ussp_relational "SELECT count(*) FROM events"),operator_accounts=$(pg_q ussp_relational "SELECT count(*) FROM operator_accounts"),operational_intents=$(pg_q ussp_relational "SELECT count(*) FROM operational_intents"),telemetry=$((recent + held_old))"
+echo "smoke: live counts with the writers paused: $expect (telemetry $all_rows rows in all, $recent in the window, $held_old of the held flight before it; $bundles record bundles)"
 rc=0
 USSP_COMPOSE_PROJECT="$project" USSP_SECRETS_DIR="$work/secrets" "$deploy/backup.sh" --settings "$work/settings.env" "$work/backups" || rc=$?
 dc unpause "${writers[@]}" >/dev/null 2>&1
 [ "$rc" -eq 0 ] || fail "backup.sh exited $rc"
-if [ "$all_rows" -le "$recent" ] || [ "$recent" -eq 0 ]; then fail "the smoke's telemetry is not both inside and outside the window ($recent of $all_rows)"; fi
+if [ "$all_rows" -le $((recent + held_old)) ] || [ "$recent" -eq 0 ] || [ "$held_old" -ne 2 ]; then
+  fail "the smoke's telemetry is not inside the window, held before it and unheld before it ($recent, $held_old held, of $all_rows)"
+fi
+# The api built the bundles of the days before the smoke at its start
+# (records.Daily): there are some to back up.
+[ "$bundles" -gt 0 ] || fail "no record bundle was built before the backup: the records archive would be checked empty"
 # The backup's NATS user reads every bucket (the export above) and writes
 # none: a put as that user is refused by the server.
 rc=0
@@ -291,7 +314,13 @@ for probe in 'stream info TRK|$JS.API.STREAM.INFO.TRK' 'consumer rm TRK smoke -f
   fi
   echo "smoke: the backup user's '$cmd' is refused (Permissions Violation for $subject)"
 done
-USSP_COMPOSE_PROJECT="$project" RESTORE_CHECK_EXPECT="$expect" "$deploy/restore-check.sh" "$work/backups"
+rc=0
+out="$(USSP_COMPOSE_PROJECT="$project" RESTORE_CHECK_EXPECT="$expect" "$deploy/restore-check.sh" "$work/backups" 2>&1)" || rc=$?
+printf '%s\n' "$out"
+[ "$rc" -eq 0 ] || fail "restore-check exited $rc"
+grep -q "held_flights=$held_flights held_rows=$held_old record_bundles=$bundles (archive $bundles)" <<<"$out" ||
+  fail "restore-check did not give back the held flight's $held_old rows and the $bundles record bundles"
+echo "smoke: the held flight's $held_old rows before the window came back, the unheld one did not, and the $bundles record bundles"
 events="${expect#events=}"
 events="${events%%,*}"
 wrong="events=$((events + 1)),${expect#*,}"
@@ -322,6 +351,20 @@ if [ "$rc" -eq 0 ] || ! grep -q 'buckets, the backup recorded' <<<"$out"; then
   fail "restore-check accepted a KV export with another bucket count than its manifest: $(tail -n 1 <<<"$out")"
 fi
 echo "smoke: restore-check refuses a KV export whose bucket count differs from its manifest (exit $rc)"
+# A hypertable with a flight_id the held export does not read stops the
+# backup before it writes anything (its held rows would be lost without
+# a word); the backup above, without one, is the twin.
+pg_q ussp_timeseries "CREATE TABLE smoke_flight_rows (flight_id uuid NOT NULL, at timestamptz NOT NULL);
+  SELECT create_hypertable('smoke_flight_rows', by_range('at', INTERVAL '1 day'))" >/dev/null
+rc=0
+out="$(USSP_COMPOSE_PROJECT="$project" USSP_SECRETS_DIR="$work/secrets" "$deploy/backup.sh" --settings "$work/settings.env" "$work/refused" 2>&1)" || rc=$?
+pg_q ussp_timeseries "DROP TABLE smoke_flight_rows" >/dev/null
+if [ "$rc" -eq 0 ] || ! grep -q 'flight_id the held export does not read: smoke_flight_rows' <<<"$out"; then
+  fail "backup.sh did not refuse a hypertable of flights it does not read (exit $rc): $(tail -n 1 <<<"$out")"
+fi
+left="$(find "$work/refused" -mindepth 1 -maxdepth 1 -printf '%f ')"
+[ -z "$left" ] || fail "the refused backup left files: $left"
+echo "smoke: backup.sh refuses a hypertable of flights the held export does not read, and writes nothing (exit $rc)"
 
 # ---- 7 -----------------------------------------------------------------------
 step "7. the stack removed (volumes kept), deployed again, read back"

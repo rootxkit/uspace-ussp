@@ -20,8 +20,10 @@ On the host, as the deploy user, the backup and then its check:
 |---|---|
 | `ussp_relational-<stamp>.dump` | the relational database whole, `pg_dump -Fc` |
 | `ussp_timeseries-<stamp>.dump` | the time series with the rows of the chunks of the last `USSP_BACKUP_TS_DAYS` days (7); older chunks and their compressed relations keep their definitions only. "The last 7 days" is the database's clock (`now()` in the container), never the host's |
+| `ussp_timeseries_held-<stamp>.sql` | the rows the dump leaves out that belong to a held flight, whatever their age: every flight an occurrence report names (`occurrence_reports.flight_ids`, the source of `record_holds`). Its telemetry and conformance samples, and the traffic products its client was shown while it flew, read from each chunk before the cutoff, one `COPY` per chunk. A hypertable with a `flight_id` that the export does not read stops the backup before it writes anything |
+| `records-<stamp>.tar` | every daily record bundle `record_bundles` names, whatever its age, from the `records` volume (api's `USSP_RECORDS_DIR`), read back file by file against its recorded SHA-256 |
 | `nats-kv-<stamp>.jsonl` | every JetStream KV bucket, one JSON line per key, read as the `backup` NATS user, which may read the `KV_<bucket>` streams only and may not write, read another stream or delete a consumer (`nats.staging.conf`) |
-| `manifest-<stamp>.json` | the database clock, the cutoff, each tree's schema version, each file's bytes, SHA-256 and entries, the KV export's keys, buckets and buckets with keys; written last, so a stamp without it is incomplete |
+| `manifest-<stamp>.json` | the database clock, the cutoff, each tree's schema version, each file's bytes, SHA-256 and entries, the held flights and their rows per chunk, the bundles by name and SHA-256, the KV export's keys, buckets and buckets with keys; written last, so a stamp without it is incomplete |
 
 Each file is written under a `.partial` name and read back before it is
 kept (a dump must list with `pg_restore --list`; the KV export must hold
@@ -44,9 +46,16 @@ they carry is in the databases.
 checks every file's bytes and SHA-256 against it, restores both databases
 into `ussp_relational_restore_check` and `ussp_timeseries_restore_check`
 in the running container (the time series through
-`timescaledb_pre_restore()` / `post_restore()`), and prints what came
-back: audit events, operators, intents, telemetry rows, hypertables, both
-schema versions, KV keys. It fails on a file that differs, a failed
+`timescaledb_pre_restore()` / `post_restore()`, then the held rows with
+`psql`), and prints what came back: audit events, operators, intents,
+telemetry rows (the held ones among them), hypertables, both schema
+versions, the held flights and their rows, the record bundles, KV keys.
+Before any database is touched it checks that the records archive holds
+exactly the bundles the manifest names, each with its SHA-256; after the
+restore, that every chunk holds the held rows the backup read from it
+and that every bundle the restored `record_bundles` names is in the
+archive. A manifest without the held rows and the bundles (from before
+this check) is refused. It fails on a file that differs, a failed
 restore, a schema version other than the manifest's, a KV export with
 another number of keys or of buckets holding keys than the manifest's
 (`kv.keys`, `kv.buckets_with_keys`; a manifest without the latter, from
@@ -92,15 +101,27 @@ the same smoke on every change.
 2. Restore the relational dump into a new database and swap names, or
    into `ussp_relational` after dropping it, with the server's own
    `pg_restore --exit-on-error`; the time series as `restore-check.sh`
-   does (pre-restore, `pg_restore`, post-restore). The roles
-   (`ussp_api`, `ussp_tsdb`, `ussp_app`) exist from `initdb/10-ussp.sql`.
-3. KV: put keys back from the export with `nats kv put` as a process
-   user, bucket by bucket, only where the bucket has no other source.
-   Which buckets the processes refill by themselves after a cold start has
-   not been rehearsed here, so decide per bucket from its description in
-   `internal/bus/topology.go`; `record_holds` (an occurrence's hold on a
-   flight's records) is one to put back. A night-old copy of live alert
-   state (`conformance_state`, `proximity_state`) would restart alerts as
-   they were last night, and is not put back.
+   does (pre-restore, `pg_restore`, post-restore, then
+   `ussp_timeseries_held-<stamp>.sql` with `psql -v ON_ERROR_STOP=1`:
+   the held flights' rows before the window, which the dump does not
+   hold). The roles (`ussp_api`, `ussp_tsdb`, `ussp_app`) exist from
+   `initdb/10-ussp.sql`. The record bundles: extract `records-<stamp>.tar`
+   into the `records` volume (api's `USSP_RECORDS_DIR`); api serves a
+   bundle only when its bytes still match `record_bundles`.
+3. KV: `record_holds` does not hold a flight's records: it is api's
+   projection of the occurrence reports, and the rows it protects come
+   back from the held file in step 2, not from the KV export. api writes
+   it again from the restored `occurrence_reports` at its start and every
+   10 minutes, but tsdb-writer's retention, which may run first, removes
+   the remote pilot's position from the old telemetry of every flight it
+   does not name. So put `record_holds` back from the export with
+   `nats kv put` as a process user before any process starts, or start
+   api first and wait until the bucket holds a key per held flight.
+   Other buckets: put keys back only where the bucket has no other
+   source. Which buckets the processes refill by themselves after a cold
+   start has not been rehearsed here, so decide per bucket from its
+   description in `internal/bus/topology.go`. A night-old copy of live
+   alert state (`conformance_state`, `proximity_state`) would restart
+   alerts as they were last night, and is not put back.
 4. Deploy (`deploy/deploy.sh`): migrate brings the schema to the image's
    version, and the verification reads every process.

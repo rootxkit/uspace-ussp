@@ -36,6 +36,16 @@ additively within `/v1`.
 
 ### Fixed
 
+- The nightly backup lost held flights older than the time-series
+  window (`USSP_BACKUP_TS_DAYS`, 7 days, pending GCAA) and every daily
+  record bundle: it left the rows of the older chunks out whatever
+  `record_holds` said, and never read the `records` volume.
+  `deploy/backup.sh` now also writes `ussp_timeseries_held-<stamp>.sql`
+  (the telemetry, conformance samples and traffic products of every
+  flight an occurrence report names, from every chunk before the
+  cutoff) and `records-<stamp>.tar` (every bundle `record_bundles`
+  names, read back against its SHA-256); `deploy/restore-check.sh`
+  applies and counts both, and refuses a manifest without them.
 - The ANSP's degraded direct delivery (spec 02 F2 failure rule,
   cross-plan M4, M5; system audit 2026-10-05 H-2) was acknowledged and
   discarded: the record's `version`, the restriction's `ansp_version`,
