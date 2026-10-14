@@ -67,6 +67,10 @@ additively within `/v1`.
   cutoff) and `records-<stamp>.tar` (every bundle `record_bundles`
   names, read back against its SHA-256); `deploy/restore-check.sh`
   applies and counts both, and refuses a manifest without them.
+  The held rows are not kept forever: telemetry's retention drops their
+  chunks like any other, so the oldest held row a backup can give back
+  is `telemetry_retention_days + USSP_BACKUP_KEEP_DAYS` old, 90 + 14 =
+  104 days with the defaults (pending GCAA; `docs/RUNBOOKS/backup.md`).
 - The ANSP's degraded direct delivery (spec 02 F2 failure rule,
   cross-plan M4, M5; system audit 2026-10-05 H-2) was acknowledged and
   discarded: the record's `version`, the restriction's `ansp_version`,
