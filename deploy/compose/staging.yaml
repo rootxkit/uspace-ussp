@@ -1,0 +1,486 @@
+# Staging and production shape of uspace-ussp (docs/PLAN.md §11, WP-20).
+# The deployment repository (uspace-deploy on the staging droplet; a
+# third-party USSP's own infrastructure in production) runs this file
+# through deploy/deploy.sh. deploy/compose/docker-compose.yml is the
+# laptop stack (`make compose-up`), not this.
+#
+#   deploy/deploy.sh --env-file <deployment env>
+#
+# What the deployment supplies (deploy/compose/deploy.env.example has
+# every one with a comment; a variable without a default is refused when
+# unset, and `make check-deploy` renders this file with the examples and
+# reads the result back):
+#
+#   USSP_GO_IMAGE, USSP_WEB_IMAGE  the images by digest (repo@sha256:...),
+#                       verified first by deploy/verify-image.sh
+#   USSP_HOST           this USSP's public host (the staging value is in
+#                       deploy/staging/hosts.env and nowhere else)
+#   USSP_SETTINGS_FILE  the operator's settings: every USSP_* variable that
+#                       is neither a secret nor set here
+#                       (deploy/compose/ussp.env.example)
+#   USSP_SECRETS_DIR    written on the host by deploy/gen-secrets.sh, never
+#                       in git: db.env, nats.env, <process>.env (that
+#                       process's own NATS user and only the DSNs it
+#                       opens), migrate.env, migrate-timeseries.env,
+#                       web.env, keys/ (issuer.pem, mfa.key, and one
+#                       jwks-cache-<process>.key per process that verifies
+#                       tokens, mounted into that process alone); and, once
+#                       the authority has issued this USSP's certificate,
+#                       certificate.env and keys/client.secret, written by
+#                       uspace-deploy's scripts/ussp-certificate.sh
+#   USSP_GROUND_DIR     the EGM2008 geoid grid (and terrain tiles), read-only
+#   USSP_EDGE_NETWORK   the network shared with the edge Caddy
+#   USSP_CADDY_IP       the edge Caddy's own fixed address on it: with web,
+#                       the only proxy whose X-Forwarded-For is believed
+#                       (one host each, never a range: any container on the
+#                       edge network could then claim a client address)
+#   USSP_WEB_IP         web's fixed address on the edge network (the BFF
+#                       forwards the browser's address on every call)
+#
+# Rules this file keeps (each one is read back by scripts/check-deploy.sh):
+# one timescaledb-ha container holding both databases, separate databases,
+# trees and version tables (M37); two one-shot migrate services that every
+# long-running process waits for, and no process migrates at start (M36,
+# D5): a process refuses a schema older than it needs and names both
+# versions; each process gets only the DSN of the database it opens (api
+# both, tsdb-writer the time series, no other process either); one NATS
+# user per process; read-only root filesystems and no capabilities; no
+# published port (only the shared Caddy publishes, through
+# deploy/caddy/ussp.caddy); a memory and CPU limit on every service, with
+# GOMEMLIMIT at about 80 % of it (the droplet's share, uspace-deploy
+# docs/BUDGET.md); bounded logs; every JetStream stream and bucket bounded
+# here, their sum within the NATS store. A health check on every service
+# with the /readyz semantics: `degraded` is healthy, a required
+# dependency down is not.
+#
+# Networks: `ussp` is internal (no egress) and holds the database and
+# NATS. The edge network joins the processes Caddy routes to (api,
+# telemetry-ingest, rid-sp, traffic-ws, web) and the ones that call out
+# (api, rid-sp, monitor, dss-sync: the authority, the CISP, the ANSP, the
+# DSS and the peer USSs, all reached through the edge Caddy by the
+# hosts the deployment maps with extra_hosts). tsdb-writer joins nothing
+# else. The edge network is shared with the other systems, so every
+# name used on it is prefixed (ussp-api, ...): a bare service name such as
+# `api` would resolve to every system's api there.
+name: uspace-ussp
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${USSP_LOG_MAX_SIZE:-10m}
+    max-file: ${USSP_LOG_MAX_FILE:-3}
+
+# Every JetStream stream and bucket, bounded for the droplet's share
+# (uspace-deploy profiles/demo.env; check-deploy fails when ENV.md names a
+# bound this list does not set, or when their sum exceeds the NATS store
+# below: a full store refuses every publish of the account, alerts
+# included). Read by every process, which ensures the topology.
+x-bounds: &bounds
+  USSP_CONF_STREAM_MAX_BYTES: ${USSP_CONF_STREAM_MAX_BYTES:-268435456}
+  USSP_TRK_STREAM_MAX_BYTES: ${USSP_TRK_STREAM_MAX_BYTES:-536870912}
+  USSP_MAN_STREAM_MAX_BYTES: ${USSP_MAN_STREAM_MAX_BYTES:-134217728}
+  USSP_PEER_STREAM_MAX_BYTES: ${USSP_PEER_STREAM_MAX_BYTES:-134217728}
+  USSP_ALRT_STREAM_MAX_BYTES: ${USSP_ALRT_STREAM_MAX_BYTES:-268435456}
+  USSP_IDENT_STREAM_MAX_BYTES: ${USSP_IDENT_STREAM_MAX_BYTES:-67108864}
+  USSP_INTENT_STREAM_MAX_BYTES: ${USSP_INTENT_STREAM_MAX_BYTES:-134217728}
+  USSP_CIS_STREAM_MAX_BYTES: ${USSP_CIS_STREAM_MAX_BYTES:-67108864}
+  USSP_TRAFFIC_STREAM_MAX_BYTES: ${USSP_TRAFFIC_STREAM_MAX_BYTES:-134217728}
+  USSP_INGEST_STREAM_MAX_BYTES: ${USSP_INGEST_STREAM_MAX_BYTES:-134217728}
+  USSP_FLIGHT_STREAM_MAX_BYTES: ${USSP_FLIGHT_STREAM_MAX_BYTES:-67108864}
+  USSP_CIS_CURRENT_BUCKET_MAX_BYTES: ${USSP_CIS_CURRENT_BUCKET_MAX_BYTES:-134217728}
+  USSP_POLICY_BUCKET_MAX_BYTES: ${USSP_POLICY_BUCKET_MAX_BYTES:-8388608}
+  USSP_SOURCE_CONTROL_BUCKET_MAX_BYTES: ${USSP_SOURCE_CONTROL_BUCKET_MAX_BYTES:-16777216}
+  USSP_REGISTRY_VALIDITY_BUCKET_MAX_BYTES: ${USSP_REGISTRY_VALIDITY_BUCKET_MAX_BYTES:-67108864}
+  USSP_CLIENT_BINDINGS_BUCKET_MAX_BYTES: ${USSP_CLIENT_BINDINGS_BUCKET_MAX_BYTES:-16777216}
+  USSP_INTENT_ACTIVE_BUCKET_MAX_BYTES: ${USSP_INTENT_ACTIVE_BUCKET_MAX_BYTES:-67108864}
+  USSP_TELEMETRY_SEEN_BUCKET_MAX_BYTES: ${USSP_TELEMETRY_SEEN_BUCKET_MAX_BYTES:-268435456}
+  USSP_RID_ISA_NOTIFICATIONS_BUCKET_MAX_BYTES: ${USSP_RID_ISA_NOTIFICATIONS_BUCKET_MAX_BYTES:-33554432}
+  USSP_CONFORMANCE_STATE_BUCKET_MAX_BYTES: ${USSP_CONFORMANCE_STATE_BUCKET_MAX_BYTES:-134217728}
+  USSP_PROXIMITY_STATE_BUCKET_MAX_BYTES: ${USSP_PROXIMITY_STATE_BUCKET_MAX_BYTES:-16777216}
+  USSP_SESSIONS_LIVE_BUCKET_MAX_BYTES: ${USSP_SESSIONS_LIVE_BUCKET_MAX_BYTES:-16777216}
+  USSP_RECORD_HOLDS_BUCKET_MAX_BYTES: ${USSP_RECORD_HOLDS_BUCKET_MAX_BYTES:-16777216}
+  USSP_RID_DP_SUBSCRIPTIONS_BUCKET_MAX_BYTES: ${USSP_RID_DP_SUBSCRIPTIONS_BUCKET_MAX_BYTES:-4194304}
+  USSP_MONITOR_STATUS_BUCKET_MAX_BYTES: ${USSP_MONITOR_STATUS_BUCKET_MAX_BYTES:-4194304}
+  USSP_FLIGHT_BINDING_BUCKET_MAX_BYTES: ${USSP_FLIGHT_BINDING_BUCKET_MAX_BYTES:-16777216}
+  USSP_JWKS_CACHE_BUCKET_MAX_BYTES: ${USSP_JWKS_CACHE_BUCKET_MAX_BYTES:-1048576}
+
+x-go: &go
+  image: ${USSP_GO_IMAGE:?the uspace-ussp image by digest}
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  logging: *logging
+  depends_on:
+    migrate: {condition: service_completed_successfully}
+    migrate-timeseries: {condition: service_completed_successfully}
+    nats: {condition: service_healthy}
+
+# The settings every long-running process reads beside its own env files.
+x-env: &env
+  <<: *bounds
+  # The edge Caddy only (api adds web's BFF below).
+  USSP_TRUSTED_PROXIES: ${USSP_CADDY_IP:?the edge Caddy's own address}/32
+  SSL_CERT_FILE: ${USSP_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}
+
+# This USSP's own issuer, for the processes that verify its operator
+# tokens and portal sessions: api serves the JWKS and must not list
+# itself ("lists this USSP's own issuer"), so it is appended here for
+# telemetry-ingest and traffic-ws (deploy/ENV.md, web section). The
+# verifier fetches a JWKS over https only (plain http is for localhost),
+# so they read api's through the edge Caddy, at this USSP's public host
+# mapped to Caddy's address (x-own-host).
+x-own-issuer: &own-issuer ${USSP_TOKEN_ISSUERS:?set in the settings file},https://${USSP_HOST:?this USSP's public host}=https://${USSP_HOST}/.well-known/jwks.json
+x-own-host: &own-host
+  - "${USSP_HOST}:${USSP_CADDY_IP}"
+
+x-probe: &probe
+  interval: 10s
+  timeout: 5s
+  retries: 3
+  start_period: 30s
+
+services:
+  timescaledb:
+    image: ${USSP_TIMESCALEDB_IMAGE:-timescale/timescaledb-ha:pg16@sha256:e9f34d8dd27621ec3933386eb07b70021d15b8116247362e0537bbff94ef0769}
+    restart: unless-stopped
+    networks:
+      ussp:
+        aliases: [ussp-timescaledb]
+    logging: *logging
+    shm_size: 128m
+    env_file:
+      - ${USSP_SECRETS_DIR:?written on the host by deploy/gen-secrets.sh}/db.env
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${USSP_PG_SHARED_BUFFERS:-128MB}
+      - -c
+      - max_wal_size=${USSP_PG_MAX_WAL_SIZE:-256MB}
+      - -c
+      - min_wal_size=${USSP_PG_MIN_WAL_SIZE:-64MB}
+      - -c
+      - work_mem=${USSP_PG_WORK_MEM:-4MB}
+      - -c
+      - max_connections=${USSP_PG_MAX_CONNECTIONS:-100}
+    volumes:
+      - ./initdb/10-ussp.sql:/docker-entrypoint-initdb.d/10-ussp.sql:ro
+      - pgdata:/home/postgres/pgdata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres && psql -X -U postgres -d ussp_timeseries -tAc \"SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'\" | grep -q 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+    deploy:
+      resources:
+        limits: {cpus: "1.0", memory: 512M}
+
+  nats:
+    image: ${USSP_NATS_IMAGE:-nats:2-alpine@sha256:ac8f88a6494bffc2c2a5289a0ca61cb28a9145c11ba5677cf24265d07f46d8d4}
+    restart: unless-stopped
+    read_only: true
+    networks:
+      ussp:
+        aliases: [ussp-nats]
+    logging: *logging
+    command: ["-c", "/etc/nats/nats.conf"]
+    env_file:
+      - ${USSP_SECRETS_DIR}/nats.env
+    environment:
+      # The store holds every stream's and bucket's max_bytes (x-bounds:
+      # about 2.6 GiB); 3 GiB in the demo profile.
+      NATS_MAX_FILE_STORE: ${USSP_NATS_MAX_FILE_STORE:-3221225472}
+      NATS_MAX_MEMORY_STORE: ${USSP_NATS_MAX_MEMORY_STORE:-67108864}
+    volumes:
+      - ./nats.staging.conf:/etc/nats/nats.conf:ro
+      - nats:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8222/healthz?js-enabled-only=true"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits: {cpus: "0.5", memory: 128M}
+
+  # One-shot: the relational tree as its owner ussp_api, then exit; it
+  # logs "migrate done" with from, to and latest (deploy.sh reads them).
+  migrate:
+    <<: *go
+    restart: "no"
+    entrypoint: ["/usr/bin/ussp-api", "migrate"]
+    networks: [ussp]
+    env_file:
+      - ${USSP_SETTINGS_FILE:?the operator's settings}
+      - ${USSP_SECRETS_DIR}/migrate.env
+    environment:
+      <<: *bounds
+    depends_on:
+      timescaledb: {condition: service_healthy}
+    deploy:
+      resources:
+        limits: {cpus: "0.5", memory: 64M}
+
+  # One-shot: the time-series tree as its owner ussp_tsdb.
+  migrate-timeseries:
+    <<: *go
+    restart: "no"
+    entrypoint: ["/usr/bin/ussp-tsdb-writer", "migrate"]
+    networks: [ussp]
+    env_file:
+      - ${USSP_SETTINGS_FILE}
+      - ${USSP_SECRETS_DIR}/migrate-timeseries.env
+    environment:
+      <<: *bounds
+    depends_on:
+      timescaledb: {condition: service_healthy}
+    deploy:
+      resources:
+        limits: {cpus: "0.5", memory: 64M}
+
+  api:
+    <<: *go
+    entrypoint: ["/usr/bin/ussp-api"]
+    networks:
+      ussp:
+        aliases: [ussp-api]
+      edge:
+        aliases: [ussp-api]
+    env_file:
+      - ${USSP_SETTINGS_FILE}
+      - ${USSP_SECRETS_DIR}/api.env
+      # USSP_CERTIFICATE_ID, the authority's id of this USSP's certificate
+      # (Art. 7(6) notices): copied from the authority's issue answer by
+      # uspace-deploy's scripts/ussp-certificate.sh, never written by
+      # hand. Optional to compose so the model renders before the
+      # certificate is issued; deploy.sh refuses a deploy without it
+      # unless --without-certificate says so, and checks its form.
+      - path: ${USSP_SECRETS_DIR}/certificate.env
+        required: false
+    environment:
+      <<: *env
+      USSP_API_ADDR: ":8080"
+      # The edge Caddy and web's BFF, one host each.
+      USSP_TRUSTED_PROXIES: ${USSP_CADDY_IP}/32,${USSP_WEB_IP:?web's address on the edge network}/32
+      USSP_ISSUER_KEY_FILE: /run/secrets/ussp/issuer.pem
+      USSP_MFA_KEY_FILE: /run/secrets/ussp/mfa.key
+      USSP_JWKS_CACHE_KEY_FILE: /run/secrets/jwks-cache.key
+      USSP_RECORDS_DIR: /var/lib/ussp/records
+      GOMEMLIMIT: 200MiB
+    volumes:
+      - ${USSP_SECRETS_DIR}/keys/jwks-cache-api.key:/run/secrets/jwks-cache.key:ro
+      - ${USSP_SECRETS_DIR}/keys:/run/secrets/ussp:ro
+      - ${USSP_GROUND_DIR:?the geoid grid directory}:/srv/ground:ro
+      - records:/var/lib/ussp/records
+    healthcheck:
+      <<: *probe
+      test: ["CMD", "/usr/bin/ussp-api", "healthcheck", "/readyz"]
+    deploy:
+      resources:
+        limits: {cpus: "1.0", memory: 256M}
+
+  telemetry-ingest:
+    <<: *go
+    entrypoint: ["/usr/bin/ussp-telemetry-ingest"]
+    extra_hosts: *own-host
+    networks:
+      ussp: {}
+      edge:
+        aliases: [ussp-telemetry-ingest]
+    env_file:
+      - ${USSP_SETTINGS_FILE}
+      - ${USSP_SECRETS_DIR}/telemetry-ingest.env
+    environment:
+      <<: *env
+      USSP_TELEMETRY_INGEST_ADDR: ":8081"
+      USSP_JWKS_CACHE_KEY_FILE: /run/secrets/jwks-cache.key
+      USSP_TOKEN_ISSUERS: *own-issuer
+      # The geoid grid is memory-mapped (core v1.4.0); the limit keeps
+      # room for the copy an older core held.
+      GOMEMLIMIT: 180MiB
+    volumes:
+      - ${USSP_SECRETS_DIR}/keys/jwks-cache-telemetry-ingest.key:/run/secrets/jwks-cache.key:ro
+      - ${USSP_GROUND_DIR}:/srv/ground:ro
+    healthcheck:
+      <<: *probe
+      test: ["CMD", "/usr/bin/ussp-telemetry-ingest", "healthcheck", "/readyz"]
+    deploy:
+      resources:
+        limits: {cpus: "0.5", memory: 224M}
+
+  rid-sp:
+    <<: *go
+    entrypoint: ["/usr/bin/ussp-rid-sp"]
+    networks:
+      ussp: {}
+      edge:
+        aliases: [ussp-rid-sp]
+    env_file:
+      - ${USSP_SETTINGS_FILE}
+      - ${USSP_SECRETS_DIR}/rid-sp.env
+    environment:
+      <<: *env
+      USSP_JWKS_CACHE_KEY_FILE: /run/secrets/jwks-cache.key
+      USSP_RID_SP_ADDR: ":8082"
+      GOMEMLIMIT: 76MiB
+    volumes:
+      - ${USSP_SECRETS_DIR}/keys/jwks-cache-rid-sp.key:/run/secrets/jwks-cache.key:ro
+      - ${USSP_SECRETS_DIR}/keys:/run/secrets/ussp:ro
+    healthcheck:
+      <<: *probe
+      test: ["CMD", "/usr/bin/ussp-rid-sp", "healthcheck", "/readyz"]
+    deploy:
+      resources:
+        limits: {cpus: "0.5", memory: 96M}
+
+  # On the edge network for egress only (the ANSP's F4 stream, the DSS,
+  # the peers' Display Provider); Caddy routes nothing to it.
+  monitor:
+    <<: *go
+    entrypoint: ["/usr/bin/ussp-monitor"]
+    networks:
+      ussp: {}
+      edge:
+        aliases: [ussp-monitor]
+    env_file:
+      - ${USSP_SETTINGS_FILE}
+      - ${USSP_SECRETS_DIR}/monitor.env
+    environment:
+      <<: *bounds
+      USSP_MONITOR_ADDR: ":8083"
+      SSL_CERT_FILE: ${USSP_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}
+      GOMEMLIMIT: 205MiB
+    volumes:
+      - ${USSP_SECRETS_DIR}/keys:/run/secrets/ussp:ro
+      - ${USSP_GROUND_DIR}:/srv/ground:ro
+    healthcheck:
+      <<: *probe
+      test: ["CMD", "/usr/bin/ussp-monitor", "healthcheck", "/readyz"]
+    deploy:
+      resources:
+        limits: {cpus: "0.75", memory: 256M}
+
+  traffic-ws:
+    <<: *go
+    entrypoint: ["/usr/bin/ussp-traffic-ws"]
+    extra_hosts: *own-host
+    networks:
+      ussp: {}
+      edge:
+        aliases: [ussp-traffic-ws]
+    env_file:
+      - ${USSP_SETTINGS_FILE}
+      - ${USSP_SECRETS_DIR}/traffic-ws.env
+    environment:
+      <<: *env
+      USSP_TRAFFIC_WS_ADDR: ":8084"
+      USSP_JWKS_CACHE_KEY_FILE: /run/secrets/jwks-cache.key
+      USSP_TOKEN_ISSUERS: *own-issuer
+      GOMEMLIMIT: 76MiB
+    volumes:
+      - ${USSP_SECRETS_DIR}/keys/jwks-cache-traffic-ws.key:/run/secrets/jwks-cache.key:ro
+      - ${USSP_GROUND_DIR}:/srv/ground:ro
+    healthcheck:
+      <<: *probe
+      test: ["CMD", "/usr/bin/ussp-traffic-ws", "healthcheck", "/readyz"]
+    deploy:
+      resources:
+        limits: {cpus: "0.5", memory: 96M}
+
+  # Egress only (the DSS, peer USSs).
+  dss-sync:
+    <<: *go
+    entrypoint: ["/usr/bin/ussp-dss-sync"]
+    networks:
+      ussp: {}
+      edge:
+        aliases: [ussp-dss-sync]
+    env_file:
+      - ${USSP_SETTINGS_FILE}
+      - ${USSP_SECRETS_DIR}/dss-sync.env
+    environment:
+      <<: *bounds
+      USSP_DSS_SYNC_ADDR: ":8085"
+      SSL_CERT_FILE: ${USSP_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}
+      GOMEMLIMIT: 50MiB
+    volumes:
+      - ${USSP_SECRETS_DIR}/keys:/run/secrets/ussp:ro
+    healthcheck:
+      <<: *probe
+      test: ["CMD", "/usr/bin/ussp-dss-sync", "healthcheck", "/readyz"]
+    deploy:
+      resources:
+        limits: {cpus: "0.25", memory: 64M}
+
+  # NATS and TimescaleDB only: no edge network.
+  tsdb-writer:
+    <<: *go
+    entrypoint: ["/usr/bin/ussp-tsdb-writer"]
+    networks: [ussp]
+    env_file:
+      - ${USSP_SETTINGS_FILE}
+      - ${USSP_SECRETS_DIR}/tsdb-writer.env
+    environment:
+      <<: *bounds
+      USSP_TSDB_WRITER_ADDR: ":8086"
+      # Rows held in memory per stream while TimescaleDB is down: bounded
+      # for the 128 MiB limit (the default 50 000 is sized for more).
+      USSP_WRITER_HOLD_ROWS: ${USSP_WRITER_HOLD_ROWS:-20000}
+      GOMEMLIMIT: 100MiB
+    healthcheck:
+      <<: *probe
+      test: ["CMD", "/usr/bin/ussp-tsdb-writer", "healthcheck", "/readyz"]
+    deploy:
+      resources:
+        limits: {cpus: "0.5", memory: 128M}
+
+  # The portal and console (web/): no database, no NATS; reaches api on
+  # the edge network and is reached through Caddy. Built in CI, never here.
+  web:
+    image: ${USSP_WEB_IMAGE:?the uspace-ussp-web image by digest}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp, /app/.next/cache]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging: *logging
+    networks:
+      edge:
+        aliases: [ussp-web]
+        ipv4_address: ${USSP_WEB_IP}
+    env_file:
+      - ${USSP_SECRETS_DIR}/web.env
+    environment:
+      USSP_WEB_API_URL: http://ussp-api:8080
+      # Caddy, one hop in front of Next.js, appends to X-Forwarded-For.
+      USSP_WEB_TRUSTED_PROXY_HOPS: "1"
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits: {cpus: "0.5", memory: 224M}
+
+networks:
+  # Named by the compose project (uspace-ussp_ussp on the droplet), so a
+  # second project on the same host has its own.
+  ussp:
+    internal: true
+  edge:
+    name: ${USSP_EDGE_NETWORK:?the network shared with the edge Caddy}
+    external: true
+
+# Named volumes: the database, the JetStream store and the daily record
+# bundles (the image creates /var/lib/ussp/records owned by its non-root
+# user, so a new volume starts writable). deploy/backup.sh dumps the
+# databases and exports the KV buckets.
+volumes:
+  pgdata:
+  nats:
+  records:

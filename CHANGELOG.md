@@ -243,6 +243,24 @@ additively within `/v1`.
 
 ### Added
 
+- Staging deployment (WP-20): `deploy/compose/staging.yaml`, the staging
+  and production shape (by digest, one TimescaleDB container for both
+  databases, one-shot migrations, one NATS user and only its own DSNs per
+  process, limits, `/readyz` health checks, no published port, every
+  JetStream bound within the store), its settings and secrets
+  (`deploy/compose/ussp.env.example`, `deploy/gen-secrets.sh`), the Caddy
+  site `deploy/caddy/ussp.caddy` with its proof, `deploy/deploy.sh` (a
+  preflight, signature and attestation checks, migrate read back, a
+  rolling start, and a verification of every process's `/readyz`), the
+  wiring of the authority's certificate answer as uspace-deploy's
+  `scripts/ussp-certificate.sh` writes it, `deploy/backup.sh` and
+  `deploy/restore-check.sh` (the time series by the database's clock, a
+  manifest, counts on restore), `deploy/teardown.sh`, and the staging
+  smoke (`make staging-smoke`; CI jobs `deploy` and `staging-smoke`). On
+  `main` the images' SPDX SBOMs are attested and both signatures and
+  attestations read back. The images' base layers are pinned by digest.
+  Runbooks: `docs/RUNBOOKS/deploy.md`, `rollback.md`, `backup.md`.
+
 - WP-19, the conformance profile (`deploy/conformance/`): this USSP's
   target for uspace-lab's conformance suite (lab WP-L7) and an overlay
   of the lab's systems stack with the InterUSS DSS. `make conformance`

@@ -1,0 +1,115 @@
+# uspace-ussp routes for the shared Caddy (docs/PLAN.md §11, M22, M38,
+# WP-20). A REFERENCE SITE: this repository never runs Caddy on a
+# server. The private deployment repository uspace-deploy composes the
+# droplet's Caddyfile from every system's site (decision D1); it may
+# replace the repeated parts below by its shared snippets, and its own
+# Caddy proof keeps the outcome equal. deploy/caddy/proof.sh proves this
+# file against the pinned Caddy.
+#
+# Placeholders only, never a real host name (spec 06 §4):
+#   {$USSP_HOST}                  this USSP's public host
+#   {$USSP_API_UPSTREAM}          api, e.g. ussp-api:8080
+#   {$USSP_TELEMETRY_UPSTREAM}    telemetry-ingest, e.g. ussp-telemetry-ingest:8081
+#   {$USSP_RIDSP_UPSTREAM}        rid-sp, e.g. ussp-rid-sp:8082
+#   {$USSP_TRAFFIC_UPSTREAM}      traffic-ws, e.g. ussp-traffic-ws:8084
+#   {$USSP_WEB_UPSTREAM}          web, e.g. ussp-web:3000
+#   {$USSP_BASEMAP_DIR}           the shared read-only basemap volume (M38)
+#
+# Route groups (the process table of PLAN §2):
+#   /v1/telemetry, /v1/telemetry/*         telemetry-ingest (the operator
+#                                          WebSocket and the batch drain)
+#   /v1/traffic, /v1/traffic/*, /v1/alerts traffic-ws (the traffic stream,
+#                                          its snapshot, the alert stream;
+#                                          /v1/alerts/{id}/ack is api's)
+#   /uss/flights, /uss/flights/*,
+#   /uss/identification_service_areas/*,
+#   /v1/authority/flights                  rid-sp (F3411 SP, the optional push)
+#   /metrics, /readyz                      404 (scraped and probed inside the
+#                                          networks; /readyz names every
+#                                          dependency and its detail)
+#   /basemap/*                             file_server on the basemap volume
+#   /v1/*, /uss/*, /oauth/*,
+#   /.well-known/*, /healthz               api (national API, F3548 USS)
+#   everything else                        web (/_bff/* and the pages)
+#
+# Client addresses: Caddy believes no X-Forwarded-For a client sends
+# (no trusted_proxies here) and writes the peer's address; the
+# processes believe Caddy's fixed address alone (USSP_TRUSTED_PROXIES).
+# WebSocket upgrades pass through with their Origin header intact
+# (M22: telemetry-ingest and traffic-ws check it against
+# USSP_WS_ALLOWED_ORIGINS); a configuration reload keeps open streams
+# for five minutes instead of cutting every operator's telemetry.
+#
+# Rate limits: the stock Caddy image has no rate-limit directive (it is
+# a plugin the shared Caddy does not build), so the budgets are the
+# processes' own (USSP_LOGIN_RATE_PER_MIN, USSP_TOKEN_RATE_PER_MIN,
+# USSP_REGISTRY_RATE_PER_MIN, the operator WebSocket's 2 Hz per client,
+# deploy/ENV.md) and every request body is bounded by the process
+# (USSP_HTTP_MAX_BODY_BYTES).
+#
+# The USSP host asks for no client certificate: this USSP presents one
+# towards the ANSP (USSP_MTLS_MODE) and serves none. The subject header
+# is still removed from every request, so no route ever sees one.
+
+{$USSP_HOST} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	request_header -X-Client-Cert-Subject
+
+	@internal path /metrics /metrics/* /readyz
+	handle @internal {
+		respond 404
+	}
+
+	@telemetry path /v1/telemetry /v1/telemetry/*
+	handle @telemetry {
+		reverse_proxy {$USSP_TELEMETRY_UPSTREAM} {
+			stream_close_delay 5m
+		}
+	}
+
+	@traffic path /v1/traffic /v1/traffic/* /v1/alerts
+	handle @traffic {
+		reverse_proxy {$USSP_TRAFFIC_UPSTREAM} {
+			stream_close_delay 5m
+		}
+	}
+
+	@ridsp path /uss/flights /uss/flights/* /uss/identification_service_areas/* /v1/authority/flights
+	handle @ridsp {
+		reverse_proxy {$USSP_RIDSP_UPSTREAM} {
+			stream_close_delay 5m
+		}
+	}
+
+	# The shared basemap (M38): one read-only directory for every host.
+	# file_server answers Range with 206. A day's cache: the bundle's URLs
+	# do not carry its release, so `immutable` would pin a browser to an
+	# old one; SOURCE.json, which names the release, five minutes.
+	@basemap path /basemap/*
+	handle @basemap {
+		@basemap_source path /basemap/SOURCE.json
+		@basemap_bundle not path /basemap/SOURCE.json
+		header @basemap_source Cache-Control "public, max-age=300"
+		header @basemap_bundle Cache-Control "public, max-age=86400"
+		uri strip_prefix /basemap
+		root * {$USSP_BASEMAP_DIR}
+		file_server
+	}
+
+	@api path /v1/* /uss/* /oauth/* /.well-known/* /healthz
+	handle @api {
+		reverse_proxy {$USSP_API_UPSTREAM}
+	}
+
+	handle {
+		reverse_proxy {$USSP_WEB_UPSTREAM}
+	}
+}

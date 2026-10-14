@@ -1,0 +1,21 @@
+# The NATS JetStream KV buckets of the topology (internal/bus/topology.go,
+# docs/PLAN.md §7), one name a line. deploy/restore-check.sh checks the
+# number of buckets a backup exported against it, and every bucket of the
+# export is one of these. TestKVBucketListIsTheTopologys
+# (internal/app/proc) fails when this file and the topology differ.
+cis_current
+client_bindings
+conformance_state
+flight_binding
+intent_active
+jwks_cache
+monitor_status
+policy
+proximity_state
+record_holds
+registry_validity
+rid_dp_subscriptions
+rid_isa_notifications
+sessions_live
+source_control
+telemetry_seen

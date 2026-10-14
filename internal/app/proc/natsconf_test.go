@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/rootxkit/uspace-ussp/internal/bus"
@@ -14,6 +15,7 @@ import (
 // natsConfs are the NATS configurations the deployments start with.
 var natsConfs = []string{
 	filepath.Join("..", "..", "..", "deploy", "compose", "nats.conf"),
+	filepath.Join("..", "..", "..", "deploy", "compose", "nats.staging.conf"),
 }
 
 var (
@@ -100,5 +102,87 @@ func TestNATSConfJWKSCacheWriters(t *testing.T) {
 	}
 	if len(TopologyFor(config.ProcessDSSSync, config.Config{}).Buckets) != len(TopologyOf(config.Config{}).Buckets)-1 {
 		t.Error("TopologyFor dropped more than jwks_cache")
+	}
+}
+
+var natsAllow = regexp.MustCompile(`(?s)allow:\s*\[(.*?)\]`)
+
+// The staging backup user reads the KV buckets and nothing else: its
+// publish allow list is the account's stream listing and, for each
+// bucket of the topology and no other stream, that bucket's stream
+// info, direct and message gets, the ordered consumer a key listing
+// creates and its flow control. Consumer deletion is denied (a
+// process's durable consumer included). The smoke run exercises the
+// list on a server (deploy/smoke/run.sh, step 6).
+func TestNATSStagingBackupUser(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "deploy", "compose", "nats.staging.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var block string
+	for _, m := range natsUserBlock.FindAllStringSubmatch(string(b), -1) {
+		if m[1] == "backup" {
+			block = m[2]
+		}
+	}
+	if block == "" {
+		t.Fatal("no backup user in nats.staging.conf")
+	}
+	var allow []string
+	if a := natsAllow.FindStringSubmatch(block); a != nil {
+		for _, q := range natsQuoted.FindAllStringSubmatch(a[1], -1) {
+			allow = append(allow, q[1])
+		}
+	}
+	want := []string{"$JS.API.INFO", "$JS.API.STREAM.NAMES", "$JS.API.STREAM.LIST"}
+	for _, bk := range TopologyOf(config.Config{}).Buckets {
+		k := "KV_" + bk.Bucket
+		want = append(want, "$JS.API.STREAM.INFO."+k, "$JS.API.STREAM.MSG.GET."+k, "$JS.API.DIRECT.GET."+k, "$JS.API.DIRECT.GET."+k+".>",
+			"$JS.API.CONSUMER.CREATE."+k, "$JS.API.CONSUMER.CREATE."+k+".>", "$JS.API.CONSUMER.INFO."+k+".>", "$JS.FC."+k+".>")
+	}
+	slices.Sort(allow)
+	slices.Sort(want)
+	if !slices.Equal(allow, want) {
+		for _, a := range allow {
+			if !slices.Contains(want, a) {
+				t.Errorf("the backup user may publish %s", a)
+			}
+		}
+		for _, w := range want {
+			if !slices.Contains(allow, w) {
+				t.Errorf("the backup user may not publish %s: that bucket is not backed up", w)
+			}
+		}
+	}
+	d := natsDeny.FindStringSubmatch(block)
+	if len(d) < 2 || !strings.Contains(d[1], `"$JS.API.CONSUMER.DELETE.>"`) {
+		t.Errorf("the backup user may delete a consumer: %v", d)
+	}
+}
+
+// deploy/nats-kv-buckets.txt is the topology's KV buckets, one name a
+// line, read by deploy/restore-check.sh: the number of buckets a backup
+// exported is checked against it, not against the backup's own files.
+// A bucket added to the topology and not to the file, or one the file
+// names and the topology has not, fails here.
+func TestKVBucketListIsTheTopologys(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "deploy", "nats-kv-buckets.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed []string
+	for _, l := range strings.Split(strings.ReplaceAll(string(b), "\r", ""), "\n") {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			listed = append(listed, l)
+		}
+	}
+	var want []string
+	for _, bk := range TopologyOf(config.Config{}).Buckets {
+		want = append(want, bk.Bucket)
+	}
+	slices.Sort(listed)
+	slices.Sort(want)
+	if !slices.Equal(listed, want) {
+		t.Errorf("deploy/nats-kv-buckets.txt lists %v, the topology has %v", listed, want)
 	}
 }

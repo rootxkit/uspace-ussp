@@ -1,0 +1,26 @@
+# The edge Caddy of the staging smoke (deploy/smoke/compose.smoke.yaml):
+# the global options of a standalone Caddy, then this repository's
+# snippet unchanged. The site certificate is issued by Caddy's internal
+# issuer from the smoke's own throwaway root (run.sh makes it with
+# openssl), which the driver trusts; on the droplet the certificate is
+# ACME's.
+{
+	admin localhost:2019
+	auto_https disable_redirects
+	skip_install_trust
+	local_certs
+	pki {
+		ca local {
+			root {
+				cert /etc/smoke/ca.pem
+				key /etc/smoke/ca.key
+			}
+		}
+	}
+	log {
+		output stdout
+		format json
+	}
+}
+
+import /etc/caddy/ussp.caddy

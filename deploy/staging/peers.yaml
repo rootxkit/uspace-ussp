@@ -1,0 +1,26 @@
+# The staging droplet's addition to deploy/compose/staging.yaml: every
+# peer of this USSP (the authority, the CISP, the ANSP and the lab's DSS
+# and issuer) is served by the same edge Caddy, so their public hosts
+# resolve to its address inside the networks, as this USSP's own host
+# does for a peer calling it. A USSP whose peers are elsewhere (any
+# production deployment) does not use this file: their hosts resolve as
+# they do on the internet.
+#
+#   deploy/deploy.sh --env-file <deployment env> --env-file deploy/staging/hosts.env \
+#     -f deploy/staging/peers.yaml
+x-peers: &peers
+  extra_hosts:
+    - "${AUTHORITY_HOST:?deploy/staging/hosts.env}:${USSP_CADDY_IP}"
+    - "${CISP_HOST:?deploy/staging/hosts.env}:${USSP_CADDY_IP}"
+    - "${ANSP_HOST:?deploy/staging/hosts.env}:${USSP_CADDY_IP}"
+    - "${LAB_HOST:?deploy/staging/hosts.env}:${USSP_CADDY_IP}"
+    - "${USSP_HOST}:${USSP_CADDY_IP}"
+
+services:
+  api: *peers
+  rid-sp: *peers
+  monitor: *peers
+  dss-sync: *peers
+  # Both verify the ecosystem's tokens with the authority's JWKS.
+  telemetry-ingest: *peers
+  traffic-ws: *peers

@@ -1,0 +1,58 @@
+# The staging smoke's additions to deploy/compose/staging.yaml
+# (deploy/smoke/run.sh, CI job `staging-smoke`): the edge Caddy that
+# uspace-deploy runs on the droplet, with this repository's snippet, at
+# the fixed address staging.yaml trusts and published on the loopback
+# only; the name the processes that call out or fetch a JWKS reach the
+# smoke's peers by (TestStagingSmokePeers, on the host); and the smoke's
+# root CA they trust them by. Nothing else differs from the staging shape.
+x-peers: &peers
+  extra_hosts:
+    - "smoke-peers:${SMOKE_PEERS_IP:?run.sh sets it}"
+  # The smoke's root (USSP_CA_BUNDLE): the peers' proxies present a
+  # certificate it issued, and every JWKS is fetched over https.
+  volumes:
+    - ${SMOKE_DIR}/ca/ca.pem:/etc/smoke/ca.pem:ro
+
+services:
+  caddy:
+    image: ${SMOKE_CADDY_IMAGE:-caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d}
+    restart: "no"
+    read_only: true
+    tmpfs: [/tmp, /data, /config]
+    environment:
+      USSP_HOST: ${USSP_HOST}
+      USSP_API_UPSTREAM: ussp-api:8080
+      USSP_TELEMETRY_UPSTREAM: ussp-telemetry-ingest:8081
+      USSP_RIDSP_UPSTREAM: ussp-rid-sp:8082
+      USSP_TRAFFIC_UPSTREAM: ussp-traffic-ws:8084
+      USSP_WEB_UPSTREAM: ussp-web:3000
+      USSP_BASEMAP_DIR: /srv/basemap
+    volumes:
+      # Relative to deploy/compose/, the first file's directory.
+      - ../smoke/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../caddy/ussp.caddy:/etc/caddy/ussp.caddy:ro
+      - ${SMOKE_DIR:?run.sh sets it}/ca:/etc/smoke:ro
+      - ${SMOKE_DIR}/basemap:/srv/basemap:ro
+    ports:
+      - "127.0.0.1:${SMOKE_HTTPS_PORT:-58443}:443"
+    networks:
+      edge:
+        ipv4_address: ${USSP_CADDY_IP}
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    deploy:
+      resources:
+        limits: {cpus: "0.5", memory: 128M}
+
+  api: *peers
+  rid-sp: *peers
+  monitor: *peers
+  dss-sync: *peers
+  telemetry-ingest: *peers
+  traffic-ws: *peers

@@ -30,7 +30,7 @@ COMMIT       ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 
 .PHONY: all build vet fmt fmt-check tools staticcheck lint tidy test race cover \
         integration generate fetch-standards check-generated check-schemas check-deps check-hostnames \
-        check-contracts secrets vulncheck image compose-deps compose-up compose-down \
+        check-contracts check-deploy staging-smoke secrets vulncheck image compose-deps compose-up compose-down \
         conformance conformance-selftest conformance-down ci clean migrate-up migrate-down migrate-status
 
 all: ci
@@ -131,6 +131,22 @@ check-hostnames:
 
 check-contracts:
 	scripts/check-contracts.sh
+
+# The staging compose, its settings and secrets, read back as compose
+# renders them (scripts/check-deploy.sh; CI job `deploy`).
+check-deploy:
+	scripts/check-deploy.sh
+
+# The staging smoke (deploy/smoke/run.sh; CI job `staging-smoke`): both
+# images built from this checkout, deploy/compose/staging.yaml deployed
+# from scratch by deploy/deploy.sh behind a local edge Caddy, a simulated
+# operator through the public host, a restart, one migration back, the
+# teardown verified. Docker and Go only; nothing leaves the machine.
+SMOKE_VERSION ?= smoke-$(shell git rev-parse --short HEAD 2>/dev/null || echo local)
+staging-smoke:
+	docker build -f deploy/Dockerfile --build-arg VERSION=$(SMOKE_VERSION) --build-arg COMMIT=$(COMMIT) -t uspace-ussp:smoke .
+	docker build -f deploy/web.Dockerfile -t uspace-ussp-web:smoke web
+	SMOKE_GO_IMAGE=uspace-ussp:smoke SMOKE_WEB_IMAGE=uspace-ussp-web:smoke SMOKE_VERSION=$(SMOKE_VERSION) GO=$(GO) deploy/smoke/run.sh
 
 # Secret scan of the history and of every file that could be committed
 # (tracked or untracked, not git-ignored), with .gitleaks.toml.
