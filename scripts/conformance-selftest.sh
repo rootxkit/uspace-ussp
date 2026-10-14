@@ -210,6 +210,15 @@ hook_rc 0 "CONFORMANCE_ALLOW_INCOMPLETE=1 is handed to the suite" "${ext[@]}" US
 if handed_args | grep -q '^--allow-incomplete$'; then pass "--allow-incomplete given"; else fail "--allow-incomplete missing: $(handed_args | tr '\n' ' ')"; fi
 hook_rc 0 "without it, --allow-incomplete is not given" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off
 if handed_args | grep -q '^--allow-incomplete$'; then fail "--allow-incomplete given unasked"; else pass "--allow-incomplete absent"; fi
+# Without the InterUSS suites and with an incomplete run accepted, the
+# hook would exit 0 having judged none of their requirements: refused
+# before anything runs. Each switch alone still runs the suite.
+rm -f "$work/args"
+hook_rc 2 "CONFORMANCE_QUALIFIER=off with CONFORMANCE_ALLOW_INCOMPLETE=1 is refused" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_QUALIFIER=off CONFORMANCE_ALLOW_INCOMPLETE=1
+if [ -e "$work/args" ]; then fail "the suite ran with the InterUSS suites off and an incomplete run accepted"; else pass "the suite never ran with the InterUSS suites off and an incomplete run accepted"; fi
+if grep -qF 'CONFORMANCE_QUALIFIER=off with CONFORMANCE_ALLOW_INCOMPLETE=1' "$work/log"; then pass "the refusal names both switches"; else fail "the refusal does not name both switches: $(tail -n 1 "$work/log")"; fi
+hook_rc 0 "CONFORMANCE_QUALIFIER=off alone runs the suite" "${ext[@]}" USSP_CONFORMANCE_AUTHORITY_PUSH=off CONFORMANCE_QUALIFIER=off
+if [ -e "$work/args" ]; then pass "the suite ran with the InterUSS suites off"; else fail "the suite did not run with CONFORMANCE_QUALIFIER=off alone"; fi
 
 # ---- the reviewed baseline ------------------------------------------------------
 bl="$work/baseline.json"
