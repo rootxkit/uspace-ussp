@@ -53,6 +53,10 @@ additively within `/v1`.
   inspect`, which does not pull, so a digest that was only in GHCR was
   reported as an image that does not run. It now pulls each image that
   is not here first; the self-test checks one from a local registry.
+- `deploy/backup.sh` looked for the records volume at
+  `/var/lib/ussp/records` whatever api's `USSP_RECORDS_DIR` said. It now
+  reads `USSP_RECORDS_DIR` from the running api container and backs up
+  the named volume mounted there, and refuses an api without it.
 - The nightly backup lost held flights older than the time-series
   window (`USSP_BACKUP_TS_DAYS`, 7 days, pending GCAA) and every daily
   record bundle: it left the rows of the older chunks out whatever

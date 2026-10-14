@@ -119,13 +119,19 @@ container() {
 }
 pg="$(container timescaledb)"
 nats="$(container nats)"
-# The records volume: the named volume api has at its records directory.
+# The records volume: the named volume api has at its own
+# USSP_RECORDS_DIR, read from the running container (whatever path the
+# compose file gives it).
 api="$(container api)"
-records_vol="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/ussp/records"}}{{.Type}} {{.Name}}{{end}}{{end}}' "$api")"
+records_dir="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$api" | tr -d '\r' | sed -n 's/^USSP_RECORDS_DIR=//p' | tail -n 1)"
+[ -n "$records_dir" ] || die "api has no USSP_RECORDS_DIR: it builds no record bundle, and none can be backed up"
+records_vol="$(docker inspect -f '{{range .Mounts}}{{.Destination}} {{.Type}} {{.Name}}{{println}}{{end}}' "$api" |
+  tr -d '\r' | awk -v d="${records_dir%/}" '$1 == d { print $2 " " $3 }' | head -n 1)"
 case "$records_vol" in
   "volume "?*) records_vol="${records_vol#volume }" ;;
-  *) die "api has no named volume at /var/lib/ussp/records (${records_vol:-none}): the record bundles cannot be backed up" ;;
+  *) die "api has no named volume at its USSP_RECORDS_DIR $records_dir (${records_vol:-none}): the record bundles cannot be backed up" ;;
 esac
+echo "backup: the record bundles are read from the volume $records_vol at api's USSP_RECORDS_DIR $records_dir"
 net="$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' "$nats" | head -n 1)"
 [ -n "$net" ] || die "the nats container is on no network"
 psql_q() { # <database> <sql>: tuples only, unaligned
