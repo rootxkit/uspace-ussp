@@ -498,6 +498,8 @@ jobs:
           cache-from: type=gha,scope=go
       - name: the production image has no ussp-test-interfaces, the testif image has
         run: scripts/check-images.sh uspace-ussp:pr uspace-ussp-testif:pr
+      - name: check-images.sh fails an image whose entrypoint does not run
+        run: scripts/check-images-selftest.sh
       - name: web image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
