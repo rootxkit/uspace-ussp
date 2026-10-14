@@ -11,9 +11,11 @@
 # container (the server's own pg_restore) into ussp_relational_restore_check
 # and ussp_timeseries_restore_check, created for the check and dropped
 # after it, also on failure, and their absence checked; the time series
-# through timescaledb_pre_restore() and timescaledb_post_restore(). Then it
-# counts what came back: the audit events, the operators, the intents,
-# the telemetry rows, the hypertables, each tree's schema version, and
+# through timescaledb_pre_restore() and timescaledb_post_restore(), then
+# the held flights' rows of the chunks before the cutoff applied with
+# psql. Then it counts what came back: the audit events, the operators,
+# the intents, the telemetry rows (the held ones among them), the
+# hypertables, each tree's schema version, the record bundles, and
 # decodes every KV value of the export. It never says "ok" without the
 # numbers (E-02).
 #
@@ -22,8 +24,13 @@
 # when the KV export holds another number of keys or of buckets with keys
 # than the manifest recorded, when the backup exported another number of
 # buckets than the topology has (deploy/nats-kv-buckets.txt) or a bucket
-# it does not name, when a KV value does not decode (all of these before
-# any database is touched), or, with RESTORE_CHECK_EXPECT set
+# it does not name, when a KV value does not decode, when the records
+# archive holds another set of bundles than the manifest names or a
+# bundle whose SHA-256 differs (all of these before any database is
+# touched), when a chunk holds another number of rows after the held
+# rows are applied than the backup read from it, when the restored
+# record_bundles names a bundle the archive does not hold, or, with
+# RESTORE_CHECK_EXPECT set
 # ("events=N,operator_accounts=M,operational_intents=K,telemetry=T", the
 # counts read from the live databases when the dump was taken), when a
 # count differs.
@@ -57,6 +64,50 @@ for f in $(jqr '.files | keys[]' "$manifest"); do
   [ "$sum" = "$(jqr --arg f "$f" '.files[$f].sha256' "$manifest")" ] || die "$f does not have the SHA-256 the manifest recorded"
 done
 echo "restore-check: $(jqr '.files | length' "$manifest") files match the manifest (bytes, SHA-256)"
+
+# The held rows and the record bundles, which every backup since they
+# were added holds: a manifest without them is refused, as one without
+# kv.buckets_with_keys is.
+held_file="ussp_timeseries_held-$stamp.sql"
+records_file="records-$stamp.tar"
+for f in "$held_file" "$records_file"; do
+  jq -e --arg f "$f" '.files | has($f)' "$manifest" >/dev/null || die "the manifest names no $f (a backup older than this check): its held rows and record bundles cannot be checked"
+done
+jq -e '(.held.chunks | type) == "object" and (.records.bundles | type) == "array"' "$manifest" >/dev/null ||
+  die "the manifest records no held chunks or record bundles (a backup older than this check)"
+held_chunks="$(jqr '.held.chunks | to_entries[] | "\(.key) \(.value.rows)"' "$manifest")"
+while IFS=' ' read -r c n; do
+  [ -n "$c" ] || continue
+  if ! [[ "$c" =~ ^_timescaledb_internal\._hyper_[0-9]+_[0-9]+_chunk$ ]] || ! [[ "$n" =~ ^[0-9]+$ ]]; then die "the manifest's held chunk '$c $n' is not a chunk and a count"; fi
+done <<<"$held_chunks"
+
+# The record bundles, before any database is touched: the archive holds
+# exactly the bundles the manifest names, each with its SHA-256. Every
+# name is checked before anything is extracted.
+bundles="$(jqr '.records.bundles[] | "\(.ref) \(.sha256)"' "$manifest")"
+n_bundles=0
+while IFS=' ' read -r ref sum; do
+  [ -n "$ref" ] || continue
+  if ! [[ "$ref" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{12}\.jsonl\.gz$ ]] || ! [[ "$sum" =~ ^[0-9a-f]{64}$ ]]; then
+    die "the manifest names the bundle '$ref', not a bundle file name and a SHA-256"
+  fi
+  n_bundles=$((n_bundles + 1))
+done <<<"$bundles"
+want_names="$(cut -d' ' -f1 <<<"$bundles" | grep . | sort || true)"
+listed="$(tar -tf - < "$dir/$records_file" | tr -d '\r' | sort)" || die "$records_file does not list"
+[ "$listed" = "$want_names" ] || die "$records_file does not hold exactly the $n_bundles bundles the manifest names"
+records_tmp="$(mktemp -d)"
+# shellcheck disable=SC2317 # run by the EXIT trap until the databases' own replaces it
+rm_records_tmp() { rm -rf "$records_tmp"; }
+trap rm_records_tmp EXIT
+tar -xf - -C "$records_tmp" < "$dir/$records_file" || die "$records_file does not extract"
+while IFS=' ' read -r ref sum; do
+  [ -n "$ref" ] || continue
+  [ "$(sha256sum "$records_tmp/$ref" | cut -d' ' -f1)" = "$sum" ] || die "the bundle $ref in $records_file does not have the SHA-256 the manifest recorded"
+done <<<"$bundles"
+rm_records_tmp
+trap - EXIT
+echo "restore-check: $records_file holds the $n_bundles record bundles the manifest names, each with its SHA-256"
 
 # The KV export, before any database is touched. The number of buckets
 # the backup exported is the topology's (deploy/nats-kv-buckets.txt,
@@ -132,6 +183,26 @@ if [ "$rc" -ne 0 ]; then
   others="$(printf '%s\n' "$out" | grep -E '^pg_restore: error:' | grep -v 'extension "timescaledb" already exists' || true)"
   [ -z "$others" ] || die "pg_restore of ussp_timeseries-$stamp.dump: $(printf '%s' "$others" | head -n 3 | tr '\n' ' ')"
 fi
+# The held flights' rows the dump left out, after the restore is over (a
+# hypertable takes rows again only then): each chunk must hold what the
+# backup read from it, and nothing else came back into it.
+if ! out="$(docker exec -i "$pg" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d "$ts" < "$dir/$held_file" 2>&1)"; then
+  die "the held rows of $held_file did not apply: $(printf '%s' "$out" | tail -n 3 | tr '\n' ' ')"
+fi
+held_rows=0
+while IFS=' ' read -r c n; do
+  [ -n "$c" ] || continue
+  got="$(psql_q "$ts" "SELECT count(*) FROM $c")"
+  [ "$got" = "$n" ] || die "the restored chunk $c holds $got rows, the backup read $n held rows from it"
+  held_rows=$((held_rows + n))
+done <<<"$held_chunks"
+held_flights="$(jqr .held.flights "$manifest")"
+# Every bundle the restored database names is in the archive with its
+# SHA-256 (the archive was read after the dump, so it may hold newer ones).
+named="$(psql_q "$rel" "SELECT storage_ref || ' ' || content_hash FROM record_bundles ORDER BY date")"
+missing="$(grep -vxF -f <(printf '%s\n' "$bundles") <<<"$named" | grep . || true)"
+[ -z "$missing" ] || die "the restored record_bundles names bundles $records_file does not hold with their SHA-256: $(cut -d' ' -f1 <<<"$missing" | tr '\n' ' ' | sed 's/ $//')"
+restored_bundles="$(psql_q "$rel" "SELECT count(*) FROM record_bundles")"
 
 events="$(psql_q "$rel" "SELECT count(*) FROM events")"
 operators="$(psql_q "$rel" "SELECT count(*) FROM operator_accounts")"
@@ -143,7 +214,8 @@ v_ts="$(psql_q "$ts" "SELECT coalesce(max(version_id), 0) FROM goose_db_version_
 
 
 echo "restore-check: restored $stamp: events=$events operator_accounts=$operators operational_intents=$intents telemetry=$telemetry" \
-  "hypertables=$hypertables schema relational=$v_rel timeseries=$v_ts nats_kv_keys=$kv_lines nats_kv_buckets_with_keys=$kv_buckets"
+  "hypertables=$hypertables schema relational=$v_rel timeseries=$v_ts nats_kv_keys=$kv_lines nats_kv_buckets_with_keys=$kv_buckets" \
+  "held_flights=$held_flights held_rows=$held_rows record_bundles=$restored_bundles (archive $n_bundles)"
 
 [ "$v_rel" = "$(jqr .schema.relational "$manifest")" ] || die "the restored relational schema is at $v_rel, the backup recorded $(jqr .schema.relational "$manifest")"
 [ "$v_ts" = "$(jqr .schema.timeseries "$manifest")" ] || die "the restored time-series schema is at $v_ts, the backup recorded $(jqr .schema.timeseries "$manifest")"

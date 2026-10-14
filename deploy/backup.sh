@@ -17,20 +17,37 @@
 #                                 05 §4): every table, schema and older chunk
 #                                 is in the dump without its rows. The cutoff
 #                                 is the database's clock, not the host's
-#   nats-kv-<stamp>.jsonl         every JetStream KV bucket, one line per key
+#   ussp_timeseries_held-<stamp>.sql
+#                                 the rows the dump leaves out that belong to a
+#                                 held flight, whatever their age: every flight
+#                                 an occurrence report names (the source of
+#                                 record_holds). Its telemetry and conformance
+#                                 samples, and the traffic products its client
+#                                 was shown while it flew, of every chunk before
+#                                 the cutoff, one COPY per chunk, applied with
+#                                 psql after the dump's restore
+#   records-<stamp>.tar           every daily record bundle record_bundles names,
+#                                 whatever its age, from the records volume
+#                                 (USSP_RECORDS_DIR of api), each read back
+#                                 against its recorded SHA-256
+#   nats-kv-<stamp>.jsonl        every JetStream KV bucket, one line per key
 #                                 ({"bucket","key","value_b64"}), read as the
 #                                 backup's own NATS user (read-only: nats.
 #                                 staging.conf)
 #   manifest-<stamp>.json         what was written: the database clock, the
 #                                 cutoff, chunks kept and left out, each
 #                                 file's bytes, SHA-256 and entries, each
-#                                 tree's schema version, and the KV export's
-#                                 keys, buckets and buckets with keys
+#                                 tree's schema version, the held flights and
+#                                 their rows per chunk, the bundles by name
+#                                 and SHA-256, and the KV export's keys,
+#                                 buckets and buckets with keys
 #
 # The dumps are taken inside the project's timescaledb container (the
 # server's own pg_dump). Each file is written under a .partial name and
 # read back before it is moved into place: a dump must list with
-# pg_restore --list, the KV export must hold one valid line per key it
+# pg_restore --list, the held rows must be one closed COPY per chunk,
+# the records archive must hold exactly the bundles record_bundles names
+# with their SHA-256, the KV export must hold one valid line per key it
 # listed. A failed run never leaves a file that looks like a backup, and
 # the manifest, written last, is what marks a stamp complete. The
 # JetStream streams are not backed up: each is bounded by age and what
@@ -102,6 +119,13 @@ container() {
 }
 pg="$(container timescaledb)"
 nats="$(container nats)"
+# The records volume: the named volume api has at its records directory.
+api="$(container api)"
+records_vol="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/ussp/records"}}{{.Type}} {{.Name}}{{end}}{{end}}' "$api")"
+case "$records_vol" in
+  "volume "?*) records_vol="${records_vol#volume }" ;;
+  *) die "api has no named volume at /var/lib/ussp/records (${records_vol:-none}): the record bundles cannot be backed up" ;;
+esac
 net="$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' "$nats" | head -n 1)"
 [ -n "$net" ] || die "the nats container is on no network"
 psql_q() { # <database> <sql>: tuples only, unaligned
@@ -119,18 +143,42 @@ v_ts="$(psql_q ussp_timeseries "SELECT coalesce(max(version_id), 0) FROM goose_d
 # The chunks whose range ends before the cutoff, with their compressed
 # relations (TimescaleDB 2.30: compression_settings, the pinned image):
 # their rows are left out of the dump, never their definitions.
+# One cutoff, as a value, for this and the held export below: both read
+# the same chunks.
 old_chunks="$(psql_q ussp_timeseries "
   SELECT format('%I.%I', i.chunk_schema, i.chunk_name)
   FROM timescaledb_information.chunks i
-  WHERE i.range_end < now() - make_interval(days => $ts_days)
+  WHERE i.range_end < '$cutoff'::timestamptz
   UNION
   SELECT cs.compress_relid::regclass::text
   FROM _timescaledb_catalog.compression_settings cs
   JOIN timescaledb_information.chunks i ON cs.relid = format('%I.%I', i.chunk_schema, i.chunk_name)::regclass
-  WHERE i.range_end < now() - make_interval(days => $ts_days) AND cs.compress_relid IS NOT NULL")"
+  WHERE i.range_end < '$cutoff'::timestamptz AND cs.compress_relid IS NOT NULL")"
 all_chunks="$(psql_q ussp_timeseries "SELECT count(*) FROM timescaledb_information.chunks")"
 excluded=()
 while IFS= read -r t; do [ -n "$t" ] && excluded+=("--exclude-table-data=$t"); done <<<"$old_chunks"
+
+# The held rows (internal/records: a flight an occurrence report names is
+# held past its retention). The hypertables a flight's record reads, by
+# what ties a row to the flight: its flight_id, or its client and the
+# flight's window (the traffic products, records.Builder.products). A
+# hypertable with a flight_id this list does not name, or a table whose
+# time column is not the one named, stops the backup before anything is
+# written: rows of a held flight would be left out without a word.
+held_tables=(telemetry:captured_at:flight conformance_samples:captured_at:flight traffic_products:at:client)
+unread="$(psql_q ussp_timeseries "
+  SELECT h.hypertable_name FROM timescaledb_information.hypertables h
+  JOIN information_schema.columns c
+    ON c.table_schema = h.hypertable_schema AND c.table_name = h.hypertable_name AND c.column_name = 'flight_id'
+  WHERE (h.hypertable_schema, h.hypertable_name) NOT IN (('public', 'telemetry'), ('public', 'conformance_samples'))
+  ORDER BY 1")"
+[ -z "$unread" ] || die "hypertables with a flight_id the held export does not read: $(printf '%s' "$unread" | tr '\n' ' ' | sed 's/ $//'); nothing written"
+for spec in "${held_tables[@]}"; do
+  IFS=: read -r t col _ <<<"$spec"
+  dim="$(psql_q ussp_timeseries "SELECT column_name FROM timescaledb_information.dimensions
+    WHERE hypertable_schema = 'public' AND hypertable_name = '$t' AND dimension_number = 1")"
+  [ "$dim" = "$col" ] || die "$t is partitioned by ${dim:-nothing}, the held export reads it by $col; nothing written"
+done
 
 declare -A entries
 dump() { # <database> [pg_dump args...]
@@ -153,6 +201,112 @@ dump() { # <database> [pg_dump args...]
 dump ussp_relational
 dump ussp_timeseries "${excluded[@]}"
 echo "backup: time series since $cutoff (database clock $db_now): $all_chunks chunks, the rows of ${#excluded[@]} relations before the cutoff left out"
+
+# The held flights, read after the relational dump (a report is never
+# removed, so every flight it names is here): each with the client and
+# the window its traffic products are read by (an id without a flights
+# row holds its flight_id rows only). COPY text, one flight per line.
+held="$(psql_q ussp_relational "COPY (
+  SELECT h.id, f.client_id, f.started_at, coalesce(f.ended_at, now())
+  FROM (SELECT DISTINCT unnest(flight_ids) AS id FROM occurrence_reports) h
+  LEFT JOIN flights f ON f.id = h.id
+  ORDER BY h.id) TO STDOUT")"
+held_flights="$(grep -c . <<<"$held" || true)"
+# The chunks before the cutoff of the held tables, the ones whose rows the
+# dump left out; their held rows are read from each chunk itself, so a
+# row is in the dump or in this file, never in both.
+partial="$dir/.ussp_timeseries_held-$stamp.sql.partial"
+final="$dir/ussp_timeseries_held-$stamp.sql"
+script="$dir/.held-$stamp.psql.partial"
+{
+  printf '%s\n' '\set ON_ERROR_STOP on' 'SET client_min_messages = warning;' \
+    'CREATE TEMP TABLE backup_held (flight_id uuid PRIMARY KEY, client_id text, started_at timestamptz, ended_at timestamptz);' \
+    'COPY backup_held FROM STDIN;'
+  [ "$held_flights" -eq 0 ] || printf '%s\n' "$held"
+  printf '%s\n' '\.'
+  for spec in "${held_tables[@]}"; do
+    IFS=: read -r t col key <<<"$spec"
+    cols="$(psql_q ussp_timeseries "SELECT string_agg(quote_ident(attname), ', ' ORDER BY attnum) FROM pg_attribute
+      WHERE attrelid = 'public.$t'::regclass AND attnum > 0 AND NOT attisdropped")"
+    if [ "$key" = flight ]; then
+      match="t.flight_id IN (SELECT flight_id FROM backup_held)"
+    else
+      match="EXISTS (SELECT 1 FROM backup_held h WHERE h.client_id = t.client_id AND t.$col BETWEEN h.started_at AND h.ended_at)"
+    fi
+    chunks="$(psql_q ussp_timeseries "SELECT format('%I.%I', chunk_schema, chunk_name) FROM timescaledb_information.chunks
+      WHERE hypertable_schema = 'public' AND hypertable_name = '$t' AND range_end < '$cutoff'::timestamptz ORDER BY range_end")"
+    while IFS= read -r c; do
+      [ -n "$c" ] || continue
+      [[ "$c" =~ ^_timescaledb_internal\._hyper_[0-9]+_[0-9]+_chunk$ ]] || die "chunk $c is not a chunk name; nothing more written"
+      printf "\\\\qecho '-- chunk %s of %s'\n" "$c" "$t"
+      printf "\\\\qecho 'COPY public.%s (%s) FROM stdin;'\n" "$t" "$cols"
+      printf 'COPY (SELECT %s FROM %s t WHERE %s) TO STDOUT;\n' "$cols" "$c" "$match"
+      printf "\\\\qecho '\\\\\\\\.'\n"
+    done <<<"$chunks"
+  done
+} > "$script"
+if ! docker exec -i "$pg" psql -X -q -U postgres -d ussp_timeseries < "$script" > "$partial"; then
+  rm -f "$script" "$partial"
+  die "the held rows of ussp_timeseries could not be read; older backups kept"
+fi
+rm -f "$script"
+# Read back: every COPY closed, its rows counted per chunk.
+if ! held_rows="$(tr -d '\r' < "$partial" | awk '
+    inside && $0 == "\\." { inside = 0; next }
+    inside { n[c]++; next }
+    /^-- chunk / { c = $3; n[c] += 0; t[c] = $5; next }
+    /^COPY public\.[a-z_]+ \(.*\) FROM stdin;$/ { if (c == "") exit 2; inside = 1; next }
+    { exit 3 }
+    END { if (inside) exit 4; for (k in n) printf "%s %s %d\n", k, t[k], n[k] }' | sort)"; then
+  rm -f "$partial"
+  die "the held rows of ussp_timeseries do not read back as one closed COPY per chunk; older backups kept"
+fi
+mv "$partial" "$final"
+held_total="$(awk '{s += $3} END {print s + 0}' <<<"$held_rows")"
+echo "backup: $final ($held_flights held flights, $held_total rows in $(grep -c . <<<"$held_rows" || true) chunks before the cutoff)"
+files+=("$final")
+
+# The daily record bundles, read after the relational dump (a bundle is
+# never removed, so every one it names is here): each name checked
+# before it is read, the archive read back file by file against the
+# SHA-256 record_bundles holds. From the records volume, read-only, in
+# the pinned nats-box: api's image has no shell.
+bundles="$(psql_q ussp_relational "SELECT storage_ref || ' ' || content_hash FROM record_bundles ORDER BY date")"
+n_bundles=0
+while IFS=' ' read -r ref sum; do
+  [ -n "$ref" ] || continue
+  [[ "$ref" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{12}\.jsonl\.gz$ ]] || die "record_bundles names $ref, not a bundle file name; nothing more written"
+  [[ "$sum" =~ ^[0-9a-f]{64}$ ]] || die "record_bundles holds no SHA-256 for $ref; nothing more written"
+  n_bundles=$((n_bundles + 1))
+done <<<"$bundles"
+partial="$dir/.records-$stamp.tar.partial"
+final="$dir/records-$stamp.tar"
+check="$dir/.records-$stamp.check"
+if [ "$n_bundles" -eq 0 ]; then
+  tar -cf - -T /dev/null > "$partial"
+elif ! cut -d' ' -f1 <<<"$bundles" | MSYS_NO_PATHCONV=1 docker run --rm -i -v "$records_vol:/records:ro" "$NATS_BOX_IMAGE" \
+    tar -C /records -cf - -T - > "$partial"; then
+  rm -f "$partial"
+  die "the record bundles could not be read from the volume $records_vol; older backups kept"
+fi
+rm -rf "$check"
+mkdir -p "$check"
+if ! listed="$(tar -tf - < "$partial" | tr -d '\r' | sort)" || [ "$listed" != "$(cut -d' ' -f1 <<<"$bundles" | grep . | sort || true)" ] ||
+   ! tar -xf - -C "$check" < "$partial"; then
+  rm -rf "$check" "$partial"
+  die "the records archive does not hold exactly the $n_bundles bundles record_bundles names; older backups kept"
+fi
+while IFS=' ' read -r ref sum; do
+  [ -n "$ref" ] || continue
+  if [ "$(sha "$check/$ref")" != "$sum" ]; then
+    rm -rf "$check" "$partial"
+    die "the bundle $ref does not have the SHA-256 record_bundles holds; older backups kept"
+  fi
+done <<<"$bundles"
+rm -rf "$check"
+mv "$partial" "$final"
+echo "backup: $final ($n_bundles record bundles, each matching its recorded SHA-256)"
+files+=("$final")
 
 # The KV export, from the pinned nats-box on the project's network, as the
 # backup's own NATS user. A key name never holds a space, so a line that is
@@ -203,25 +357,39 @@ files+=("$final")
 
 # The manifest, last: a stamp without one is incomplete.
 partial="$dir/.manifest-$stamp.json.partial"
+printf '%s\n' "$held_rows" > "$partial.held"
+printf '%s\n' "$bundles" > "$partial.records"
 {
   jq -n --arg stamp "$stamp" --arg db_now "$db_now" --arg cutoff "$cutoff" --argjson ts_days "$ts_days" \
     --argjson all "$all_chunks" --argjson out "$(grep -c . <<<"$old_chunks" || true)" \
     --argjson v_rel "$v_rel" --argjson v_ts "$v_ts" --argjson kv "$lines" --argjson buckets "$buckets" --argjson with_keys "$with_keys" \
-    '{stamp: $stamp, db_now: $db_now, ts_cutoff: $cutoff, ts_days: $ts_days,
+    --argjson held_flights "$held_flights" --rawfile held_rows "$partial.held" --rawfile bundles "$partial.records" \
+    'def lines: split("\n") | map(select(length > 0) | split(" "));
+     {stamp: $stamp, db_now: $db_now, ts_cutoff: $cutoff, ts_days: $ts_days,
       chunks: {all: $all, relations_left_out: $out}, schema: {relational: $v_rel, timeseries: $v_ts},
+      held: {flights: $held_flights,
+             chunks: ($held_rows | lines | map({key: .[0], value: {table: .[1], rows: (.[2] | tonumber)}}) | from_entries)},
+      records: {bundles: ($bundles | lines | map({ref: .[0], sha256: .[1]}))},
       kv: {keys: $kv, buckets: $buckets, buckets_with_keys: $with_keys}, files: {}}'
 } > "$partial.base"
+rm -f "$partial.held" "$partial.records"
 cp "$partial.base" "$partial"
 for f in "${files[@]}"; do
   b="$(basename "$f")"
   n="null"
-  case "$b" in ussp_relational-*) n="${entries[ussp_relational]}" ;; ussp_timeseries-*) n="${entries[ussp_timeseries]}" ;; nats-kv-*) n="$lines" ;; esac
+  case "$b" in
+    ussp_relational-*) n="${entries[ussp_relational]}" ;;
+    ussp_timeseries-*) n="${entries[ussp_timeseries]}" ;;
+    ussp_timeseries_held-*) n="$held_total" ;;
+    records-*) n="$n_bundles" ;;
+    nats-kv-*) n="$lines" ;;
+  esac
   jq --arg f "$b" --argjson bytes "$(wc -c < "$f" | tr -d ' ')" --arg sha "$(sha "$f")" --argjson n "$n" \
     '.files[$f] = {bytes: $bytes, sha256: $sha, entries: $n}' "$partial" > "$partial.next"
   mv "$partial.next" "$partial"
 done
 rm -f "$partial.base"
-jq -e '.files | length == 3' "$partial" >/dev/null || { rm -f "$partial"; die "the manifest does not name the three files"; }
+jq -e '.files | length == 5' "$partial" >/dev/null || { rm -f "$partial"; die "the manifest does not name the five files"; }
 mv "$partial" "$dir/manifest-$stamp.json"
 files+=("$dir/manifest-$stamp.json")
 echo "backup: $dir/manifest-$stamp.json (schema relational $v_rel, timeseries $v_ts)"
@@ -241,7 +409,8 @@ fi
 # Rotation: only complete stamps of this job, older than keep_days.
 find "$dir" -maxdepth 1 -type f -name 'manifest-*.json' -mtime +"$keep_days" | while IFS= read -r m; do
   s="$(basename "$m" .json)"; s="${s#manifest-}"
-  rm -f "$dir/ussp_relational-$s.dump" "$dir/ussp_timeseries-$s.dump" "$dir/nats-kv-$s.jsonl" "$m"
+  rm -f "$dir/ussp_relational-$s.dump" "$dir/ussp_timeseries-$s.dump" "$dir/ussp_timeseries_held-$s.sql" \
+    "$dir/records-$s.tar" "$dir/nats-kv-$s.jsonl" "$m"
   echo "backup: rotated out $s"
 done
 echo "backup: done ($stamp, kept $keep_days days, time series $ts_days days)"

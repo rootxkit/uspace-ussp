@@ -47,7 +47,8 @@
 #                                   procedure, docs/RUNBOOKS/chaos.md)
 #   CONFORMANCE_KEEP                1 leaves the stack running after the run
 #   CONFORMANCE_OUT                 reports (default local/conformance/reports)
-#   CONFORMANCE_ALLOW_INCOMPLETE    1 accepts an incomplete run (exit 0, not 3)
+#   CONFORMANCE_ALLOW_INCOMPLETE    1 accepts an incomplete run (exit 0, not 3);
+#                                   refused with CONFORMANCE_QUALIFIER=off
 #   CONFORMANCE_BASELINE            the reviewed baseline the suite gates on
 #                                   (default deploy/conformance/baseline.json;
 #                                   none: no baseline, every requirement not
@@ -211,6 +212,12 @@ validate() {
   fi
   qualifier="${CONFORMANCE_QUALIFIER:-on}"
   case "$qualifier" in on | off) ;; *) usage "CONFORMANCE_QUALIFIER is $qualifier: want on or off" ;; esac
+  # Off, the InterUSS requirements are not judged in this invocation;
+  # accepting an incomplete run as well would let it exit 0 having judged
+  # none of them.
+  if [ "$qualifier" = off ] && [ "${CONFORMANCE_ALLOW_INCOMPLETE:-}" = 1 ]; then
+    usage "CONFORMANCE_QUALIFIER=off with CONFORMANCE_ALLOW_INCOMPLETE=1 is refused: the run would exit 0 without the InterUSS suites having judged anything (use one or the other)"
+  fi
   extra_reports=()
   if [ -n "${CONFORMANCE_QUALIFIER_REPORTS:-}" ]; then
     local pair pairs

@@ -8,8 +8,10 @@
 # production image must fail to (there is no such file), the testif image
 # must answer with the process's usage. Both are checked, so that a check
 # that could never find the binary is not mistaken for its absence
-# (LESSONS E-01). The images are run with no network and nothing
-# mounted; nothing is started beyond the one --help.
+# (LESSONS E-01), and the production image's own entrypoint must answer
+# its --help, so that an image that cannot run at all is not either. The
+# images are run with no network and nothing mounted; nothing is started
+# beyond each --help. scripts/check-images-selftest.sh tests this script.
 set -euo pipefail
 
 prod="${1:?usage: check-images.sh <production image> <testif image>}"
@@ -24,6 +26,19 @@ probe() { # probe <image>: the --help output of ussp-test-interfaces in it, or t
 }
 
 status=0
+# The production image's own entrypoint must run (its --help answers
+# with its usage): a probe of an image that cannot run at all fails too,
+# and would pass below as the absence of the test interfaces.
+out=""
+if ep_path="$(docker image inspect -f '{{index .Config.Entrypoint 0}}' "$prod" 2>&1)" &&
+  out="$(docker run --rm --network none "$prod" --help 2>&1)" &&
+  first="${out%%$'\n'*}" && { [ "$first" = "usage: ${ep_path##*/}" ] || [[ "$first" == "usage: ${ep_path##*/} "* ]]; }; then
+  echo "check-images: $prod's entrypoint $ep_path runs (--help answers with its usage)"
+else
+  echo "check-images: $prod's entrypoint ${ep_path:-(none)} does not run: the absence below would prove nothing" >&2
+  printf '%s\n' "$out" | head -n 3 >&2
+  status=1
+fi
 if out="$(probe "$prod")"; then
   echo "check-images: $prod runs ussp-test-interfaces: the production image must not contain it" >&2
   echo "$out" | head -n 3 >&2

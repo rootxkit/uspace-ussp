@@ -286,14 +286,35 @@ mkdir -p "$rbk"
 topo_n="$(grep -cvE '^[[:space:]]*(#|$)' deploy/nats-kv-buckets.txt)"
 first_bucket="$(grep -vE '^[[:space:]]*(#|$)' deploy/nats-kv-buckets.txt | head -n 1 | tr -d '\r')"
 rstamp=20261014T000000Z
-kv_backup() { # <dir> <buckets recorded> <bucket of the one key>
-  local d="$1" n="$2" b="$3" f bytes sum
-  rm -rf "$d"; mkdir -p "$d"
+kv_backup() { # <dir> <buckets recorded> <bucket of the one key> [records: ok, missing, altered, unrecorded]
+  local d="$1" n="$2" b="$3" mode="${4:-ok}" f bytes sum ref
+  rm -rf "$d"; mkdir -p "$d/vol"
   printf 'relational' > "$d/ussp_relational-$rstamp.dump"
   printf 'timeseries' > "$d/ussp_timeseries-$rstamp.dump"
+  printf -- '-- no held flight\n' > "$d/ussp_timeseries_held-$rstamp.sql"
   jq -cn --arg b "$b" '{bucket: $b, key: "k", value_b64: "dg=="}' > "$d/nats-kv-$rstamp.jsonl"
-  jq -n --arg s "$rstamp" --argjson n "$n" '{stamp: $s, schema: {relational: 1, timeseries: 1}, kv: {keys: 1, buckets: $n, buckets_with_keys: 1}, files: {}}' > "$d/m.json"
-  for f in "ussp_relational-$rstamp.dump" "ussp_timeseries-$rstamp.dump" "nats-kv-$rstamp.jsonl"; do
+  # One record bundle, named as the api names it; "altered" changes its
+  # bytes after its SHA-256 is recorded, "missing" leaves it out.
+  printf 'bundle\n' | gzip -n > "$d/vol/b"
+  sum="$(sha256sum "$d/vol/b" | cut -d' ' -f1)"
+  ref="2026-10-01-${sum:0:12}.jsonl.gz"
+  mv "$d/vol/b" "$d/vol/$ref"
+  [ "$mode" != altered ] || printf 'x' >> "$d/vol/$ref"
+  if [ "$mode" = missing ]; then
+    tar -cf - -T /dev/null > "$d/records-$rstamp.tar"
+  else
+    (cd "$d/vol" && tar -cf - "$ref") > "$d/records-$rstamp.tar"
+  fi
+  rm -rf "$d/vol"
+  jq -n --arg s "$rstamp" --argjson n "$n" --arg ref "$ref" --arg sum "$sum" '{stamp: $s, schema: {relational: 1, timeseries: 1},
+    held: {flights: 0, chunks: {}}, records: {bundles: [{ref: $ref, sha256: $sum}]},
+    kv: {keys: 1, buckets: $n, buckets_with_keys: 1}, files: {}}' > "$d/m.json"
+  local names=("ussp_relational-$rstamp.dump" "ussp_timeseries-$rstamp.dump" "ussp_timeseries_held-$rstamp.sql" "records-$rstamp.tar" "nats-kv-$rstamp.jsonl")
+  if [ "$mode" = unrecorded ]; then
+    names=("ussp_relational-$rstamp.dump" "ussp_timeseries-$rstamp.dump" "nats-kv-$rstamp.jsonl")
+    jq 'del(.held, .records)' "$d/m.json" > "$d/m2.json" && mv "$d/m2.json" "$d/m.json"
+  fi
+  for f in "${names[@]}"; do
     bytes="$(wc -c < "$d/$f" | tr -d ' ')"
     sum="$(sha256sum "$d/$f" | cut -d' ' -f1)"
     jq --arg f "$f" --argjson b "$bytes" --arg s "$sum" '.files[$f] = {bytes: $b, sha256: $s}' "$d/m.json" > "$d/m2.json"
@@ -301,9 +322,9 @@ kv_backup() { # <dir> <buckets recorded> <bucket of the one key>
   done
   mv "$d/m.json" "$d/manifest-$rstamp.json"
 }
-restore_kv() { # <label> <expected text> <buckets recorded> <bucket of the key>
+restore_kv() { # <label> <expected text> <buckets recorded> <bucket of the key> [records]
   local label="$1" want="$2" rc=0 out
-  kv_backup "$rbk/b" "$3" "$4"
+  kv_backup "$rbk/b" "$3" "$4" "${5:-ok}"
   out="$(USSP_COMPOSE_PROJECT="uspace-ussp-restore-check-$$" deploy/restore-check.sh "$rbk/b" 2>&1)" || rc=$?
   if [ "$rc" -ne 0 ] && grep -qF -- "$want" <<<"$out"; then
     ok "restore-check.sh: $label (exit $rc: $want)"
@@ -314,7 +335,14 @@ restore_kv() { # <label> <expected text> <buckets recorded> <bucket of the key>
 restore_kv "a backup with one bucket more than the topology is refused" "the topology has $topo_n" "$((topo_n + 1))" "$first_bucket"
 restore_kv "a backup with one bucket fewer than the topology is refused" "the topology has $topo_n" "$((topo_n - 1))" "$first_bucket"
 restore_kv "a key of a bucket the topology does not name is refused" "not a bucket of the topology" "$topo_n" "not_a_bucket"
-restore_kv "the topology's bucket count gets past the check" "no running timescaledb container" "$topo_n" "$first_bucket"
+# The record bundles, before any database: an archive without the bundle
+# the manifest names, or with other bytes for it, is refused, and so is a
+# manifest from before the held rows and the bundles were backed up; the
+# archive that matches gets past the check (the line below).
+restore_kv "a records archive without a bundle the manifest names is refused" "does not hold exactly the 1 bundles" "$topo_n" "$first_bucket" missing
+restore_kv "a bundle whose bytes differ from its recorded SHA-256 is refused" "does not have the SHA-256 the manifest recorded" "$topo_n" "$first_bucket" altered
+restore_kv "a manifest without the held rows and the bundles is refused" "a backup older than this check" "$topo_n" "$first_bucket" unrecorded
+restore_kv "the topology's bucket count and the bundles get past the check" "no running timescaledb container" "$topo_n" "$first_bucket"
 
 # ---- the Caddy snippet -------------------------------------------------------
 
