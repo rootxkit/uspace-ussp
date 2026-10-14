@@ -94,9 +94,12 @@ SELECT date, built_at, content_hash, storage_ref, flights
 FROM record_bundles
 WHERE date = sqlc.arg(date);
 
--- The days from first to last (inclusive) without a bundle.
+-- The days from first to last (inclusive) without a bundle. Date plus
+-- whole days, never a timestamptz series: that one steps through the
+-- session's TimeZone and skips a day a zone skipped (Pacific/Apia's
+-- 2011-12-30), which would then be neither built nor alarmed.
 -- name: MissingRecordDays :many
-SELECT d::date AS day
-FROM generate_series(sqlc.arg(first_day)::date, sqlc.arg(last_day)::date, interval '1 day') AS d
-WHERE NOT EXISTS (SELECT 1 FROM record_bundles b WHERE b.date = d::date)
-ORDER BY d;
+SELECT (sqlc.arg(first_day)::date + i)::date AS day
+FROM generate_series(0, sqlc.arg(last_day)::date - sqlc.arg(first_day)::date) AS i
+WHERE NOT EXISTS (SELECT 1 FROM record_bundles b WHERE b.date = sqlc.arg(first_day)::date + i)
+ORDER BY i;

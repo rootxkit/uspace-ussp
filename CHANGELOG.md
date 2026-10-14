@@ -44,6 +44,10 @@ additively within `/v1`.
   more than the alarm between 01:00 and 02:00. Pinned at every hour's
   boundary, across DST changes and UTC midnight, with the database
   clock in UTC and in zones with DST.
+- The days without a record bundle were a `timestamptz` series in the
+  database session's `TimeZone`: a zone that skipped a day
+  (Pacific/Apia, 2011-12-30) left it out, so it was neither built nor
+  alarmed. `MissingRecordDays` now steps UTC dates by whole days.
 - The nightly backup lost held flights older than the time-series
   window (`USSP_BACKUP_TS_DAYS`, 7 days, pending GCAA) and every daily
   record bundle: it left the rows of the older chunks out whatever
