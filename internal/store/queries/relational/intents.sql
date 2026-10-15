@@ -204,3 +204,44 @@ SELECT id
    AND (sqlc.narg(to_at)::timestamptz IS NULL OR time_start <= sqlc.narg(to_at)::timestamptz)
  ORDER BY id
  LIMIT sqlc.arg(max_rows);
+
+-- The counts of the intents by state (GET /v1/intents/summary for an
+-- operator, GET /v1/admin/intents/summary for every operator): each
+-- reads at most max_rows rows, found through an index (never the whole
+-- table), and the caller asks one row more than its bound to know
+-- whether it reached it. The open states are counted on
+-- operational_intents_open_idx (the sweep ends each open intent at its
+-- time_end, so they are few); the closed states among the newest
+-- intents by created_at.
+
+-- name: IntentOpenCountsOfOperator :many
+SELECT s.local_state, count(*)::bigint AS n
+  FROM (SELECT local_state FROM operational_intents
+         WHERE operator_id = sqlc.arg(operator_id)
+           AND local_state IN ('pending_validation', 'pending_dss', 'pending_authority', 'accepted', 'activated', 'nonconforming', 'contingent')
+         LIMIT sqlc.arg(max_rows)) s
+ GROUP BY s.local_state;
+
+-- name: IntentNewestCountsOfOperator :many
+-- On operational_intents_operator_idx (operator_id, created_at).
+SELECT s.local_state, count(*)::bigint AS n
+  FROM (SELECT local_state FROM operational_intents
+         WHERE operator_id = sqlc.arg(operator_id)
+         ORDER BY created_at DESC
+         LIMIT sqlc.arg(max_rows)) s
+ GROUP BY s.local_state;
+
+-- name: IntentOpenCounts :many
+SELECT s.local_state, count(*)::bigint AS n
+  FROM (SELECT local_state FROM operational_intents
+         WHERE local_state IN ('pending_validation', 'pending_dss', 'pending_authority', 'accepted', 'activated', 'nonconforming', 'contingent')
+         LIMIT sqlc.arg(max_rows)) s
+ GROUP BY s.local_state;
+
+-- name: IntentNewestCounts :many
+-- On operational_intents_created_idx (created_at, migration 00029).
+SELECT s.local_state, count(*)::bigint AS n
+  FROM (SELECT local_state FROM operational_intents
+         ORDER BY created_at DESC
+         LIMIT sqlc.arg(max_rows)) s
+ GROUP BY s.local_state;

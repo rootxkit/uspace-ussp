@@ -188,6 +188,11 @@ type Store interface {
 	// f.Limit (which is at most MaxList+1: the service reads one more
 	// than it answers to say whether the list is truncated).
 	List(ctx context.Context, operatorID string, f ListFilter) ([]Record, error)
+	// StateCounts counts the intents by state in one snapshot on the
+	// database clock: the open ones, and every state among the newest,
+	// each reading at most maxRows rows; the operator's when operatorID
+	// is set, every operator's when it is nil.
+	StateCounts(ctx context.Context, operatorID *string, maxRows int) (StateCounts, error)
 	// InTx runs fn in one transaction holding the intents lock: every
 	// decision that reads the active intents and writes one is
 	// serialised, so two overlapping requests are never both granted.

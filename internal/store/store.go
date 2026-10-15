@@ -129,6 +129,21 @@ func (s *Store) Tx(ctx context.Context, fn func(q *relational.Queries) error) er
 	return nil
 }
 
+// ReadTx runs fn in one read-only, repeatable-read relational
+// transaction, always rolled back: every query of fn sees one snapshot
+// and its now() is one database clock (the counts of a summary).
+func (s *Store) ReadTx(ctx context.Context, fn func(q *relational.Queries) error) error {
+	if s.Rel == nil {
+		return fmt.Errorf("%s: %w", TreeRelational, ErrNoPool)
+	}
+	tx, err := s.Rel.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	return fn(relational.New(tx))
+}
+
 // IsNoRows reports whether err is "no rows in result set".
 func IsNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
 
