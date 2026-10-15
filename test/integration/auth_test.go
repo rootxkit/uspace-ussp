@@ -10,7 +10,6 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -299,7 +298,7 @@ var seq atomic.Int64
 
 // unique is a suffix that keeps the rows of one test apart from every
 // other's (the database is shared and not emptied).
-func unique() string { return fmt.Sprintf("%d%04d", time.Now().UnixNano()%1_000_000_000, seq.Add(1)) }
+func unique() string { return uniqueAt(time.Now().UnixNano(), seq.Add(1)) }
 
 // operator registers an operator (the registry answer decides its
 // status) and signs its admin in; it returns the operator id and the
