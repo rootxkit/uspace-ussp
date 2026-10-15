@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@rootxkit/uspace-ui':
-        specifier: https://github.com/rootxkit/uspace-ui/releases/download/v1.1.1/rootxkit-uspace-ui-1.1.1.tgz
-        version: https://github.com/rootxkit/uspace-ui/releases/download/v1.1.1/rootxkit-uspace-ui-1.1.1.tgz(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(axe-core@4.13.0)(eslint-plugin-jsx-a11y@6.10.2(eslint@9.39.5(jiti@2.7.0)))(eslint-plugin-react-hooks@7.1.1(eslint@9.39.5(jiti@2.7.0)))(eslint@9.39.5(jiti@2.7.0))(maplibre-gl@5.24.0)(next@16.3.8(@playwright/test@1.63.0)(@types/node@22.20.4)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-hook-form@7.89.0(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)(tailwindcss@4.3.3)(typescript-eslint@8.71.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3))(typescript@5.9.3)(zod@4.6.5)
+        specifier: https://github.com/rootxkit/uspace-ui/releases/download/v1.1.2/rootxkit-uspace-ui-1.1.2.tgz
+        version: https://github.com/rootxkit/uspace-ui/releases/download/v1.1.2/rootxkit-uspace-ui-1.1.2.tgz(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(axe-core@4.13.0)(eslint-plugin-jsx-a11y@6.10.2(eslint@9.39.5(jiti@2.7.0)))(eslint-plugin-react-hooks@7.1.1(eslint@9.39.5(jiti@2.7.0)))(eslint@9.39.5(jiti@2.7.0))(maplibre-gl@5.24.0)(next@16.3.8(@playwright/test@1.63.0)(@types/node@22.20.4)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-hook-form@7.89.0(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)(tailwindcss@4.3.3)(typescript-eslint@8.71.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3))(typescript@5.9.3)(zod@4.6.5)
       maplibre-gl:
         specifier: 5.24.0
         version: 5.24.0
@@ -1275,9 +1275,9 @@ packages:
     resolution: {integrity: sha512-ypeBZ/6BKXR9+7/TtbKhbl4UgD7raHhPS12oknlKno2A8+lnFkxIwiE/Aklu6L2cd/ioH+fCWuMxi9/p3EyAPw==}
     engines: {node: '>=18.17.0', npm: '>=9.5.0'}
 
-  '@rootxkit/uspace-ui@https://github.com/rootxkit/uspace-ui/releases/download/v1.1.1/rootxkit-uspace-ui-1.1.1.tgz':
-    resolution: {integrity: sha512-FWrGAwbTPifr+mT+WcmfhjOuHpv9BBgEsEk5iisxwpPHvXmoRyqlI1Ighplkvo4HIlfQgE+f3I3VcQMnQflUYw==, tarball: https://github.com/rootxkit/uspace-ui/releases/download/v1.1.1/rootxkit-uspace-ui-1.1.1.tgz}
-    version: 1.1.1
+  '@rootxkit/uspace-ui@https://github.com/rootxkit/uspace-ui/releases/download/v1.1.2/rootxkit-uspace-ui-1.1.2.tgz':
+    resolution: {integrity: sha512-GyLfUdFnxrx2Bm88tgd09lYqmkRtLX1AEQ+cXzMbAGbfy3sAGDj5jd5N62weD+om40fZuS6pUVDpfHG29Zy8iQ==, tarball: https://github.com/rootxkit/uspace-ui/releases/download/v1.1.2/rootxkit-uspace-ui-1.1.2.tgz}
+    version: 1.1.2
     engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
@@ -3965,7 +3965,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@rootxkit/uspace-ui@https://github.com/rootxkit/uspace-ui/releases/download/v1.1.1/rootxkit-uspace-ui-1.1.1.tgz(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(axe-core@4.13.0)(eslint-plugin-jsx-a11y@6.10.2(eslint@9.39.5(jiti@2.7.0)))(eslint-plugin-react-hooks@7.1.1(eslint@9.39.5(jiti@2.7.0)))(eslint@9.39.5(jiti@2.7.0))(maplibre-gl@5.24.0)(next@16.3.8(@playwright/test@1.63.0)(@types/node@22.20.4)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-hook-form@7.89.0(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)(tailwindcss@4.3.3)(typescript-eslint@8.71.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3))(typescript@5.9.3)(zod@4.6.5)':
+  '@rootxkit/uspace-ui@https://github.com/rootxkit/uspace-ui/releases/download/v1.1.2/rootxkit-uspace-ui-1.1.2.tgz(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(axe-core@4.13.0)(eslint-plugin-jsx-a11y@6.10.2(eslint@9.39.5(jiti@2.7.0)))(eslint-plugin-react-hooks@7.1.1(eslint@9.39.5(jiti@2.7.0)))(eslint@9.39.5(jiti@2.7.0))(maplibre-gl@5.24.0)(next@16.3.8(@playwright/test@1.63.0)(@types/node@22.20.4)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react-hook-form@7.89.0(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)(tailwindcss@4.3.3)(typescript-eslint@8.71.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3))(typescript@5.9.3)(zod@4.6.5)':
     dependencies:
       '@hookform/resolvers': 5.9.1(react-hook-form@7.89.0(@types/react@19.3.0)(react@19.3.0))(zod@4.6.5)
       '@protomaps/basemaps': 5.7.2
