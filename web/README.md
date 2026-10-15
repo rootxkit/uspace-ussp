@@ -18,16 +18,16 @@ USSP_WEB_API_URL=http://127.0.0.1:8080 USSP_WEB_SESSION_SECURE=false pnpm dev
 
 ## The kit
 
-`@rootxkit/uspace-ui` is the GitHub Release asset of `v1.0.0`, pinned by
+`@rootxkit/uspace-ui` is the GitHub Release asset of `v1.1.0`, pinned by
 URL in `package.json`; `pnpm-lock.yaml` records its sha512 integrity and
 `--frozen-lockfile` refuses other bytes (uspace-ui `docs/CONSUMING.md`
 §1). Its `SHA256SUMS` and its signed build provenance were checked before
 pinning:
 
 ```
-gh release download v1.0.0 --repo rootxkit/uspace-ui
+gh release download v1.1.0 --repo rootxkit/uspace-ui
 sha256sum -c SHA256SUMS
-gh attestation verify rootxkit-uspace-ui-1.0.0.tgz --repo rootxkit/uspace-ui \
+gh attestation verify rootxkit-uspace-ui-1.1.0.tgz --repo rootxkit/uspace-ui \
   --signer-workflow rootxkit/uspace-ui/.github/workflows/release.yml
 ```
 
