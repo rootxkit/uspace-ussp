@@ -397,12 +397,39 @@ test("each fake down, then NATS down: every input with its state and its time", 
   await page.context().close();
 });
 
+test("the overview counts every operator's intents by state; a new intent raises the total by one", async ({ browser, request }) => {
+  const page = await english(browser);
+  const viewer = await staff(request, "support");
+  await signIn(page, viewer);
+  const counts = page.getByTestId("console-intent-counts");
+  await expect(counts).toHaveAttribute("data-truncated", "false");
+  await expect(page.getByTestId("console-intent-count-activated")).toBeVisible();
+  await expect(page.getByRole("group", { name: "The service now" })).toContainText("Intents, every operator");
+  await expect(page.getByRole("group", { name: "The service now" })).toContainText("Intents nonconforming or contingent");
+  const before = Number(await counts.getAttribute("data-total"));
+  expect(Number.isInteger(before)).toBe(true);
+  // Another operator files and activates an intent: the next read counts it.
+  await control(request, "/intruder", { lat: 41.62 + Math.random() * 0.15, lng: 44.65 + Math.random() * 0.3, east_m: 0 });
+  await expect(counts).toHaveAttribute("data-total", String(before + 1), { timeout: 30_000 });
+  await shot(page, "console-overview-counts-en");
+  await page.context().close();
+});
+
 test("signed out, a console page says how to sign in; the console BFF refuses what is not the console's", async ({ page, request }) => {
   await page.goto("/console/alerts");
   await expect(page.getByTestId("console-signed-out")).toBeVisible();
   expect((await request.get("/_bff/console/api/v1/admin/alerts")).status()).toBe(401);
   expect((await request.get("/_bff/console/api/v1/intents")).status()).toBe(404);
   expect((await request.get("/_bff/api/v1/admin/inputs")).status()).toBe(404);
+  // The console's intent summary is read only at its BFF: a GET reaches
+  // the API (401 signed out), any other method is 405 before the proxy;
+  // the portal's BFF does not let it through.
+  expect((await request.get("/_bff/console/api/v1/admin/intents/summary")).status()).toBe(401);
+  const post = await request.post("/_bff/console/api/v1/admin/intents/summary", { data: {} });
+  expect(post.status()).toBe(405);
+  expect(post.headers()["allow"]).toBe("GET, HEAD");
+  expect((await request.get("/_bff/api/v1/admin/intents/summary")).status()).toBe(404);
+  expect((await request.get("/_bff/console/api/v1/intents/summary")).status()).toBe(404);
 });
 
 test("accessibility of the console pages (axe, WCAG 2.2 AA)", async ({ browser, request }) => {
