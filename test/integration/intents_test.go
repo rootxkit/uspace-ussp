@@ -419,8 +419,19 @@ func TestIntegrationIntentAuthorisedWithTheTenItems(t *testing.T) {
 	if o := g.stack.call("GET", "/v1/intents/"+id, nil, bearer(other)); o.status != 404 {
 		t.Fatalf("another operator: %d", o.status)
 	}
-	if l := g.stack.call("GET", "/v1/intents", nil, bearer(token)); l.status != 200 || !strings.Contains(l.raw, id) {
-		t.Fatalf("list: %d", l.status)
+	if l := g.stack.call("GET", "/v1/intents", nil, bearer(token)); l.status != 200 || !strings.Contains(l.raw, id) || l.body["truncated"] != false {
+		t.Fatalf("list: %d %s", l.status, l.raw)
+	}
+	// The list is bounded and says so (E-10): the operator has two
+	// intents, a limit of one lists the newer and is truncated, a limit
+	// of two lists both and is not.
+	if l := g.stack.call("GET", "/v1/intents?limit=1", nil, bearer(token)); l.status != 200 || l.body["truncated"] != true ||
+		len(l.body["intents"].([]any)) != 1 || !strings.Contains(l.raw, r2.str("intent_id")) {
+		t.Fatalf("limit 1: %d %s", l.status, l.raw)
+	}
+	if l := g.stack.call("GET", "/v1/intents?limit=2", nil, bearer(token)); l.status != 200 || l.body["truncated"] != false ||
+		len(l.body["intents"].([]any)) != 2 {
+		t.Fatalf("limit 2: %d %s", l.status, l.raw)
 	}
 }
 

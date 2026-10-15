@@ -78,6 +78,69 @@ func (p Store) ByClientRef(ctx context.Context, clientID, ref string) (*intent.R
 	return recordOf(row(r))
 }
 
+// StateCounts counts the intents by state in one read-only, repeatable
+// read transaction (store.ReadTx): its now() is the database clock of
+// the counts and every count sees one snapshot. Each query reads at most
+// maxRows rows through an index (the open-intents partial index;
+// operator_id, created_at for an operator; created_at for every
+// operator).
+func (p Store) StateCounts(ctx context.Context, operatorID *string, maxRows int) (intent.StateCounts, error) {
+	if p.S == nil {
+		return intent.StateCounts{}, fmt.Errorf("intent counts: %w", store.ErrNoPool)
+	}
+	var op relational.IntentOpenCountsOfOperatorParams
+	if operatorID != nil {
+		u, err := store.UUID("operator_id", *operatorID)
+		if err != nil {
+			return intent.StateCounts{}, err
+		}
+		op = relational.IntentOpenCountsOfOperatorParams{OperatorID: u, MaxRows: int32(maxRows)}
+	}
+	out := intent.StateCounts{Open: map[string]int{}, Newest: map[string]int{}}
+	err := p.S.ReadTx(ctx, func(q *relational.Queries) error {
+		var err error
+		if out.AsOf, err = q.IntentNow(ctx); err != nil {
+			return fmt.Errorf("now: %w", err)
+		}
+		if operatorID != nil {
+			open, err := q.IntentOpenCountsOfOperator(ctx, op)
+			if err != nil {
+				return fmt.Errorf("open: %w", err)
+			}
+			for _, r := range open {
+				out.Open[r.LocalState] += int(r.N)
+			}
+			newest, err := q.IntentNewestCountsOfOperator(ctx, relational.IntentNewestCountsOfOperatorParams(op))
+			if err != nil {
+				return fmt.Errorf("newest: %w", err)
+			}
+			for _, r := range newest {
+				out.Newest[r.LocalState] += int(r.N)
+			}
+			return nil
+		}
+		open, err := q.IntentOpenCounts(ctx, int32(maxRows))
+		if err != nil {
+			return fmt.Errorf("open: %w", err)
+		}
+		for _, r := range open {
+			out.Open[r.LocalState] += int(r.N)
+		}
+		newest, err := q.IntentNewestCounts(ctx, int32(maxRows))
+		if err != nil {
+			return fmt.Errorf("newest: %w", err)
+		}
+		for _, r := range newest {
+			out.Newest[r.LocalState] += int(r.N)
+		}
+		return nil
+	})
+	if err != nil {
+		return intent.StateCounts{}, fmt.Errorf("intent counts: %w", err)
+	}
+	return out, nil
+}
+
 // Get is the intent, nil when none.
 func (p Store) Get(ctx context.Context, id string) (*intent.Record, error) {
 	u, err := store.UUID("id", id)
@@ -94,13 +157,14 @@ func (p Store) Get(ctx context.Context, id string) (*intent.Record, error) {
 	return recordOf(r)
 }
 
-// List is an operator's intents, newest first.
+// List is an operator's intents, newest first, at most MaxList+1 (the
+// service's probe for more than it answers).
 func (p Store) List(ctx context.Context, operatorID string, f intent.ListFilter) ([]intent.Record, error) {
 	op, err := store.UUID("operator_id", operatorID)
 	if err != nil {
 		return nil, err
 	}
-	params := relational.IntentListParams{OperatorID: op, FromAt: f.From, ToAt: f.To, MaxRows: int32(min(f.Limit, intent.MaxList))}
+	params := relational.IntentListParams{OperatorID: op, FromAt: f.From, ToAt: f.To, MaxRows: int32(min(f.Limit, intent.MaxList+1))}
 	if f.State != "" {
 		params.State = &f.State
 	}

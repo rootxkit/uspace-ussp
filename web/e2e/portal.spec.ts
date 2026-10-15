@@ -61,6 +61,11 @@ test("S-M1 and S-M3: register, client, intent, decision, geo, traffic, alert ack
   await expect(page).toHaveURL(`${FRONT}/`);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Overview");
   await expect(page.getByTestId("session")).toContainText("operator_admin");
+  // The new operator's intents counted by state (GET /v1/intents/summary): none in each.
+  const counts = page.getByTestId("intent-counts");
+  await expect(counts).toHaveAttribute("data-total", "0");
+  await expect(counts).toHaveAttribute("data-truncated", "false");
+  await expect(page.getByTestId("intent-count-activated")).toContainText("0");
   const cookies = await page.context().cookies();
   expect(cookies.find((c) => c.name === "uspace_session")?.httpOnly).toBe(true);
   expect(await page.evaluate(() => document.cookie)).not.toContain("uspace_session");
@@ -130,6 +135,14 @@ test("S-M1 and S-M3: register, client, intent, decision, geo, traffic, alert ack
   await shot(page, "decision-en");
   await page.getByRole("button", { name: "Activate" }).click();
   await expect(decision).toHaveAttribute("data-state", "activated");
+
+  // The overview counts the activated intent, the operator's only one.
+  await page.goto("/");
+  await expect(counts).toHaveAttribute("data-total", "1");
+  await expect(page.getByTestId("intent-count-activated")).toContainText("1");
+  await expect(page.getByTestId("intent-count-accepted")).toContainText("0");
+  await expect(page.getByRole("group", { name: "Your operations now" })).toContainText("Intents in total");
+  await shot(page, "overview-en");
 
   // Geo-awareness around the map: the CIS's zone with its version.
   await page.goto("/geo");
@@ -236,6 +249,12 @@ test("signed out, a portal page says how to sign in and the BFF refuses the API"
   expect(res.status()).toBe(401);
   const outside = await request.get("/_bff/api/v1/admin/status");
   expect(outside.status()).toBe(404);
+  // The summary is read only at the BFF: a GET reaches the API (401
+  // signed out), any other method is 405 before the proxy.
+  expect((await request.get("/_bff/api/v1/intents/summary")).status()).toBe(401);
+  const post = await request.post("/_bff/api/v1/intents/summary", { data: {} });
+  expect(post.status()).toBe(405);
+  expect(post.headers()["allow"]).toBe("GET, HEAD");
 });
 
 test("accessibility of the sign-in, intents form and traffic pages (axe, WCAG 2.2 AA)", async ({ page, request }) => {

@@ -141,6 +141,7 @@ func AccessTable() map[string]httpx.Access {
 		"GET /v1/registry/validate":                         {Scopes: []string{auth.ScopeIntents}},
 		"POST /v1/intents":                                  operatorOrPortal(auth.ScopeIntents),
 		"GET /v1/intents":                                   operatorOrPortal(auth.ScopeIntents),
+		"GET /v1/intents/summary":                           portalAny, // the session's operator only; no operator token
 		"GET /v1/intents/{intent_id}":                       operatorOrPortal(auth.ScopeIntents),
 		"PATCH /v1/intents/{intent_id}":                     operatorOrPortal(auth.ScopeIntents),
 		"GET /v1/geo":                                       operatorOrPortal(auth.ScopeGeo),
@@ -153,6 +154,7 @@ func AccessTable() map[string]httpx.Access {
 		"GET /v1/admin/status":                              consoleAny,
 		"POST /v1/admin/status":                             consoleAdmin,
 		"GET /v1/admin/flights":                             consoleAny,
+		"GET /v1/admin/intents/summary":                     consoleAny, // counts only, no operator named
 		"GET /v1/admin/alerts":                              consoleAny,
 		"GET /v1/admin/escalations":                         consoleAny,
 		"POST /v1/admin/alerts/{alert_id}/escalate":         consoleSupervisor,

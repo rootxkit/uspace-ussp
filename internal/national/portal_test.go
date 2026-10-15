@@ -51,6 +51,8 @@ func (members) BoundClient(_ context.Context, operatorID, sn string) (string, er
 // user on its context.
 type intentsFake struct {
 	calls []string
+	// truncated is ListOperator's Truncated.
+	truncated bool
 }
 
 func (f *intentsFake) note(ctx context.Context, op, client string) {
@@ -67,9 +69,9 @@ func (f *intentsFake) Get(ctx context.Context, clientID, id string) (intent.Deci
 	return intent.Decision{IntentID: id}, nil
 }
 
-func (f *intentsFake) List(ctx context.Context, clientID string, _ intent.ListFilter) ([]intent.Decision, error) {
+func (f *intentsFake) List(ctx context.Context, clientID string, _ intent.ListFilter) (intent.Page, error) {
 	f.note(ctx, "list", clientID)
-	return nil, nil
+	return intent.Page{}, nil
 }
 
 func (f *intentsFake) Change(ctx context.Context, clientID, id string, _ []byte) (intent.Decision, error) {
@@ -84,9 +86,19 @@ func (f *intentsFake) ClientOf(_ context.Context, operatorID, id string) (string
 	return "", &intent.Error{Status: 404, Slug: "not_found", Detail: "no such intent"}
 }
 
-func (f *intentsFake) ListOperator(ctx context.Context, operatorID string, _ intent.ListFilter) ([]intent.Decision, error) {
+func (f *intentsFake) ListOperator(ctx context.Context, operatorID string, _ intent.ListFilter) (intent.Page, error) {
 	f.note(ctx, "list-operator", operatorID)
-	return []intent.Decision{{IntentID: portalIntID}}, nil
+	return intent.Page{Intents: []intent.Decision{{IntentID: portalIntID}}, Truncated: f.truncated}, nil
+}
+
+func (f *intentsFake) SummaryOperator(ctx context.Context, operatorID string) (intent.CountSummary, error) {
+	f.note(ctx, "summary-operator", operatorID)
+	return fakeSummary(), nil
+}
+
+func (f *intentsFake) SummaryAll(ctx context.Context) (intent.CountSummary, error) {
+	f.note(ctx, "summary-all", "")
+	return fakeSummary(), nil
 }
 
 func portalCtx(role string) context.Context {
@@ -165,9 +177,17 @@ func TestPortalIntents(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 	viewer.ListIntents(rec, httptest.NewRequest(http.MethodGet, "/v1/intents", nil).WithContext(portalCtx(auth.RoleViewer)), gen.ListIntentsParams{})
-	if rec.Code != 200 || f.calls[len(f.calls)-1] != "list-operator|"+portalOp+"|" || !strings.Contains(rec.Body.String(), portalIntID) {
+	if rec.Code != 200 || f.calls[len(f.calls)-1] != "list-operator|"+portalOp+"|" || !strings.Contains(rec.Body.String(), portalIntID) ||
+		!strings.Contains(rec.Body.String(), `"truncated":false`) {
 		t.Fatalf("list: %d %s %v", rec.Code, rec.Body, f.calls)
 	}
+	f.truncated = true
+	rec = httptest.NewRecorder()
+	viewer.ListIntents(rec, httptest.NewRequest(http.MethodGet, "/v1/intents", nil).WithContext(portalCtx(auth.RoleViewer)), gen.ListIntentsParams{})
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"truncated":true`) {
+		t.Fatalf("truncated list: %d %s", rec.Code, rec.Body)
+	}
+	f.truncated = false
 
 	patch := func(s *Server, role string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()

@@ -360,6 +360,8 @@ type memStore struct {
 	outbox      []OutboxSpec
 	failNow     error
 	failTx      error
+	// failList fails List.
+	failList error
 	// failCommit fails a transaction after fn succeeded (the commit).
 	failCommit error
 	// projected is the version of each intent last projected.
@@ -435,6 +437,9 @@ func (m *memStore) Get(_ context.Context, id string) (*Record, error) {
 func (m *memStore) List(_ context.Context, operatorID string, f ListFilter) ([]Record, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.failList != nil {
+		return nil, m.failList
+	}
 	var out []Record
 	for _, r := range m.byID {
 		if r.OperatorID == operatorID && (f.State == "" || r.LocalState == f.State) {
@@ -444,6 +449,35 @@ func (m *memStore) List(_ context.Context, operatorID string, f ListFilter) ([]R
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) || out[i].ID < out[j].ID })
 	if len(out) > f.Limit {
 		out = out[:f.Limit]
+	}
+	return out, nil
+}
+
+// StateCounts counts as the queries do: the open intents and the
+// newest, each at most maxRows read.
+func (m *memStore) StateCounts(_ context.Context, operatorID *string, maxRows int) (StateCounts, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.failList != nil {
+		return StateCounts{}, m.failList
+	}
+	var rs []*Record
+	for _, r := range m.byID {
+		if operatorID == nil || r.OperatorID == *operatorID {
+			rs = append(rs, r)
+		}
+	}
+	sort.Slice(rs, func(i, j int) bool { return rs[i].CreatedAt.After(rs[j].CreatedAt) })
+	out := StateCounts{AsOf: m.now, Open: map[string]int{}, Newest: map[string]int{}}
+	open := 0
+	for i, r := range rs {
+		if i < maxRows {
+			out.Newest[r.LocalState]++
+		}
+		if slices.Contains(OpenStates, r.LocalState) && open < maxRows {
+			out.Open[r.LocalState]++
+			open++
+		}
 	}
 	return out, nil
 }

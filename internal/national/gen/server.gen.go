@@ -2414,6 +2414,9 @@ type IntentDecision struct {
 // IntentList defines model for IntentList.
 type IntentList struct {
 	Intents []IntentDecision `json:"intents"`
+
+	// Truncated True when more intents match than limit (or 500) and the oldest of them are not listed; a count of this list is then not the operator's number of intents.
+	Truncated bool `json:"truncated"`
 }
 
 // IntentPatch activate (confirmed in the response, Art. 10(5)), modify (new volumes re-decided as a new version, Art. 6(6)) or end.
@@ -2503,6 +2506,35 @@ type IntentRequest struct {
 
 	// Volumes (5) The 4D trajectory: F3548 Volume4D, every one with both times and both altitudes.
 	Volumes []IntentVolume4D `json:"volumes"`
+}
+
+// IntentStateCounts The intents in each local state (IntentDecision.state), every state present.
+type IntentStateCounts struct {
+	Accepted          int `json:"accepted"`
+	Activated         int `json:"activated"`
+	Contingent        int `json:"contingent"`
+	Ended             int `json:"ended"`
+	Nonconforming     int `json:"nonconforming"`
+	PendingAuthority  int `json:"pending_authority"`
+	PendingDss        int `json:"pending_dss"`
+	PendingValidation int `json:"pending_validation"`
+	Rejected          int `json:"rejected"`
+	Withdrawn         int `json:"withdrawn"`
+}
+
+// IntentSummary defines model for IntentSummary.
+type IntentSummary struct {
+	// AsOf The database clock when the intents were counted.
+	AsOf time.Time `json:"as_of"`
+
+	// Counts The intents in each local state (IntentDecision.state), every state present.
+	Counts IntentStateCounts `json:"counts"`
+
+	// Total The sum of counts.
+	Total int `json:"total"`
+
+	// Truncated A count reached its bound of 10000 rows; the counts and the total are then lower bounds.
+	Truncated bool `json:"truncated"`
 }
 
 // IntentTime defines model for IntentTime.
@@ -3573,6 +3605,9 @@ type ServerInterface interface {
 	// GetAdminInputs Every input with its state and its time
 	// (GET /v1/admin/inputs)
 	GetAdminInputs(w http.ResponseWriter, r *http.Request)
+	// GetAdminIntentSummary Every operator's intents counted by state
+	// (GET /v1/admin/intents/summary)
+	GetAdminIntentSummary(w http.ResponseWriter, r *http.Request)
 	// ListOccurrences The occurrence reports not yet delivered
 	// (GET /v1/admin/occurrences)
 	ListOccurrences(w http.ResponseWriter, r *http.Request)
@@ -3618,6 +3653,9 @@ type ServerInterface interface {
 	// CreateIntent File an operational intent and get the authorisation decision
 	// (POST /v1/intents)
 	CreateIntent(w http.ResponseWriter, r *http.Request)
+	// GetIntentSummary The operator's intents counted by state
+	// (GET /v1/intents/summary)
+	GetIntentSummary(w http.ResponseWriter, r *http.Request)
 	// GetIntent One of the operator's intents: its decision and state
 	// (GET /v1/intents/{intent_id})
 	GetIntent(w http.ResponseWriter, r *http.Request, intentId IntentID)
@@ -4271,6 +4309,20 @@ func (siw *ServerInterfaceWrapper) GetAdminInputs(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// GetAdminIntentSummary operation middleware
+func (siw *ServerInterfaceWrapper) GetAdminIntentSummary(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAdminIntentSummary(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListOccurrences operation middleware
 func (siw *ServerInterfaceWrapper) ListOccurrences(w http.ResponseWriter, r *http.Request) {
 
@@ -4586,6 +4638,20 @@ func (siw *ServerInterfaceWrapper) CreateIntent(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateIntent(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetIntentSummary operation middleware
+func (siw *ServerInterfaceWrapper) GetIntentSummary(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetIntentSummary(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4943,6 +5009,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/registry/validate", wrapper.ValidateRegistry)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/intents", wrapper.ListIntents)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/intents", wrapper.CreateIntent)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/intents/summary", wrapper.GetIntentSummary)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/intents/{intent_id}", wrapper.GetIntent)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/intents/{intent_id}", wrapper.ChangeIntent)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/geo", wrapper.GetGeo)
@@ -4957,6 +5024,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/status", wrapper.ListStatusNotices)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/status", wrapper.RequestStatusNotice)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/flights", wrapper.ListAdminFlights)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/intents/summary", wrapper.GetAdminIntentSummary)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/alerts", wrapper.ListAdminAlerts)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/escalations", wrapper.ListEscalations)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/alerts/{alert_id}/escalate", wrapper.EscalateAlert)

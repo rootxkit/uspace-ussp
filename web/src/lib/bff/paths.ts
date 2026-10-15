@@ -35,6 +35,7 @@ export function allowPaths(apiBase: string): RegExp[] {
     `/v1/accounts/operators/${ID}/clients/${CLIENT}/serials`,
     `/v1/accounts/operators/${ID}/clients/${CLIENT}/serials/[A-Za-z0-9._%-]{1,192}`,
     "/v1/intents",
+    "/v1/intents/summary",
     `/v1/intents/${ID}`,
     "/v1/geo",
     `/v1/geo/intents/${ID}`,
@@ -54,6 +55,7 @@ export function consoleAllowPaths(apiBase: string): RegExp[] {
   return [
     "/v1/accounts/me",
     "/v1/admin/flights",
+    "/v1/admin/intents/summary",
     "/v1/admin/alerts",
     "/v1/admin/escalations",
     `/v1/admin/alerts/${ID}/escalate`,
@@ -70,6 +72,39 @@ export function consoleAllowPaths(apiBase: string): RegExp[] {
     "/v1/admin/records/days",
     "/v1/admin/events",
   ].map((p) => new RegExp(`^${prefix}${p}$`));
+}
+
+/**
+ * The allowed paths of the portal's BFF that pass a GET (or HEAD) and
+ * nothing else: the read-only summaries. Matched against the path after
+ * the BFF's own prefix, before the kit's proxy sees the request; every
+ * path here is in allowPaths too (internal/national's
+ * TestBFFGetOnlyPathsAreGetRoutes holds both to api's access table).
+ */
+export function getOnlyPaths(): RegExp[] {
+  return ["/v1/intents/summary"].map((p) => new RegExp(`^${p}$`));
+}
+
+/** The console's GET-only paths, as getOnlyPaths' are, all in consoleAllowPaths. */
+export function consoleGetOnlyPaths(): RegExp[] {
+  return ["/v1/admin/intents/summary"].map((p) => new RegExp(`^${p}$`));
+}
+
+/**
+ * Whether method may go to path (the path after the BFF's prefix): a
+ * GET-only path takes GET and HEAD only; any other path is left to the
+ * allow-list and the API. A path that does not decode is judged as it
+ * came.
+ */
+export function methodAllowed(path: string, method: string, getOnly: readonly RegExp[]): boolean {
+  let decoded = path;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    // judged as it came
+  }
+  if (!getOnly.some((re) => re.test(path) || re.test(decoded))) return true;
+  return method === "GET" || method === "HEAD";
 }
 
 /**

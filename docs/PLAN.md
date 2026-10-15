@@ -359,7 +359,8 @@ the **decision** body (`intent/decision/v1`), never on the problem.
 |---|---|---|---|---|
 | `POST /v1/intents` | api | `ussp.intents`, or a portal session (`operator_admin`, `remote_pilot`; filed under the client the serial is bound to; WP-17) | `02 F5`, `04 §3.5`, Art. 6(4), 10 | body `intent/request/v1` (the ten Annex IV items + contingency + emergency contact ref); returns `intent/decision/v1`; `client_ref` idempotent |
 | `GET /v1/intents/{id}` | api | `ussp.intents` (own) | `02 F5` | decision, state, conflicts, versions |
-| `GET /v1/intents?from=&to=&state=` | api | `ussp.intents` (own) | `02 F5` | list |
+| `GET /v1/intents?from=&to=&state=` | api | `ussp.intents` (own) | `02 F5` | list; `truncated` when more match than the limit |
+| `GET /v1/intents/summary` | api | a portal session, any role (its own operator; no operator token; WP-17) | `02 F5` | the operator's intents counted by state on the database clock, every state present; each count reads at most 10000 rows through an index, `truncated` when one reached it; no PII |
 | `PATCH /v1/intents/{id}` | api | `ussp.intents` | Art. 6(5), 10(5), 6(7) | `{action: activate | modify | end, volumes?}`; activation confirmed in the response without unjustified delay; modify = new version re-decided |
 | `GET /v1/geo?bbox=&at=` and `GET /v1/geo/intents/{id}` | api | `ussp.geo` | `02 F5`, Art. 9 | applicable zones, airspaces with Art. 3(4) requirements, restrictions; each with `updated_at`, `version`, `valid_from/to`; `cis_version`, `cis_age_s`, `stale` |
 | `WS /v1/telemetry` | telemetry-ingest | `ussp.telemetry` | `02 F5`, Art. 8(2) | frames `telemetry/v1`; server `status` frames (accepted, dropped, rate, `backlog` ack); 2 Hz per client cap |
@@ -379,6 +380,7 @@ the **decision** body (`intent/decision/v1`), never on the problem.
 | `POST /v1/accounts/login`, `/logout`, `GET /v1/accounts/me` | api | portal / console sessions | `01 §3`; M20, M21 | argon2id; session JWT for the `uspace_session` cookie (`iss` = this issuer, `aud` = this host, `sub` = account id, `scope = "session"`, `roles: [..]`, `realm` = `portal` for operators / `console` for staff, `jti` = session id, `exp` ≤ 12 h, `kid`); MFA for staff admin |
 | `POST /v1/accounts/operators` (self-registration with registration number), `GET/PATCH /v1/accounts/operators/{id}`, `GET` (any portal role; WP-17) and `POST /v1/accounts/operators/{id}/clients`, `POST .../clients/{id}/serials`, `DELETE .../serials/{serial}`, `POST .../clients/{id}/rotate` | api | `operator_admin` | `01 §3`, `06 T3` | validity checked through F8 before activation |
 | `GET /v1/admin/flights`, `/alerts`, `/dss`, `/inputs`, `/escalations`; `POST /v1/admin/alerts/{id}/escalate|close`; `POST /v1/admin/emergency/{flight_id}` (open, note, close) | api | `supervisor`, `support` | `01` S11, `05 §6` | console; degraded inputs with age |
+| `GET /v1/admin/intents/summary` | api | `supervisor`, `support`, `admin` (console sessions only) | `01` S11 | every operator's intents counted by state on the database clock, every state present; each count reads at most 10000 rows through an index, `truncated` when one reached it; counts only, no operator or person named |
 | `GET/PUT /v1/admin/policy`, `GET/POST /v1/admin/sources` | api | `admin` | INV-03, U-15 | audited; 503 when the KV cannot take the switch (B-09) |
 | `GET /healthz`, `GET /readyz`, `GET /metrics` | every process | none / network | — | `readyz` lists each dependency with state and age |
 

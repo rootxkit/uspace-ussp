@@ -35,7 +35,7 @@ gh attestation verify rootxkit-uspace-ui-1.1.0.tgz --repo rootxkit/uspace-ui \
 
 | Path | What | API |
 |---|---|---|
-| `/` | signed in, the overview and the first page after sign-in: the intents counted by state, the geo-awareness and the weather around the map's view, the latest intents, the operator's record; signed out, what the portal does | `GET /v1/intents`, `/v1/geo`, `/v1/weather`, `/v1/accounts/me`, `/v1/accounts/operators/{id}` |
+| `/` | signed in, the overview and the first page after sign-in: the operator's intents counted by state as the API counts them (every state, on the database clock, "at least" when a count reached its bound), the geo-awareness and the weather around the map's view, the latest intents, the operator's record; signed out, what the portal does | `GET /v1/intents/summary`, `/v1/intents`, `/v1/geo`, `/v1/weather`, `/v1/accounts/me`, `/v1/accounts/operators/{id}` |
 | `/register` | operator self-registration; the state the registry decided (status only) | `POST /v1/accounts/operators` |
 | `/login` | the kit's `LoginForm` on `/_bff/login` (realm `portal`) | `POST /v1/accounts/login` |
 | `/clients` | the operator's clients; create (secret shown once), rotate, bind and unbind serials | `/v1/accounts/operators/{id}/clients*` |
@@ -56,10 +56,14 @@ then the authenticator's code; the challenge sealed under
 monitor ("conformance and traffic alerts stopped since T") and every
 source with its state and time, read from `GET /v1/admin/inputs`.
 
+The two intent summaries are read-only at their BFF: `/v1/intents/summary`
+(`getOnlyPaths`) and `/v1/admin/intents/summary` (`consoleGetOnlyPaths`)
+take GET and HEAD, and any other method is 405 before the proxy.
+
 | Path | What | API |
 |---|---|---|
 | `/console/login` | the kit's `LoginForm` on `/_bff/console/login` (realm `console`) | `POST /v1/accounts/login`, `/login/mfa` |
-| `/console` | the overview: the key figures (tracks in view, active flights and alerts, escalations, open emergency cases, inputs healthy, the monitor, the DSS), the live map by viewport (`console/subscribe/v1`), the tracks with state and age, degraded inputs, the thresholds, the inputs, the escalations | `WS /v1/traffic`, `GET /v1/admin/escalations`, `/v1/admin/flights`, `/v1/admin/alerts`, `/v1/admin/emergency`, `/v1/admin/dss`, `/v1/admin/inputs` |
+| `/console` | the overview: the key figures (tracks in view, active flights, every operator's intents and those nonconforming or contingent, active alerts, escalations, open emergency cases, inputs healthy, the monitor, the DSS), the live map by viewport (`console/subscribe/v1`), the tracks with state and age, degraded inputs, the thresholds, the inputs, the escalations, every operator's intents counted by state (counts only, on the database clock) | `WS /v1/traffic`, `GET /v1/admin/escalations`, `/v1/admin/flights`, `/v1/admin/intents/summary`, `/v1/admin/alerts`, `/v1/admin/emergency`, `/v1/admin/dss`, `/v1/admin/inputs` |
 | `/console/flights` | active flights: intent and DSS state, conformance, source instance, last sample, emergency link | `GET /v1/admin/flights` |
 | `/console/alerts` | active or recent alerts: acknowledgement, messages recorded, escalation, close, occurrence report, audit | `/v1/admin/alerts*`, `/v1/admin/events` |
 | `/console/emergency`, `/console/emergency/{flight}` | the cases; open, notes with checklist steps, close, the contact reference and procedure, the audit | `/v1/admin/emergency*` |

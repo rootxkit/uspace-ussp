@@ -602,6 +602,80 @@ func (q *Queries) IntentMarkProjected(ctx context.Context, arg IntentMarkProject
 	return result.RowsAffected(), nil
 }
 
+const intentNewestCounts = `-- name: IntentNewestCounts :many
+SELECT s.local_state, count(*)::bigint AS n
+  FROM (SELECT local_state FROM operational_intents
+         ORDER BY created_at DESC
+         LIMIT $1) s
+ GROUP BY s.local_state
+`
+
+type IntentNewestCountsRow struct {
+	LocalState string `json:"local_state"`
+	N          int64  `json:"n"`
+}
+
+// On operational_intents_created_idx (created_at, migration 00029).
+func (q *Queries) IntentNewestCounts(ctx context.Context, maxRows int32) ([]IntentNewestCountsRow, error) {
+	rows, err := q.db.Query(ctx, intentNewestCounts, maxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IntentNewestCountsRow
+	for rows.Next() {
+		var i IntentNewestCountsRow
+		if err := rows.Scan(&i.LocalState, &i.N); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const intentNewestCountsOfOperator = `-- name: IntentNewestCountsOfOperator :many
+SELECT s.local_state, count(*)::bigint AS n
+  FROM (SELECT local_state FROM operational_intents
+         WHERE operator_id = $1
+         ORDER BY created_at DESC
+         LIMIT $2) s
+ GROUP BY s.local_state
+`
+
+type IntentNewestCountsOfOperatorParams struct {
+	OperatorID pgtype.UUID `json:"operator_id"`
+	MaxRows    int32       `json:"max_rows"`
+}
+
+type IntentNewestCountsOfOperatorRow struct {
+	LocalState string `json:"local_state"`
+	N          int64  `json:"n"`
+}
+
+// On operational_intents_operator_idx (operator_id, created_at).
+func (q *Queries) IntentNewestCountsOfOperator(ctx context.Context, arg IntentNewestCountsOfOperatorParams) ([]IntentNewestCountsOfOperatorRow, error) {
+	rows, err := q.db.Query(ctx, intentNewestCountsOfOperator, arg.OperatorID, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IntentNewestCountsOfOperatorRow
+	for rows.Next() {
+		var i IntentNewestCountsOfOperatorRow
+		if err := rows.Scan(&i.LocalState, &i.N); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const intentNow = `-- name: IntentNow :one
 
 SELECT now()::timestamptz AS now
@@ -614,6 +688,87 @@ func (q *Queries) IntentNow(ctx context.Context) (time.Time, error) {
 	var now time.Time
 	err := row.Scan(&now)
 	return now, err
+}
+
+const intentOpenCounts = `-- name: IntentOpenCounts :many
+SELECT s.local_state, count(*)::bigint AS n
+  FROM (SELECT local_state FROM operational_intents
+         WHERE local_state IN ('pending_validation', 'pending_dss', 'pending_authority', 'accepted', 'activated', 'nonconforming', 'contingent')
+         LIMIT $1) s
+ GROUP BY s.local_state
+`
+
+type IntentOpenCountsRow struct {
+	LocalState string `json:"local_state"`
+	N          int64  `json:"n"`
+}
+
+func (q *Queries) IntentOpenCounts(ctx context.Context, maxRows int32) ([]IntentOpenCountsRow, error) {
+	rows, err := q.db.Query(ctx, intentOpenCounts, maxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IntentOpenCountsRow
+	for rows.Next() {
+		var i IntentOpenCountsRow
+		if err := rows.Scan(&i.LocalState, &i.N); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const intentOpenCountsOfOperator = `-- name: IntentOpenCountsOfOperator :many
+
+SELECT s.local_state, count(*)::bigint AS n
+  FROM (SELECT local_state FROM operational_intents
+         WHERE operator_id = $1
+           AND local_state IN ('pending_validation', 'pending_dss', 'pending_authority', 'accepted', 'activated', 'nonconforming', 'contingent')
+         LIMIT $2) s
+ GROUP BY s.local_state
+`
+
+type IntentOpenCountsOfOperatorParams struct {
+	OperatorID pgtype.UUID `json:"operator_id"`
+	MaxRows    int32       `json:"max_rows"`
+}
+
+type IntentOpenCountsOfOperatorRow struct {
+	LocalState string `json:"local_state"`
+	N          int64  `json:"n"`
+}
+
+// The counts of the intents by state (GET /v1/intents/summary for an
+// operator, GET /v1/admin/intents/summary for every operator): each
+// reads at most max_rows rows, found through an index (never the whole
+// table), and the caller asks one row more than its bound to know
+// whether it reached it. The open states are counted on
+// operational_intents_open_idx (the sweep ends each open intent at its
+// time_end, so they are few); the closed states among the newest
+// intents by created_at.
+func (q *Queries) IntentOpenCountsOfOperator(ctx context.Context, arg IntentOpenCountsOfOperatorParams) ([]IntentOpenCountsOfOperatorRow, error) {
+	rows, err := q.db.Query(ctx, intentOpenCountsOfOperator, arg.OperatorID, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IntentOpenCountsOfOperatorRow
+	for rows.Next() {
+		var i IntentOpenCountsOfOperatorRow
+		if err := rows.Scan(&i.LocalState, &i.N); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const intentOverlapping = `-- name: IntentOverlapping :many

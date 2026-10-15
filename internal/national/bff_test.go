@@ -102,3 +102,34 @@ func TestConsoleBFFAllowListIsAPIRoutes(t *testing.T) {
 		}
 	}
 }
+
+// The GET-only paths of each BFF (paths.ts getOnlyPaths and
+// consoleGetOnlyPaths) are in that BFF's allow-list, and api serves
+// each with GET and no other method: the BFF refuses the others before
+// the proxy. Twin: each list is read and carries its summary.
+func TestBFFGetOnlyPathsAreGetRoutes(t *testing.T) {
+	param := regexp.MustCompile(`\{[^}]+\}`)
+	methods := map[string][]string{}
+	for pattern := range AccessTable() {
+		method, path, _ := strings.Cut(pattern, " ")
+		p := param.ReplaceAllString(path, "{}")
+		methods[p] = append(methods[p], method)
+	}
+	for _, c := range []struct{ getOnly, allow, want string }{
+		{"getOnlyPaths", "allowPaths", "/v1/intents/summary"},
+		{"consoleGetOnlyPaths", "consoleAllowPaths", "/v1/admin/intents/summary"},
+	} {
+		getOnly, allow := bffPathsOf(t, c.getOnly), bffPathsOf(t, c.allow)
+		if !slices.Contains(getOnly, c.want) {
+			t.Errorf("%s %v does not carry %s", c.getOnly, getOnly, c.want)
+		}
+		for _, p := range getOnly {
+			if !slices.Contains(allow, p) {
+				t.Errorf("%s: %s is not in %s", c.getOnly, p, c.allow)
+			}
+			if got := methods[p]; len(got) != 1 || got[0] != "GET" {
+				t.Errorf("%s: api serves %s with %v, not GET only", c.getOnly, p, got)
+			}
+		}
+	}
+}

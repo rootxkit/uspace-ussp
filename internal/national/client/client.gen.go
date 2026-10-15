@@ -2416,6 +2416,9 @@ type IntentDecision struct {
 // IntentList defines model for IntentList.
 type IntentList struct {
 	Intents []IntentDecision `json:"intents"`
+
+	// Truncated True when more intents match than limit (or 500) and the oldest of them are not listed; a count of this list is then not the operator's number of intents.
+	Truncated bool `json:"truncated"`
 }
 
 // IntentPatch activate (confirmed in the response, Art. 10(5)), modify (new volumes re-decided as a new version, Art. 6(6)) or end.
@@ -2505,6 +2508,35 @@ type IntentRequest struct {
 
 	// Volumes (5) The 4D trajectory: F3548 Volume4D, every one with both times and both altitudes.
 	Volumes []IntentVolume4D `json:"volumes"`
+}
+
+// IntentStateCounts The intents in each local state (IntentDecision.state), every state present.
+type IntentStateCounts struct {
+	Accepted          int `json:"accepted"`
+	Activated         int `json:"activated"`
+	Contingent        int `json:"contingent"`
+	Ended             int `json:"ended"`
+	Nonconforming     int `json:"nonconforming"`
+	PendingAuthority  int `json:"pending_authority"`
+	PendingDss        int `json:"pending_dss"`
+	PendingValidation int `json:"pending_validation"`
+	Rejected          int `json:"rejected"`
+	Withdrawn         int `json:"withdrawn"`
+}
+
+// IntentSummary defines model for IntentSummary.
+type IntentSummary struct {
+	// AsOf The database clock when the intents were counted.
+	AsOf time.Time `json:"as_of"`
+
+	// Counts The intents in each local state (IntentDecision.state), every state present.
+	Counts IntentStateCounts `json:"counts"`
+
+	// Total The sum of counts.
+	Total int `json:"total"`
+
+	// Truncated A count reached its bound of 10000 rows; the counts and the total are then lower bounds.
+	Truncated bool `json:"truncated"`
 }
 
 // IntentTime defines model for IntentTime.
@@ -4110,6 +4142,22 @@ type ClientInterface interface {
 	// Corresponds with GET /v1/admin/inputs (the `GetAdminInputs` operationId).
 	GetAdminInputs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetAdminIntentSummary Every operator's intents counted by state
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// WP-18): the intents of every operator of this USSP counted by
+	// state on the database clock (as_of), every state present and
+	// zero when none. Counts only: no intent, operator, client or
+	// person is named. The open states count every open intent; the
+	// closed states (ended, rejected, withdrawn) count those among the
+	// newest 10000 intents. Each count reads at most 10000 rows through
+	// an index; truncated says one reached that bound, and the counts
+	// and the total are then lower bounds. A portal session and an
+	// operator token are 403.
+	//
+	// Corresponds with GET /v1/admin/intents/summary (the `GetAdminIntentSummary` operationId).
+	GetAdminIntentSummary(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListOccurrences The occurrence reports not yet delivered
 	//
 	// Console session of a supervisor or support (served by api; spec
@@ -4449,7 +4497,7 @@ type ClientInterface interface {
 
 	// ListIntents The operator's intents, newest first
 	//
-	// At most 500; from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
+	// At most 500 (truncated when more match); from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
 	//
 	// Corresponds with GET /v1/intents (the `ListIntents` operationId).
 	ListIntents(ctx context.Context, params *ListIntentsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -4471,6 +4519,21 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /v1/intents (the `CreateIntent` operationId).
 	CreateIntent(ctx context.Context, body CreateIntentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetIntentSummary The operator's intents counted by state
+	//
+	// A portal session (any role) of the operator: its own intents
+	// counted by state on the database clock (as_of), every state
+	// present and zero when none, and no intent or person named. The
+	// open states count every open intent of the operator; the closed
+	// states (ended, rejected, withdrawn) count those among its newest
+	// 10000 intents. Each count reads at most 10000 rows through an
+	// index; truncated says one reached that bound, and the counts and
+	// the total are then lower bounds. An operator token is 403: the
+	// summary is the portal's (WP-17).
+	//
+	// Corresponds with GET /v1/intents/summary (the `GetIntentSummary` operationId).
+	GetIntentSummary(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetIntent One of the operator's intents: its decision and state
 	//
@@ -5640,6 +5703,32 @@ func (c *Client) GetAdminInputs(ctx context.Context, reqEditors ...RequestEditor
 	return c.Client.Do(req)
 }
 
+// GetAdminIntentSummary Every operator's intents counted by state
+//
+// Console session of a supervisor, support or admin (served by api;
+// WP-18): the intents of every operator of this USSP counted by
+// state on the database clock (as_of), every state present and
+// zero when none. Counts only: no intent, operator, client or
+// person is named. The open states count every open intent; the
+// closed states (ended, rejected, withdrawn) count those among the
+// newest 10000 intents. Each count reads at most 10000 rows through
+// an index; truncated says one reached that bound, and the counts
+// and the total are then lower bounds. A portal session and an
+// operator token are 403.
+//
+// Corresponds with GET /v1/admin/intents/summary (the `GetAdminIntentSummary` operationId).
+func (c *Client) GetAdminIntentSummary(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetAdminIntentSummaryRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ListOccurrences The occurrence reports not yet delivered
 //
 // Console session of a supervisor or support (served by api; spec
@@ -6169,7 +6258,7 @@ func (c *Client) GetGeoForIntent(ctx context.Context, intentId IntentID, reqEdit
 
 // ListIntents The operator's intents, newest first
 //
-// At most 500; from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
+// At most 500 (truncated when more match); from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
 //
 // Corresponds with GET /v1/intents (the `ListIntents` operationId).
 func (c *Client) ListIntents(ctx context.Context, params *ListIntentsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -6212,6 +6301,31 @@ func (c *Client) CreateIntentWithBody(ctx context.Context, contentType string, b
 // Corresponds with POST /v1/intents (the `CreateIntent` operationId).
 func (c *Client) CreateIntent(ctx context.Context, body CreateIntentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateIntentRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetIntentSummary The operator's intents counted by state
+//
+// A portal session (any role) of the operator: its own intents
+// counted by state on the database clock (as_of), every state
+// present and zero when none, and no intent or person named. The
+// open states count every open intent of the operator; the closed
+// states (ended, rejected, withdrawn) count those among its newest
+// 10000 intents. Each count reads at most 10000 rows through an
+// index; truncated says one reached that bound, and the counts and
+// the total are then lower bounds. An operator token is 403: the
+// summary is the portal's (WP-17).
+//
+// Corresponds with GET /v1/intents/summary (the `GetIntentSummary` operationId).
+func (c *Client) GetIntentSummary(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetIntentSummaryRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -7666,6 +7780,33 @@ func NewGetAdminInputsRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewGetAdminIntentSummaryRequest constructs an http.Request for the GetAdminIntentSummary method
+func NewGetAdminIntentSummaryRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/intents/summary")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListOccurrencesRequest constructs an http.Request for the ListOccurrences method
 func NewListOccurrencesRequest(server string) (*http.Request, error) {
 	var err error
@@ -8323,6 +8464,33 @@ func NewCreateIntentRequestWithBody(server string, contentType string, body io.R
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetIntentSummaryRequest constructs an http.Request for the GetIntentSummary method
+func NewGetIntentSummaryRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/intents/summary")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -9427,6 +9595,24 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /v1/admin/inputs (the `GetAdminInputs` operationId).
 	GetAdminInputsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetAdminInputsResponse, error)
 
+	// GetAdminIntentSummaryWithResponse Every operator's intents counted by state
+	//
+	// Console session of a supervisor, support or admin (served by api;
+	// WP-18): the intents of every operator of this USSP counted by
+	// state on the database clock (as_of), every state present and
+	// zero when none. Counts only: no intent, operator, client or
+	// person is named. The open states count every open intent; the
+	// closed states (ended, rejected, withdrawn) count those among the
+	// newest 10000 intents. Each count reads at most 10000 rows through
+	// an index; truncated says one reached that bound, and the counts
+	// and the total are then lower bounds. A portal session and an
+	// operator token are 403.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/admin/intents/summary (the `GetAdminIntentSummary` operationId).
+	GetAdminIntentSummaryWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetAdminIntentSummaryResponse, error)
+
 	// ListOccurrencesWithResponse The occurrence reports not yet delivered
 	//
 	// Console session of a supervisor or support (served by api; spec
@@ -9786,7 +9972,7 @@ type ClientWithResponsesInterface interface {
 
 	// ListIntentsWithResponse The operator's intents, newest first
 	//
-	// At most 500; from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
+	// At most 500 (truncated when more match); from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -9810,6 +9996,23 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /v1/intents (the `CreateIntent` operationId).
 	CreateIntentWithResponse(ctx context.Context, body CreateIntentJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIntentResponse, error)
+
+	// GetIntentSummaryWithResponse The operator's intents counted by state
+	//
+	// A portal session (any role) of the operator: its own intents
+	// counted by state on the database clock (as_of), every state
+	// present and zero when none, and no intent or person named. The
+	// open states count every open intent of the operator; the closed
+	// states (ended, rejected, withdrawn) count those among its newest
+	// 10000 intents. Each count reads at most 10000 rows through an
+	// index; truncated says one reached that bound, and the counts and
+	// the total are then lower bounds. An operator token is 403: the
+	// summary is the portal's (WP-17).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/intents/summary (the `GetIntentSummary` operationId).
+	GetIntentSummaryWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetIntentSummaryResponse, error)
 
 	// GetIntentWithResponse One of the operator's intents: its decision and state
 	//
@@ -12142,6 +12345,75 @@ func (r GetAdminInputsResponse) ContentType() string {
 	return ""
 }
 
+type GetAdminIntentSummaryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *IntentSummary
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetAdminIntentSummaryResponse) GetJSON200() *IntentSummary {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r GetAdminIntentSummaryResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r GetAdminIntentSummaryResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r GetAdminIntentSummaryResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetAdminIntentSummaryResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetAdminIntentSummaryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetAdminIntentSummaryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetAdminIntentSummaryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetAdminIntentSummaryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListOccurrencesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -13449,6 +13721,75 @@ func (r CreateIntentResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r CreateIntentResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetIntentSummaryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *IntentSummary
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *Problem
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *Problem
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetIntentSummaryResponse) GetJSON200() *IntentSummary {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r GetIntentSummaryResponse) GetApplicationproblemJSON401() *Problem {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r GetIntentSummaryResponse) GetApplicationproblemJSON403() *Problem {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r GetIntentSummaryResponse) GetApplicationproblemJSON503() *Problem {
+	return r.ApplicationproblemJSON503
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetIntentSummaryResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetIntentSummaryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetIntentSummaryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetIntentSummaryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetIntentSummaryResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -15060,6 +15401,30 @@ func (c *ClientWithResponses) GetAdminInputsWithResponse(ctx context.Context, re
 	return ParseGetAdminInputsResponse(rsp)
 }
 
+// GetAdminIntentSummaryWithResponse Every operator's intents counted by state
+//
+// Console session of a supervisor, support or admin (served by api;
+// WP-18): the intents of every operator of this USSP counted by
+// state on the database clock (as_of), every state present and
+// zero when none. Counts only: no intent, operator, client or
+// person is named. The open states count every open intent; the
+// closed states (ended, rejected, withdrawn) count those among the
+// newest 10000 intents. Each count reads at most 10000 rows through
+// an index; truncated says one reached that bound, and the counts
+// and the total are then lower bounds. A portal session and an
+// operator token are 403.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/admin/intents/summary (the `GetAdminIntentSummary` operationId).
+func (c *ClientWithResponses) GetAdminIntentSummaryWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetAdminIntentSummaryResponse, error) {
+	rsp, err := c.GetAdminIntentSummary(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetAdminIntentSummaryResponse(rsp)
+}
+
 // ListOccurrencesWithResponse The occurrence reports not yet delivered
 //
 // Console session of a supervisor or support (served by api; spec
@@ -15533,7 +15898,7 @@ func (c *ClientWithResponses) GetGeoForIntentWithResponse(ctx context.Context, i
 
 // ListIntentsWithResponse The operator's intents, newest first
 //
-// At most 500; from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
+// At most 500 (truncated when more match); from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -15574,6 +15939,29 @@ func (c *ClientWithResponses) CreateIntentWithResponse(ctx context.Context, body
 		return nil, err
 	}
 	return ParseCreateIntentResponse(rsp)
+}
+
+// GetIntentSummaryWithResponse The operator's intents counted by state
+//
+// A portal session (any role) of the operator: its own intents
+// counted by state on the database clock (as_of), every state
+// present and zero when none, and no intent or person named. The
+// open states count every open intent of the operator; the closed
+// states (ended, rejected, withdrawn) count those among its newest
+// 10000 intents. Each count reads at most 10000 rows through an
+// index; truncated says one reached that bound, and the counts and
+// the total are then lower bounds. An operator token is 403: the
+// summary is the portal's (WP-17).
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/intents/summary (the `GetIntentSummary` operationId).
+func (c *ClientWithResponses) GetIntentSummaryWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetIntentSummaryResponse, error) {
+	rsp, err := c.GetIntentSummary(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetIntentSummaryResponse(rsp)
 }
 
 // GetIntentWithResponse One of the operator's intents: its decision and state
@@ -17615,6 +18003,60 @@ func ParseGetAdminInputsResponse(rsp *http.Response) (*GetAdminInputsResponse, e
 	return response, nil
 }
 
+// ParseGetAdminIntentSummaryResponse parses an HTTP response from a GetAdminIntentSummaryWithResponse call
+func ParseGetAdminIntentSummaryResponse(rsp *http.Response) (*GetAdminIntentSummaryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetAdminIntentSummaryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IntentSummary
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListOccurrencesResponse parses an HTTP response from a ListOccurrencesWithResponse call
 func ParseListOccurrencesResponse(rsp *http.Response) (*ListOccurrencesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -18662,6 +19104,60 @@ func ParseCreateIntentResponse(rsp *http.Response) (*CreateIntentResponse, error
 			return nil, err
 		}
 		response.ApplicationproblemJSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetIntentSummaryResponse parses an HTTP response from a GetIntentSummaryWithResponse call
+func ParseGetIntentSummaryResponse(rsp *http.Response) (*GetIntentSummaryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetIntentSummaryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IntentSummary
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
 		var dest Problem

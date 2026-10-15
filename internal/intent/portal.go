@@ -54,9 +54,9 @@ func SerialOf(raw []byte) (string, error) {
 
 // ListOperator is GET /v1/intents for a portal session: the operator's
 // intents, newest first, at most MaxList.
-func (s *Service) ListOperator(ctx context.Context, operatorID string, f ListFilter) ([]Decision, error) {
+func (s *Service) ListOperator(ctx context.Context, operatorID string, f ListFilter) (Page, error) {
 	if err := checkFilter(&f); err != nil {
-		return nil, err
+		return Page{}, err
 	}
 	return s.list(ctx, operatorID, f)
 }

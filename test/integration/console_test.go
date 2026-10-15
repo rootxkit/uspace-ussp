@@ -13,11 +13,14 @@ import (
 
 	coresources "github.com/rootxkit/uspace-core/sources"
 
+	"github.com/rootxkit/uspace-ussp/internal/accounts"
 	"github.com/rootxkit/uspace-ussp/internal/admin"
 	"github.com/rootxkit/uspace-ussp/internal/alerts"
 	"github.com/rootxkit/uspace-ussp/internal/app/api"
 	"github.com/rootxkit/uspace-ussp/internal/auth"
 	"github.com/rootxkit/uspace-ussp/internal/bus"
+	"github.com/rootxkit/uspace-ussp/internal/intent"
+	intentstore "github.com/rootxkit/uspace-ussp/internal/intent/pgstore"
 	"github.com/rootxkit/uspace-ussp/internal/national"
 	"github.com/rootxkit/uspace-ussp/internal/policy"
 	"github.com/rootxkit/uspace-ussp/internal/sources"
@@ -561,5 +564,69 @@ func TestIntegrationConsoleMonitorStatus(t *testing.T) {
 	}
 	if v.Bus.State != "connected" {
 		t.Fatalf("bus %+v", v.Bus)
+	}
+}
+
+// GET /v1/admin/intents/summary on the real database (WP-18): a console
+// session of each role reads every operator's intents counted by state,
+// every state present, on the database clock; two new intents of two
+// operators, one activated and one ended, each raise their state's
+// count by one; a portal session is 403 and no credential 401 (E-01
+// pairs).
+func TestIntegrationConsoleIntentSummary(t *testing.T) {
+	s := newStackWith(t, newClock(), &logBuffer{}, &intent.Service{Store: intentstore.Store{S: appStore(t)}})
+	u := unique()
+	tokens := map[string]string{}
+	for _, role := range []string{auth.RoleSupervisor, auth.RoleSupport} {
+		user, pass := role+".sum."+u, "staff-password-"+u
+		if _, err := s.svc.CreateStaff(context.Background(), user, pass, role, "test"); err != nil {
+			t.Fatal(err)
+		}
+		r := s.login(auth.RealmConsole, user, pass, "")
+		if r.status != 200 {
+			t.Fatalf("%s sign-in: %d %s", role, r.status, r.raw)
+		}
+		tokens[role] = r.str("token")
+	}
+	summary := func(tok string) resp {
+		t.Helper()
+		r := s.call("GET", "/v1/admin/intents/summary", nil, bearer(tok))
+		if r.status != 200 || len(counts(t, r)) != 10 || r.str("as_of") == "" {
+			t.Fatalf("summary: %d %s", r.status, r.raw)
+		}
+		return r
+	}
+	before := summary(tokens[auth.RoleSupport])
+	seedFlight(t, "activated", nil, time.Now().Add(-5*time.Minute))
+	seedFlight(t, "ended", nil, time.Now().Add(-90*time.Minute))
+	for role, tok := range tokens {
+		after := summary(tok)
+		b, a := counts(t, before), counts(t, after)
+		if before.body["truncated"] == true || after.body["truncated"] == true {
+			t.Logf("%s: the database holds more intents than the bound; the deltas are not judged", role)
+			continue
+		}
+		if a["activated"] != b["activated"]+1 || a["ended"] != b["ended"]+1 || after.body["total"] != before.body["total"].(float64)+2 {
+			t.Fatalf("%s: before %s after %s", role, before.raw, after.raw)
+		}
+	}
+
+	s.registry.set(accounts.RegistryValid)
+	user, pass := "portal.sum."+u, "portal-password-"+u
+	if r := s.call("POST", "/v1/accounts/operators", map[string]any{
+		"registration_number": "GEO-TEST-" + u, "display_name": "Summary operator " + u, "contact_email": "sum" + u + "@example.test",
+		"admin_username": user, "admin_password": pass,
+	}, nil); r.status != 201 {
+		t.Fatalf("register: %d %s", r.status, r.raw)
+	}
+	portal := s.login(auth.RealmPortal, user, pass, "")
+	if portal.status != 200 {
+		t.Fatalf("portal sign-in: %d %s", portal.status, portal.raw)
+	}
+	if r := s.call("GET", "/v1/admin/intents/summary", nil, bearer(portal.str("token"))); r.status != 403 {
+		t.Fatalf("portal session: %d %s", r.status, r.raw)
+	}
+	if r := s.call("GET", "/v1/admin/intents/summary", nil, nil); r.status != 401 {
+		t.Fatalf("no credential: %d %s", r.status, r.raw)
 	}
 }

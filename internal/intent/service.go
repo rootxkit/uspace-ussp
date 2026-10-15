@@ -184,7 +184,15 @@ type Store interface {
 	ByClientRef(ctx context.Context, clientID, ref string) (*Record, error)
 	// Get is the intent, nil when none.
 	Get(ctx context.Context, id string) (*Record, error)
+	// List is the operator's intents under f, newest first, at most
+	// f.Limit (which is at most MaxList+1: the service reads one more
+	// than it answers to say whether the list is truncated).
 	List(ctx context.Context, operatorID string, f ListFilter) ([]Record, error)
+	// StateCounts counts the intents by state in one snapshot on the
+	// database clock: the open ones, and every state among the newest,
+	// each reading at most maxRows rows; the operator's when operatorID
+	// is set, every operator's when it is nil.
+	StateCounts(ctx context.Context, operatorID *string, maxRows int) (StateCounts, error)
 	// InTx runs fn in one transaction holding the intents lock: every
 	// decision that reads the active intents and writes one is
 	// serialised, so two overlapping requests are never both granted.
@@ -799,15 +807,22 @@ func (s *Service) Get(ctx context.Context, clientID, id string) (Decision, error
 	return r.Decision, nil
 }
 
+// Page is one answer of GET /v1/intents: at most the filter's limit,
+// newest first, Truncated when the filter matched more.
+type Page struct {
+	Intents   []Decision `json:"intents"`
+	Truncated bool       `json:"truncated"`
+}
+
 // List is GET /v1/intents: the operator's own intents, newest first, at
 // most MaxList.
-func (s *Service) List(ctx context.Context, clientID string, f ListFilter) ([]Decision, error) {
+func (s *Service) List(ctx context.Context, clientID string, f ListFilter) (Page, error) {
 	o, err := s.owner(ctx, clientID)
 	if err != nil {
-		return nil, err
+		return Page{}, err
 	}
 	if err := checkFilter(&f); err != nil {
-		return nil, err
+		return Page{}, err
 	}
 	return s.list(ctx, o.OperatorID, f)
 }
@@ -827,17 +842,24 @@ func checkFilter(f *ListFilter) error {
 	return nil
 }
 
-// list is the operator's intents under a checked filter.
-func (s *Service) list(ctx context.Context, operatorID string, f ListFilter) ([]Decision, error) {
+// list is the operator's intents under a checked filter: one row more
+// than the limit is read, and its presence is Truncated.
+func (s *Service) list(ctx context.Context, operatorID string, f ListFilter) (Page, error) {
+	limit := f.Limit
+	f.Limit++
 	rs, err := s.Store.List(ctx, operatorID, f)
 	if err != nil {
-		return nil, &UnavailableError{Dependency: "database", Detail: "the intents could not be read"}
+		return Page{}, &UnavailableError{Dependency: "database", Detail: "the intents could not be read"}
 	}
-	out := make([]Decision, len(rs))
+	p := Page{Truncated: len(rs) > limit}
+	if p.Truncated {
+		rs = rs[:limit]
+	}
+	p.Intents = make([]Decision, len(rs))
 	for i := range rs {
-		out[i] = rs[i].Decision
+		p.Intents[i] = rs[i].Decision
 	}
-	return out, nil
+	return p, nil
 }
 
 // Patch is the body of PATCH /v1/intents/{id}.

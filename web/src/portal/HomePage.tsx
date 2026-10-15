@@ -2,12 +2,13 @@
 
 // The portal's start page. Signed out: what the portal does and the way
 // to sign in or register. Signed in, the overview, the first page after
-// sign-in: the operator's intents counted by the state the API gives
-// them (GET /v1/intents), the geo-awareness and the weather around the
-// map's view (GET /v1/geo, GET /v1/weather, as their pages read them),
-// the latest intents, and the operator's record (an operator_admin
-// reads it). A figure not read yet is a dash, never a zero; nothing is
-// computed but counts of what the API listed.
+// sign-in: the operator's intents counted by state as the API counts
+// them (GET /v1/intents/summary, on the database clock, "at least" when
+// a count reached its bound), the geo-awareness and the weather around
+// the map's view (GET /v1/geo, GET /v1/weather, as their pages read
+// them), the latest intents (GET /v1/intents), and the operator's record
+// (an operator_admin reads it). A figure not read yet is a dash, never a
+// zero; nothing is counted here but the API's figures added up.
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "@rootxkit/uspace-ui/api";
@@ -52,6 +53,8 @@ const STATE_TONE: Record<IntentState, StatusTone> = {
 };
 const PENDING: readonly IntentState[] = ["pending_validation", "pending_dss", "pending_authority"];
 const ATTENTION: readonly IntentState[] = ["nonconforming", "contingent"];
+/** Every state, in the order the counts panel shows them. */
+const STATES: readonly IntentState[] = [...PENDING, "accepted", "activated", ...ATTENTION, "ended", "rejected", "withdrawn"];
 const WEATHER_TONE: Record<Schemas["WeatherSource"]["state"], StatusTone> = { up: "ok", failing: "critical", never_fetched: "warning" };
 const OPERATOR_TONE: Record<Schemas["Operator"]["status"], StatusTone> = { active: "ok", pending_validation: "warning", refused: "critical" };
 
@@ -87,6 +90,23 @@ function useIntents(): Read<Intent[]> {
     api
       .GET("/v1/intents")
       .then(({ data }) => live && setState({ kind: "ok", data: data?.intents ?? [], atMs: Date.now() }))
+      .catch((error: unknown) => live && setState({ kind: "failed", error }));
+    return () => {
+      live = false;
+    };
+  }, [api]);
+  return state;
+}
+
+/** The operator's intents counted by state (the session's operator; the API decides). */
+function useSummary(): Read<Schemas["IntentSummary"]> {
+  const api = useApi();
+  const [state, setState] = useState<Read<Schemas["IntentSummary"]>>({ kind: "loading" });
+  useEffect(() => {
+    let live = true;
+    api
+      .GET("/v1/intents/summary")
+      .then(({ data }) => live && data !== undefined && setState({ kind: "ok", data, atMs: Date.now() }))
       .catch((error: unknown) => live && setState({ kind: "failed", error }));
     return () => {
       live = false;
@@ -171,19 +191,25 @@ function Overview() {
   const cfg = useRuntimeConfig();
   const me = useMe();
   const intents = useIntents();
+  const summary = useSummary();
   const [box, setBox] = useState<string | null>(null);
   const onBox = useCallback((b: BBox) => setBox(bboxParam(b)), []);
   const { geo, weather } = useAround(box);
   const [selected, setSelected] = useState<string | null>(null);
 
   const list = intents.kind === "ok" ? intents.data : null;
-  const count = (states: readonly IntentState[]) => (list === null ? null : list.filter((d) => states.includes(d.state)).length);
+  const counts = summary.kind === "ok" ? summary.data.counts : null;
+  const count = (states: readonly IntentState[]) => (counts === null ? null : states.reduce((n, st) => n + counts[st], 0));
   const attention = count(ATTENTION);
   const pending = count(PENDING);
   const recent = useMemo(() => (list === null ? [] : [...list].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, RECENT)), [list]);
-  const asOf = (ms: number) => t("portal.overview.as_of", { time: fmtTimeUTC(new Date(ms).toISOString(), lang, { seconds: true }) });
-  const intentsHint = intents.kind === "ok" ? asOf(intents.atMs) : undefined;
-  const intentsFailed = intents.kind === "failed" ? { tone: "critical" as const, label: t("portal.overview.unread") } : undefined;
+  const intentsHint =
+    summary.kind !== "ok"
+      ? undefined
+      : summary.data.truncated
+        ? t("portal.overview.at_least")
+        : t("portal.overview.as_of", { time: fmtTimeUTC(summary.data.as_of, lang, { seconds: true }) });
+  const intentsFailed = summary.kind === "failed" ? { tone: "critical" as const, label: t("portal.overview.unread") } : undefined;
 
   const zones: ZoneView[] = useMemo(() => {
     if (geo.kind !== "ok") return [];
@@ -224,9 +250,16 @@ function Overview() {
         </>
       }
     >
+      {summary.kind === "failed" && <ProblemNotice error={summary.error} />}
       {intents.kind === "failed" && <ProblemNotice error={intents.error} />}
       <KpiRow label={t("portal.overview.kpis")}>
-        <StatTile icon={<IntentIcon />} label={t("portal.overview.intents")} value={list?.length ?? null} status={intentsFailed} hint={intentsHint} />
+        <StatTile
+          icon={<IntentIcon />}
+          label={t("portal.overview.intents")}
+          value={summary.kind === "ok" ? summary.data.total : null}
+          status={intentsFailed}
+          hint={intentsHint}
+        />
         <StatTile icon={<AircraftIcon />} label={t("portal.state.activated")} value={count(["activated"])} status={intentsFailed} hint={intentsHint} />
         <StatTile icon={<PlusIcon />} label={t("portal.state.accepted")} value={count(["accepted"])} status={intentsFailed} hint={intentsHint} />
         <StatTile
@@ -333,6 +366,28 @@ function Overview() {
           )}
         </Panel>
       </div>
+
+      <Panel title={t("portal.overview.counts_title")} description={t("portal.overview.counts_note")}>
+        {counts === null ? (
+          <p role="status" className="m-0 text-sm">
+            {summary.kind === "failed" ? t("portal.overview.unread") : t("portal.loading")}
+          </p>
+        ) : (
+          <dl
+            className="m-0 grid gap-3 sm:grid-cols-3 lg:grid-cols-5"
+            data-testid="intent-counts"
+            data-total={summary.kind === "ok" ? summary.data.total : undefined}
+            data-truncated={summary.kind === "ok" ? String(summary.data.truncated) : undefined}
+          >
+            {STATES.map((st) => (
+              <Fact key={st} term={t(`portal.state.${st}`)} testId={`intent-count-${st}`}>
+                <span className="text-lg font-semibold tabular-nums">{counts[st]}</span>
+              </Fact>
+            ))}
+          </dl>
+        )}
+        {summary.kind === "ok" && summary.data.truncated && <p className="m-0 mt-3 text-sm">{t("portal.overview.at_least")}</p>}
+      </Panel>
 
       <div className="grid items-start gap-6 lg:grid-cols-2">
         <Panel title={t("portal.overview.planning_title")} description={t("portal.overview.planning_note")}>

@@ -2,8 +2,9 @@
 
 // The console's overview, its first page after sign-in (brief WP-18):
 // the key figures of the service now, read from the console's own API
-// operations (flights, alerts, escalations, emergency cases, inputs, the
-// DSS) and the live stream; then the live map, traffic-ws's stream with
+// operations (flights, every operator's intents counted by state,
+// alerts, escalations, emergency cases, inputs, the DSS) and the live
+// stream; then the live map, traffic-ws's stream with
 // the staff session cookie on a same-origin upgrade (M22), subscribed by
 // the map's viewport (console/subscribe/v1 {bbox, layers} on every
 // settled move, M29); its traffic/product/v1 bodies on the map with the
@@ -40,11 +41,12 @@ import {
 } from "@rootxkit/uspace-ui/ui";
 import { useRouter } from "next/navigation";
 import { PageFrame, useShellFeed } from "@/components/frame";
-import { AircraftIcon, AlertIcon, EmergencyIcon, EscalationIcon, FlightIcon, NetworkIcon, PolicyIcon, SourceIcon } from "@/components/icons";
+import { AircraftIcon, AlertIcon, EmergencyIcon, EscalationIcon, FlightIcon, IntentIcon, NetworkIcon, PolicyIcon, SourceIcon } from "@/components/icons";
 import { useRuntimeConfig } from "@/components/Providers";
 import { useAppT, type AppT } from "@/i18n/t";
+import type { Schemas } from "@/lib/api";
 import { useConsoleApi } from "@/lib/consoleApi";
-import { Utc } from "@/portal/common";
+import { Fact, Utc } from "@/portal/common";
 import { PortalMap, ViewBox } from "@/portal/PortalMap";
 import { PRODUCT_SCHEMA, adaptProduct, type Product, type TrackFacts } from "@/portal/live/adapt";
 import { DegradedList, StreamFacts } from "@/portal/live/StreamFacts";
@@ -59,6 +61,20 @@ const TICK_MS = 1000;
 const OVERVIEW_PERIOD_MS = 5000;
 /** How many inputs the overview's inputs panel lists. Display-only. */
 const INPUTS_LISTED = 8;
+type IntentState = keyof Schemas["IntentStateCounts"];
+/** Every intent state, in the order the counts panel shows them. */
+const INTENT_STATES: readonly IntentState[] = [
+  "pending_validation",
+  "pending_dss",
+  "pending_authority",
+  "accepted",
+  "activated",
+  "nonconforming",
+  "contingent",
+  "ended",
+  "rejected",
+  "withdrawn",
+];
 const ZERO: StreamCounters = { productsRefused: 0, tracksRefused: 0, alertsRefused: 0, framesNotShown: 0, alertsEvicted: 0 };
 
 const DEP_TONE: Record<"up" | "degraded" | "down" | "unknown", StatusTone> = { up: "ok", degraded: "warning", down: "critical", unknown: "neutral" };
@@ -101,7 +117,48 @@ function countTile(
   );
 }
 
-function OverviewKpis({ tracks, escalations, escalationsFailing }: { tracks: number | null; escalations: Escalations | null; escalationsFailing: number | null }) {
+/** The hint of a count from the intent summary: its database clock, or "at least" when a count reached its bound. */
+function summaryHint(t: AppT, lang: ReturnType<typeof useLang>["lang"], s: Schemas["IntentSummary"] | null): string | undefined {
+  if (s === null) return undefined;
+  return s.truncated ? t("console.overview.at_least") : t("console.overview.as_of", { time: fmtTimeUTC(s.as_of, lang, { seconds: true }) });
+}
+
+/** Every operator's intents counted by state, as the API counts them; a dash before the first answer. */
+function IntentCountsPanel({ summary }: { summary: Poll<Schemas["IntentSummary"]> }) {
+  const t = useAppT();
+  const { lang } = useLang();
+  const s = summary.data;
+  return (
+    <Panel title={t("console.overview.intent_counts_title")} description={t("console.overview.intent_counts_note")}>
+      {s === null ? (
+        <p role="status" className="m-0 text-sm">
+          {summary.failingSinceMs !== null ? t("console.overview.unread") : t("portal.loading")}
+        </p>
+      ) : (
+        <dl className="m-0 grid gap-3 sm:grid-cols-3 lg:grid-cols-5" data-testid="console-intent-counts" data-total={s.total} data-truncated={String(s.truncated)}>
+          {INTENT_STATES.map((st) => (
+            <Fact key={st} term={t(`portal.state.${st}`)} testId={`console-intent-count-${st}`}>
+              <span className="text-lg font-semibold tabular-nums">{s.counts[st]}</span>
+            </Fact>
+          ))}
+        </dl>
+      )}
+      {s !== null && <p className="m-0 mt-3 text-xs text-muted-foreground">{summaryHint(t, lang, s)}</p>}
+    </Panel>
+  );
+}
+
+function OverviewKpis({
+  tracks,
+  escalations,
+  escalationsFailing,
+  summary,
+}: {
+  tracks: number | null;
+  escalations: Escalations | null;
+  escalationsFailing: number | null;
+  summary: Poll<Schemas["IntentSummary"]>;
+}) {
   const t = useAppT();
   const { lang } = useLang();
   const api = useConsoleApi();
@@ -131,6 +188,8 @@ function OverviewKpis({ tracks, escalations, escalationsFailing }: { tracks: num
   const switchedOff = sources === null || switchedOn === null ? 0 : sources.length - switchedOn;
   const monitor = inputs.data?.monitor.state ?? null;
   const dssState = dss.data?.readiness.state ?? null;
+  const sum = summary.data;
+  const nAttention = sum === null ? null : sum.counts.nonconforming + sum.counts.contingent;
   return (
     <KpiRow label={t("console.overview.kpis")}>
       <StatTile
@@ -145,6 +204,21 @@ function OverviewKpis({ tracks, escalations, escalationsFailing }: { tracks: num
         value: flights.data?.flights.length ?? null,
         truncated: flights.data?.truncated === true,
       })}
+      <StatTile icon={<IntentIcon />} label={t("console.overview.intents")} value={sum?.total ?? null} status={unread(t, summary)} hint={summaryHint(t, lang, sum)} />
+      <StatTile
+        icon={<IntentIcon />}
+        label={t("console.overview.intents_attention")}
+        value={nAttention}
+        status={
+          unread(t, summary) ??
+          (nAttention === null
+            ? undefined
+            : nAttention > 0
+              ? { tone: "critical", label: t("console.overview.open") }
+              : { tone: "ok", label: t("console.overview.none_open") })
+        }
+        hint={summaryHint(t, lang, sum)}
+      />
       {countTile(t, lang, alerts, {
         icon: <AlertIcon />,
         label: t("console.overview.alerts"),
@@ -293,9 +367,19 @@ export function ConsoleMapPage() {
     return c;
   }, [list]);
   const [selected, setSelected] = useState<string | null>(null);
+  const api = useConsoleApi();
+  const summary = usePoll(
+    useCallback(() => api.GET("/v1/admin/intents/summary").then(body), [api]),
+    OVERVIEW_PERIOD_MS,
+  );
   return (
     <PageFrame id="overview-heading" title={t("console.overview.heading")} description={t("console.overview.note")}>
-      <OverviewKpis tracks={product === null ? null : list.length} escalations={escalations.data} escalationsFailing={escalations.failingSinceMs} />
+      <OverviewKpis
+        tracks={product === null ? null : list.length}
+        escalations={escalations.data}
+        escalationsFailing={escalations.failingSinceMs}
+        summary={summary}
+      />
       <section
         aria-label={t("portal.feed.label")}
         className="flex flex-wrap items-start gap-x-6 gap-y-1 rounded-panel border border-border bg-card px-4 py-2.5 text-xs shadow-panel"
@@ -335,6 +419,7 @@ export function ConsoleMapPage() {
         </div>
       </div>
       <EscalationsPanel onData={onEscalations} />
+      <IntentCountsPanel summary={summary} />
       <Panel title={t("portal.traffic.tracks_heading", { n: list.length })} padding={product === null || list.length === 0 ? "default" : "none"}>
         {product === null ? (
           <p role="status" className="m-0" data-testid="console-no-product">
