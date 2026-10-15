@@ -17,8 +17,9 @@ import type { components } from "@/api/generated/openapi";
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
 import { useConsoleApi } from "@/lib/consoleApi";
-import { Fact, PageHeading, Utc } from "@/portal/common";
+import { Fact, Utc } from "@/portal/common";
 import { AuditRows } from "./AuditRows";
+import { PageFrame } from "@/components/frame";
 import { body, usePoll } from "./usePoll";
 
 type Case = components["schemas"]["EmergencyCase"];
@@ -217,9 +218,7 @@ export function ConsoleCasePage({ flightId }: { flightId: string }) {
   );
   const { data, error, okAtMs, reload } = usePoll(read, CASES_PERIOD_MS);
   return (
-    <section aria-labelledby="case-heading" className="flex flex-col gap-3">
-      <PageHeading id="case-heading">{t("console.emergency.case_heading")}</PageHeading>
-      <p className="m-0 text-sm text-[var(--us-text-muted)]">{t("console.emergency.note_text")}</p>
+    <PageFrame id="case-heading" title={t("console.emergency.case_heading")} description={t("console.emergency.note_text")}>
       <Link href="/console/emergency" className="text-sm underline">
         {t("console.emergency.all")}
       </Link>
@@ -231,7 +230,7 @@ export function ConsoleCasePage({ flightId }: { flightId: string }) {
           {data.closed_at !== undefined && <OpenForm flightId={flightId} onOpened={reload} />}
         </>
       )}
-    </section>
+    </PageFrame>
   );
 }
 
@@ -242,9 +241,7 @@ export function ConsoleEmergencyPage() {
   const read = useCallback(() => api.GET("/v1/admin/emergency").then(body), [api]);
   const { data, error, reload } = usePoll(read, CASES_PERIOD_MS);
   return (
-    <section aria-labelledby="emergency-heading" className="flex flex-col gap-3">
-      <PageHeading id="emergency-heading">{t("console.emergency.heading")}</PageHeading>
-      <p className="m-0 text-sm text-[var(--us-text-muted)]">{t("console.emergency.note_text")}</p>
+    <PageFrame id="emergency-heading" title={t("console.emergency.heading")} description={t("console.emergency.note_text")}>
       <ProblemNotice error={error} />
       {data !== null && data.cases.length === 0 && <p role="status">{t("console.emergency.none")}</p>}
       {data !== null && data.cases.length > 0 && (
@@ -286,6 +283,6 @@ export function ConsoleEmergencyPage() {
       )}
       {data?.truncated === true && <p className="m-0">{t("portal.list.truncated")}</p>}
       <OpenForm flightId={null} onOpened={reload} />
-    </section>
+    </PageFrame>
   );
 }

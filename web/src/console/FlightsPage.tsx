@@ -12,7 +12,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
 import { useConsoleApi } from "@/lib/consoleApi";
-import { Num, PageHeading, Utc } from "@/portal/common";
+import { Num, Utc } from "@/portal/common";
+import { PageFrame } from "@/components/frame";
 import { body, usePoll } from "./usePoll";
 
 const FLIGHTS_PERIOD_MS = 5000;
@@ -23,8 +24,7 @@ export function ConsoleFlightsPage() {
   const read = useCallback(() => api.GET("/v1/admin/flights").then(body), [api]);
   const { data, error, failingSinceMs } = usePoll(read, FLIGHTS_PERIOD_MS);
   return (
-    <section aria-labelledby="flights-heading" className="flex flex-col gap-3">
-      <PageHeading id="flights-heading">{t("console.flights.heading")}</PageHeading>
+    <PageFrame id="flights-heading" title={t("console.flights.heading")}>
       {failingSinceMs !== null && (
         <p role="alert" className="m-0 font-semibold">
           {t("console.unread_since")} <Utc iso={new Date(failingSinceMs).toISOString()} />
@@ -109,6 +109,6 @@ export function ConsoleFlightsPage() {
         </Table>
       )}
       {data?.truncated === true && <p className="m-0">{t("portal.list.truncated")}</p>}
-    </section>
+    </PageFrame>
   );
 }

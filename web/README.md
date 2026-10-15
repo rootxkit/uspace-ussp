@@ -18,16 +18,16 @@ USSP_WEB_API_URL=http://127.0.0.1:8080 USSP_WEB_SESSION_SECURE=false pnpm dev
 
 ## The kit
 
-`@rootxkit/uspace-ui` is the GitHub Release asset of `v1.0.0`, pinned by
+`@rootxkit/uspace-ui` is the GitHub Release asset of `v1.1.0`, pinned by
 URL in `package.json`; `pnpm-lock.yaml` records its sha512 integrity and
 `--frozen-lockfile` refuses other bytes (uspace-ui `docs/CONSUMING.md`
 §1). Its `SHA256SUMS` and its signed build provenance were checked before
 pinning:
 
 ```
-gh release download v1.0.0 --repo rootxkit/uspace-ui
+gh release download v1.1.0 --repo rootxkit/uspace-ui
 sha256sum -c SHA256SUMS
-gh attestation verify rootxkit-uspace-ui-1.0.0.tgz --repo rootxkit/uspace-ui \
+gh attestation verify rootxkit-uspace-ui-1.1.0.tgz --repo rootxkit/uspace-ui \
   --signer-workflow rootxkit/uspace-ui/.github/workflows/release.yml
 ```
 
@@ -35,6 +35,7 @@ gh attestation verify rootxkit-uspace-ui-1.0.0.tgz --repo rootxkit/uspace-ui \
 
 | Path | What | API |
 |---|---|---|
+| `/` | signed in, the overview and the first page after sign-in: the intents counted by state, the geo-awareness and the weather around the map's view, the latest intents, the operator's record; signed out, what the portal does | `GET /v1/intents`, `/v1/geo`, `/v1/weather`, `/v1/accounts/me`, `/v1/accounts/operators/{id}` |
 | `/register` | operator self-registration; the state the registry decided (status only) | `POST /v1/accounts/operators` |
 | `/login` | the kit's `LoginForm` on `/_bff/login` (realm `portal`) | `POST /v1/accounts/login` |
 | `/clients` | the operator's clients; create (secret shown once), rotate, bind and unbind serials | `/v1/accounts/operators/{id}/clients*` |
@@ -58,7 +59,7 @@ source with its state and time, read from `GET /v1/admin/inputs`.
 | Path | What | API |
 |---|---|---|
 | `/console/login` | the kit's `LoginForm` on `/_bff/console/login` (realm `console`) | `POST /v1/accounts/login`, `/login/mfa` |
-| `/console` | the live map by viewport (`console/subscribe/v1`), the tracks with state and age, degraded inputs, the escalations | `WS /v1/traffic`, `GET /v1/admin/escalations` |
+| `/console` | the overview: the key figures (tracks in view, active flights and alerts, escalations, open emergency cases, inputs healthy, the monitor, the DSS), the live map by viewport (`console/subscribe/v1`), the tracks with state and age, degraded inputs, the thresholds, the inputs, the escalations | `WS /v1/traffic`, `GET /v1/admin/escalations`, `/v1/admin/flights`, `/v1/admin/alerts`, `/v1/admin/emergency`, `/v1/admin/dss`, `/v1/admin/inputs` |
 | `/console/flights` | active flights: intent and DSS state, conformance, source instance, last sample, emergency link | `GET /v1/admin/flights` |
 | `/console/alerts` | active or recent alerts: acknowledgement, messages recorded, escalation, close, occurrence report, audit | `/v1/admin/alerts*`, `/v1/admin/events` |
 | `/console/emergency`, `/console/emergency/{flight}` | the cases; open, notes with checklist steps, close, the contact reference and procedure, the audit | `/v1/admin/emergency*` |
@@ -68,6 +69,16 @@ source with its state and time, read from `GET /v1/admin/inputs`.
 | `/console/occurrences`, `/console/records` | reports not delivered with their deadline; flag an alert; the daily bundles and the days without one | `/v1/admin/occurrences`, `/v1/admin/records/days` |
 
 ## Rules
+
+- Both consoles sit in the kit's `AppShell` (1.1.0): a sidebar with
+  each app's navigation in groups (`src/components/Shell.tsx`,
+  `src/console/ConsoleShell.tsx`), a top bar with the live feed's
+  `StatusPill` on a page that has one, the scheme toggle (the kit's
+  `uspace_scheme` cookie, painted by the server), the `LanguageSwitch`
+  and the `UserMenu`; every page opens with the kit's `PageHeader`
+  (`src/components/frame.tsx`). The sign-in pages, and a page shown
+  signed out, have a frame of their own without navigation. A figure
+  the API did not give is a dash, never a zero.
 
 - The BFF is `/_bff/login`, `/_bff/logout`, `/_bff/api/*` and nothing
   else (`src/lib/bff/`): the session JWT in `uspace_session` (`HttpOnly;

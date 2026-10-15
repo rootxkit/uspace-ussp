@@ -14,7 +14,8 @@ import { Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow }
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
 import { useApi, type Schemas } from "@/lib/api";
-import { Fact, PageHeading, RequireSession, Utc } from "./common";
+import { Fact, RequireSession, Utc } from "./common";
+import { PageFrame } from "@/components/frame";
 import { useMe } from "./useMe";
 
 const SCOPES = ["ussp.intents", "ussp.telemetry", "ussp.traffic", "ussp.geo"] as const;
@@ -246,15 +247,13 @@ export function ClientsPage() {
   const t = useAppT();
   const me = useMe();
   return (
-    <section aria-labelledby="clients-heading" className="flex flex-col gap-3">
-      <PageHeading id="clients-heading">{t("portal.clients.heading")}</PageHeading>
-      <p className="m-0 text-sm text-[var(--us-text-muted)]">{t("portal.clients.note")}</p>
+    <PageFrame id="clients-heading" title={t("portal.clients.heading")} description={t("portal.clients.note")}>
       <RequireSession>
         {me.kind === "failed" && <ProblemNotice error={me.error} />}
         {me.kind === "loading" && <p role="status">{t("portal.loading")}</p>}
         {me.kind === "loaded" &&
           (me.me.operator_id === undefined ? <p role="status">{t("portal.no_operator")}</p> : <Clients operatorId={me.me.operator_id} />)}
       </RequireSession>
-    </section>
+    </PageFrame>
   );
 }

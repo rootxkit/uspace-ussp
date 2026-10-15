@@ -4,7 +4,7 @@ import { cookies, headers } from "next/headers";
 import { CSP_NONCE_HEADER, readSessionToken, sessionDisplay } from "@rootxkit/uspace-ui/auth/server";
 import { fontClassName } from "@rootxkit/uspace-ui/fonts";
 import { LANG_COOKIE, negotiateLang } from "@rootxkit/uspace-ui/i18n";
-import { brandFromEnv } from "@rootxkit/uspace-ui/theme";
+import { SCHEME_COOKIE, brandFromEnv, parseScheme, schemeAttribute } from "@rootxkit/uspace-ui/theme";
 import { Providers } from "@/components/Providers";
 import { Shell } from "@/components/Shell";
 import { runtimeConfig } from "@/config";
@@ -31,8 +31,11 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const session = sessionDisplay(readSessionToken(jar));
   const nonce = h.get(CSP_NONCE_HEADER) ?? undefined;
   const brand = brandFromEnv(process.env);
+  // An explicit scheme is painted from the first byte; `system` (or none)
+  // leaves data-theme off and the kit's tokens follow the preference.
+  const scheme = schemeAttribute(parseScheme(jar.get(SCHEME_COOKIE)?.value));
   return (
-    <html lang={lang} className={fontClassName} suppressHydrationWarning>
+    <html lang={lang} className={fontClassName} data-theme={scheme} suppressHydrationWarning>
       <body className="font-sans antialiased">
         <Providers lang={lang} brand={brand} nonce={nonce} session={session} config={runtimeConfig()}>
           <Shell>{children}</Shell>

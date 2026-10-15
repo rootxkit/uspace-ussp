@@ -32,7 +32,7 @@ database makes the ids).
 
 | Package | Version | Why |
 |---|---|---|
-| `@rootxkit/uspace-ui` | 1.0.0 (GitHub Release asset, sha512 in `pnpm-lock.yaml`, attestation verified) | the shared kit: theme, fonts (Noto Sans and Noto Sans Georgian via `next/font/local`), map and layers, legends, live client, form, table, alerts, BFF and session helpers, ESLint rules (WP-17) |
+| `@rootxkit/uspace-ui` | 1.1.0 (GitHub Release asset, sha512 in `pnpm-lock.yaml`, attestation verified) | the shared kit: theme, fonts (Noto Sans and Noto Sans Georgian via `next/font/local`), map and layers, legends, live client, form, table, alerts, BFF and session helpers, ESLint rules (WP-17) |
 | `next`, `react`, `react-dom` | 16.3.8, 19.3.0, 19.3.0 | the portal (App Router, standalone output); React 19.3 as the kit is tested with |
 | `maplibre-gl` | 5.24.0 | the kit's map peer (WP-17) |
 | `react-hook-form`, `zod` | 7.89.0, 4.6.5 | the kit's `form` peers: the shape of a form; the API judges the meaning (WP-17) |

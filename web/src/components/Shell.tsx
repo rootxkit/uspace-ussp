@@ -1,30 +1,48 @@
 "use client";
 
-// The page frame (brief WP-17): skip link, brand, the portal's
-// navigation, the language switch (ka, en), the session and sign-out.
-// What a role does not use is hidden (RequireRole); it grants nothing,
-// the API decides every request.
+// The page frame (brief WP-17): the kit's AppShell with the portal's
+// navigation in groups, the feed pill of a page with a live feed, the
+// scheme toggle, the language switch (ka, en) and the user menu with
+// sign-out. Signed out, and on the sign-in and sign-up pages, the
+// sign-in frame instead. What a role does not use is hidden; it grants
+// nothing, the API decides every request.
 import type { ReactNode } from "react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { RequireRole, useSession } from "@rootxkit/uspace-ui/auth/client";
-import { LANGS, useLang } from "@rootxkit/uspace-ui/i18n";
+import { usePathname } from "next/navigation";
+import { useSession } from "@rootxkit/uspace-ui/auth/client";
 import { useTheme } from "@rootxkit/uspace-ui/theme";
-import { Button } from "@rootxkit/uspace-ui/ui";
+import { AppShell, type Crumb } from "@rootxkit/uspace-ui/ui";
 import { useRuntimeConfig } from "@/components/Providers";
 import { ConsoleShell } from "@/console/ConsoleShell";
-import type { AppKey } from "@/i18n/catalogues";
 import { useAppT } from "@/i18n/t";
+import { AuthFrame, CrumbContext, FeedPill, FeedPillProvider, SchemeToggle, SessionMenu, ShellContent, renderLink, useFeedPillState } from "./frame";
+import { currentEntry, navGroups, type NavSection } from "./nav";
+import { AircraftIcon, AlertIcon, DashboardIcon, IntentIcon, KeyIcon, Mark, PlusIcon, WeatherIcon, ZoneIcon } from "./icons";
 
-const NAV: { href: string; key: AppKey; roles?: string[] }[] = [
-  { href: "/intents", key: "portal.nav.intents" },
-  { href: "/intents/new", key: "portal.nav.new_intent", roles: ["operator_admin", "remote_pilot"] },
-  { href: "/geo", key: "portal.nav.geo" },
-  { href: "/traffic", key: "portal.nav.traffic" },
-  { href: "/alerts", key: "portal.nav.alerts" },
-  { href: "/weather", key: "portal.nav.weather" },
-  { href: "/clients", key: "portal.nav.clients" },
+const NAV: NavSection[] = [
+  { id: "overview", items: [{ href: "/", key: "portal.nav.overview", icon: <DashboardIcon /> }] },
+  {
+    id: "flights",
+    key: "portal.nav.group.flights",
+    items: [
+      { href: "/intents", key: "portal.nav.intents", icon: <IntentIcon />, prefix: true },
+      { href: "/intents/new", key: "portal.nav.new_intent", icon: <PlusIcon />, roles: ["operator_admin", "remote_pilot"] },
+      { href: "/traffic", key: "portal.nav.traffic", icon: <AircraftIcon /> },
+      { href: "/alerts", key: "portal.nav.alerts", icon: <AlertIcon /> },
+    ],
+  },
+  {
+    id: "planning",
+    key: "portal.nav.group.planning",
+    items: [
+      { href: "/geo", key: "portal.nav.geo", icon: <ZoneIcon /> },
+      { href: "/weather", key: "portal.nav.weather", icon: <WeatherIcon /> },
+    ],
+  },
+  { id: "account", key: "portal.nav.group.account", items: [{ href: "/clients", key: "portal.nav.clients", icon: <KeyIcon /> }] },
 ];
+
+/** The sign-in and sign-up pages, framed without navigation. */
+const AUTH_PATHS = ["/login", "/register"];
 
 /** The frame of the page: the console's under /console (brief WP-18), the portal's elsewhere. */
 export function Shell({ children }: { children: ReactNode }) {
@@ -35,91 +53,41 @@ export function Shell({ children }: { children: ReactNode }) {
 
 function PortalShell({ children }: { children: ReactNode }) {
   const t = useAppT();
-  const { lang, setLang } = useLang();
-  const { session, signOut } = useSession();
+  const { session } = useSession();
   const { brand } = useTheme();
-  const router = useRouter();
   const path = usePathname();
   const cfg = useRuntimeConfig();
-  const link = (href: string, key: AppKey) => {
-    const current = path === href;
+  const [feed, setFeed] = useFeedPillState();
+  if (session === null || AUTH_PATHS.includes(path)) {
     return (
-      <Link
-        key={href}
-        href={href}
-        aria-current={current ? "page" : undefined}
-        className={current ? "font-semibold underline underline-offset-4" : "underline-offset-4 hover:underline"}
-      >
-        {t(key)}
-      </Link>
-    );
-  };
-  return (
-    <>
-      <a
-        href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-[var(--us-surface-raised)] focus:p-2"
-      >
-        {t("portal.skip")}
-      </a>
-      <header className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-[var(--us-border)] bg-[var(--us-surface-raised)] px-4 py-2">
-        <Link href="/" className="font-bold">
-          {brand.name}
-        </Link>
-        <nav aria-label={t("portal.nav.label")} className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-          {session === null ? (
-            <>
-              {link("/login", "portal.nav.login")}
-              {link("/register", "portal.nav.register")}
-            </>
-          ) : (
-            NAV.map((n) =>
-              n.roles === undefined ? (
-                link(n.href, n.key)
-              ) : (
-                <RequireRole key={n.href} anyOf={n.roles}>
-                  {link(n.href, n.key)}
-                </RequireRole>
-              ),
-            )
-          )}
-        </nav>
-        <div role="group" aria-label={t("portal.lang.label")} className="ml-auto flex gap-2">
-          {LANGS.map((l) => (
-            <Button key={l} size="sm" variant={l === lang ? "default" : "outline"} lang={l} aria-pressed={l === lang} onClick={() => setLang(l)}>
-              {t(l === "ka" ? "portal.lang.ka" : "portal.lang.en")}
-            </Button>
-          ))}
-        </div>
-        {session !== null && (
-          <div className="flex items-center gap-2 text-sm" data-testid="session">
-            <span>{t("portal.session.roles", { roles: session.roles.join(", ") })}</span>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                void signOut().then(() => {
-                  router.push("/login");
-                  router.refresh();
-                });
-              }}
-            >
-              {t("portal.nav.sign_out")}
-            </Button>
-          </div>
-        )}
-      </header>
-      {session !== null && session.realm !== "portal" && (
-        <p role="alert" className="m-0 border-b border-[var(--us-border)] px-4 py-2 text-sm" data-testid="realm-notice">
-          {t("portal.session.wrong_realm", { realm: session.realm })}
-        </p>
-      )}
-      <main id="main" tabIndex={-1} className="flex flex-col gap-4 p-4 focus:outline-none">
+      <AuthFrame home="/" name={brand.name} wide={path !== "/login"}>
         {children}
-      </main>
-      <footer className="border-t border-[var(--us-border)] px-4 py-2 text-xs text-[var(--us-text-muted)]">
-        {t("portal.footer.a11y", { target: cfg.accessibilityTarget, status: cfg.accessibilityStatus })}
-      </footer>
-    </>
+      </AuthFrame>
+    );
+  }
+  const current = currentEntry(NAV, path);
+  const group = NAV.find((g) => current !== undefined && g.items.includes(current));
+  const crumbs: Crumb[] = [{ label: t("portal.nav.overview"), href: "/" }, ...(group?.key !== undefined ? [{ label: t(group.key) }] : [])];
+  return (
+    <AppShell
+      systemName={brand.name}
+      logo={<Mark />}
+      nav={navGroups(NAV, current, session.roles, t)}
+      renderLink={renderLink}
+      status={<FeedPill value={feed} />}
+      actions={<SchemeToggle />}
+      user={<SessionMenu signedOutPath="/login" />}
+    >
+      <ShellContent footer={t("portal.footer.a11y", { target: cfg.accessibilityTarget, status: cfg.accessibilityStatus })}>
+        {session.realm !== "portal" && (
+          <p role="alert" className="m-0 rounded-panel border border-status-warning-border bg-status-warning-soft px-4 py-3 text-sm" data-testid="realm-notice">
+            {t("portal.session.wrong_realm", { realm: session.realm })}
+          </p>
+        )}
+        <FeedPillProvider set={setFeed}>
+          <CrumbContext.Provider value={path === "/" ? null : crumbs}>{children}</CrumbContext.Provider>
+        </FeedPillProvider>
+      </ShellContent>
+    </AppShell>
   );
 }

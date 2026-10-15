@@ -20,8 +20,9 @@ import { ProblemNotice } from "@/components/ProblemNotice";
 import { catalogueOf, type AppKey } from "@/i18n/catalogues";
 import { useAppT } from "@/i18n/t";
 import { useApi, type Schemas } from "@/lib/api";
-import { Fact, Num, PageHeading, RequireSession, Utc } from "../common";
+import { Fact, Num, RequireSession, Utc } from "../common";
 import { PortalMap } from "../PortalMap";
+import { PageFrame } from "@/components/frame";
 import { VolumeDrawing, VolumeFields, outlineOf, type Outline } from "./VolumeEditor";
 
 // The answer as openapi-fetch types it: alternative (always null in v1) is not on it.
@@ -343,8 +344,7 @@ export function IntentPage({ id }: { id: string }) {
       .finally(() => setBusy(false));
   };
   return (
-    <section aria-labelledby="intent-heading" className="flex flex-col gap-3">
-      <PageHeading id="intent-heading">{t("portal.intent.heading", { id })}</PageHeading>
+    <PageFrame id="intent-heading" title={t("portal.intent.heading", { id })}>
       <RequireSession>
         <ProblemNotice error={error} />
         {d === null && error === null && <p role="status">{t("portal.loading")}</p>}
@@ -397,6 +397,6 @@ export function IntentPage({ id }: { id: string }) {
           </>
         )}
       </RequireSession>
-    </section>
+    </PageFrame>
   );
 }

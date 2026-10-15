@@ -10,16 +10,18 @@
 import { useNowMs } from "@rootxkit/uspace-ui/live";
 import { FeedStatusBar } from "@rootxkit/uspace-ui/status";
 import { useAppT } from "@/i18n/t";
-import { PageHeading, RequireSession } from "../common";
+import { RequireSession } from "../common";
 import { IntentPicker } from "../IntentPicker";
 import { AlertsTable } from "./AlertsTable";
 import { DegradedList, StreamFacts } from "./StreamFacts";
+import { PageFrame, useShellFeed } from "@/components/frame";
 import { useAlertStream } from "./useStreams";
 
 function Stream({ intentId }: { intentId: string }) {
   const t = useAppT();
   const nowMs = useNowMs(1000);
   const s = useAlertStream(intentId);
+  useShellFeed(s.feed);
   return (
     <div className="flex flex-col gap-3">
       <section aria-label={t("portal.feed.label")} className="flex flex-wrap items-start gap-x-6 gap-y-1 rounded border border-[var(--us-border)] bg-[var(--us-surface-sunken)] px-3 py-2 text-xs" data-testid="feed" data-connection={s.feed.connection}>
@@ -35,13 +37,11 @@ function Stream({ intentId }: { intentId: string }) {
 export function AlertsPage({ intentId }: { intentId: string | null }) {
   const t = useAppT();
   return (
-    <section aria-labelledby="alerts-heading" className="flex flex-col gap-3">
-      <PageHeading id="alerts-heading">{t("portal.alerts.heading")}</PageHeading>
-      <p className="m-0 text-sm text-[var(--us-text-muted)]">{t("portal.alerts.note")}</p>
+    <PageFrame id="alerts-heading" title={t("portal.alerts.heading")} description={t("portal.alerts.note")}>
       <RequireSession>
         <IntentPicker path="/alerts" current={intentId} />
         {intentId !== null && <Stream key={intentId} intentId={intentId} />}
       </RequireSession>
-    </section>
+    </PageFrame>
   );
 }

@@ -9,9 +9,10 @@ import { Button } from "@rootxkit/uspace-ui/ui";
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
 import { useConsoleApi } from "@/lib/consoleApi";
-import { PageHeading, Utc } from "@/portal/common";
+import { Utc } from "@/portal/common";
 import { ConsoleAlertsTable } from "./AlertsTable";
 import { EscalationsPanel } from "./EscalationsPanel";
+import { PageFrame } from "@/components/frame";
 import { body, usePoll } from "./usePoll";
 
 /** How often the alerts are read. Display-only. */
@@ -24,8 +25,7 @@ export function ConsoleAlertsPage() {
   const read = useCallback(() => api.GET("/v1/admin/alerts", { params: { query: { view: recent ? "recent" : "active" } } }).then(body), [api, recent]);
   const { data, error, failingSinceMs, reload } = usePoll(read, ALERTS_PERIOD_MS);
   return (
-    <section aria-labelledby="console-alerts-heading" className="flex flex-col gap-3">
-      <PageHeading id="console-alerts-heading">{t("console.alerts.heading")}</PageHeading>
+    <PageFrame id="console-alerts-heading" title={t("console.alerts.heading")}>
       <EscalationsPanel />
       <div role="group" aria-label={t("console.alerts.view")} className="flex gap-2">
         <Button size="sm" variant={recent ? "outline" : "default"} aria-pressed={!recent} onClick={() => setRecent(false)}>
@@ -43,6 +43,6 @@ export function ConsoleAlertsPage() {
       <ProblemNotice error={error} />
       {data !== null && <ConsoleAlertsTable alerts={data.alerts} testId="console-alerts" onChanged={reload} />}
       {data?.truncated === true && <p className="m-0">{t("portal.list.truncated")}</p>}
-    </section>
+    </PageFrame>
   );
 }

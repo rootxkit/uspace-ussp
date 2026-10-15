@@ -5,12 +5,14 @@
 // style), the theme with the brand from the environment, the language
 // negotiated on the server, the session's display claims (decoded
 // unverified, display only), and the portal's runtime configuration.
+// The colour scheme a person picks is kept in the kit's scheme cookie, so
+// the server paints it from the first byte (app/layout.tsx).
 import { createContext, useContext, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { SessionProvider } from "@rootxkit/uspace-ui/auth/client";
 import { I18nProvider, LANG_COOKIE, type Lang } from "@rootxkit/uspace-ui/i18n";
 import type { SessionDisplay } from "@rootxkit/uspace-ui/model";
-import { ThemeProvider, type Brand } from "@rootxkit/uspace-ui/theme";
+import { SCHEME_COOKIE, ThemeProvider, type Brand } from "@rootxkit/uspace-ui/theme";
 import { CspNonceProvider } from "@rootxkit/uspace-ui/ui";
 import type { RuntimeConfig } from "@/config";
 import { catalogues } from "@/i18n/catalogues";
@@ -35,7 +37,12 @@ export function Providers(props: {
   const router = useRouter();
   return (
     <CspNonceProvider nonce={props.nonce}>
-      <ThemeProvider brand={props.brand}>
+      <ThemeProvider
+        brand={props.brand}
+        onSchemeChange={(s) => {
+          document.cookie = `${SCHEME_COOKIE}=${s}; Path=/; Max-Age=31536000; SameSite=Lax`;
+        }}
+      >
         <I18nProvider
           lang={props.lang}
           catalogues={catalogues}

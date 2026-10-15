@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import AxeBuilder from "./axe";
 import { expect, test, type Page } from "@playwright/test";
+import { FRONT } from "../playwright.config";
 import { control, sameOrigin, unique, utcInput } from "./helpers";
 
 // The operator flows of brief WP-17 in the browser, end to end against
@@ -56,7 +57,9 @@ test("S-M1 and S-M3: register, client, intent, decision, geo, traffic, alert ack
   await page.getByLabel("Username").fill(user);
   await page.getByLabel("Password").fill(pass);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/intents$/);
+  // The overview is the first page after sign-in.
+  await expect(page).toHaveURL(`${FRONT}/`);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Overview");
   await expect(page.getByTestId("session")).toContainText("operator_admin");
   const cookies = await page.context().cookies();
   expect(cookies.find((c) => c.name === "uspace_session")?.httpOnly).toBe(true);
@@ -253,7 +256,7 @@ test("accessibility of the sign-in, intents form and traffic pages (axe, WCAG 2.
   await page.getByLabel("Username").fill(user);
   await page.getByLabel("Password").fill(pass);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL(/\/intents$/);
+  await expect(page).toHaveURL(`${FRONT}/`);
   // The kit's drawing tool with a circle: its centre and radius in words,
   // and the outline said not drawn (this API draws none, PLAN Q28).
   await page.goto("/intents/new");
@@ -265,12 +268,23 @@ test("accessibility of the sign-in, intents form and traffic pages (axe, WCAG 2.
   await expect(page.locator("[data-circle-outline]")).toHaveText("The system draws a circle's outline; until it has, the map shows its centre only.");
   const circle = await new AxeBuilder(page).analyze();
   expect(circle.violations, JSON.stringify(circle.violations.map((v) => v.id))).toEqual([]);
-  for (const path of ["/intents/new", "/traffic", "/geo", "/alerts", "/clients"]) {
+  for (const path of ["/", "/intents", "/intents/new", "/traffic", "/geo", "/alerts", "/weather", "/clients"]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     const r = await new AxeBuilder(page).analyze();
     expect(r.passes, path).toBeGreaterThan(10);
     expect(r.violations, `${path}: ${JSON.stringify(r.violations.map((v) => ({ id: v.id, nodes: v.nodes.map((n) => n.target) })))}`).toEqual([]);
+  }
+  // The dark scheme, as the top bar's toggle keeps it: the same level.
+  await page.getByTestId("scheme-toggle").click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  for (const path of ["/", "/intents", "/traffic"]) {
+    await page.goto(path);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    const r = await new AxeBuilder(page).analyze();
+    expect(r.passes, `${path} dark`).toBeGreaterThan(10);
+    expect(r.violations, `${path} dark: ${JSON.stringify(r.violations.map((v) => ({ id: v.id, nodes: v.nodes.map((n) => n.target) })))}`).toEqual([]);
   }
 });
 
