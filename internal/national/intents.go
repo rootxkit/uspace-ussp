@@ -26,6 +26,9 @@ type Intents interface {
 	// SummaryOperator counts a portal session's operator's intents by
 	// state.
 	SummaryOperator(ctx context.Context, operatorID string) (intent.CountSummary, error)
+	// SummaryAll counts every operator's intents by state (the
+	// console's).
+	SummaryAll(ctx context.Context) (intent.CountSummary, error)
 }
 
 // actingClient is the client a request acts as: an operator token's

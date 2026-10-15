@@ -27,8 +27,9 @@ info:
     to the ANSP; the service records for the authority. WP-16: the
     optional weather information. WP-18: the USSP console (flights,
     alerts with escalation and close, DSS state, inputs, policy,
-    source switches, the emergency workflow, record days, audit rows)
-    and the staff admin's second sign-in step.
+    source switches, the emergency workflow, record days, audit rows,
+    every operator's intents counted by state) and the staff admin's
+    second sign-in step.
   license:
     name: Apache-2.0
 servers:
@@ -1241,6 +1242,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AdminFlights"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "503":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+
+  /v1/admin/intents/summary:
+    get:
+      operationId: getAdminIntentSummary
+      tags: [admin]
+      summary: Every operator's intents counted by state
+      description: |
+        Console session of a supervisor, support or admin (served by api;
+        WP-18): the intents of every operator of this USSP counted by
+        state on the database clock (as_of), every state present and
+        zero when none. Counts only: no intent, operator, client or
+        person is named. The open states count every open intent; the
+        closed states (ended, rejected, withdrawn) count those among the
+        newest 10000 intents. Each count reads at most 10000 rows through
+        an index; truncated says one reached that bound, and the counts
+        and the total are then lower bounds. A portal session and an
+        operator token are 403.
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The counts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntentSummary"
         "401":
           $ref: "#/components/responses/Problem"
         "403":

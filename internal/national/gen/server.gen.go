@@ -3605,6 +3605,9 @@ type ServerInterface interface {
 	// GetAdminInputs Every input with its state and its time
 	// (GET /v1/admin/inputs)
 	GetAdminInputs(w http.ResponseWriter, r *http.Request)
+	// GetAdminIntentSummary Every operator's intents counted by state
+	// (GET /v1/admin/intents/summary)
+	GetAdminIntentSummary(w http.ResponseWriter, r *http.Request)
 	// ListOccurrences The occurrence reports not yet delivered
 	// (GET /v1/admin/occurrences)
 	ListOccurrences(w http.ResponseWriter, r *http.Request)
@@ -4297,6 +4300,20 @@ func (siw *ServerInterfaceWrapper) GetAdminInputs(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetAdminInputs(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAdminIntentSummary operation middleware
+func (siw *ServerInterfaceWrapper) GetAdminIntentSummary(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAdminIntentSummary(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5007,6 +5024,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/status", wrapper.ListStatusNotices)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/status", wrapper.RequestStatusNotice)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/flights", wrapper.ListAdminFlights)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/intents/summary", wrapper.GetAdminIntentSummary)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/alerts", wrapper.ListAdminAlerts)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/escalations", wrapper.ListEscalations)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/alerts/{alert_id}/escalate", wrapper.EscalateAlert)

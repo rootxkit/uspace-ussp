@@ -1,11 +1,14 @@
 package national
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	coreauth "github.com/rootxkit/uspace-core/auth"
 
 	"github.com/rootxkit/uspace-ussp/internal/auth"
 	"github.com/rootxkit/uspace-ussp/internal/intent"
@@ -122,6 +125,84 @@ func TestIntentSummaryHandlerFailsClosed(t *testing.T) {
 	}
 	if c := call(&Server{Intents: f}, portal); c != 503 {
 		t.Fatalf("no portal members: %d", c)
+	}
+	if len(f.calls) != 1 {
+		t.Fatalf("calls %v", f.calls)
+	}
+}
+
+// GET /v1/admin/intents/summary: a console session of a supervisor,
+// support or admin gets every operator's counts; without a credential
+// it is 401; a portal session of any role and an operator token are
+// 403 and the service is never asked (E-01 pairs).
+func TestAdminIntentSummaryIsTheConsoles(t *testing.T) {
+	f := &intentsFake{}
+	h, iss := summaryRouter(t, f, auth.RoleOperatorAdmin)
+	for _, role := range []string{auth.RoleSupervisor, auth.RoleSupport, auth.RoleAdmin} {
+		console, _, err := iss.IssueSession("staff-"+role, auth.RealmConsole, "s-con", []string{role}, time.Hour, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := get(h, "/v1/admin/intents/summary", console)
+		var body struct {
+			Counts map[string]int `json:"counts"`
+			Total  int            `json:"total"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); rec.Code != 200 || err != nil || body.Total != 3 || len(body.Counts) != len(intent.States) {
+			t.Fatalf("%s: %d %s", role, rec.Code, rec.Body)
+		}
+	}
+	if len(f.calls) != 3 || f.calls[0] != "summary-all||" {
+		t.Fatalf("calls %v", f.calls)
+	}
+	f.calls = nil
+	if rec := get(h, "/v1/admin/intents/summary", ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("no credential: %d", rec.Code)
+	}
+	for _, role := range []string{auth.RoleOperatorAdmin, auth.RoleRemotePilot, auth.RoleViewer} {
+		portal, _, err := iss.IssueSession(portalAcct, auth.RealmPortal, "s-por", []string{role}, time.Hour, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rec := get(h, "/v1/admin/intents/summary", portal); rec.Code != http.StatusForbidden {
+			t.Fatalf("portal %s: %d %s", role, rec.Code, rec.Body)
+		}
+	}
+	op, err := iss.IssueOperator("op-client-1", []string{auth.ScopeIntents, auth.ScopeGeo, auth.ScopeTraffic}, time.Hour, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := get(h, "/v1/admin/intents/summary", op.Token); rec.Code != http.StatusForbidden {
+		t.Fatalf("operator token: %d %s", rec.Code, rec.Body)
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("a refused request reached the service: %v", f.calls)
+	}
+}
+
+// The console handler refuses a request that is not a console session
+// and answers 503 without the intent service; a console session is
+// answered (E-01 pair).
+func TestAdminIntentSummaryHandlerFailsClosed(t *testing.T) {
+	f := &intentsFake{}
+	call := func(s *Server, ctx context.Context) int {
+		rec := httptest.NewRecorder()
+		s.GetAdminIntentSummary(rec, httptest.NewRequest(http.MethodGet, "/v1/admin/intents/summary", nil).WithContext(ctx))
+		return rec.Code
+	}
+	console := auth.WithPrincipal(context.Background(), auth.Principal{Session: true, ViaCookie: true,
+		Claims: coreauth.Claims{Subject: "staff-1", Realm: auth.RealmConsole, Roles: []string{auth.RoleSupport}, Scopes: []string{auth.SessionScope}}})
+	if c := call(&Server{Intents: f}, console); c != 200 {
+		t.Fatalf("console: %d", c)
+	}
+	if c := call(&Server{Intents: f}, portalCtx(auth.RoleOperatorAdmin)); c != 403 {
+		t.Fatalf("portal session: %d", c)
+	}
+	if c := call(&Server{Intents: f}, context.Background()); c != 403 {
+		t.Fatalf("no session: %d", c)
+	}
+	if c := call(&Server{}, console); c != 503 {
+		t.Fatalf("no intent service: %d", c)
 	}
 	if len(f.calls) != 1 {
 		t.Fatalf("calls %v", f.calls)

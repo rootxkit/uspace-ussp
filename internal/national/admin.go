@@ -9,6 +9,7 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/rootxkit/uspace-core/core"
 
+	"github.com/rootxkit/uspace-ussp/internal/auth"
 	"github.com/rootxkit/uspace-ussp/internal/httpx"
 	"github.com/rootxkit/uspace-ussp/internal/national/gen"
 )
@@ -68,6 +69,25 @@ func (s *Server) ListAdminFlights(w http.ResponseWriter, r *http.Request) {
 	}
 	v, err := s.Admin.Flights(r.Context())
 	s.admin(w, r, http.StatusOK, v, err)
+}
+
+// GetAdminIntentSummary is GET /v1/admin/intents/summary: every
+// operator's intents counted by state. The access table admits console
+// sessions only; the handler refuses any other request again.
+func (s *Server) GetAdminIntentSummary(w http.ResponseWriter, r *http.Request) {
+	if s.intentsUnavailable(w, r) {
+		return
+	}
+	if p := principal(r); !p.Session || p.Claims.Realm != auth.RealmConsole {
+		httpx.NewProblem(http.StatusForbidden, httpx.SlugForbidden, "", "every operator's intent counts are the console's").Write(w, r)
+		return
+	}
+	sum, err := s.Intents.SummaryAll(r.Context())
+	if err != nil {
+		s.failIntent(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sum)
 }
 
 // ListAdminAlerts is GET /v1/admin/alerts.
