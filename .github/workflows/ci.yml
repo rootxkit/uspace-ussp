@@ -261,6 +261,8 @@ jobs:
       - run: pnpm lint
       - name: tsc (a key missing from ka.json fails here)
         run: pnpm typecheck
+      - name: unit tests of the BFF entries (node --test)
+        run: pnpm test:unit
       - run: pnpm build
       - name: playwright (chromium)
         run: pnpm exec playwright install --with-deps chromium

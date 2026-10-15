@@ -24,6 +24,7 @@ import {
   FlightIcon,
   Mark,
   NetworkIcon,
+  OperationsIcon,
   PolicyIcon,
   ReportIcon,
   SourceIcon,
@@ -55,6 +56,7 @@ const NAV: NavSection[] = [
     id: "governance",
     key: "console.nav.group.governance",
     items: [
+      { href: "/console/status", key: "console.nav.status", icon: <OperationsIcon /> },
       { href: "/console/policy", key: "console.nav.policy", icon: <PolicyIcon /> },
       { href: "/console/occurrences", key: "console.nav.occurrences", icon: <ReportIcon /> },
       { href: "/console/records", key: "console.nav.records", icon: <ArchiveIcon /> },

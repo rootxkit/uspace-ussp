@@ -7,7 +7,7 @@
 import { bffHandlers, type BffHandlers } from "@rootxkit/uspace-ui/auth/server";
 import { NextResponse, type NextRequest } from "next/server";
 import { bffEnv } from "../../config";
-import { LOGIN_PATH, LOGOUT_PATH, PORTAL_REALM, allowPaths, methodAllowed, withRealm } from "./paths";
+import { LOGIN_PATH, LOGOUT_PATH, PORTAL_REALM, allowPaths, allowedMethods, methodAllowed, withRealm, type MethodEntry } from "./paths";
 
 type Handler = (req: NextRequest) => Promise<Response>;
 
@@ -50,14 +50,22 @@ export function bff(): BffHandlers {
 }
 
 /**
- * The 405 of a method a GET-only path does not take (paths.ts
- * getOnlyPaths), or null when the request may go on to the proxy. path
+ * The 405 of a method a GET-only path (paths.ts getOnlyPaths) or a
+ * method path (consoleMethodPaths) does not take, with the methods it
+ * takes in Allow, or null when the request may go on to the proxy. path
  * is the request's path after the BFF's own prefix.
  */
-export function refuseMethod(path: string, method: string, getOnly: readonly RegExp[]): Response | null {
-  if (methodAllowed(path, method, getOnly)) return null;
+export function refuseMethod(path: string, method: string, getOnly: readonly RegExp[], methodPaths: readonly MethodEntry[] = []): Response | null {
+  if (methodAllowed(path, method, getOnly, methodPaths)) return null;
+  const allowed = allowedMethods(path, getOnly, methodPaths) ?? [];
+  const readOnly = allowed.every((m) => m === "GET" || m === "HEAD");
   return NextResponse.json(
-    { type: "https://schemas.uspace.ge/problems/method_not_allowed", title: "Method not allowed", status: 405, detail: "this path is read only" },
-    { status: 405, headers: { "Content-Type": "application/problem+json", "Cache-Control": "no-store", Allow: "GET, HEAD" } },
+    {
+      type: "https://schemas.uspace.ge/problems/method_not_allowed",
+      title: "Method not allowed",
+      status: 405,
+      detail: readOnly ? "this path is read only" : `this path takes ${allowed.join(", ")} only`,
+    },
+    { status: 405, headers: { "Content-Type": "application/problem+json", "Cache-Control": "no-store", Allow: allowed.join(", ") } },
   );
 }

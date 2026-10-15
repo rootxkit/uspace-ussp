@@ -14,8 +14,11 @@ import { control, sameOrigin, totp, unique } from "./helpers";
 // in the audit; the policy is changed with its diff in the history; the
 // console with each fake down (the CISP, the registry, the DSS, the
 // ANSP) and with NATS down shows each input's state with its time; and
-// every admin action left an events row with its actor and reason. In
-// Georgian and in English, nothing off the origin, axe on every page.
+// every admin action left an events row with its actor and reason; an
+// admin confirms the start of operations, ceases and restarts them, each
+// delivered to the fake authority, while a supervisor reads and cannot
+// act. In Georgian and in English, nothing off the origin, axe on every
+// page.
 
 const CONSOLE = "http://127.0.0.1:3200";
 
@@ -415,6 +418,115 @@ test("the overview counts every operator's intents by state; a new intent raises
   await page.context().close();
 });
 
+test("operations status: an admin confirms the start and it is delivered, ceases and restarts; a supervisor reads and cannot act", async ({ browser, request }) => {
+  test.setTimeout(300_000);
+  const STATUS_API = "/_bff/console/api/v1/admin/status";
+  // This run's certificate has no notice yet (test/e2e/stack names one of its own).
+  const supPage = await english(browser);
+  const sup = await staff(request, "supervisor");
+  await signIn(supPage, sup);
+  await supPage.getByRole("link", { name: "Operations status" }).click();
+  await expect(supPage).toHaveURL(/\/console\/status$/);
+  await expect(supPage.getByRole("heading", { level: 1 })).toHaveText("Operations status");
+  await expect(supPage.getByTestId("status-state")).toHaveAttribute("data-state", "not_started");
+  await expect(supPage.getByTestId("status-certificate").locator("dd")).toHaveText(/^[0-9a-f]{32}$/);
+  await expect(supPage.getByTestId("status-no-notices")).toBeVisible();
+  // The supervisor reads: no action is offered, and the API refuses one sent anyway (403, nothing stored).
+  await expect(supPage.getByTestId("status-read-only")).toBeVisible();
+  await expect(supPage.getByTestId("status-action")).toHaveCount(0);
+  const refused = await supPage.request.post(STATUS_API, { data: { kind: "start" }, headers: await csrf(supPage) });
+  expect(refused.status()).toBe(403);
+  // What the deployment's /readyz said: degraded until a start is recorded.
+  await supPage.goto("/console/inputs");
+  await expect(dependencyRow(supPage, "operating_status")).toHaveAttribute("data-state", "degraded", { timeout: 30_000 });
+  await expect(dependencyRow(supPage, "operating_status")).toContainText("no start notice yet");
+  const r0 = await new AxeBuilder(supPage).analyze();
+  expect(r0.violations).toEqual([]);
+  await supPage.goto("/console/status");
+  await expect(supPage.getByTestId("status-no-notices")).toBeVisible();
+  const r1 = await new AxeBuilder(supPage).analyze();
+  expect(r1.passes).toBeGreaterThan(10);
+  expect(r1.violations, JSON.stringify(r1.violations)).toEqual([]);
+
+  // The admin is offered the start only, behind a dialog that says what it does.
+  const page = await english(browser);
+  const ad = await staff(request, "admin");
+  await signIn(page, ad, true);
+  await page.goto("/console/status");
+  await expect(page.getByTestId("status-state")).toHaveAttribute("data-state", "not_started");
+  const certificate = ((await page.getByTestId("status-certificate").locator("dd").textContent()) ?? "").trim();
+  expect(certificate).toMatch(/^[0-9a-f]{32}$/);
+  await expect(page.getByTestId("status-action")).toHaveCount(1);
+  await page.getByRole("button", { name: "Confirm start of operations" }).click();
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toContainText("notifies the civil aviation authority");
+  await expect(dialog).toContainText(`changes the status of certificate ${certificate}`);
+  const rd = await new AxeBuilder(page).analyze();
+  expect(rd.violations, JSON.stringify(rd.violations)).toEqual([]);
+  // Cancel sends nothing.
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByTestId("status-no-notices")).toBeVisible();
+  await page.getByRole("button", { name: "Confirm start of operations" }).click();
+  await dialog.getByRole("button", { name: "Confirm start of operations" }).click();
+  await expect(page.getByTestId("status-answer")).toHaveAttribute("data-created", "true");
+  await expect(page.getByTestId("status-state")).toHaveAttribute("data-state", "operating");
+  const start = page.locator('[data-testid="status-notice"][data-kind="start"]');
+  await expect(start).toHaveCount(1);
+  await expect(start).toContainText(ad.id);
+  // Sent after the commit: the fake authority records it and the row says delivered with its notice id.
+  await expect(start).toHaveAttribute("data-state", "delivered", { timeout: 60_000 });
+  await expect(start).toContainText("Authority's notice id");
+  await shot(page, "console-status-operating-en");
+  await page.goto("/console/inputs");
+  await expect(dependencyRow(page, "operating_status")).toHaveAttribute("data-state", "up", { timeout: 60_000 });
+
+  // Operating: the cease is offered, then the restart, each delivered in turn.
+  await page.goto("/console/status");
+  await expect(page.getByRole("button", { name: "Confirm start of operations" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Cease operations" }).click();
+  await expect(dialog).toContainText(`at the authority to ceased`);
+  await dialog.getByRole("button", { name: "Cease operations" }).click();
+  await expect(page.getByTestId("status-state")).toHaveAttribute("data-state", "ceased");
+  await expect(page.locator('[data-testid="status-notice"][data-kind="cease"]')).toHaveAttribute("data-state", "delivered", { timeout: 60_000 });
+  await page.getByRole("button", { name: "Restart", exact: true }).click();
+  await expect(dialog).toContainText(`at the authority to restarted`);
+  await dialog.getByRole("button", { name: "Restart", exact: true }).click();
+  await expect(page.getByTestId("status-state")).toHaveAttribute("data-state", "operating");
+  await expect(page.locator('[data-testid="status-notice"][data-kind="restart"]')).toHaveAttribute("data-state", "delivered", { timeout: 60_000 });
+  await expect(page.getByTestId("status-notice")).toHaveCount(3);
+  await shot(page, "console-status-restarted-en");
+
+  // A second start answers the stored one (200): nothing new is stored.
+  const again = await page.request.post(STATUS_API, { data: { kind: "start" }, headers: await csrf(page) });
+  expect(again.status()).toBe(200);
+  // The admin's own POST without the CSRF pair is refused at the BFF.
+  const noCsrf = await page.request.post(STATUS_API, { data: { kind: "cease" }, headers: { Origin: CONSOLE } });
+  expect(noCsrf.status()).toBe(403);
+  expect(((await noCsrf.json()) as { type: string }).type).toContain("csrf_refused");
+  // Only GET and POST pass the BFF on the exact path; its neighbours are not let through.
+  for (const method of ["PUT", "PATCH", "DELETE", "HEAD"]) {
+    const res = await page.request.fetch(STATUS_API, { method, headers: await csrf(page) });
+    expect(res.status(), method).toBe(405);
+    expect(res.headers()["allow"], method).toBe("GET, POST");
+  }
+  for (const path of ["/v1/admin/status/1", "/v1/admin/statuses", "/v1/admin/statu", "/v1/admin/status/start"]) {
+    const res = await page.request.get(`/_bff/console/api${path}`);
+    expect(res.status(), path).toBe(404);
+  }
+  expect((await page.request.post("/_bff/console/api/v1/admin/statuses", { data: { kind: "cease" }, headers: await csrf(page) })).status()).toBe(404);
+  await page.goto("/console/status");
+  await expect(page.getByTestId("status-notice")).toHaveCount(3);
+
+  // The supervisor sees the state the admin left, still without an action.
+  await supPage.reload();
+  await expect(supPage.getByTestId("status-state")).toHaveAttribute("data-state", "operating");
+  await expect(supPage.getByTestId("status-action")).toHaveCount(0);
+  await shot(supPage, "console-status-supervisor-en");
+  await page.context().close();
+  await supPage.context().close();
+});
+
 test("signed out, a console page says how to sign in; the console BFF refuses what is not the console's", async ({ page, request }) => {
   await page.goto("/console/alerts");
   await expect(page.getByTestId("console-signed-out")).toBeVisible();
@@ -439,7 +551,7 @@ test("accessibility of the console pages (axe, WCAG 2.2 AA)", async ({ browser, 
   expect(login.violations).toEqual([]);
   const ad = await staff(request, "admin");
   await signIn(page, ad, true);
-  for (const path of ["/console", "/console/flights", "/console/alerts", "/console/emergency", "/console/dss", "/console/inputs", "/console/policy", "/console/occurrences", "/console/records"]) {
+  for (const path of ["/console", "/console/flights", "/console/alerts", "/console/emergency", "/console/dss", "/console/inputs", "/console/policy", "/console/status", "/console/occurrences", "/console/records"]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await expect(page.getByTestId("inputs-strip")).not.toContainText("Loading");
@@ -450,7 +562,7 @@ test("accessibility of the console pages (axe, WCAG 2.2 AA)", async ({ browser, 
   // The dark scheme, as the top bar's toggle keeps it: the same pages at the same level.
   await page.getByTestId("scheme-toggle").click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  for (const path of ["/console", "/console/alerts", "/console/inputs", "/console/policy"]) {
+  for (const path of ["/console", "/console/alerts", "/console/inputs", "/console/policy", "/console/status"]) {
     await page.goto(path);
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();

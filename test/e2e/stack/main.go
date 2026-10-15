@@ -27,6 +27,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -263,8 +264,17 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return err
 	}
 
+	// A certificate id of this run's own: the operating-status notices
+	// (Art. 7(6)) of every run start from none, whatever an earlier run
+	// left in the database, and the fake authority records them.
+	var cert [16]byte
+	if _, err := rand.Read(cert[:]); err != nil {
+		return err
+	}
+
 	vars := map[string]string{
 		"USSP_LOG_LEVEL":                "warn",
+		"USSP_CERTIFICATE_ID":           hex.EncodeToString(cert[:]),
 		"USSP_STATUS_INTERVAL_S":        "3600",
 		"USSP_API_ADDR":                 addr(0),
 		"USSP_TELEMETRY_INGEST_ADDR":    addr(1),

@@ -242,6 +242,23 @@ test("the pages in both languages, Noto Sans Georgian, the CSP, nothing off the 
   }
 });
 
+test("the portal's sign-in sends staff to the console's, in both languages", async ({ browser }) => {
+  for (const [locale, link, heading] of [
+    ["ka-GE", "თანამშრომლის შესვლა", "USSP-ის კონსოლში შესვლა"],
+    ["en-GB", "Staff sign-in", "Sign in to the USSP console"],
+  ] as const) {
+    const ctx = await browser.newContext({ locale });
+    const page = await ctx.newPage();
+    await page.goto("/login");
+    const staff = page.getByRole("link", { name: link });
+    await expect(staff).toHaveAttribute("href", "/console/login");
+    await staff.click();
+    await expect(page).toHaveURL(/\/console\/login$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(heading);
+    await ctx.close();
+  }
+});
+
 test("signed out, a portal page says how to sign in and the BFF refuses the API", async ({ page, request }) => {
   await page.goto("/intents");
   await expect(page.getByTestId("signed-out")).toBeVisible();

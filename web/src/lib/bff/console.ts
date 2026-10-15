@@ -10,7 +10,7 @@ import { BFF_API_PREFIX, bffHandlers, type BffHandlers } from "@rootxkit/uspace-
 import { NextRequest, NextResponse } from "next/server";
 import { bffEnv } from "../../config";
 import { refuseMethod } from "./handlers";
-import { CONSOLE_BFF, CONSOLE_REALM, LOGIN_PATH, LOGOUT_PATH, MFA_PATH, consoleAllowPaths, consoleGetOnlyPaths, withRealm } from "./paths";
+import { CONSOLE_BFF, CONSOLE_REALM, LOGIN_PATH, LOGOUT_PATH, MFA_PATH, consoleAllowPaths, consoleGetOnlyPaths, consoleMethodPaths, withRealm } from "./paths";
 
 const CONSOLE_API = CONSOLE_BFF.api;
 
@@ -59,14 +59,17 @@ export function consoleBff(): BffHandlers {
  * /_bff/api prefix (KIT: pending uspace-ui, a prefix per handler set), so
  * /_bff/console/api/<path> is handed to it as /_bff/api/<path>; the
  * console's allow-list, not the portal's, decides what passes, and a
- * GET-only path refuses every other method first.
+ * GET-only path or a method path (the operating-status notices: GET and
+ * POST) refuses every other method first, with 405. The kit's proxy
+ * checks the CSRF double submit on every unsafe method, the POST of a
+ * status notice among them.
  */
 export function consoleProxy(req: NextRequest): Promise<Response> {
   const url = new URL(req.url);
   if (!url.pathname.startsWith(`${CONSOLE_API}/`)) {
     return Promise.resolve(NextResponse.json({ type: "https://schemas.uspace.ge/problems/not_found", title: "Not found", status: 404 }, { status: 404 }));
   }
-  const refused = refuseMethod(url.pathname.slice(CONSOLE_API.length), req.method, consoleGetOnlyPaths());
+  const refused = refuseMethod(url.pathname.slice(CONSOLE_API.length), req.method, consoleGetOnlyPaths(), consoleMethodPaths());
   if (refused !== null) return Promise.resolve(refused);
   url.pathname = BFF_API_PREFIX + url.pathname.slice(CONSOLE_API.length);
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
