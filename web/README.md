@@ -56,6 +56,10 @@ then the authenticator's code; the challenge sealed under
 monitor ("conformance and traffic alerts stopped since T") and every
 source with its state and time, read from `GET /v1/admin/inputs`.
 
+The two intent summaries are read-only at their BFF: `/v1/intents/summary`
+(`getOnlyPaths`) and `/v1/admin/intents/summary` (`consoleGetOnlyPaths`)
+take GET and HEAD, and any other method is 405 before the proxy.
+
 | Path | What | API |
 |---|---|---|
 | `/console/login` | the kit's `LoginForm` on `/_bff/console/login` (realm `console`) | `POST /v1/accounts/login`, `/login/mfa` |

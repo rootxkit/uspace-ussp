@@ -9,7 +9,8 @@
 import { BFF_API_PREFIX, bffHandlers, type BffHandlers } from "@rootxkit/uspace-ui/auth/server";
 import { NextRequest, NextResponse } from "next/server";
 import { bffEnv } from "../../config";
-import { CONSOLE_BFF, CONSOLE_REALM, LOGIN_PATH, LOGOUT_PATH, MFA_PATH, consoleAllowPaths, withRealm } from "./paths";
+import { refuseMethod } from "./handlers";
+import { CONSOLE_BFF, CONSOLE_REALM, LOGIN_PATH, LOGOUT_PATH, MFA_PATH, consoleAllowPaths, consoleGetOnlyPaths, withRealm } from "./paths";
 
 const CONSOLE_API = CONSOLE_BFF.api;
 
@@ -57,13 +58,16 @@ export function consoleBff(): BffHandlers {
  * The console's proxy: the kit's proxy serves only paths under its fixed
  * /_bff/api prefix (KIT: pending uspace-ui, a prefix per handler set), so
  * /_bff/console/api/<path> is handed to it as /_bff/api/<path>; the
- * console's allow-list, not the portal's, decides what passes.
+ * console's allow-list, not the portal's, decides what passes, and a
+ * GET-only path refuses every other method first.
  */
 export function consoleProxy(req: NextRequest): Promise<Response> {
   const url = new URL(req.url);
   if (!url.pathname.startsWith(`${CONSOLE_API}/`)) {
     return Promise.resolve(NextResponse.json({ type: "https://schemas.uspace.ge/problems/not_found", title: "Not found", status: 404 }, { status: 404 }));
   }
+  const refused = refuseMethod(url.pathname.slice(CONSOLE_API.length), req.method, consoleGetOnlyPaths());
+  if (refused !== null) return Promise.resolve(refused);
   url.pathname = BFF_API_PREFIX + url.pathname.slice(CONSOLE_API.length);
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
   // A streamed body needs duplex "half" (Node's fetch); the DOM's
