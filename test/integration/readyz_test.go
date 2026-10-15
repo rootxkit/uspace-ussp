@@ -211,7 +211,7 @@ func wantStates(t *testing.T, body *client.Readiness, want map[string]client.Dep
 		// availability in the DSS (WP-13), geoid whether its grid is
 		// memory-mapped (WP-19), weather that no source is configured
 		// (WP-16: an optional service left unset is up with its reason).
-		if state == client.DependencyStateUp && (d.AgeS == nil || *d.AgeS != 0 || (d.Detail != nil) != (name == "cis" || name == "registry" || name == "dss" || name == "geoid" || name == "weather")) {
+		if state == client.DependencyStateUp && (d.AgeS == nil || *d.AgeS != 0 || (d.Detail != nil) != (name == "cis" || name == "registry" || name == "dss" || name == "geoid" || name == "weather" || name == "terrain")) {
 			t.Errorf("%s up with age %v detail %v", name, d.AgeS, d.Detail)
 		}
 		if state == client.DependencyStateUp && name == "weather" && (d.Detail == nil || !strings.HasPrefix(*d.Detail, "not_configured: ")) {
@@ -246,6 +246,7 @@ func TestIntegrationAPIReadyWithEveryDependencyUp(t *testing.T) {
 		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
 		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
 		"registry": client.DependencyStateUp, "geoid": client.DependencyStateUp, "dss": client.DependencyStateUp,
+		"terrain":        client.DependencyStateUp,
 		"client_address": client.DependencyStateUp,
 		"weather":        client.DependencyStateUp,
 	})
@@ -253,7 +254,8 @@ func TestIntegrationAPIReadyWithEveryDependencyUp(t *testing.T) {
 
 // Without an issuer key, an audience, a CISP, an authority, a geoid and
 // a DSS, api still starts (B-08) and says what it cannot do: issuer,
-// jwks, registry, geoid and dss down with their reasons, cis unknown,
+// jwks, registry, geoid and dss down with their reasons, terrain degraded
+// (AGL fails closed), cis unknown,
 // ready but degraded.
 func TestIntegrationAPIDegradedWithoutAuthConfiguration(t *testing.T) {
 	ensureSchemas(t)
@@ -264,18 +266,22 @@ func TestIntegrationAPIDegradedWithoutAuthConfiguration(t *testing.T) {
 		"USSP_NATS_URL": mustEnv(t, "USSP_TEST_NATS_URL"),
 	})
 	code, body := readyz(t, c, client.ReadinessStatusDegraded)
-	if code != 200 || strings.Join(body.Degraded, ",") != "cis,dss,geoid,issuer,jwks,registry" {
+	if code != 200 || strings.Join(body.Degraded, ",") != "cis,dss,geoid,issuer,jwks,registry,terrain" {
 		t.Fatalf("readyz %d %+v", code, body)
 	}
 	wantStates(t, body, map[string]client.DependencyState{
 		"postgres": client.DependencyStateUp, "timescaledb": client.DependencyStateUp, "nats": client.DependencyStateUp,
 		"issuer": client.DependencyStateDown, "jwks": client.DependencyStateDown, "cis": client.DependencyStateUnknown,
 		"registry": client.DependencyStateDown, "geoid": client.DependencyStateDown, "dss": client.DependencyStateDown,
+		"terrain":        client.DependencyStateDegraded,
 		"client_address": client.DependencyStateUp,
 		"weather":        client.DependencyStateUp,
 	})
 	if d := body.Dependencies["geoid"].Detail; d == nil || !strings.Contains(*d, "USSP_GEOID_FILE is not set") {
 		t.Fatalf("geoid detail %v", d)
+	}
+	if d := body.Dependencies["terrain"].Detail; d == nil || !strings.Contains(*d, "USSP_TERRAIN_DIR is not set") {
+		t.Fatalf("terrain detail %v", d)
 	}
 	if d := body.Dependencies["dss"].Detail; d == nil || !strings.Contains(*d, "USSP_DSS_BASE_URL is not set") {
 		t.Fatalf("dss detail %v", d)
@@ -312,6 +318,7 @@ func TestIntegrationAPINotReadyWithoutNATS(t *testing.T) {
 		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
 		"cis": client.DependencyStateDegraded, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
 		"registry": client.DependencyStateUp, "geoid": client.DependencyStateUp, "dss": client.DependencyStateUp,
+		"terrain":        client.DependencyStateUp,
 		"client_address": client.DependencyStateUp,
 		"weather":        client.DependencyStateUp,
 	})
@@ -429,6 +436,7 @@ func TestIntegrationAPIFollowsNATSAwayAndBack(t *testing.T) {
 		"issuer": client.DependencyStateUp, "jwks": client.DependencyStateUp,
 		"cis": client.DependencyStateUp, "cis_notify_keys": client.DependencyStateUp, "cis_publisher_keys": client.DependencyStateUp,
 		"registry": client.DependencyStateUp, "geoid": client.DependencyStateUp, "dss": client.DependencyStateUp,
+		"terrain":        client.DependencyStateUp,
 		"client_address": client.DependencyStateUp,
 		"weather":        client.DependencyStateUp,
 	})

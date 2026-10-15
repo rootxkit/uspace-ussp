@@ -121,6 +121,7 @@ func withAuth(t *testing.T, vars map[string]string, a *fakeAuthority) map[string
 	withCIS(t, vars)
 	withRegistry(t, vars)
 	withGeoid(t, vars)
+	withTerrain(t, vars)
 	withDSS(t, vars)
 	return vars
 }

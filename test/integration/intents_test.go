@@ -24,6 +24,7 @@ import (
 
 	"github.com/rootxkit/uspace-core/core"
 	"github.com/rootxkit/uspace-core/geoid"
+	"github.com/rootxkit/uspace-core/terrain"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/rootxkit/uspace-ussp/internal/accounts"
@@ -63,6 +64,40 @@ func geoidMappedDetail() string {
 		return "mapped: true"
 	}
 	return "mapped: false"
+}
+
+// withTerrain adds a DEM directory as USSP_TERRAIN_DIR: index.json
+// naming N41E044 and its tile, 5 x 5 samples at 0.25 deg from 42N 44E,
+// 600 m everywhere, in the PGM core's terrain.ParseTile reads (checked
+// here before it is written).
+func withTerrain(t *testing.T, vars map[string]string) {
+	t.Helper()
+	dir := t.TempDir()
+	var b bytes.Buffer
+	b.WriteString("P5\n")
+	for _, h := range [][2]string{
+		{"Description", "integration tile"}, {"Dataset", "COP-DEM GLO-30"},
+		{"Offset", fmt.Sprint(terrain.OffsetM)}, {"Scale", fmt.Sprint(terrain.ScaleM)}, {"Nodata", "65535"},
+		{"LatFirst", "42"}, {"LonFirst", "44"}, {"LatStep", "0.25"}, {"LonStep", "0.25"},
+	} {
+		b.WriteString("# " + h[0] + " " + h[1] + "\n")
+	}
+	b.WriteString("5 5\n65535\n")
+	raw := uint16(math.Round((600 - terrain.OffsetM) / terrain.ScaleM))
+	for i := 0; i < 25; i++ {
+		b.WriteByte(byte(raw >> 8))
+		b.WriteByte(byte(raw))
+	}
+	if _, err := terrain.ParseTile(b.Bytes()); err != nil {
+		t.Fatalf("the integration tile does not parse in core: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "N41E044.pgm"), b.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.json"), []byte(`{"cells":{"N41E044":"COP-DEM GLO-30"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	vars["USSP_TERRAIN_DIR"] = dir
 }
 
 // withGeoid adds the integration geoid grid as USSP_GEOID_FILE.
