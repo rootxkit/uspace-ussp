@@ -133,3 +133,57 @@ func TestBFFGetOnlyPathsAreGetRoutes(t *testing.T) {
 		}
 	}
 }
+
+// The method paths of the console's BFF (paths.ts consoleMethodPaths)
+// are in its allow-list, and api serves each with exactly the methods
+// the entry names: the BFF refuses every other method before the proxy
+// and lets none through that api would refuse as unrouted. Twin: the
+// entries are read and carry the operating-status notices with GET and
+// POST.
+func TestConsoleBFFMethodPathsAreAPIRoutes(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "lib", "bff", "paths.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(raw)
+	start := strings.Index(src, "export function consoleMethodPaths(")
+	if start < 0 {
+		t.Fatal("paths.ts has no consoleMethodPaths")
+	}
+	src = src[start:]
+	end := strings.Index(src, "return entries.map(")
+	if end < 0 {
+		t.Fatal("consoleMethodPaths returns no entries literal")
+	}
+	entries := map[string][]string{}
+	quoted := regexp.MustCompile(`"([A-Z]+)"`)
+	for _, m := range regexp.MustCompile(`\[\s*"(/[^"]*)",\s*\[([^\]]*)\],?\s*\]`).FindAllStringSubmatch(src[:end], -1) {
+		var ms []string
+		for _, q := range quoted.FindAllStringSubmatch(m[2], -1) {
+			ms = append(ms, q[1])
+		}
+		slices.Sort(ms)
+		entries[m[1]] = ms
+	}
+	if got := entries["/v1/admin/status"]; !slices.Equal(got, []string{"GET", "POST"}) {
+		t.Fatalf("consoleMethodPaths %v does not give /v1/admin/status GET and POST", entries)
+	}
+	param := regexp.MustCompile(`\{[^}]+\}`)
+	served := map[string][]string{}
+	for pattern := range AccessTable() {
+		method, path, _ := strings.Cut(pattern, " ")
+		p := param.ReplaceAllString(path, "{}")
+		served[p] = append(served[p], method)
+	}
+	allow := bffPathsOf(t, "consoleAllowPaths")
+	for p, ms := range entries {
+		if !slices.Contains(allow, p) {
+			t.Errorf("consoleMethodPaths: %s is not in consoleAllowPaths", p)
+		}
+		got := slices.Clone(served[p])
+		slices.Sort(got)
+		if !slices.Equal(got, ms) {
+			t.Errorf("consoleMethodPaths: api serves %s with %v, the entry names %v", p, got, ms)
+		}
+	}
+}

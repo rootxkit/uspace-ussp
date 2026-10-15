@@ -90,21 +90,52 @@ export function consoleGetOnlyPaths(): RegExp[] {
   return ["/v1/admin/intents/summary"].map((p) => new RegExp(`^${p}$`));
 }
 
+/** An allowed path that takes exactly these methods (upper case) and no other. */
+export interface MethodEntry {
+  path: RegExp;
+  methods: readonly string[];
+}
+
 /**
- * Whether method may go to path (the path after the BFF's prefix): a
- * GET-only path takes GET and HEAD only; any other path is left to the
- * allow-list and the API. A path that does not decode is judged as it
- * came.
+ * The console's paths that take exactly the methods named, matched as
+ * consoleGetOnlyPaths' are: the operating-status notices (Art. 7(6)),
+ * read with GET (listStatusNotices) and asked for with POST
+ * (requestStatusNotice, an admin's at the API), and no HEAD, PUT, PATCH
+ * or DELETE. Every path here is in consoleAllowPaths, and api serves it
+ * with exactly these methods (internal/national's
+ * TestConsoleBFFMethodPathsAreAPIRoutes).
  */
-export function methodAllowed(path: string, method: string, getOnly: readonly RegExp[]): boolean {
+export function consoleMethodPaths(): MethodEntry[] {
+  const entries: [string, string[]][] = [["/v1/admin/status", ["GET", "POST"]]];
+  return entries.map(([p, methods]) => ({ path: new RegExp(`^${p}$`), methods }));
+}
+
+/**
+ * The methods path (the path after the BFF's prefix) takes, or null
+ * when it is left to the allow-list and the API: GET and HEAD on a
+ * GET-only path, the entry's methods on a method path. A path that does
+ * not decode is judged as it came.
+ */
+export function allowedMethods(path: string, getOnly: readonly RegExp[], methodPaths: readonly MethodEntry[] = []): readonly string[] | null {
   let decoded = path;
   try {
     decoded = decodeURIComponent(path);
   } catch {
     // judged as it came
   }
-  if (!getOnly.some((re) => re.test(path) || re.test(decoded))) return true;
-  return method === "GET" || method === "HEAD";
+  const hit = (re: RegExp) => re.test(path) || re.test(decoded);
+  if (getOnly.some(hit)) return ["GET", "HEAD"];
+  return methodPaths.find((e) => hit(e.path))?.methods ?? null;
+}
+
+/**
+ * Whether method may go to path (the path after the BFF's prefix): a
+ * GET-only path takes GET and HEAD only, a method path its own methods;
+ * any other path is left to the allow-list and the API.
+ */
+export function methodAllowed(path: string, method: string, getOnly: readonly RegExp[], methodPaths: readonly MethodEntry[] = []): boolean {
+  const allowed = allowedMethods(path, getOnly, methodPaths);
+  return allowed === null || allowed.includes(method);
 }
 
 /**

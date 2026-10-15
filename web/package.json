@@ -13,6 +13,7 @@
     "gen:api": "uspace-ui-gen-api ../api/openapi.yaml src/api/generated/openapi.d.ts",
     "check:api": "uspace-ui-gen-api ../api/openapi.yaml src/api/generated/openapi.d.ts --check",
     "check:i18n": "node scripts/check-i18n.mjs",
+    "test:unit": "node --experimental-strip-types --test src/lib/bff/paths.test.ts",
     "test:e2e": "node e2e/serve.mjs --prepare && playwright test"
   },
   "dependencies": {
