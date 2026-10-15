@@ -35,7 +35,7 @@ gh attestation verify rootxkit-uspace-ui-1.1.0.tgz --repo rootxkit/uspace-ui \
 
 | Path | What | API |
 |---|---|---|
-| `/` | signed in, the overview and the first page after sign-in: the intents counted by state, the geo-awareness and the weather around the map's view, the latest intents, the operator's record; signed out, what the portal does | `GET /v1/intents`, `/v1/geo`, `/v1/weather`, `/v1/accounts/me`, `/v1/accounts/operators/{id}` |
+| `/` | signed in, the overview and the first page after sign-in: the operator's intents counted by state as the API counts them (every state, on the database clock, "at least" when a count reached its bound), the geo-awareness and the weather around the map's view, the latest intents, the operator's record; signed out, what the portal does | `GET /v1/intents/summary`, `/v1/intents`, `/v1/geo`, `/v1/weather`, `/v1/accounts/me`, `/v1/accounts/operators/{id}` |
 | `/register` | operator self-registration; the state the registry decided (status only) | `POST /v1/accounts/operators` |
 | `/login` | the kit's `LoginForm` on `/_bff/login` (realm `portal`) | `POST /v1/accounts/login` |
 | `/clients` | the operator's clients; create (secret shown once), rotate, bind and unbind serials | `/v1/accounts/operators/{id}/clients*` |
