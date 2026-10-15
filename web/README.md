@@ -59,6 +59,12 @@ source with its state and time, read from `GET /v1/admin/inputs`.
 The two intent summaries are read-only at their BFF: `/v1/intents/summary`
 (`getOnlyPaths`) and `/v1/admin/intents/summary` (`consoleGetOnlyPaths`)
 take GET and HEAD, and any other method is 405 before the proxy.
+The operating-status notices are `/v1/admin/status` with GET and POST
+only (`consoleMethodPaths`): HEAD, PUT, PATCH and DELETE are 405 with
+`Allow: GET, POST`, a neighbouring path is 404 at the allow-list, and the
+POST carries the CSRF double submit like every unsafe request.
+`pnpm test:unit` runs Node's test runner on these entries
+(`src/lib/bff/paths.test.ts`).
 
 | Path | What | API |
 |---|---|---|
@@ -70,6 +76,7 @@ take GET and HEAD, and any other method is 405 before the proxy.
 | `/console/dss` | `dss_state`, the DSS readiness, the outbox, its errors, the subscriptions | `GET /v1/admin/dss` |
 | `/console/inputs` | every input with its state, time and switch; the monitor's instances; api's dependencies; the switches stored | `GET /v1/admin/inputs`, `/v1/admin/sources` |
 | `/console/policy` | the version in force, the values pending GCAA, the change with its preview, the versions with their changes | `/v1/admin/policy` |
+| `/console/status` | operations status (Art. 7(6)): the state the notices give (not started, operating, ceased), the certificate, every notice with its delivery to the authority; an admin confirms the start, ceases or restarts behind a dialog, offered only the transition the API admits; supervisors and support read | `GET`, `POST /v1/admin/status` |
 | `/console/occurrences`, `/console/records` | reports not delivered with their deadline; flag an alert; the daily bundles and the days without one | `/v1/admin/occurrences`, `/v1/admin/records/days` |
 
 ## Rules

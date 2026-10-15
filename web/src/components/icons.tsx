@@ -129,6 +129,14 @@ export const PolicyIcon = () => (
   </Icon>
 );
 
+/** A power mark: the operating status notified to the authority. */
+export const OperationsIcon = () => (
+  <Icon>
+    <path d="M12 3v8" />
+    <path d="M6.3 7.1a8 8 0 1 0 11.4 0" />
+  </Icon>
+);
+
 export const ReportIcon = () => (
   <Icon>
     <path d="M4 4h16v16H4z" />
