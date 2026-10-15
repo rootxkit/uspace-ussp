@@ -2414,6 +2414,9 @@ type IntentDecision struct {
 // IntentList defines model for IntentList.
 type IntentList struct {
 	Intents []IntentDecision `json:"intents"`
+
+	// Truncated True when more intents match than limit (or 500) and the oldest of them are not listed; a count of this list is then not the operator's number of intents.
+	Truncated bool `json:"truncated"`
 }
 
 // IntentPatch activate (confirmed in the response, Art. 10(5)), modify (new volumes re-decided as a new version, Art. 6(6)) or end.

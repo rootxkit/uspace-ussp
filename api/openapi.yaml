@@ -272,8 +272,8 @@ paths:
       tags:
       - intents
       summary: The operator's intents, newest first
-      description: At most 500; from and to keep the intents whose window overlaps them; state filters. A portal
-        session (any role) lists its operator's intents.
+      description: At most 500 (truncated when more match); from and to keep the intents whose window overlaps them;
+        state filters. A portal session (any role) lists its operator's intents.
       security:
       - operatorToken: []
       - session: []
@@ -3909,12 +3909,17 @@ components:
       type: object
       required:
       - intents
+      - truncated
       properties:
         intents:
           type: array
           maxItems: 500
           items:
             $ref: '#/components/schemas/IntentDecision'
+        truncated:
+          type: boolean
+          description: True when more intents match than limit (or 500) and the oldest of them are not listed; a count
+            of this list is then not the operator's number of intents.
     TelemetryFrame:
       description: telemetry/v1 (schemas/telemetry/v1/schema.json, the source of truth).
       type: object

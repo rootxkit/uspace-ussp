@@ -94,13 +94,14 @@ func (p Store) Get(ctx context.Context, id string) (*intent.Record, error) {
 	return recordOf(r)
 }
 
-// List is an operator's intents, newest first.
+// List is an operator's intents, newest first, at most MaxList+1 (the
+// service's probe for more than it answers).
 func (p Store) List(ctx context.Context, operatorID string, f intent.ListFilter) ([]intent.Record, error) {
 	op, err := store.UUID("operator_id", operatorID)
 	if err != nil {
 		return nil, err
 	}
-	params := relational.IntentListParams{OperatorID: op, FromAt: f.From, ToAt: f.To, MaxRows: int32(min(f.Limit, intent.MaxList))}
+	params := relational.IntentListParams{OperatorID: op, FromAt: f.From, ToAt: f.To, MaxRows: int32(min(f.Limit, intent.MaxList+1))}
 	if f.State != "" {
 		params.State = &f.State
 	}

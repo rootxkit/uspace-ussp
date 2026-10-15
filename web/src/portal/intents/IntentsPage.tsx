@@ -1,8 +1,9 @@
 "use client";
 
 // The operator's intents, newest first (GET /v1/intents, at most 500 as
-// the API bounds it), with their decision, state, authorisation number
-// and window; a state filter the API applies.
+// the API bounds it, and said when the API cut the list), with their
+// decision, state, authorisation number and window; a state filter the
+// API applies.
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { RequireRole } from "@rootxkit/uspace-ui/auth/client";
@@ -19,7 +20,7 @@ export function IntentsPage() {
   const t = useAppT();
   const api = useApi();
   const [state, setState] = useState<string>("");
-  const [list, setList] = useState<{ intents: Omit<Schemas["IntentDecision"], "alternative">[] } | null>(null);
+  const [list, setList] = useState<{ intents: Omit<Schemas["IntentDecision"], "alternative">[]; truncated: boolean } | null>(null);
   const [error, setError] = useState<unknown>(null);
   useEffect(() => {
     let live = true;
@@ -57,6 +58,11 @@ export function IntentsPage() {
           </RequireRole>
         </div>
         <ProblemNotice error={error} />
+        {list?.truncated === true && (
+          <p role="status" className="m-0 text-sm" data-testid="intents-truncated">
+            {t("portal.list.truncated")}
+          </p>
+        )}
         {list !== null &&
           (list.intents.length === 0 ? (
             <p role="status" data-testid="no-intents">

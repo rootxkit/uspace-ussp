@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -492,14 +493,48 @@ func TestOwnershipIsEnforced(t *testing.T) {
 		}
 	}
 	list, err := s.List(t.Context(), testClient, ListFilter{})
-	if err != nil || len(list) != 1 {
+	if err != nil || len(list.Intents) != 1 || list.Truncated {
 		t.Fatalf("own list %v %v", list, err)
 	}
-	if list, err := s.List(t.Context(), "client-other", ListFilter{}); err != nil || len(list) != 0 {
+	if list, err := s.List(t.Context(), "client-other", ListFilter{}); err != nil || len(list.Intents) != 0 || list.Truncated {
 		t.Fatalf("other list %v %v", list, err)
 	}
 	if _, err := s.List(t.Context(), testClient, ListFilter{State: "flying"}); err == nil {
 		t.Fatal("an unknown state filter")
+	}
+}
+
+// A list is bounded by its limit and says so (E-10): with one intent
+// more than the limit the page holds the limit and is truncated; at
+// the limit exactly it holds them all and is not (E-01 pair).
+func TestListSaysWhenTruncated(t *testing.T) {
+	s, st, _ := newService(newRig())
+	op := st.owners[testClient].OperatorID
+	base := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	for i := range 3 {
+		id := fmt.Sprintf("00000000-0000-4000-8000-00000000010%d", i)
+		st.byID[id] = &Record{ID: id, OperatorID: op, ClientID: testClient, LocalState: StateAccepted,
+			CreatedAt: base.Add(time.Duration(i) * time.Minute), Decision: Decision{IntentID: id, State: StateAccepted}}
+	}
+	for _, c := range []struct {
+		limit, want int
+		truncated   bool
+	}{{2, 2, true}, {3, 3, false}, {0, 3, false}} {
+		p, err := s.List(t.Context(), testClient, ListFilter{Limit: c.limit})
+		if err != nil || len(p.Intents) != c.want || p.Truncated != c.truncated {
+			t.Fatalf("limit %d: %d intents, truncated %v, %v", c.limit, len(p.Intents), p.Truncated, err)
+		}
+		o, err := s.ListOperator(t.Context(), op, ListFilter{Limit: c.limit})
+		if err != nil || len(o.Intents) != c.want || o.Truncated != c.truncated {
+			t.Fatalf("operator, limit %d: %d intents, truncated %v, %v", c.limit, len(o.Intents), o.Truncated, err)
+		}
+	}
+	if _, err := s.List(t.Context(), testClient, ListFilter{}); err != nil {
+		t.Fatal(err)
+	}
+	st.failList = errors.New("database down")
+	if _, err := s.List(t.Context(), testClient, ListFilter{}); err == nil {
+		t.Fatal("a failed read listed")
 	}
 }
 
@@ -746,10 +781,10 @@ func TestPortalLookups(t *testing.T) {
 			t.Fatalf("%v: %d", c, code)
 		}
 	}
-	if list, err := s.ListOperator(t.Context(), own, ListFilter{}); err != nil || len(list) != 1 {
+	if list, err := s.ListOperator(t.Context(), own, ListFilter{}); err != nil || len(list.Intents) != 1 || list.Truncated {
 		t.Fatalf("operator list %v %v", list, err)
 	}
-	if list, err := s.ListOperator(t.Context(), "00000000-0000-4000-8000-000000000002", ListFilter{}); err != nil || len(list) != 0 {
+	if list, err := s.ListOperator(t.Context(), "00000000-0000-4000-8000-000000000002", ListFilter{}); err != nil || len(list.Intents) != 0 {
 		t.Fatalf("other operator's list %v %v", list, err)
 	}
 	if _, err := s.ListOperator(t.Context(), own, ListFilter{State: "flying"}); err == nil {

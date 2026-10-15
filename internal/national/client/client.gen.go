@@ -2416,6 +2416,9 @@ type IntentDecision struct {
 // IntentList defines model for IntentList.
 type IntentList struct {
 	Intents []IntentDecision `json:"intents"`
+
+	// Truncated True when more intents match than limit (or 500) and the oldest of them are not listed; a count of this list is then not the operator's number of intents.
+	Truncated bool `json:"truncated"`
 }
 
 // IntentPatch activate (confirmed in the response, Art. 10(5)), modify (new volumes re-decided as a new version, Art. 6(6)) or end.
@@ -4449,7 +4452,7 @@ type ClientInterface interface {
 
 	// ListIntents The operator's intents, newest first
 	//
-	// At most 500; from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
+	// At most 500 (truncated when more match); from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
 	//
 	// Corresponds with GET /v1/intents (the `ListIntents` operationId).
 	ListIntents(ctx context.Context, params *ListIntentsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -6169,7 +6172,7 @@ func (c *Client) GetGeoForIntent(ctx context.Context, intentId IntentID, reqEdit
 
 // ListIntents The operator's intents, newest first
 //
-// At most 500; from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
+// At most 500 (truncated when more match); from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
 //
 // Corresponds with GET /v1/intents (the `ListIntents` operationId).
 func (c *Client) ListIntents(ctx context.Context, params *ListIntentsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -9786,7 +9789,7 @@ type ClientWithResponsesInterface interface {
 
 	// ListIntentsWithResponse The operator's intents, newest first
 	//
-	// At most 500; from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
+	// At most 500 (truncated when more match); from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -15533,7 +15536,7 @@ func (c *ClientWithResponses) GetGeoForIntentWithResponse(ctx context.Context, i
 
 // ListIntentsWithResponse The operator's intents, newest first
 //
-// At most 500; from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
+// At most 500 (truncated when more match); from and to keep the intents whose window overlaps them; state filters. A portal session (any role) lists its operator's intents.
 //
 // Returns a wrapper object for the known response body format(s).
 //

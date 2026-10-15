@@ -360,6 +360,8 @@ type memStore struct {
 	outbox      []OutboxSpec
 	failNow     error
 	failTx      error
+	// failList fails List.
+	failList error
 	// failCommit fails a transaction after fn succeeded (the commit).
 	failCommit error
 	// projected is the version of each intent last projected.
@@ -435,6 +437,9 @@ func (m *memStore) Get(_ context.Context, id string) (*Record, error) {
 func (m *memStore) List(_ context.Context, operatorID string, f ListFilter) ([]Record, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.failList != nil {
+		return nil, m.failList
+	}
 	var out []Record
 	for _, r := range m.byID {
 		if r.OperatorID == operatorID && (f.State == "" || r.LocalState == f.State) {

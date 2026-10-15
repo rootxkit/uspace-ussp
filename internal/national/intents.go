@@ -18,11 +18,11 @@ import (
 type Intents interface {
 	Submit(ctx context.Context, clientID string, raw []byte) (intent.Decision, bool, error)
 	Get(ctx context.Context, clientID, id string) (intent.Decision, error)
-	List(ctx context.Context, clientID string, f intent.ListFilter) ([]intent.Decision, error)
+	List(ctx context.Context, clientID string, f intent.ListFilter) (intent.Page, error)
 	Change(ctx context.Context, clientID, id string, raw []byte) (intent.Decision, error)
 	// ClientOf and ListOperator serve a portal session (brief WP-17).
 	ClientOf(ctx context.Context, operatorID, id string) (string, error)
-	ListOperator(ctx context.Context, operatorID string, f intent.ListFilter) ([]intent.Decision, error)
+	ListOperator(ctx context.Context, operatorID string, f intent.ListFilter) (intent.Page, error)
 }
 
 // actingClient is the client a request acts as: an operator token's
@@ -130,25 +130,25 @@ func (s *Server) ListIntents(w http.ResponseWriter, r *http.Request, params gen.
 	if params.Limit != nil {
 		f.Limit = *params.Limit
 	}
-	var ds []intent.Decision
+	var p intent.Page
 	var err error
 	if portalSession(r) {
 		m, ok := s.member(w, r, false)
 		if !ok {
 			return
 		}
-		ds, err = s.Intents.ListOperator(r.Context(), m.OperatorID, f)
+		p, err = s.Intents.ListOperator(r.Context(), m.OperatorID, f)
 	} else {
-		ds, err = s.Intents.List(r.Context(), principal(r).Claims.Subject, f)
+		p, err = s.Intents.List(r.Context(), principal(r).Claims.Subject, f)
 	}
 	if err != nil {
 		s.failIntent(w, r, err)
 		return
 	}
-	if ds == nil {
-		ds = []intent.Decision{}
+	if p.Intents == nil {
+		p.Intents = []intent.Decision{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"intents": ds})
+	writeJSON(w, http.StatusOK, p)
 }
 
 // GetIntent is GET /v1/intents/{intent_id}.
