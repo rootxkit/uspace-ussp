@@ -2508,6 +2508,35 @@ type IntentRequest struct {
 	Volumes []IntentVolume4D `json:"volumes"`
 }
 
+// IntentStateCounts The intents in each local state (IntentDecision.state), every state present.
+type IntentStateCounts struct {
+	Accepted          int `json:"accepted"`
+	Activated         int `json:"activated"`
+	Contingent        int `json:"contingent"`
+	Ended             int `json:"ended"`
+	Nonconforming     int `json:"nonconforming"`
+	PendingAuthority  int `json:"pending_authority"`
+	PendingDss        int `json:"pending_dss"`
+	PendingValidation int `json:"pending_validation"`
+	Rejected          int `json:"rejected"`
+	Withdrawn         int `json:"withdrawn"`
+}
+
+// IntentSummary defines model for IntentSummary.
+type IntentSummary struct {
+	// AsOf The database clock when the intents were counted.
+	AsOf time.Time `json:"as_of"`
+
+	// Counts The intents in each local state (IntentDecision.state), every state present.
+	Counts IntentStateCounts `json:"counts"`
+
+	// Total The sum of counts.
+	Total int `json:"total"`
+
+	// Truncated A count reached its bound of 10000 rows; the counts and the total are then lower bounds.
+	Truncated bool `json:"truncated"`
+}
+
 // IntentTime defines model for IntentTime.
 type IntentTime struct {
 	Format interface{} `json:"format"`
@@ -3621,6 +3650,9 @@ type ServerInterface interface {
 	// CreateIntent File an operational intent and get the authorisation decision
 	// (POST /v1/intents)
 	CreateIntent(w http.ResponseWriter, r *http.Request)
+	// GetIntentSummary The operator's intents counted by state
+	// (GET /v1/intents/summary)
+	GetIntentSummary(w http.ResponseWriter, r *http.Request)
 	// GetIntent One of the operator's intents: its decision and state
 	// (GET /v1/intents/{intent_id})
 	GetIntent(w http.ResponseWriter, r *http.Request, intentId IntentID)
@@ -4598,6 +4630,20 @@ func (siw *ServerInterfaceWrapper) CreateIntent(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// GetIntentSummary operation middleware
+func (siw *ServerInterfaceWrapper) GetIntentSummary(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetIntentSummary(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetIntent operation middleware
 func (siw *ServerInterfaceWrapper) GetIntent(w http.ResponseWriter, r *http.Request) {
 
@@ -4946,6 +4992,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/registry/validate", wrapper.ValidateRegistry)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/intents", wrapper.ListIntents)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/intents", wrapper.CreateIntent)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/intents/summary", wrapper.GetIntentSummary)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/intents/{intent_id}", wrapper.GetIntent)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/intents/{intent_id}", wrapper.ChangeIntent)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/geo", wrapper.GetGeo)

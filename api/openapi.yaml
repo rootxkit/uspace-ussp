@@ -18,7 +18,8 @@ info:
     validity lookup. WP-7: operational intents and flight authorisation.
     WP-12: geo-awareness from the CIS cache. WP-17: the operator
     portal's sessions on the intents, geo, weather, traffic and alert
-    operations, and the list of the operator's clients.
+    operations, the list of the operator's clients, and the count of
+    the operator's intents by state.
     WP-8: operator telemetry (served by telemetry-ingest). WP-9: the
     optional authority flight push (served by rid-sp). WP-11: traffic
     information and the alert stream (served by traffic-ws), the alert
@@ -307,6 +308,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/IntentList'
         '400': *id002
+        '401': *id002
+        '403': *id002
+        '503': *id002
+        default: *id002
+  /v1/intents/summary:
+    get:
+      operationId: getIntentSummary
+      tags:
+      - intents
+      summary: The operator's intents counted by state
+      description: |
+        A portal session (any role) of the operator: its own intents
+        counted by state on the database clock (as_of), every state
+        present and zero when none, and no intent or person named. The
+        open states count every open intent of the operator; the closed
+        states (ended, rejected, withdrawn) count those among its newest
+        10000 intents. Each count reads at most 10000 rows through an
+        index; truncated says one reached that bound, and the counts and
+        the total are then lower bounds. An operator token is 403: the
+        summary is the portal's (WP-17).
+      security:
+      - session: []
+      responses:
+        '200':
+          description: The counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntentSummary'
         '401': *id002
         '403': *id002
         '503': *id002
@@ -3905,6 +3935,54 @@ components:
           type: string
           minLength: 1
           maxLength: 256
+    IntentSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - as_of
+      - counts
+      - total
+      - truncated
+      properties:
+        as_of:
+          type: string
+          format: date-time
+          description: The database clock when the intents were counted.
+        counts:
+          $ref: '#/components/schemas/IntentStateCounts'
+        total:
+          type: integer
+          minimum: 0
+          description: The sum of counts.
+        truncated:
+          type: boolean
+          description: A count reached its bound of 10000 rows; the counts and the total are then lower bounds.
+    IntentStateCounts:
+      type: object
+      additionalProperties: false
+      description: The intents in each local state (IntentDecision.state), every state present.
+      required:
+      - pending_validation
+      - pending_dss
+      - pending_authority
+      - accepted
+      - activated
+      - nonconforming
+      - contingent
+      - ended
+      - rejected
+      - withdrawn
+      properties:
+        pending_validation: {type: integer, minimum: 0}
+        pending_dss: {type: integer, minimum: 0}
+        pending_authority: {type: integer, minimum: 0}
+        accepted: {type: integer, minimum: 0}
+        activated: {type: integer, minimum: 0}
+        nonconforming: {type: integer, minimum: 0}
+        contingent: {type: integer, minimum: 0}
+        ended: {type: integer, minimum: 0}
+        rejected: {type: integer, minimum: 0}
+        withdrawn: {type: integer, minimum: 0}
     IntentList:
       type: object
       required:

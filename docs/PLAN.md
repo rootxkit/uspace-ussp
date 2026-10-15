@@ -359,7 +359,8 @@ the **decision** body (`intent/decision/v1`), never on the problem.
 |---|---|---|---|---|
 | `POST /v1/intents` | api | `ussp.intents`, or a portal session (`operator_admin`, `remote_pilot`; filed under the client the serial is bound to; WP-17) | `02 F5`, `04 §3.5`, Art. 6(4), 10 | body `intent/request/v1` (the ten Annex IV items + contingency + emergency contact ref); returns `intent/decision/v1`; `client_ref` idempotent |
 | `GET /v1/intents/{id}` | api | `ussp.intents` (own) | `02 F5` | decision, state, conflicts, versions |
-| `GET /v1/intents?from=&to=&state=` | api | `ussp.intents` (own) | `02 F5` | list |
+| `GET /v1/intents?from=&to=&state=` | api | `ussp.intents` (own) | `02 F5` | list; `truncated` when more match than the limit |
+| `GET /v1/intents/summary` | api | a portal session, any role (its own operator; no operator token; WP-17) | `02 F5` | the operator's intents counted by state on the database clock, every state present; each count reads at most 10000 rows through an index, `truncated` when one reached it; no PII |
 | `PATCH /v1/intents/{id}` | api | `ussp.intents` | Art. 6(5), 10(5), 6(7) | `{action: activate | modify | end, volumes?}`; activation confirmed in the response without unjustified delay; modify = new version re-decided |
 | `GET /v1/geo?bbox=&at=` and `GET /v1/geo/intents/{id}` | api | `ussp.geo` | `02 F5`, Art. 9 | applicable zones, airspaces with Art. 3(4) requirements, restrictions; each with `updated_at`, `version`, `valid_from/to`; `cis_version`, `cis_age_s`, `stale` |
 | `WS /v1/telemetry` | telemetry-ingest | `ussp.telemetry` | `02 F5`, Art. 8(2) | frames `telemetry/v1`; server `status` frames (accepted, dropped, rate, `backlog` ack); 2 Hz per client cap |

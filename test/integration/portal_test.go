@@ -256,3 +256,75 @@ func TestIntegrationPortalAcksBeforeTheFlightIsRecorded(t *testing.T) {
 		t.Fatal("the flight was not filled in, or the clear or the acknowledgement was lost")
 	}
 }
+
+// counts is the counts object of an intent summary.
+func counts(t *testing.T, r resp) map[string]float64 {
+	t.Helper()
+	raw, ok := r.body["counts"].(map[string]any)
+	if !ok {
+		t.Fatalf("no counts: %s", r.raw)
+	}
+	out := map[string]float64{}
+	for k, v := range raw {
+		out[k], _ = v.(float64)
+	}
+	return out
+}
+
+// GET /v1/intents/summary on the real database (WP-17): a portal
+// session of the operator, admin or viewer, gets its own operator's
+// intents counted by state, every state present, on the database clock;
+// another operator's session counts only its own; an operator token and
+// a console session are 403; no credential is 401 (E-01 pairs).
+func TestIntegrationPortalIntentSummary(t *testing.T) {
+	g := newIntentRig(t)
+	g.publishAll(nil, nil, nil)
+	p := g.portalOperator()
+	before := time.Now().Add(-time.Minute)
+	empty := g.stack.call("GET", "/v1/intents/summary", nil, bearer(p.session))
+	if empty.status != 200 || empty.body["total"] != 0.0 || empty.body["truncated"] != false || len(counts(t, empty)) != 10 {
+		t.Fatalf("empty: %d %s", empty.status, empty.raw)
+	}
+	for i, ref := range []string{"sum-1", "sum-2"} {
+		r := g.stack.call("POST", "/v1/intents", g.request(p.number, p.serial, ref, g.box(float64(i)*0.1, 0, 0.01)), bearer(p.session))
+		if r.status != 201 || r.str("state") != "accepted" {
+			t.Fatalf("file %s: %d %s", ref, r.status, r.raw)
+		}
+		if i == 1 {
+			if e := g.stack.call("PATCH", "/v1/intents/"+r.str("intent_id"), map[string]any{"action": "end"}, bearer(p.session)); e.status != 200 {
+				t.Fatalf("end: %d %s", e.status, e.raw)
+			}
+		}
+	}
+	viewer := g.portalUser(p.opID, auth.RoleViewer)
+	for who, tok := range map[string]string{"admin": p.session, "viewer": viewer} {
+		s := g.stack.call("GET", "/v1/intents/summary", nil, bearer(tok))
+		c := counts(t, s)
+		at, err := time.Parse(time.RFC3339Nano, s.str("as_of"))
+		if s.status != 200 || c["accepted"] != 1 || c["ended"] != 1 || c["activated"] != 0 || s.body["total"] != 2.0 ||
+			s.body["truncated"] != false || len(c) != 10 || err != nil || at.Before(before) {
+			t.Fatalf("%s: %d %s", who, s.status, s.raw)
+		}
+	}
+	other := g.portalOperator()
+	if o := g.stack.call("GET", "/v1/intents/summary", nil, bearer(other.session)); o.status != 200 || o.body["total"] != 0.0 {
+		t.Fatalf("another operator: %d %s", o.status, o.raw)
+	}
+	if o := g.stack.call("GET", "/v1/intents/summary", nil, bearer(p.token)); o.status != 403 {
+		t.Fatalf("operator token: %d %s", o.status, o.raw)
+	}
+	u := unique()
+	if _, err := g.stack.svc.CreateStaff(context.Background(), "support.sum."+u, "staff-password-"+u, auth.RoleSupport, "test"); err != nil {
+		t.Fatal(err)
+	}
+	staff := g.stack.login(auth.RealmConsole, "support.sum."+u, "staff-password-"+u, "")
+	if staff.status != 200 {
+		t.Fatalf("staff sign-in: %d %s", staff.status, staff.raw)
+	}
+	if o := g.stack.call("GET", "/v1/intents/summary", nil, bearer(staff.str("token"))); o.status != 403 {
+		t.Fatalf("console session: %d %s", o.status, o.raw)
+	}
+	if o := g.stack.call("GET", "/v1/intents/summary", nil, nil); o.status != 401 {
+		t.Fatalf("no credential: %d %s", o.status, o.raw)
+	}
+}

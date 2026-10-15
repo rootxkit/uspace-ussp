@@ -91,6 +91,11 @@ func (f *intentsFake) ListOperator(ctx context.Context, operatorID string, _ int
 	return intent.Page{Intents: []intent.Decision{{IntentID: portalIntID}}, Truncated: f.truncated}, nil
 }
 
+func (f *intentsFake) SummaryOperator(ctx context.Context, operatorID string) (intent.CountSummary, error) {
+	f.note(ctx, "summary-operator", operatorID)
+	return fakeSummary(), nil
+}
+
 func portalCtx(role string) context.Context {
 	return auth.WithPrincipal(context.Background(), auth.Principal{Session: true, ViaCookie: true,
 		Claims: coreauth.Claims{Subject: portalAcct, Realm: auth.RealmPortal, Roles: []string{role}, Scopes: []string{auth.SessionScope}}})
