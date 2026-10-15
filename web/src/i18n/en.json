@@ -83,6 +83,8 @@
   "portal.login.heading": "Sign in to the operator portal",
   "portal.login.note": "Your password goes to the USSP once; the session is kept in a cookie that page scripts cannot read.",
   "portal.login.no_account": "No account yet?",
+  "portal.login.staff": "USSP staff?",
+  "portal.login.staff_link": "Staff sign-in",
   "portal.register.heading": "Register an operator",
   "portal.register.note": "The USSP asks the authority's registry about your registration number. The operator is active once the registry says valid, pending validation while it cannot answer, and refused otherwise.",
   "portal.register.registration_number": "Operator registration number",

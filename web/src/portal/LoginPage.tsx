@@ -3,7 +3,9 @@
 // Sign-in: the kit's LoginForm on the BFF's /_bff/login. The password
 // crosses the network once and the session token never reaches page
 // script (M21). A refusal shows the API's detail; a lockout counts its
-// Retry-After down. Signed in, the overview is the first page.
+// Retry-After down. Signed in, the overview is the first page. A staff
+// account signs in on the console (realm console), not here: the small
+// link below takes it there.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BFF_LOGIN_PATH, LoginForm } from "@rootxkit/uspace-ui/auth/client";
@@ -29,6 +31,12 @@ export function LoginPage() {
         {t("portal.login.no_account")}{" "}
         <Link href="/register" className="font-semibold text-foreground underline">
           {t("portal.nav.register")}
+        </Link>
+      </p>
+      <p className="m-0 text-center text-xs text-muted-foreground">
+        {t("portal.login.staff")}{" "}
+        <Link href="/console/login" className="font-semibold text-foreground underline" data-testid="staff-sign-in">
+          {t("portal.login.staff_link")}
         </Link>
       </p>
     </section>
