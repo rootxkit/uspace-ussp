@@ -4,7 +4,7 @@
 // T7): when, who (actor type and id), what, and the payload as stored,
 // the reason among it. Read when shown; refreshed with the page.
 import { useCallback } from "react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@rootxkit/uspace-ui/ui";
+import { TABLE_NOWRAP, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, cn } from "@rootxkit/uspace-ui/ui";
 import type { paths } from "@/api/generated/openapi";
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
@@ -34,7 +34,7 @@ export function AuditRows({ entityType, entityId }: { entityType: EntityType; en
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>{t("console.audit.at")}</TableHead>
+              <TableHead className={TABLE_NOWRAP}>{t("console.audit.at")}</TableHead>
               <TableHead>{t("console.audit.actor")}</TableHead>
               <TableHead>{t("console.audit.event")}</TableHead>
               <TableHead>{t("console.audit.payload")}</TableHead>
@@ -43,14 +43,14 @@ export function AuditRows({ entityType, entityId }: { entityType: EntityType; en
           <TableBody>
             {data.events.map((e) => (
               <TableRow key={e.id} data-testid="audit-row" data-event={e.event_type} data-actor={e.actor_id}>
-                <TableCell className="text-xs">
+                <TableCell className={cn("text-xs", TABLE_NOWRAP)}>
                   <Utc iso={e.ts} />
                 </TableCell>
                 <TableCell className="text-xs">
-                  {e.actor_type}: <span className="font-mono">{e.actor_id}</span>
+                  {e.actor_type}: <span className={cn("font-mono", TABLE_NOWRAP)}>{e.actor_id}</span>
                 </TableCell>
-                <TableCell className="text-xs">{e.event_type}</TableCell>
-                <TableCell className="max-w-md break-all font-mono text-xs">{JSON.stringify(e.payload)}</TableCell>
+                <TableCell className={cn("text-xs", TABLE_NOWRAP)}>{e.event_type}</TableCell>
+                <TableCell className="max-w-md font-mono text-xs">{JSON.stringify(e.payload)}</TableCell>
               </TableRow>
             ))}
           </TableBody>

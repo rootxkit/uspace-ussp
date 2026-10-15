@@ -9,7 +9,7 @@
 // without one, said, never left out.
 import { useCallback, useState } from "react";
 import { RequireRole } from "@rootxkit/uspace-ui/auth/client";
-import { Button, Input, Label, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea } from "@rootxkit/uspace-ui/ui";
+import { Button, Input, Label, TABLE_NOWRAP, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea, cn } from "@rootxkit/uspace-ui/ui";
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
 import { useConsoleApi } from "@/lib/consoleApi";
@@ -92,19 +92,23 @@ export function ConsoleOccurrencesPage() {
             {data.reports.map((r) => (
               <TableRow key={r.report_ref} data-testid="occurrence-row" data-critical={r.critical ? "true" : "false"}>
                 <TableCell className="text-xs">
-                  <p className="m-0 font-mono">{r.report_ref}</p>
+                  <p className={cn("m-0 font-mono", TABLE_NOWRAP)}>{r.report_ref}</p>
                   <p className="m-0">
                     {r.kind} · {r.channel} · {r.flagged_by}
                   </p>
                 </TableCell>
-                <TableCell className="text-xs">{r.state}</TableCell>
+                <TableCell className={cn("text-xs", TABLE_NOWRAP)}>{r.state}</TableCell>
                 <TableCell className={`text-xs ${r.critical ? "font-semibold" : ""}`}>
-                  <Utc iso={r.deadline_at} /> ({t("console.occurrences.left")} <Num v={r.time_to_deadline_s / 3600} digits={1} unit="h" />)
+                  <Utc iso={r.deadline_at} className={TABLE_NOWRAP} /> ({t("console.occurrences.left")}{" "}
+                  <span className={TABLE_NOWRAP}>
+                    <Num v={r.time_to_deadline_s / 3600} digits={1} unit="h" />
+                  </span>
+                  )
                   {r.critical && <p className="m-0">{t("console.occurrences.critical")}</p>}
                 </TableCell>
                 <TableCell className="text-xs">
                   {r.attempts}
-                  {r.last_error !== null && <p className="m-0 break-words">{r.last_error}</p>}
+                  {r.last_error !== null && <p className="m-0">{r.last_error}</p>}
                 </TableCell>
               </TableRow>
             ))}
@@ -138,21 +142,21 @@ export function ConsoleRecordsPage() {
             <Table data-testid="record-days">
               <TableHeader>
                 <TableRow>
-                  <TableHead>{t("console.records.date")}</TableHead>
-                  <TableHead>{t("console.records.built")}</TableHead>
-                  <TableHead>{t("console.records.flights")}</TableHead>
+                  <TableHead className={TABLE_NOWRAP}>{t("console.records.date")}</TableHead>
+                  <TableHead className={TABLE_NOWRAP}>{t("console.records.built")}</TableHead>
+                  <TableHead className={TABLE_NOWRAP}>{t("console.records.flights")}</TableHead>
                   <TableHead>{t("console.records.hash")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {data.days.map((d) => (
                   <TableRow key={d.date}>
-                    <TableCell className="text-xs">{d.date}</TableCell>
-                    <TableCell className="text-xs">
+                    <TableCell className={cn("text-xs", TABLE_NOWRAP)}>{d.date}</TableCell>
+                    <TableCell className={cn("text-xs", TABLE_NOWRAP)}>
                       <Utc iso={d.built_at} />
                     </TableCell>
-                    <TableCell className="text-xs">{d.flights}</TableCell>
-                    <TableCell className="break-all font-mono text-xs">{d.content_hash}</TableCell>
+                    <TableCell className={cn("text-xs", TABLE_NOWRAP)}>{d.flights}</TableCell>
+                    <TableCell className="font-mono text-xs">{d.content_hash}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

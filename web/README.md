@@ -18,16 +18,16 @@ USSP_WEB_API_URL=http://127.0.0.1:8080 USSP_WEB_SESSION_SECURE=false pnpm dev
 
 ## The kit
 
-`@rootxkit/uspace-ui` is the GitHub Release asset of `v1.1.0`, pinned by
+`@rootxkit/uspace-ui` is the GitHub Release asset of `v1.1.1`, pinned by
 URL in `package.json`; `pnpm-lock.yaml` records its sha512 integrity and
 `--frozen-lockfile` refuses other bytes (uspace-ui `docs/CONSUMING.md`
 §1). Its `SHA256SUMS` and its signed build provenance were checked before
 pinning:
 
 ```
-gh release download v1.1.0 --repo rootxkit/uspace-ui
+gh release download v1.1.1 --repo rootxkit/uspace-ui
 sha256sum -c SHA256SUMS
-gh attestation verify rootxkit-uspace-ui-1.1.0.tgz --repo rootxkit/uspace-ui \
+gh attestation verify rootxkit-uspace-ui-1.1.1.tgz --repo rootxkit/uspace-ui \
   --signer-workflow rootxkit/uspace-ui/.github/workflows/release.yml
 ```
 
@@ -83,6 +83,12 @@ take GET and HEAD, and any other method is 405 before the proxy.
   (`src/components/frame.tsx`). The sign-in pages, and a page shown
   signed out, have a frame of their own without navigation. A figure
   the API did not give is a dash, never a zero.
+
+- The kit's table cells wrap (1.1.1), so a table fits its container.
+  A cell, or the element inside one, that holds an id, a code, a
+  serial, a time or a number carries the kit's `TABLE_NOWRAP`; `Utc`
+  (`src/portal/common.tsx`) takes it as `className`. Prose, reasons and
+  lists wrap.
 
 - The BFF is `/_bff/login`, `/_bff/logout`, `/_bff/api/*` and nothing
   else (`src/lib/bff/`): the session JWT in `uspace_session` (`HttpOnly;

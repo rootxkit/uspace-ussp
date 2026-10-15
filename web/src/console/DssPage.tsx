@@ -6,7 +6,7 @@
 // with the oldest item and how many retry, the last errors and the
 // subscriptions held.
 import { useCallback } from "react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@rootxkit/uspace-ui/ui";
+import { TABLE_NOWRAP, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, cn } from "@rootxkit/uspace-ui/ui";
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
 import { useConsoleApi } from "@/lib/consoleApi";
@@ -81,7 +81,7 @@ export function ConsoleDssPage() {
                   <TableRow>
                     <TableHead>{t("console.dss.kind")}</TableHead>
                     <TableHead>{t("console.dss.entity")}</TableHead>
-                    <TableHead>{t("console.dss.attempts")}</TableHead>
+                    <TableHead className={TABLE_NOWRAP}>{t("console.dss.attempts")}</TableHead>
                     <TableHead>{t("console.dss.error")}</TableHead>
                     <TableHead>{t("console.dss.next")}</TableHead>
                   </TableRow>
@@ -89,12 +89,12 @@ export function ConsoleDssPage() {
                 <TableBody>
                   {data.last_errors.map((e, i) => (
                     <TableRow key={`${e.kind}-${e.entity_id}-${i}`}>
-                      <TableCell className="text-xs">{e.kind}</TableCell>
-                      <TableCell className="font-mono text-xs">{e.entity_id}</TableCell>
-                      <TableCell className="text-xs">{e.attempts}</TableCell>
-                      <TableCell className="max-w-md break-words text-xs">{e.last_error}</TableCell>
+                      <TableCell className={cn("text-xs", TABLE_NOWRAP)}>{e.kind}</TableCell>
+                      <TableCell className={cn("font-mono text-xs", TABLE_NOWRAP)}>{e.entity_id}</TableCell>
+                      <TableCell className={cn("text-xs", TABLE_NOWRAP)}>{e.attempts}</TableCell>
+                      <TableCell className="max-w-md text-xs">{e.last_error}</TableCell>
                       <TableCell className="text-xs">
-                        {e.done_at !== undefined ? t("console.dss.done") : <Utc iso={e.next_at} />}
+                        {e.done_at !== undefined ? t("console.dss.done") : <Utc iso={e.next_at} className={TABLE_NOWRAP} />}
                       </TableCell>
                     </TableRow>
                   ))}

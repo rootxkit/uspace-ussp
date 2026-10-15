@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { RequireRole } from "@rootxkit/uspace-ui/auth/client";
-import { Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@rootxkit/uspace-ui/ui";
+import { Button, TABLE_NOWRAP, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, cn } from "@rootxkit/uspace-ui/ui";
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
 import { useApi, type Schemas } from "@/lib/api";
@@ -72,7 +72,7 @@ export function IntentsPage() {
             <Table data-testid="intents">
               <TableHeader>
                 <TableRow>
-                  <TableHead>{t("portal.intents.intent")}</TableHead>
+                  <TableHead className={TABLE_NOWRAP}>{t("portal.intents.intent")}</TableHead>
                   <TableHead>{t("portal.decision.state")}</TableHead>
                   <TableHead>{t("portal.intents.decision")}</TableHead>
                   <TableHead>{t("portal.decision.authorisation_number")}</TableHead>
@@ -84,21 +84,21 @@ export function IntentsPage() {
               <TableBody>
                 {list.intents.map((d) => (
                   <TableRow key={d.intent_id} data-testid="intent-row">
-                    <TableCell>
+                    <TableCell className={TABLE_NOWRAP}>
                       <Link href={`/intents/${d.intent_id}`} className="font-mono text-xs underline">
                         {d.intent_id}
                       </Link>
                     </TableCell>
                     <TableCell>{t(`portal.state.${d.state}`)}</TableCell>
                     <TableCell>{t(`portal.decision.decision.${d.decision}`)}</TableCell>
-                    <TableCell className="font-mono text-xs">{d.authorisation_number ?? ""}</TableCell>
-                    <TableCell>
+                    <TableCell className={cn("font-mono text-xs", TABLE_NOWRAP)}>{d.authorisation_number ?? ""}</TableCell>
+                    <TableCell className={TABLE_NOWRAP}>
                       <Utc iso={d.valid_from} />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className={TABLE_NOWRAP}>
                       <Utc iso={d.valid_to} />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className={TABLE_NOWRAP}>
                       <Utc iso={d.updated_at} />
                     </TableCell>
                   </TableRow>

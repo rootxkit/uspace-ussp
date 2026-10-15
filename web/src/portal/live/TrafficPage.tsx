@@ -17,7 +17,7 @@ import { AgeLegend, IdentificationLegend, TrackLegend } from "@rootxkit/uspace-u
 import { useNowMs } from "@rootxkit/uspace-ui/live";
 import type { Trust } from "@rootxkit/uspace-ui/model";
 import { FeedStatusBar, ThresholdsPanel } from "@rootxkit/uspace-ui/status";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@rootxkit/uspace-ui/ui";
+import { TABLE_NOWRAP, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, cn } from "@rootxkit/uspace-ui/ui";
 import { useAppT } from "@/i18n/t";
 import { RequireSession, Utc } from "../common";
 import { IntentPicker } from "../IntentPicker";
@@ -96,13 +96,13 @@ function Live({ intentId }: { intentId: string }) {
           <Table data-testid="tracks">
             <TableHeader>
               <TableRow>
-                <TableHead>{t("portal.traffic.track")}</TableHead>
+                <TableHead className={TABLE_NOWRAP}>{t("portal.traffic.track")}</TableHead>
                 <TableHead>{t("portal.traffic.trust")}</TableHead>
                 <TableHead>{t("portal.traffic.state")}</TableHead>
-                <TableHead>{t("portal.traffic.age")}</TableHead>
+                <TableHead className={TABLE_NOWRAP}>{t("portal.traffic.age")}</TableHead>
                 <TableHead>{t("portal.traffic.alt_amsl")}</TableHead>
-                <TableHead>{t("portal.traffic.speed")}</TableHead>
-                <TableHead>{t("portal.traffic.course")}</TableHead>
+                <TableHead className={TABLE_NOWRAP}>{t("portal.traffic.speed")}</TableHead>
+                <TableHead className={TABLE_NOWRAP}>{t("portal.traffic.course")}</TableHead>
                 <TableHead>{t("portal.traffic.ident")}</TableHead>
                 <TableHead>{t("portal.traffic.report")}</TableHead>
               </TableRow>
@@ -113,9 +113,9 @@ function Live({ intentId }: { intentId: string }) {
                 return (
                   <TableRow key={tr.trackId} data-testid="track-row" data-track-id={tr.trackId} data-own={f?.own === true ? "true" : "false"} aria-selected={selected === tr.trackId}>
                     <TableCell className="font-mono text-xs">
-                      {tr.trackId}
+                      <span className={TABLE_NOWRAP}>{tr.trackId}</span>
                       {f?.own === true && <span className="ml-1 font-sans font-semibold">{t("portal.traffic.own")}</span>}
-                      {f?.callsign !== null && f?.callsign !== undefined && <span className="ml-1 font-sans">{f.callsign}</span>}
+                      {f?.callsign !== null && f?.callsign !== undefined && <span className={cn("ml-1 font-sans", TABLE_NOWRAP)}>{f.callsign}</span>}
                     </TableCell>
                     <TableCell>
                       {kitT(`trust.${tr.trust}`)} · {tr.source}
@@ -124,13 +124,13 @@ function Live({ intentId }: { intentId: string }) {
                       {f === undefined ? "" : t(`portal.traffic.track_state.${f.state}`)}
                       {f?.peerUnavailable === true && <p className="m-0 text-xs">{t("portal.traffic.peer_unavailable")}</p>}
                     </TableCell>
-                    <TableCell>{f === undefined ? "" : fmtNum(f.ageS, 1, "s", lang)}</TableCell>
-                    <TableCell>{fmtNum(tr.altAmslM, 0, "m", lang)}</TableCell>
-                    <TableCell>{fmtSpeed(tr.speedMs, lang)}</TableCell>
-                    <TableCell>{fmtHeading(tr.trackDeg)}</TableCell>
+                    <TableCell className={TABLE_NOWRAP}>{f === undefined ? "" : fmtNum(f.ageS, 1, "s", lang)}</TableCell>
+                    <TableCell className={TABLE_NOWRAP}>{fmtNum(tr.altAmslM, 0, "m", lang)}</TableCell>
+                    <TableCell className={TABLE_NOWRAP}>{fmtSpeed(tr.speedMs, lang)}</TableCell>
+                    <TableCell className={TABLE_NOWRAP}>{fmtHeading(tr.trackDeg)}</TableCell>
                     <TableCell>{kitT(`ident.status.${f?.ident ?? "none"}`)}</TableCell>
                     <TableCell className="text-xs">
-                      <Utc iso={tr.times.capturedAt} />
+                      <Utc iso={tr.times.capturedAt} className={TABLE_NOWRAP} />
                       {tr.emergency && <p className="m-0 font-semibold">{t("portal.traffic.emergency")}</p>}
                     </TableCell>
                   </TableRow>

@@ -15,7 +15,7 @@ import { RequireRole } from "@rootxkit/uspace-ui/auth/client";
 import { SeverityMark, alertSummary, detailNumber, kindName } from "@rootxkit/uspace-ui/alerts";
 import { useLang, useT } from "@rootxkit/uspace-ui/i18n";
 import { isSeverity } from "@rootxkit/uspace-ui/model";
-import { Button, Input, Label, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@rootxkit/uspace-ui/ui";
+import { Button, Input, Label, TABLE_NOWRAP, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, cn } from "@rootxkit/uspace-ui/ui";
 import type { components } from "@/api/generated/openapi";
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
@@ -86,21 +86,21 @@ function Row({ a, onChanged, idPrefix }: { a: AdminAlert; onChanged(): void; idP
         {summary !== null && <p className="m-0 text-xs">{summary}</p>}
         <dl className="m-0 grid grid-cols-[auto_auto] gap-x-2 text-xs">
           <dt>{t("portal.alerts.d_cpa_h")}</dt>
-          <dd className="m-0">
+          <dd className={cn("m-0", TABLE_NOWRAP)}>
             <Num v={detailNumber(a.detail, "d_cpa_h_m")} unit="m" />
           </dd>
           <dt>{t("portal.alerts.d_alt")}</dt>
-          <dd className="m-0">
+          <dd className={cn("m-0", TABLE_NOWRAP)}>
             <Num v={detailNumber(a.detail, "d_alt_m")} unit="m" />
           </dd>
         </dl>
-        <p className="m-0 font-mono text-xs">{a.alert_id}</p>
+        <p className={cn("m-0 font-mono text-xs", TABLE_NOWRAP)}>{a.alert_id}</p>
       </TableCell>
       <TableCell className="text-xs">
         <p className="m-0">
-          {t("console.alerts.flight")} <span className="font-mono">{a.flight_id ?? t("console.none")}</span>
+          {t("console.alerts.flight")} <span className={cn("font-mono", TABLE_NOWRAP)}>{a.flight_id ?? t("console.none")}</span>
         </p>
-        {a.authorisation_number !== undefined && <p className="m-0">{a.authorisation_number}</p>}
+        {a.authorisation_number !== undefined && <p className={cn("m-0", TABLE_NOWRAP)}>{a.authorisation_number}</p>}
       </TableCell>
       <TableCell className="text-xs">
         {t(`portal.alerts.state.${a.state as "raised" | "updated" | "cleared"}`)}
@@ -109,16 +109,16 @@ function Row({ a, onChanged, idPrefix }: { a: AdminAlert; onChanged(): void; idP
           {t("console.alerts.messages", { n: a.messages_recorded })}
         </p>
         <p className="m-0">
-          {t("portal.alerts.raised")} <Utc iso={a.raised_at} />
+          {t("portal.alerts.raised")} <Utc iso={a.raised_at} className={TABLE_NOWRAP} />
         </p>
         <p className="m-0">
-          {t("portal.alerts.updated")} <Utc iso={a.updated_at} />
+          {t("portal.alerts.updated")} <Utc iso={a.updated_at} className={TABLE_NOWRAP} />
         </p>
       </TableCell>
       <TableCell className="text-xs">
         {a.acked_at !== undefined ? (
           <p className="m-0" data-testid="admin-acked">
-            {t("console.alerts.acked_by", { who: a.acked_by ?? "" })} <Utc iso={a.acked_at} />
+            {t("console.alerts.acked_by", { who: a.acked_by ?? "" })} <Utc iso={a.acked_at} className={TABLE_NOWRAP} />
           </p>
         ) : (
           <p className="m-0">{t("portal.alerts.not_acked")}</p>
@@ -128,7 +128,7 @@ function Row({ a, onChanged, idPrefix }: { a: AdminAlert; onChanged(): void; idP
         {a.escalated_at !== undefined ? (
           <div data-testid="admin-escalated">
             <p className="m-0 font-semibold">
-              {t("portal.alerts.escalated")} <Utc iso={a.escalated_at} />
+              {t("portal.alerts.escalated")} <Utc iso={a.escalated_at} className={TABLE_NOWRAP} />
             </p>
             <p className="m-0">{a.escalated_by === undefined ? t("console.alerts.escalated_auto") : t("console.alerts.by", { who: a.escalated_by })}</p>
             {a.escalation_reason !== undefined && <p className="m-0">{a.escalation_reason}</p>}
@@ -139,7 +139,7 @@ function Row({ a, onChanged, idPrefix }: { a: AdminAlert; onChanged(): void; idP
         {a.closed_at !== undefined && (
           <div data-testid="admin-closed">
             <p className="m-0 font-semibold">
-              {t("console.alerts.closed")} <Utc iso={a.closed_at} />
+              {t("console.alerts.closed")} <Utc iso={a.closed_at} className={TABLE_NOWRAP} />
             </p>
             <p className="m-0">
               {t("console.alerts.by", { who: a.closed_by ?? "" })}: {a.close_reason}

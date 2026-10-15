@@ -10,7 +10,7 @@
 // geoid); and the readiness of every dependency of api.
 import { useCallback, useState } from "react";
 import { RequireRole } from "@rootxkit/uspace-ui/auth/client";
-import { Button, Input, Label, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@rootxkit/uspace-ui/ui";
+import { Button, Input, Label, TABLE_NOWRAP, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, cn } from "@rootxkit/uspace-ui/ui";
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
 import { useConsoleApi } from "@/lib/consoleApi";
@@ -101,17 +101,17 @@ export function ConsoleInputsPage() {
             <TableBody>
               {data.sources.map((i) => (
                 <TableRow key={inputName(i)} data-testid="input-row" data-input={inputName(i)} data-state={i.state}>
-                  <TableCell className="font-mono text-xs">{inputName(i)}</TableCell>
+                  <TableCell className={cn("font-mono text-xs", TABLE_NOWRAP)}>{inputName(i)}</TableCell>
                   <TableCell className="text-xs">
                     <p className="m-0 font-semibold">{stateWord(i.state)}</p>
                     {i.disabled !== undefined ? (
                       <p className="m-0" data-testid="disabled-by">
-                        {t("console.input.disabled_by", { who: i.disabled.by_who })} <Utc iso={i.disabled.at} /> ({t(`console.input.by_${i.disabled.by}`)}): {i.disabled.reason}
+                        {t("console.input.disabled_by", { who: i.disabled.by_who })} <Utc iso={i.disabled.at} className={TABLE_NOWRAP} /> ({t(`console.input.by_${i.disabled.by}`)}): {i.disabled.reason}
                       </p>
                     ) : (
                       i.since !== undefined && (
                         <p className="m-0">
-                          {t("console.since")} <Utc iso={i.since} />
+                          {t("console.since")} <Utc iso={i.since} className={TABLE_NOWRAP} />
                         </p>
                       )
                     )}
@@ -123,7 +123,7 @@ export function ConsoleInputsPage() {
                     {i.detail !== undefined && <p className="m-0">{i.detail}</p>}
                   </TableCell>
                   <TableCell className="text-xs">
-                    {i.last_heard_at === undefined ? t("console.inputs.never") : <Utc iso={i.last_heard_at} />}
+                    {i.last_heard_at === undefined ? t("console.inputs.never") : <Utc iso={i.last_heard_at} className={TABLE_NOWRAP} />}
                     {i.age_s !== undefined && (
                       <p className="m-0">
                         {t("console.inputs.age")} <Num v={i.age_s} unit="s" />
@@ -156,7 +156,7 @@ export function ConsoleInputsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{t("console.monitor.instance")}</TableHead>
+                    <TableHead className={TABLE_NOWRAP}>{t("console.monitor.instance")}</TableHead>
                     <TableHead>{t("console.monitor.written")}</TableHead>
                     <TableHead>{t("console.monitor.evaluation")}</TableHead>
                     <TableHead>{t("console.monitor.flights")}</TableHead>
@@ -167,11 +167,11 @@ export function ConsoleInputsPage() {
                 <TableBody>
                   {data.monitor.instances.map((m) => (
                     <TableRow key={m.instance} data-testid="monitor-instance">
-                      <TableCell className="font-mono text-xs">{m.instance}</TableCell>
-                      <TableCell className="text-xs">
+                      <TableCell className={cn("font-mono text-xs", TABLE_NOWRAP)}>{m.instance}</TableCell>
+                      <TableCell className={cn("text-xs", TABLE_NOWRAP)}>
                         <Utc iso={m.at} /> (<Num v={m.age_s} unit="s" />)
                       </TableCell>
-                      <TableCell className="text-xs">
+                      <TableCell className={cn("text-xs", TABLE_NOWRAP)}>
                         <Num v={m.evaluation_period_s} digits={2} unit="s" /> · CPA <Num v={m.cpa_evaluation_period_s} digits={2} unit="s" />
                       </TableCell>
                       <TableCell className="text-xs">

@@ -8,7 +8,7 @@
 // telemetry), the emergency flag and the emergency workflow.
 import Link from "next/link";
 import { useCallback } from "react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@rootxkit/uspace-ui/ui";
+import { TABLE_NOWRAP, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, cn } from "@rootxkit/uspace-ui/ui";
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
 import { useConsoleApi } from "@/lib/consoleApi";
@@ -57,10 +57,10 @@ export function ConsoleFlightsPage() {
             {data.flights.map((f) => (
               <TableRow key={f.flight_id} data-testid="flight-row" data-flight-id={f.flight_id} data-serial={f.uas_serial}>
                 <TableCell className="text-xs">
-                  <p className="m-0 font-mono">{f.flight_id}</p>
-                  <p className="m-0">{f.uas_serial}</p>
+                  <p className={cn("m-0 font-mono", TABLE_NOWRAP)}>{f.flight_id}</p>
+                  <p className={cn("m-0", TABLE_NOWRAP)}>{f.uas_serial}</p>
                   <p className="m-0">
-                    {t("console.flights.started")} <Utc iso={f.started_at} />
+                    {t("console.flights.started")} <Utc iso={f.started_at} className={TABLE_NOWRAP} />
                   </p>
                 </TableCell>
                 <TableCell className="text-xs">
@@ -68,8 +68,8 @@ export function ConsoleFlightsPage() {
                     t("console.flights.no_intent")
                   ) : (
                     <>
-                      <p className="m-0 font-mono">{f.intent_id}</p>
-                      <p className="m-0">{f.authorisation_number}</p>
+                      <p className={cn("m-0 font-mono", TABLE_NOWRAP)}>{f.intent_id}</p>
+                      <p className={cn("m-0", TABLE_NOWRAP)}>{f.authorisation_number}</p>
                       <p className="m-0">
                         {f.intent_state ?? t("console.none")} · DSS {f.dss_state ?? t("console.none")}
                       </p>
@@ -83,17 +83,19 @@ export function ConsoleFlightsPage() {
                     <>
                       <p className="m-0 font-semibold">{f.conformance.state}</p>
                       {f.conformance.reason !== undefined && <p className="m-0">{f.conformance.reason}</p>}
-                      <Utc iso={f.conformance.at} />
+                      <Utc iso={f.conformance.at} className={TABLE_NOWRAP} />
                     </>
                   )}
                 </TableCell>
-                <TableCell className="font-mono text-xs">{f.client_id ?? t("console.none")}</TableCell>
+                <TableCell className={cn("font-mono text-xs", TABLE_NOWRAP)}>{f.client_id ?? t("console.none")}</TableCell>
                 <TableCell className="text-xs">
                   {f.last_sample_at === undefined ? (
                     t("console.flights.no_sample")
                   ) : (
                     <>
-                      <Utc iso={f.last_sample_at} /> (<Num v={f.last_sample_age_s} unit="s" />)
+                      <span className={TABLE_NOWRAP}>
+                        <Utc iso={f.last_sample_at} /> (<Num v={f.last_sample_age_s} unit="s" />)
+                      </span>
                     </>
                   )}
                 </TableCell>

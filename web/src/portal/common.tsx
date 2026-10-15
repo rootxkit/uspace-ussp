@@ -32,10 +32,10 @@ export function Num({ v, digits = 1, unit }: { v: number | null | undefined; dig
   return <>{v === null || v === undefined ? DASH : fmtNum(v, digits, unit, lang)}</>;
 }
 
-/** An instant in UTC with the seconds, or a dash. */
-export function Utc({ iso }: { iso: string | null | undefined }) {
+/** An instant in UTC with the seconds, or a dash; `className` lets a table cell keep it on one line (`TABLE_NOWRAP`). */
+export function Utc({ iso, className }: { iso: string | null | undefined; className?: string }) {
   const { lang } = useLang();
-  return <time dateTime={iso ?? undefined}>{iso === null || iso === undefined ? DASH : fmtTimeUTC(iso, lang, { seconds: true })}</time>;
+  return <time dateTime={iso ?? undefined} className={className}>{iso === null || iso === undefined ? DASH : fmtTimeUTC(iso, lang, { seconds: true })}</time>;
 }
 
 /** A page heading. */
