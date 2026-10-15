@@ -218,8 +218,9 @@ export USSP_EXPECT_VERSION="${SMOKE_VERSION:-}"
 #                          publishes the first one from the console; the
 #                          defaults apply (pending GCAA)
 #   monitor:adsb_rx        no e-conspicuity receiver (USSP_ADSB_SOURCE)
-#   monitor:terrain        no pinned terrain source is published yet
-accepts=(--accept api:operating_status --accept monitor:adsb_rx --accept monitor:terrain)
+#   monitor:terrain,       no pinned terrain source is published yet
+#   api:terrain            (USSP_TERRAIN_DIR); the api then fails closed on AGL
+accepts=(--accept api:operating_status --accept monitor:adsb_rx --accept monitor:terrain --accept api:terrain)
 for s in telemetry-ingest rid-sp monitor traffic-ws tsdb-writer; do accepts+=(--accept "$s:policy"); done
 
 # ---- 3 -----------------------------------------------------------------------
