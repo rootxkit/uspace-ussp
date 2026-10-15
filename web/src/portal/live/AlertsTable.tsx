@@ -14,7 +14,7 @@ import { useState } from "react";
 import { RequireRole } from "@rootxkit/uspace-ui/auth/client";
 import { SeverityMark, alertSummary, detailNumber, kindName } from "@rootxkit/uspace-ui/alerts";
 import { useLang, useT } from "@rootxkit/uspace-ui/i18n";
-import { Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@rootxkit/uspace-ui/ui";
+import { Button, TABLE_NOWRAP, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, cn } from "@rootxkit/uspace-ui/ui";
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
 import { useApi } from "@/lib/api";
@@ -73,24 +73,24 @@ export function AlertsTable({ alerts, testId = "alerts", onAcked }: { alerts: re
                 <TableCell>
                   <p className="m-0 font-semibold">{kindName(kitT, a.kind)}</p>
                   {view !== null && <p className="m-0 text-xs">{alertSummary(view, kitT, lang)}</p>}
-                  <p className="m-0 font-mono text-xs">{a.alertId}</p>
+                  <p className={cn("m-0 font-mono text-xs", TABLE_NOWRAP)}>{a.alertId}</p>
                 </TableCell>
                 <TableCell>
                   <dl className="m-0 grid grid-cols-[auto_auto] gap-x-2 text-xs">
                     <dt>{t("portal.alerts.t_cpa")}</dt>
-                    <dd className="m-0">
+                    <dd className={cn("m-0", TABLE_NOWRAP)}>
                       <Num v={detailNumber(a.detail, "t_cpa_s")} unit="s" />
                     </dd>
                     <dt>{t("portal.alerts.d_cpa_h")}</dt>
-                    <dd className="m-0">
+                    <dd className={cn("m-0", TABLE_NOWRAP)}>
                       <Num v={detailNumber(a.detail, "d_cpa_h_m")} unit="m" />
                     </dd>
                     <dt>{t("portal.alerts.d_alt")}</dt>
-                    <dd className="m-0">
+                    <dd className={cn("m-0", TABLE_NOWRAP)}>
                       <Num v={detailNumber(a.detail, "d_alt_m")} unit="m" />
                     </dd>
                     <dt>{t("portal.alerts.d_now")}</dt>
-                    <dd className="m-0">
+                    <dd className={cn("m-0", TABLE_NOWRAP)}>
                       <Num v={detailNumber(a.detail, "d_horizontal_now_m")} unit="m" />
                     </dd>
                   </dl>
@@ -100,7 +100,7 @@ export function AlertsTable({ alerts, testId = "alerts", onAcked }: { alerts: re
                     t("portal.alerts.no_peer")
                   ) : (
                     <>
-                      <span className="font-mono">{a.peerTrackId}</span>
+                      <span className={cn("font-mono", TABLE_NOWRAP)}>{a.peerTrackId}</span>
                       {a.peerTrust !== null && <span> ({kitT(`trust.${a.peerTrust}`)})</span>}
                     </>
                   )}
@@ -111,22 +111,22 @@ export function AlertsTable({ alerts, testId = "alerts", onAcked }: { alerts: re
                   {a.received !== undefined && a.received > 1 && <p className="m-0">{t("portal.alerts.received", { n: a.received })}</p>}
                   {a.escalatedAt !== null && (
                     <p className="m-0 font-semibold" data-testid="escalated">
-                      {t("portal.alerts.escalated")} <Utc iso={a.escalatedAt} />
+                      {t("portal.alerts.escalated")} <Utc iso={a.escalatedAt} className={TABLE_NOWRAP} />
                     </p>
                   )}
                 </TableCell>
                 <TableCell className="text-xs">
                   <p className="m-0">
-                    {t("portal.alerts.raised")} <Utc iso={a.raisedAt} />
+                    {t("portal.alerts.raised")} <Utc iso={a.raisedAt} className={TABLE_NOWRAP} />
                   </p>
                   <p className="m-0">
-                    {t("portal.alerts.updated")} <Utc iso={a.updatedAt} />
+                    {t("portal.alerts.updated")} <Utc iso={a.updatedAt} className={TABLE_NOWRAP} />
                   </p>
                 </TableCell>
                 <TableCell className="text-xs">
                   {ackedAt !== null ? (
                     <p className="m-0" data-testid="acked">
-                      {t("portal.alerts.acked")} <Utc iso={ackedAt} />
+                      {t("portal.alerts.acked")} <Utc iso={ackedAt} className={TABLE_NOWRAP} />
                     </p>
                   ) : a.state === "cleared" ? (
                     ""

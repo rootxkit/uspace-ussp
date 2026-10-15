@@ -84,6 +84,12 @@ take GET and HEAD, and any other method is 405 before the proxy.
   signed out, have a frame of their own without navigation. A figure
   the API did not give is a dash, never a zero.
 
+- The kit's table cells wrap (1.1.1), so a table fits its container.
+  A cell, or the element inside one, that holds an id, a code, a
+  serial, a time or a number carries the kit's `TABLE_NOWRAP`; `Utc`
+  (`src/portal/common.tsx`) takes it as `className`. Prose, reasons and
+  lists wrap.
+
 - The BFF is `/_bff/login`, `/_bff/logout`, `/_bff/api/*` and nothing
   else (`src/lib/bff/`): the session JWT in `uspace_session` (`HttpOnly;
   SameSite=Strict`, `Secure` unless `USSP_WEB_SESSION_SECURE=false`), the

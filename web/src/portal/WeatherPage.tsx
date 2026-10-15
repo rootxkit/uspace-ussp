@@ -13,7 +13,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@rootxkit/uspace-ui/api";
 import { fmtAge, useLang } from "@rootxkit/uspace-ui/i18n";
 import type { BBox } from "@rootxkit/uspace-ui/map";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@rootxkit/uspace-ui/ui";
+import { TABLE_NOWRAP, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, cn } from "@rootxkit/uspace-ui/ui";
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useRuntimeConfig } from "@/components/Providers";
 import { useAppT } from "@/i18n/t";
@@ -37,7 +37,7 @@ function Fields({ f }: { f: Schemas["WeatherFields"] }) {
         )}
       </dd>
       <dt>{t("portal.weather.visibility")}</dt>
-      <dd className="m-0">
+      <dd className={cn("m-0", TABLE_NOWRAP)}>
         {f.visibility_at_least && "≥ "}
         <Num v={f.visibility_m} digits={0} unit="m" />
       </dd>
@@ -46,11 +46,11 @@ function Fields({ f }: { f: Schemas["WeatherFields"] }) {
         {t(`portal.weather.ceiling.${f.ceiling}`)} <Num v={f.cloud_base_ft_agl} digits={0} unit="ft AGL" />
       </dd>
       <dt>{t("portal.weather.temp")}</dt>
-      <dd className="m-0">
+      <dd className={cn("m-0", TABLE_NOWRAP)}>
         <Num v={f.temp_c} digits={0} unit="°C" /> / <Num v={f.dew_point_c} digits={0} unit="°C" />
       </dd>
       <dt>{t("portal.weather.qnh")}</dt>
-      <dd className="m-0">
+      <dd className={cn("m-0", TABLE_NOWRAP)}>
         <Num v={f.qnh_hpa} digits={0} unit="hPa" />
       </dd>
       <dt>{t("portal.weather.indicators")}</dt>
@@ -144,10 +144,10 @@ export function WeatherPage() {
                         {!p.in_force && <p className="m-0 text-xs">{t("portal.weather.not_in_force")}</p>}
                       </TableCell>
                       <TableCell>
-                        <Utc iso={p.observed_at} /> ({fmtAge(p.age_s, lang)})
+                        <Utc iso={p.observed_at} className={TABLE_NOWRAP} /> ({fmtAge(p.age_s, lang)})
                       </TableCell>
                       <TableCell>
-                        <Utc iso={p.valid_from} /> – <Utc iso={p.valid_to} />
+                        <Utc iso={p.valid_from} className={TABLE_NOWRAP} /> – <Utc iso={p.valid_to} className={TABLE_NOWRAP} />
                       </TableCell>
                       <TableCell>
                         <Fields f={p.fields} />

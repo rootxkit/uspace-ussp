@@ -10,7 +10,7 @@ import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
 import { RequireRole } from "@rootxkit/uspace-ui/auth/client";
 import { CheckboxField, EnumField, Form, TextField } from "@rootxkit/uspace-ui/form";
-import { Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@rootxkit/uspace-ui/ui";
+import { Button, TABLE_NOWRAP, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, cn } from "@rootxkit/uspace-ui/ui";
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
 import { useApi, type Schemas } from "@/lib/api";
@@ -73,14 +73,14 @@ function ClientRow({ c, operatorId, onChanged, onSecret }: { c: Schemas["ClientI
   const path = { operator_id: operatorId, client_id: c.client_id };
   return (
     <TableRow data-testid={`client-${c.client_id}`}>
-      <TableCell className="font-mono text-xs">{c.client_id}</TableCell>
+      <TableCell className={cn("font-mono text-xs", TABLE_NOWRAP)}>{c.client_id}</TableCell>
       <TableCell>{c.scopes.join(" ")}</TableCell>
-      <TableCell>{c.status}</TableCell>
+      <TableCell className={TABLE_NOWRAP}>{c.status}</TableCell>
       <TableCell>
-        <Utc iso={c.created_at} />
+        <Utc iso={c.created_at} className={TABLE_NOWRAP} />
         {c.previous_valid_until !== undefined && (
           <p className="m-0 text-xs">
-            {t("portal.clients.previous_valid_until")}: <Utc iso={c.previous_valid_until} />
+            {t("portal.clients.previous_valid_until")}: <Utc iso={c.previous_valid_until} className={TABLE_NOWRAP} />
           </p>
         )}
       </TableCell>
@@ -88,7 +88,7 @@ function ClientRow({ c, operatorId, onChanged, onSecret }: { c: Schemas["ClientI
         <ul className="m-0 flex list-none flex-col gap-1 p-0" aria-label={t("portal.clients.serials")}>
           {c.serials.map((s) => (
             <li key={s.serial} className="flex items-center gap-2">
-              <span className="font-mono text-xs">{s.serial}</span>
+              <span className={cn("font-mono text-xs", TABLE_NOWRAP)}>{s.serial}</span>
               <RequireRole anyOf={["operator_admin"]}>
                 <Button
                   size="sm"
@@ -222,9 +222,9 @@ function Clients({ operatorId }: { operatorId: string }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{t("portal.clients.client_id")}</TableHead>
+                  <TableHead className={TABLE_NOWRAP}>{t("portal.clients.client_id")}</TableHead>
                   <TableHead>{t("portal.clients.scopes")}</TableHead>
-                  <TableHead>{t("portal.clients.status")}</TableHead>
+                  <TableHead className={TABLE_NOWRAP}>{t("portal.clients.status")}</TableHead>
                   <TableHead>{t("portal.clients.created_at")}</TableHead>
                   <TableHead>{t("portal.clients.serials")}</TableHead>
                   <TableHead>{t("portal.clients.actions")}</TableHead>

@@ -15,7 +15,7 @@ import { z } from "zod";
 import { RequireRole } from "@rootxkit/uspace-ui/auth/client";
 import { Form, NumberField, TextField, UTCDateTimeField } from "@rootxkit/uspace-ui/form";
 import type { FieldError } from "@rootxkit/uspace-ui/model";
-import { Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@rootxkit/uspace-ui/ui";
+import { Button, TABLE_NOWRAP, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, cn } from "@rootxkit/uspace-ui/ui";
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { catalogueOf, type AppKey } from "@/i18n/catalogues";
 import { useAppT } from "@/i18n/t";
@@ -66,7 +66,7 @@ function Conflicts({ d }: { d: Decision }) {
           <TableHead>{t("portal.decision.conflict.effect")}</TableHead>
           <TableHead>{t("portal.decision.conflict.item")}</TableHead>
           <TableHead>{t("portal.decision.conflict.ref")}</TableHead>
-          <TableHead>{t("portal.decision.conflict.volume")}</TableHead>
+          <TableHead className={TABLE_NOWRAP}>{t("portal.decision.conflict.volume")}</TableHead>
           <TableHead>{t("portal.decision.conflict.overlap")}</TableHead>
           <TableHead>{t("portal.decision.conflict.detail")}</TableHead>
         </TableRow>
@@ -75,12 +75,12 @@ function Conflicts({ d }: { d: Decision }) {
         {d.conflicts.map((c, i) => (
           <TableRow key={`${c.kind}-${c.reason}-${i}`} data-testid="conflict" data-reason={c.reason}>
             <TableCell>{t(`portal.decision.kind.${c.kind}`)}</TableCell>
-            <TableCell className="font-mono text-xs">{c.reason}</TableCell>
+            <TableCell className={cn("font-mono text-xs", TABLE_NOWRAP)}>{c.reason}</TableCell>
             <TableCell>{t(`portal.decision.effect.${c.effect}`)}</TableCell>
             <TableCell>{itemName(t, c.item)}</TableCell>
-            <TableCell className="font-mono text-xs">{c.ref ?? ""}</TableCell>
-            <TableCell>{c.volume === null ? "" : c.volume + 1}</TableCell>
-            <TableCell>
+            <TableCell className={cn("font-mono text-xs", TABLE_NOWRAP)}>{c.ref ?? ""}</TableCell>
+            <TableCell className={TABLE_NOWRAP}>{c.volume === null ? "" : c.volume + 1}</TableCell>
+            <TableCell className={TABLE_NOWRAP}>
               {c.overlap === null ? (
                 ""
               ) : (
@@ -183,7 +183,7 @@ function DecisionView({ d }: { d: Decision }) {
         <Table data-testid="volumes-amsl">
           <TableHeader>
             <TableRow>
-              <TableHead>{t("portal.decision.volume")}</TableHead>
+              <TableHead className={TABLE_NOWRAP}>{t("portal.decision.volume")}</TableHead>
               <TableHead>{t("portal.decision.lower_w84")}</TableHead>
               <TableHead>{t("portal.decision.upper_w84")}</TableHead>
               <TableHead>{t("portal.decision.undulation")}</TableHead>
@@ -194,20 +194,20 @@ function DecisionView({ d }: { d: Decision }) {
           <TableBody>
             {d.volumes_amsl.map((v, i) => (
               <TableRow key={i}>
-                <TableCell>{i + 1}</TableCell>
-                <TableCell>
+                <TableCell className={TABLE_NOWRAP}>{i + 1}</TableCell>
+                <TableCell className={TABLE_NOWRAP}>
                   <Num v={v.lower_w84_m} unit="m" />
                 </TableCell>
-                <TableCell>
+                <TableCell className={TABLE_NOWRAP}>
                   <Num v={v.upper_w84_m} unit="m" />
                 </TableCell>
-                <TableCell>
+                <TableCell className={TABLE_NOWRAP}>
                   <Num v={v.undulation_m} unit="m" />
                 </TableCell>
-                <TableCell>
+                <TableCell className={TABLE_NOWRAP}>
                   <Num v={v.lower_amsl_m} unit="m" />
                 </TableCell>
-                <TableCell>
+                <TableCell className={TABLE_NOWRAP}>
                   <Num v={v.upper_amsl_m} unit="m" />
                 </TableCell>
               </TableRow>
