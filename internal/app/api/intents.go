@@ -67,6 +67,11 @@ func startIntents(ctx context.Context, rt *proc.Runtime, pol *policy.Service, ci
 	proc.Publish(rt, "intent", counters)
 	g, mapped, why := loadGeoid(rt)
 	rt.Health.Register(DepGeoid, false, geoidProbe(g, mapped, why))
+	dem, cells, demWhy := loadTerrain(rt.Config.TerrainDir)
+	rt.Health.Register(DepTerrain, false, terrainProbe(dem, cells, demWhy))
+	if dem == nil {
+		rt.Logger.Warn(demWhy)
+	}
 	current := func() policy.Record {
 		if r, ok := pol.Current(); ok {
 			return r
@@ -76,6 +81,10 @@ func startIntents(ctx context.Context, rt *proc.Runtime, pol *policy.Service, ci
 	d := &intent.Decider{
 		CIS: cisState.Evaluator, Integrity: cisState.Cache, Registry: reg, DSS: dss, Weather: wx,
 		SystemID: rt.Config.SystemID, Counters: counters,
+	}
+	if dem != nil {
+		// A nil interface without terrain, never a nil *terrain.Store.
+		d.Terrain = demGround{store: dem, counters: counters}
 	}
 	pub := bus.NewPublisher(rt.Bus, counters)
 	svc := &intent.Service{
