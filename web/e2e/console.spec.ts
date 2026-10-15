@@ -420,5 +420,17 @@ test("accessibility of the console pages (axe, WCAG 2.2 AA)", async ({ browser, 
     expect(r.passes, path).toBeGreaterThan(10);
     expect(r.violations, `${path}: ${JSON.stringify(r.violations.map((v) => ({ id: v.id, nodes: v.nodes.map((n) => n.target) })))}`).toEqual([]);
   }
+  // The dark scheme, as the top bar's toggle keeps it: the same pages at the same level.
+  await page.getByTestId("scheme-toggle").click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  for (const path of ["/console", "/console/alerts", "/console/inputs", "/console/policy"]) {
+    await page.goto(path);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.getByTestId("inputs-strip")).not.toContainText("Loading");
+    const r = await new AxeBuilder(page).analyze();
+    expect(r.passes, `${path} dark`).toBeGreaterThan(10);
+    expect(r.violations, `${path} dark: ${JSON.stringify(r.violations.map((v) => ({ id: v.id, nodes: v.nodes.map((n) => n.target) })))}`).toEqual([]);
+  }
   await page.context().close();
 });

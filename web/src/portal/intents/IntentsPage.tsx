@@ -10,7 +10,8 @@ import { Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow }
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
 import { useApi, type Schemas } from "@/lib/api";
-import { PageHeading, RequireSession, Utc } from "../common";
+import { PageFrame } from "@/components/frame";
+import { RequireSession, Utc } from "../common";
 
 const STATES = ["pending_validation", "pending_dss", "pending_authority", "accepted", "activated", "nonconforming", "contingent", "ended", "rejected", "withdrawn"] as const;
 
@@ -35,8 +36,7 @@ export function IntentsPage() {
     };
   }, [api, state]);
   return (
-    <section aria-labelledby="intents-heading" className="flex flex-col gap-3">
-      <PageHeading id="intents-heading">{t("portal.intents.heading")}</PageHeading>
+    <PageFrame id="intents-heading" title={t("portal.intents.heading")}>
       <RequireSession>
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 text-sm">
@@ -101,6 +101,6 @@ export function IntentsPage() {
             </Table>
           ))}
       </RequireSession>
-    </section>
+    </PageFrame>
   );
 }

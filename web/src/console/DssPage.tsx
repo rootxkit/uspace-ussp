@@ -10,7 +10,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
 import { useConsoleApi } from "@/lib/consoleApi";
-import { Fact, PageHeading, Utc } from "@/portal/common";
+import { Fact, Utc } from "@/portal/common";
+import { PageFrame } from "@/components/frame";
 import { body, usePoll } from "./usePoll";
 
 const DSS_PERIOD_MS = 5000;
@@ -21,8 +22,7 @@ export function ConsoleDssPage() {
   const read = useCallback(() => api.GET("/v1/admin/dss").then(body), [api]);
   const { data, error, failingSinceMs } = usePoll(read, DSS_PERIOD_MS);
   return (
-    <section aria-labelledby="dss-heading" className="flex flex-col gap-3">
-      <PageHeading id="dss-heading">{t("console.dss.heading")}</PageHeading>
+    <PageFrame id="dss-heading" title={t("console.dss.heading")}>
       {failingSinceMs !== null && (
         <p role="alert" className="m-0 font-semibold">
           {t("console.unread_since")} <Utc iso={new Date(failingSinceMs).toISOString()} />
@@ -116,6 +116,6 @@ export function ConsoleDssPage() {
           </section>
         </>
       )}
-    </section>
+    </PageFrame>
   );
 }

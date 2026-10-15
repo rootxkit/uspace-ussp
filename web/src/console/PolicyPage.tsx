@@ -17,7 +17,8 @@ import type { components } from "@/api/generated/openapi";
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
 import { useConsoleApi } from "@/lib/consoleApi";
-import { PageHeading, Utc } from "@/portal/common";
+import { Utc } from "@/portal/common";
+import { PageFrame } from "@/components/frame";
 import { body, usePoll } from "./usePoll";
 
 type Version = components["schemas"]["PolicyVersion"];
@@ -150,9 +151,7 @@ export function ConsolePolicyPage() {
   // Kept here: the editor starts afresh on the version it stored.
   const [stored, setStored] = useState<Version | null>(null);
   return (
-    <section aria-labelledby="policy-heading" className="flex flex-col gap-3">
-      <PageHeading id="policy-heading">{t("console.policy.heading")}</PageHeading>
-      <p className="m-0 text-sm text-[var(--us-text-muted)]">{t("console.policy.note")}</p>
+    <PageFrame id="policy-heading" title={t("console.policy.heading")} description={t("console.policy.note")}>
       <ProblemNotice error={error} />
       {data !== null && (
         <>
@@ -221,6 +220,6 @@ export function ConsolePolicyPage() {
           </section>
         </>
       )}
-    </section>
+    </PageFrame>
   );
 }

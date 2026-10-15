@@ -17,8 +17,9 @@ import { CheckboxField, EnumField, Form, NumberField, TextField, UTCDateTimeFiel
 import type { FieldError } from "@rootxkit/uspace-ui/model";
 import { useAppT } from "@/i18n/t";
 import { useApi, type Schemas } from "@/lib/api";
-import { PageHeading, RequireSession } from "../common";
+import { RequireSession } from "../common";
 import { PortalMap } from "../PortalMap";
+import { PageFrame } from "@/components/frame";
 import { VolumeDrawing, VolumeFields, outlineOf, type Outline } from "./VolumeEditor";
 
 const MODES = ["VLOS", "BVLOS"] as const;
@@ -185,9 +186,7 @@ export function IntentFormPage() {
   const [outline, setOutline] = useState<Outline>({ kind: "polygon", vertices: [] });
   const [initial] = useState(defaults);
   return (
-    <section aria-labelledby="new-intent-heading" className="flex flex-col gap-3">
-      <PageHeading id="new-intent-heading">{t("portal.intent.new_heading")}</PageHeading>
-      <p className="m-0 text-sm text-[var(--us-text-muted)]">{t("portal.intent.new_note")}</p>
+    <PageFrame id="new-intent-heading" title={t("portal.intent.new_heading")} description={t("portal.intent.new_note")}>
       <RequireSession>
         <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
           <div className="flex flex-col gap-2">
@@ -248,6 +247,6 @@ export function IntentFormPage() {
           </Form>
         </div>
       </RequireSession>
-    </section>
+    </PageFrame>
   );
 }

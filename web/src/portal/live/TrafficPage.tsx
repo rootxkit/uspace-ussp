@@ -19,11 +19,12 @@ import type { Trust } from "@rootxkit/uspace-ui/model";
 import { FeedStatusBar, ThresholdsPanel } from "@rootxkit/uspace-ui/status";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@rootxkit/uspace-ui/ui";
 import { useAppT } from "@/i18n/t";
-import { PageHeading, RequireSession, Utc } from "../common";
+import { RequireSession, Utc } from "../common";
 import { IntentPicker } from "../IntentPicker";
 import { PortalMap } from "../PortalMap";
 import { AlertsTable } from "./AlertsTable";
 import { DegradedList, StreamFacts } from "./StreamFacts";
+import { PageFrame, useShellFeed } from "@/components/frame";
 import { TRAIL_POINTS, useTraffic } from "./useStreams";
 
 /** How often ages are redrawn. Display-only. */
@@ -35,6 +36,7 @@ function Live({ intentId }: { intentId: string }) {
   const { lang } = useLang();
   const nowMs = useNowMs(TICK_MS);
   const traffic = useTraffic(intentId);
+  useShellFeed(traffic.feed);
   const { feed, product, tracks, facts } = traffic;
   const [selected, setSelected] = useState<string | null>(null);
   const list = useMemo(() => [...tracks.values()].sort((a, b) => a.trackId.localeCompare(b.trackId)), [tracks]);
@@ -145,13 +147,11 @@ function Live({ intentId }: { intentId: string }) {
 export function TrafficPage({ intentId }: { intentId: string | null }) {
   const t = useAppT();
   return (
-    <section aria-labelledby="traffic-heading" className="flex flex-col gap-3">
-      <PageHeading id="traffic-heading">{t("portal.traffic.heading")}</PageHeading>
-      <p className="m-0 text-sm text-[var(--us-text-muted)]">{t("portal.traffic.note")}</p>
+    <PageFrame id="traffic-heading" title={t("portal.traffic.heading")} description={t("portal.traffic.note")}>
       <RequireSession>
         <IntentPicker path="/traffic" current={intentId} />
         {intentId !== null && <Live key={intentId} intentId={intentId} />}
       </RequireSession>
-    </section>
+    </PageFrame>
   );
 }

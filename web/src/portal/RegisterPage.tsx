@@ -10,9 +10,13 @@ import { useState } from "react";
 import Link from "next/link";
 import { z } from "zod";
 import { Form, TextField } from "@rootxkit/uspace-ui/form";
+import { PageHeader, Panel, StatusBadge } from "@rootxkit/uspace-ui/ui";
 import { useAppT } from "@/i18n/t";
 import { useApi, type Schemas } from "@/lib/api";
-import { Fact, PageHeading, Utc } from "./common";
+import { Fact, Utc } from "./common";
+
+/** The tone a registration state is shown with; the words say the state. */
+const STATUS_TONE = { active: "ok", pending_validation: "warning", refused: "critical" } as const;
 
 const schema = z.object({
   registration_number: z.string().trim().min(1).max(32),
@@ -27,9 +31,9 @@ export function RegisterPage() {
   const api = useApi();
   const [operator, setOperator] = useState<Schemas["Operator"] | null>(null);
   return (
-    <section aria-labelledby="register-heading" className="flex max-w-xl flex-col gap-3">
-      <PageHeading id="register-heading">{t("portal.register.heading")}</PageHeading>
-      <p className="m-0 text-sm text-[var(--us-text-muted)]">{t("portal.register.note")}</p>
+    <section aria-labelledby="register-heading" className="flex flex-col gap-6">
+      <PageHeader title={<span id="register-heading">{t("portal.register.heading")}</span>} description={t("portal.register.note")} />
+      <Panel>
       <Form
         schema={schema}
         defaults={{ registration_number: "", display_name: "", contact_email: "", admin_username: "", admin_password: "" }}
@@ -45,10 +49,11 @@ export function RegisterPage() {
         <TextField name="admin_username" labelKey="portal.register.admin_username" autoComplete="username" required />
         <TextField name="admin_password" labelKey="portal.register.admin_password" autoComplete="new-password" required />
       </Form>
+      </Panel>
       {operator !== null && (
-        <section aria-labelledby="registered-heading" role="status" data-testid="registered" data-status={operator.status} className="rounded border border-[var(--us-border)] p-3">
+        <section aria-labelledby="registered-heading" role="status" data-testid="registered" data-status={operator.status} className="rounded-panel border border-border bg-card p-4 shadow-panel">
           <h2 id="registered-heading" className="m-0 text-base font-semibold">
-            {t(`portal.operator.status.${operator.status}`)}
+            <StatusBadge tone={STATUS_TONE[operator.status]}>{t(`portal.operator.status.${operator.status}`)}</StatusBadge>
           </h2>
           <dl className="m-0 mt-2 grid gap-2 sm:grid-cols-2">
             <Fact term={t("portal.register.registration_number")}>{operator.registration_number}</Fact>
@@ -63,7 +68,7 @@ export function RegisterPage() {
             </Fact>
           </dl>
           <p className="m-0 mt-2 text-sm">{t(`portal.operator.next.${operator.status}`)}</p>
-          <Link href="/login" className="underline">
+          <Link href="/login" className="font-semibold underline">
             {t("portal.nav.login")}
           </Link>
         </section>

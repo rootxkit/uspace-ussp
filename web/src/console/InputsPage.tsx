@@ -14,8 +14,9 @@ import { Button, Input, Label, Table, TableBody, TableCell, TableHead, TableHead
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
 import { useConsoleApi } from "@/lib/consoleApi";
-import { Num, PageHeading, Utc } from "@/portal/common";
+import { Num, Utc } from "@/portal/common";
 import { inputName, useInputState, useInputs, type Input as InputItem } from "./InputsStrip";
+import { PageFrame } from "@/components/frame";
 import { body, usePoll } from "./usePoll";
 
 const SOURCES_PERIOD_MS = 5000;
@@ -74,9 +75,7 @@ export function ConsoleInputsPage() {
     switches.reload();
   };
   return (
-    <section aria-labelledby="inputs-heading" className="flex flex-col gap-3">
-      <PageHeading id="inputs-heading">{t("console.inputs.heading")}</PageHeading>
-      <p className="m-0 text-sm text-[var(--us-text-muted)]">{t("console.inputs.note")}</p>
+    <PageFrame id="inputs-heading" title={t("console.inputs.heading")} description={t("console.inputs.note")}>
       <ProblemNotice error={inputs.error} />
       {data !== null && (
         <>
@@ -242,6 +241,6 @@ export function ConsoleInputsPage() {
           </Table>
         )}
       </section>
-    </section>
+    </PageFrame>
   );
 }

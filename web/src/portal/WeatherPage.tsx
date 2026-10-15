@@ -18,7 +18,8 @@ import { ProblemNotice } from "@/components/ProblemNotice";
 import { useRuntimeConfig } from "@/components/Providers";
 import { useAppT } from "@/i18n/t";
 import { useApi, type Schemas } from "@/lib/api";
-import { Fact, Num, PageHeading, RequireSession, Utc } from "./common";
+import { Fact, Num, RequireSession, Utc } from "./common";
+import { PageFrame } from "@/components/frame";
 import { PortalMap, ViewBox, bboxParam } from "./PortalMap";
 
 function Fields({ f }: { f: Schemas["WeatherFields"] }) {
@@ -86,9 +87,7 @@ export function WeatherPage() {
     };
   }, [api, bbox]);
   return (
-    <section aria-labelledby="weather-heading" className="flex flex-col gap-3">
-      <PageHeading id="weather-heading">{t("portal.weather.heading")}</PageHeading>
-      <p className="m-0 text-sm text-[var(--us-text-muted)]">{t("portal.weather.note")}</p>
+    <PageFrame id="weather-heading" title={t("portal.weather.heading")} description={t("portal.weather.note")}>
       <RequireSession>
         <PortalMap className="h-[280px]">
           <ViewBox margin={cfg.geoMarginFraction} onChange={onBox} />
@@ -163,6 +162,6 @@ export function WeatherPage() {
           </>
         )}
       </RequireSession>
-    </section>
+    </PageFrame>
   );
 }

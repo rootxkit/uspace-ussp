@@ -13,7 +13,8 @@ import { Button, Input, Label, Table, TableBody, TableCell, TableHead, TableHead
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
 import { useConsoleApi } from "@/lib/consoleApi";
-import { Num, PageHeading, Utc } from "@/portal/common";
+import { Num, Utc } from "@/portal/common";
+import { PageFrame } from "@/components/frame";
 import { body, usePoll } from "./usePoll";
 
 const PERIOD_MS = 10000;
@@ -69,8 +70,7 @@ export function ConsoleOccurrencesPage() {
   const read = useCallback(() => api.GET("/v1/admin/occurrences").then(body), [api]);
   const { data, error, reload } = usePoll(read, PERIOD_MS);
   return (
-    <section aria-labelledby="occurrences-heading" className="flex flex-col gap-3">
-      <PageHeading id="occurrences-heading">{t("console.occurrences.heading")}</PageHeading>
+    <PageFrame id="occurrences-heading" title={t("console.occurrences.heading")}>
       <ProblemNotice error={error} />
       {data?.delivery !== undefined && data.delivery !== null && (
         <p role="alert" className="m-0 text-sm" data-testid="occurrences-delivery">
@@ -113,7 +113,7 @@ export function ConsoleOccurrencesPage() {
       )}
       {data?.truncated === true && <p className="m-0">{t("portal.list.truncated")}</p>}
       <FlagForm onFlagged={reload} />
-    </section>
+    </PageFrame>
   );
 }
 
@@ -123,9 +123,7 @@ export function ConsoleRecordsPage() {
   const read = useCallback(() => api.GET("/v1/admin/records/days").then(body), [api]);
   const { data, error } = usePoll(read, PERIOD_MS * 6);
   return (
-    <section aria-labelledby="records-heading" className="flex flex-col gap-3">
-      <PageHeading id="records-heading">{t("console.records.heading")}</PageHeading>
-      <p className="m-0 text-sm text-[var(--us-text-muted)]">{t("console.records.note")}</p>
+    <PageFrame id="records-heading" title={t("console.records.heading")} description={t("console.records.note")}>
       <ProblemNotice error={error} />
       {data !== null && (
         <>
@@ -162,6 +160,6 @@ export function ConsoleRecordsPage() {
           )}
         </>
       )}
-    </section>
+    </PageFrame>
   );
 }
