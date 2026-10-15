@@ -25,12 +25,18 @@ aircraft**, and it informs rather than resolves.
 
 ## Status
 
-Scaffold (WP-0, milestone S-M0). The seven processes start, report
-their dependencies on `/readyz` and `/metrics`, and do no work yet;
-`docs/PLAN.md` is the implementation plan (architecture, data model,
-published API, bus events, security, performance budgets, testing,
-deployment, milestones S-M0..S-M6, 21 work packages in 7 waves, open
-questions) and `docs/WORKPACKAGES/` the briefs.
+Work packages WP-0 through WP-21 are built (milestones S-M0..S-M6): the
+seven processes and the `ussp-test-interfaces` conformance process run,
+the operator portal and console are under `web/`, and a staging
+deployment and the `uss_qualifier` conformance run exist. Nothing is
+tagged yet; `CHANGELOG.md` lists the work under Unreleased. Open
+conformance findings are in `docs/BACKLOG.md`. `docs/PLAN.md` is the
+implementation plan (architecture, data model, published API, bus
+events, security, performance budgets, testing, deployment, milestones,
+work packages in waves, open questions) and `docs/WORKPACKAGES/` the
+briefs; `docs/RUNBOOKS/` has the runbooks and run records.
+
+Live demo: https://uspace-ussp.chikox.net
 
 ```
 make tools          # once: the pinned linters
@@ -43,10 +49,10 @@ make compose-up     # every container, built locally; make compose-down removes 
 Configuration is environment only: `deploy/ENV.md`, or
 `ussp-<process> --help`.
 
-## Layout (planned)
+## Layout
 
 ```
-cmd/            api, telemetry-ingest, rid-sp, monitor, traffic-ws, dss-sync, tsdb-writer (+ ussp-dev)
+cmd/            api, telemetry-ingest, rid-sp, monitor, traffic-ws, dss-sync, tsdb-writer (+ test-interfaces, ussp-dev)
 internal/       domain packages shared by the processes (see docs/PLAN.md §4)
 api/            openapi.yaml (the published national API) and the pinned F3411/F3548 files
 schemas/        JSON Schemas this system produces (telemetry, alert, intent, coordination, traffic product)
