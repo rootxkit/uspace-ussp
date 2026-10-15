@@ -31,12 +31,14 @@ import {
   Panel,
   StatTile,
   StatusBadge,
+  TABLE_NOWRAP,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
+  cn,
   type StatTileStatus,
 } from "@rootxkit/uspace-ui/ui";
 import { useRouter } from "next/navigation";
@@ -433,10 +435,10 @@ export function ConsoleMapPage() {
           <Table data-testid="console-tracks">
             <TableHeader>
               <TableRow>
-                <TableHead>{t("portal.traffic.track")}</TableHead>
+                <TableHead className={TABLE_NOWRAP}>{t("portal.traffic.track")}</TableHead>
                 <TableHead>{t("portal.traffic.trust")}</TableHead>
                 <TableHead>{t("portal.traffic.state")}</TableHead>
-                <TableHead>{t("portal.traffic.age")}</TableHead>
+                <TableHead className={TABLE_NOWRAP}>{t("portal.traffic.age")}</TableHead>
                 <TableHead>{t("portal.traffic.alt_amsl")}</TableHead>
                 <TableHead>{t("portal.traffic.report")}</TableHead>
               </TableRow>
@@ -446,15 +448,15 @@ export function ConsoleMapPage() {
                 const f = facts.get(tr.trackId);
                 return (
                   <TableRow key={tr.trackId} data-testid="console-track-row" data-track-id={tr.trackId} data-state={f?.state ?? ""}>
-                    <TableCell className="font-mono text-xs">{tr.trackId}</TableCell>
+                    <TableCell className={cn("font-mono text-xs", TABLE_NOWRAP)}>{tr.trackId}</TableCell>
                     <TableCell>
                       {kitT(`trust.${tr.trust}`)} · {tr.source}
                     </TableCell>
                     <TableCell>{f === undefined ? "" : t(`portal.traffic.track_state.${f.state}`)}</TableCell>
-                    <TableCell>{f === undefined ? "" : fmtNum(f.ageS, 1, "s", lang)}</TableCell>
-                    <TableCell>{fmtNum(tr.altAmslM, 0, "m", lang)}</TableCell>
+                    <TableCell className={TABLE_NOWRAP}>{f === undefined ? "" : fmtNum(f.ageS, 1, "s", lang)}</TableCell>
+                    <TableCell className={TABLE_NOWRAP}>{fmtNum(tr.altAmslM, 0, "m", lang)}</TableCell>
                     <TableCell className="text-xs">
-                      <Utc iso={tr.times.capturedAt} />
+                      <Utc iso={tr.times.capturedAt} className={TABLE_NOWRAP} />
                       {tr.emergency && <p className="m-0 font-semibold">{t("portal.traffic.emergency")}</p>}
                     </TableCell>
                   </TableRow>

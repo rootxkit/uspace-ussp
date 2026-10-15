@@ -12,7 +12,7 @@ import Link from "next/link";
 import { useCallback, useState } from "react";
 import { ApiError } from "@rootxkit/uspace-ui/api";
 import { RequireRole } from "@rootxkit/uspace-ui/auth/client";
-import { Button, Input, Label, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea } from "@rootxkit/uspace-ui/ui";
+import { Button, Input, Label, TABLE_NOWRAP, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea, cn } from "@rootxkit/uspace-ui/ui";
 import type { components } from "@/api/generated/openapi";
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
@@ -258,13 +258,13 @@ export function ConsoleEmergencyPage() {
             {data.cases.map((c) => (
               <TableRow key={c.case_id} data-testid="case-row" data-case-id={c.case_id} data-open={c.closed_at === undefined ? "true" : "false"}>
                 <TableCell className="text-xs">
-                  <Link href={`/console/emergency/${c.flight_id}`} className="font-mono underline">
+                  <Link href={`/console/emergency/${c.flight_id}`} className={cn("font-mono underline", TABLE_NOWRAP)}>
                     {c.flight_id}
                   </Link>
-                  <p className="m-0">{c.uas_serial}</p>
+                  <p className={cn("m-0", TABLE_NOWRAP)}>{c.uas_serial}</p>
                 </TableCell>
                 <TableCell className="text-xs">
-                  {c.opened_by} <Utc iso={c.opened_at} />
+                  {c.opened_by} <Utc iso={c.opened_at} className={TABLE_NOWRAP} />
                 </TableCell>
                 <TableCell className="text-xs">{c.reason}</TableCell>
                 <TableCell className="text-xs">
@@ -272,7 +272,7 @@ export function ConsoleEmergencyPage() {
                     t("console.emergency.open_state")
                   ) : (
                     <>
-                      {t("console.emergency.closed")} <Utc iso={c.closed_at} />: {c.outcome}
+                      {t("console.emergency.closed")} <Utc iso={c.closed_at} className={TABLE_NOWRAP} />: {c.outcome}
                     </>
                   )}
                 </TableCell>

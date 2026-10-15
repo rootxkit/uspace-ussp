@@ -12,7 +12,7 @@
 // the change; it judges nothing.
 import { useCallback, useMemo, useState } from "react";
 import { RequireRole } from "@rootxkit/uspace-ui/auth/client";
-import { Badge, Button, Input, Label, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea } from "@rootxkit/uspace-ui/ui";
+import { Badge, Button, Input, Label, TABLE_NOWRAP, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Textarea } from "@rootxkit/uspace-ui/ui";
 import type { components } from "@/api/generated/openapi";
 import { ProblemNotice } from "@/components/ProblemNotice";
 import { useAppT } from "@/i18n/t";
@@ -96,7 +96,9 @@ function Editor({ current, pending, onStored }: { current: Version; pending: rea
             return (
               <TableRow key={k}>
                 <TableCell className="font-mono text-xs">
-                  <Label htmlFor={id}>{k}</Label>
+                  <Label htmlFor={id} className={TABLE_NOWRAP}>
+                    {k}
+                  </Label>
                   {pending.includes(k) && (
                     <Badge variant="outline" className="ml-2">
                       {t("console.policy.pending_gcaa")}
@@ -169,7 +171,7 @@ export function ConsolePolicyPage() {
                     .map((k) => (
                       <TableRow key={k}>
                         <TableCell className="font-mono text-xs">
-                          {k}
+                          <span className={TABLE_NOWRAP}>{k}</span>
                           {data.pending_gcaa.includes(k) && (
                             <Badge variant="outline" className="ml-2">
                               {t("console.policy.pending_gcaa")}
