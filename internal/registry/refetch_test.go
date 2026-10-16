@@ -375,3 +375,30 @@ func TestTwoInstancesRefetchOnce(t *testing.T) {
 		t.Fatalf("the re-fetched answer was deleted: %v", ops)
 	}
 }
+
+// KeysOf derives the keys exactly as a lookup caches them (the bound
+// keys pgstore reads are matched against the cached rows and the
+// changes by these): an operator by its compare key, never its secret
+// part; a serial normalised; a pilot trimmed; an empty part has none.
+func TestKeysOfIsTheLookupsKeys(t *testing.T) {
+	got := KeysOf(Query{Operator: " " + opSecret + " ", Serial: " " + snA + " ", Pilot: " " + pilotA + " "})
+	want := []Key{{EntityOperator, opNumber}, {EntityUAS, snA}, {EntityPilot, pilotA}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	f := newFixture(t)
+	f.fake.SetOperator(opNumber, "active", nil)
+	f.fake.SetUAS(snA, "active", "", "")
+	f.fake.SetPilot(pilotA, "active")
+	if _, err := f.cache.Validate(t.Context(), []Query{{Operator: opSecret, Serial: snA, Pilot: pilotA}}, PurposeIdentification); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range got {
+		if _, ok := f.store.row(k); !ok {
+			t.Errorf("no cached row under %v", k)
+		}
+	}
+	if ks := KeysOf(Query{Serial: "  "}); len(ks) != 0 {
+		t.Fatalf("an empty query has keys %v", ks)
+	}
+}

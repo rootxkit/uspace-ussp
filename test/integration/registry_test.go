@@ -5,8 +5,11 @@ package integration
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
+
+	"github.com/rootxkit/uspace-core/core"
 
 	"github.com/rootxkit/uspace-ussp/internal/registry"
 	"github.com/rootxkit/uspace-ussp/internal/registry/pgstore"
@@ -309,5 +312,100 @@ func TestIntegrationRegistryCacheOnPostgres(t *testing.T) {
 	}
 	if count(t, relOwner(t), "SELECT count(*) FROM events WHERE event_type = 'registry_validated' AND payload::text LIKE '%xyz%'") != 0 {
 		t.Fatal("the secret part was recorded")
+	}
+}
+
+// The bound keys on PostgreSQL (plan step D): the serial and operator of
+// an open flight and the serial, operator and pilot of an active intent
+// are bound, each as a lookup caches it; an ended flight and an ended
+// intent are not (E-01 pair); the read is bounded and a read cut at its
+// bound is counted (E-10). Then the staging order on PostgreSQL: a
+// lookup before the feed has seen the registration, the key bound to
+// the open flight, the poll: the answer is replaced under the page's
+// next_since and the projection never loses the key.
+func TestIntegrationRegistryBoundKeys(t *testing.T) {
+	cleanRegistry(t)
+	ctx := context.Background()
+	app := appPool(t)
+	u := unique()
+	var operatorID string
+	if err := app.QueryRow(ctx, `INSERT INTO operator_accounts (authority_registration_number, display_name, contact_email, status)
+		VALUES ($1, 'Bound keys operator', 'bound@example.invalid', 'active') RETURNING id::text`, "GEO-TEST-B"+u).Scan(&operatorID); err != nil {
+		t.Fatal(err)
+	}
+	clientID := "client-bound-" + u
+	if _, err := app.Exec(ctx, `INSERT INTO oauth_clients (client_id, operator_id, secret_hash, scopes, status)
+		VALUES ($1, $2::uuid, 'x', '{ussp.intents}', 'active')`, clientID, operatorID); err != nil {
+		t.Fatal(err)
+	}
+	opReg, pilot := "GEOTESTB"+u+"-abc", "GEO-TEST-PILOT-"+u
+	for _, in := range []struct{ serial, state string }{{"TESTBI" + u, "activated"}, {"TESTBE" + u, "ended"}} {
+		if _, err := app.Exec(ctx, `INSERT INTO operational_intents (id, operator_id, client_id, uas_serial, local_state, volumes, volumes_amsl,
+			    envelope_geom, time_start, time_end, operator_reg, pilot_ref)
+			VALUES (gen_random_uuid(), $1::uuid, $2, $3, $4, '[]', '[]',
+			        ST_GeogFromText('SRID=4326;POLYGON((44.7 41.7,44.8 41.7,44.8 41.8,44.7 41.7))'), now(), now() + interval '1 hour', $5, $6)`,
+			operatorID, clientID, in.serial, in.state, opReg, pilot); err != nil {
+			t.Fatal(err)
+		}
+	}
+	openSerial := "test-bf-" + u
+	if _, err := app.Exec(ctx, `INSERT INTO flights (uas_serial, operator_reg, started_at) VALUES ($1, NULL, now()),
+		($2, NULL, now() - interval '1 hour')`, openSerial, "TESTBX"+u); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Exec(ctx, `UPDATE flights SET ended_at = now(), end_reason = 'landed' WHERE uas_serial = $1`, "TESTBX"+u); err != nil {
+		t.Fatal(err)
+	}
+	counters := &core.Counters{}
+	st := pgstore.Store{S: appStore(t), Counters: counters}
+	bound, err := st.Bound(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := append(registry.KeysOf(registry.Query{Serial: "TESTBI" + u, Operator: opReg, Pilot: pilot}), registry.KeysOf(registry.Query{Serial: openSerial})...)
+	for _, k := range want {
+		if !slices.Contains(bound, k) {
+			t.Errorf("%v is not bound", k)
+		}
+	}
+	for _, k := range append(registry.KeysOf(registry.Query{Serial: "TESTBE" + u}), registry.KeysOf(registry.Query{Serial: "TESTBX" + u})...) {
+		if slices.Contains(bound, k) {
+			t.Errorf("%v is bound", k)
+		}
+	}
+	if counters.Get(pgstore.CounterBoundTruncated) != 0 {
+		t.Fatal("an uncut read was counted cut")
+	}
+	cut := pgstore.Store{S: appStore(t), Counters: counters, BoundLimit: 1}
+	if few, err := cut.Bound(ctx); err != nil || len(few) == 0 || len(few) > 3 || counters.Get(pgstore.CounterBoundTruncated) != 1 {
+		t.Fatalf("a read of one row: %v %v, cut %d", few, err, counters.Get(pgstore.CounterBoundTruncated))
+	}
+
+	fake := authority.New()
+	defer fake.Close()
+	client, err := registry.NewClient(registry.ClientConfig{BaseURL: fake.URL(), Tokens: authority.Tokens{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proj := registry.NewMemoryProjector()
+	cache := registry.NewCache(registry.CacheConfig{Client: client, Store: st, Projector: proj, Audit: st})
+	feed := registry.NewFeed(registry.FeedConfig{Client: client, Store: st, Projector: proj, Bound: st, Cache: cache, Counters: cache.Counters()})
+	fake.SetUAS(openSerial, "active", "", "")
+	if _, err := cache.Validate(ctx, []registry.Query{{Serial: openSerial}}, registry.PurposeIdentification); err != nil {
+		t.Fatal(err)
+	}
+	key := registry.KeysOf(registry.Query{Serial: openSerial})[0]
+	if err := feed.Poll(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, since, err := st.Entries(ctx, []registry.Key{key})
+	if err != nil || len(got) != 1 || got[0].Status != registry.StatusValid || got[0].FetchedSince != since || since != 1 {
+		t.Fatalf("after the poll: %+v %d %v", got, since, err)
+	}
+	if fake.Requests("validate") != 2 || cache.Counters().Get(registry.CounterFeedRefetched) != 1 {
+		t.Fatalf("validate %d refetched %d", fake.Requests("validate"), cache.Counters().Get(registry.CounterFeedRefetched))
+	}
+	if es, _ := proj.Snapshot(); !slices.ContainsFunc(es, func(e registry.Entry) bool { return e.Key == key && e.FetchedSince == 1 }) {
+		t.Fatalf("projection %+v", es)
 	}
 }

@@ -65,6 +65,21 @@ SELECT entity_type, key
  WHERE entity_type = sqlc.arg(entity_type) AND key_fold = sqlc.arg(key_fold)
    AND fetched_since >= sqlc.arg(seq)::bigint;
 
+-- name: RegistryBoundKeys :many
+-- The registry keys an aircraft in flight or about to fly needs now:
+-- the serial and operator of every open flight (flights_open_idx) and
+-- the serial, operator and pilot of every active intent (the open
+-- intents' index), at most max_rows. The feed re-fetches these when a
+-- change names them, and its sweep keeps them fresh.
+SELECT f.uas_serial, f.operator_reg, NULL::text AS pilot_ref
+  FROM flights f
+ WHERE f.ended_at IS NULL
+UNION
+SELECT i.uas_serial, i.operator_reg, i.pilot_ref
+  FROM operational_intents i
+ WHERE i.local_state IN ('accepted', 'activated', 'nonconforming', 'contingent')
+ LIMIT sqlc.arg(max_rows);
+
 -- name: RecordRegistryInvalidation :exec
 INSERT INTO registry_invalidations (entity_type, key_fold, seq, at)
 VALUES (sqlc.arg(entity_type), sqlc.arg(key_fold), sqlc.arg(seq), now())

@@ -17,8 +17,10 @@ const DepRegistry = "registry"
 
 // Registry is what the api process holds of the registry validity
 // cache: the cache intent, accounts and GET /v1/registry/validate call,
-// and its feed. The answers are projected to the KV bucket
-// registry_validity the hot path reads.
+// and its feed, which re-fetches the keys of the open flights and
+// active intents a change names and sweeps them (registry.Feed). The
+// answers are projected to the KV bucket registry_validity the hot
+// path reads.
 type Registry struct {
 	Cache *registry.Cache
 	Feed  *registry.Feed
@@ -42,18 +44,24 @@ func startRegistry(ctx context.Context, rt *proc.Runtime, current func() policy.
 	}
 	var st *pgstore.Store
 	if rt.Store != nil && rt.Store.Rel != nil {
-		st = &pgstore.Store{S: rt.Store}
+		st = &pgstore.Store{S: rt.Store, Counters: counters}
 	}
 	projection := registry.BusProjector{KV: kv}
 	cc := registry.CacheConfig{
 		Client: client, Projector: projection, Counters: counters, Logger: rt.Logger.With("component", "registry"),
 		TTL: func() registry.TTL { return registry.TTLFromPolicy(current()) },
 	}
-	fc := registry.FeedConfig{Client: client, Projector: projection, Counters: counters, Logger: rt.Logger.With("component", "registry_feed")}
 	if st != nil {
-		cc.Store, cc.Audit, fc.Store = *st, *st, *st
+		cc.Store, cc.Audit = *st, *st
 	}
-	out := &Registry{Cache: registry.NewCache(cc), Feed: registry.NewFeed(fc)}
+	cache := registry.NewCache(cc)
+	fc := registry.FeedConfig{Client: client, Projector: projection, Cache: cache, Counters: counters,
+		Revalidate: func() registry.Revalidate { return registry.RevalidateFromPolicy(current()) },
+		Logger:     rt.Logger.With("component", "registry_feed")}
+	if st != nil {
+		fc.Store, fc.Bound = *st, *st
+	}
+	out := &Registry{Cache: cache, Feed: registry.NewFeed(fc)}
 	rt.Health.Register(DepRegistry, false, registry.ReadinessProbe(out.Cache, out.Feed))
 	if client != nil && st != nil {
 		rt.Go(ctx, out.Feed.Run)

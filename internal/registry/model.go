@@ -239,6 +239,20 @@ func serialKey(raw string) (key, fold string) {
 // pilotKey is the cache key of a pilot id.
 func pilotKey(raw string) string { return strings.TrimSpace(raw) }
 
+// KeysOf are the cache keys of q's operator number, serial and pilot
+// id, as a lookup of q caches them; an empty part has none.
+func KeysOf(q Query) []Key {
+	var n normalised
+	if v := strings.TrimSpace(q.Operator); v != "" {
+		n.operatorKey, n.operatorPublic = operatorKey(v)
+	}
+	if v := strings.TrimSpace(q.Serial); v != "" {
+		n.serial, n.serialFold = serialKey(v)
+	}
+	n.pilot = pilotKey(q.Pilot)
+	return n.keys()
+}
+
 // entryKeyFold is the fold key an entity's key is invalidated under.
 func entryKeyFold(e EntityType, key string) string {
 	if e == EntityUAS {

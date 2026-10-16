@@ -82,6 +82,48 @@ func (q *Queries) RecordRegistryInvalidation(ctx context.Context, arg RecordRegi
 	return err
 }
 
+const registryBoundKeys = `-- name: RegistryBoundKeys :many
+SELECT f.uas_serial, f.operator_reg, NULL::text AS pilot_ref
+  FROM flights f
+ WHERE f.ended_at IS NULL
+UNION
+SELECT i.uas_serial, i.operator_reg, i.pilot_ref
+  FROM operational_intents i
+ WHERE i.local_state IN ('accepted', 'activated', 'nonconforming', 'contingent')
+ LIMIT $1
+`
+
+type RegistryBoundKeysRow struct {
+	UasSerial   string  `json:"uas_serial"`
+	OperatorReg *string `json:"operator_reg"`
+	PilotRef    *string `json:"pilot_ref"`
+}
+
+// The registry keys an aircraft in flight or about to fly needs now:
+// the serial and operator of every open flight (flights_open_idx) and
+// the serial, operator and pilot of every active intent (the open
+// intents' index), at most max_rows. The feed re-fetches these when a
+// change names them, and its sweep keeps them fresh.
+func (q *Queries) RegistryBoundKeys(ctx context.Context, maxRows int32) ([]RegistryBoundKeysRow, error) {
+	rows, err := q.db.Query(ctx, registryBoundKeys, maxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RegistryBoundKeysRow
+	for rows.Next() {
+		var i RegistryBoundKeysRow
+		if err := rows.Scan(&i.UasSerial, &i.OperatorReg, &i.PilotRef); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const registryFeedCursor = `-- name: RegistryFeedCursor :one
 SELECT since, etag, polled_at, extract(epoch FROM now() - polled_at)::float8 AS age_s
   FROM registry_feed

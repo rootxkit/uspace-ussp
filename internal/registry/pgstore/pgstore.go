@@ -13,15 +13,71 @@ import (
 	"slices"
 	"time"
 
+	"github.com/rootxkit/uspace-core/core"
+
 	"github.com/rootxkit/uspace-ussp/internal/registry"
 	"github.com/rootxkit/uspace-ussp/internal/store"
 	"github.com/rootxkit/uspace-ussp/internal/store/relational"
 )
 
-// Store is registry.Store on the relational database.
-type Store struct{ S *store.Store }
+// Store is registry.Store on the relational database, and the
+// registry.BoundKeys of its flights and intents.
+type Store struct {
+	S *store.Store
+	// BoundLimit bounds the rows Bound reads (MaxBoundRows when 0).
+	BoundLimit int
+	// Counters, when set, count a Bound cut at its limit
+	// (CounterBoundTruncated).
+	Counters *core.Counters
+}
 
-var _ registry.Store = Store{}
+var (
+	_ registry.Store     = Store{}
+	_ registry.BoundKeys = Store{}
+)
+
+// MaxBoundRows bounds the open flights and active intents Bound reads
+// (E-10); each names at most three keys.
+const MaxBoundRows = 20_000
+
+// CounterBoundTruncated counts reads of the bound keys cut at
+// BoundLimit: the keys beyond it are neither re-fetched nor swept.
+const CounterBoundTruncated = "registry_bound_truncated"
+
+// Bound implements registry.BoundKeys: the cache keys of the serial and
+// operator of every open flight and the serial, operator and pilot of
+// every active intent, each once.
+func (p Store) Bound(ctx context.Context) ([]registry.Key, error) {
+	limit := p.BoundLimit
+	if limit <= 0 || limit > MaxBoundRows {
+		limit = MaxBoundRows
+	}
+	rows, err := p.S.Queries().RegistryBoundKeys(ctx, int32(limit))
+	if err != nil {
+		return nil, fmt.Errorf("bound keys: %w", err)
+	}
+	if len(rows) >= limit && p.Counters != nil {
+		p.Counters.Inc(CounterBoundTruncated)
+	}
+	var out []registry.Key
+	seen := map[registry.Key]bool{}
+	for _, r := range rows {
+		q := registry.Query{Serial: r.UasSerial}
+		if r.OperatorReg != nil {
+			q.Operator = *r.OperatorReg
+		}
+		if r.PilotRef != nil {
+			q.Pilot = *r.PilotRef
+		}
+		for _, k := range registry.KeysOf(q) {
+			if !seen[k] {
+				seen[k] = true
+				out = append(out, k)
+			}
+		}
+	}
+	return out, nil
+}
 
 // Entries reads the cached entries of keys and the feed's cursor.
 func (p Store) Entries(ctx context.Context, keys []registry.Key) ([]registry.Cached, int64, error) {

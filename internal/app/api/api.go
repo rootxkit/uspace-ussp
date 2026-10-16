@@ -271,6 +271,9 @@ func routes(ctx context.Context, mux *http.ServeMux, rt *proc.Runtime) error {
 			Durable: FlightsConsumer, FilterSubject: bus.SubjectFlightAll, MaxAckPending: 256,
 		})},
 		Store: isaRecorder{S: rt.Store, Planner: planner}, Counters: flightCounters, Logger: rt.Logger,
+		// Spec 02 F8: a lookup on each new serial seen (a flight
+		// without an intent never passed through a decision).
+		Warmer: reg.Cache,
 	}
 	rt.Go(ctx, rec.Run)
 	// The conformance states of monitor (WP-10, PLAN §3.2): the
