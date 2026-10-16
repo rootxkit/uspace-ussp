@@ -133,7 +133,28 @@ Every other registry counter in the lines is 0 or equal throughout:
 | 13:00:21 | 167 | 56 | 54 |
 
 `registry_cache_hit` went from 2 to 6 and `registry_warmed` from 1 to 2
-at the 12:52:21 line, when the flight's intent was submitted.
+at the 12:52:21 line.
+
+### Suspension mid-flight
+
+Observed while the flight of intent `8f8980d8-aae8-4c12-a092-932b7d88393a`
+was streaming. The values are from SELECTs on
+`ussp_relational.registry_validity`.
+
+| Time (UTC) | Event | Observed |
+|---|---|---|
+| 13:02:39 | Authority: UAS `TESTA000DEMFLT1` set to Suspended by `demo-registrar` | |
+| 13:02:51.13 | USSP row for `uas` `TESTA000DEMFLT1` | `status` `suspended`, `fetched_since` 5 |
+| about 13:03:37 | Authority: the UAS set to Active | |
+| 13:03:51.14 | USSP row for the UAS | `status` `valid`, `fetched_since` 6 |
+
+The row was never absent and never `registry_unavailable` in between,
+as read; the reads were at about 13:02:57 and 13:03:11, not continuous.
+A re-read at 13:04:14 shows the row `valid`, `fetched_since` 6,
+`fetched_at` 13:03:51.135Z. No alert was raised (the flight was outside
+any zone at the time; a SELECT at 13:04Z finds no `alerts` row raised after 12:57Z).
+This confirms the presence path of plan item 4 (a suspended registration
+is held as `suspended`, not dropped) on staging.
 
 **Not in the logs.** `registry_feed_polled`, `registry_feed_invalidated`,
 `registry_feed_refetched`, `registry_feed_retained`,
