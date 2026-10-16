@@ -63,7 +63,9 @@ alerts), WP-10/11 (`monitor` zones).
   <first problem>)`, previous version kept). Features written with
   `geom`, limits in metres with their references, `applicable_from/to`
   from `limitedApplicability` (an open period = null), `zone_type`;
-  `cis_datasets` row with `fetched_at`, `signature_ok`.
+  `cis_datasets` row with `fetched_at`, `signature_ok` and
+  `provenance` (`publisher` | `cisp_expiry`, NULL while held; 00032,
+  its CHECK validated by 00033).
 - `cis.Projection` (`zone/applicable/v1` per `cell5` into KV
   `cis_current`): per dataset version, the `zones.Zone` list (via
   `ed318.ToZones` with `NOAADaylight`) indexed by cell, plus the U-space
@@ -166,9 +168,10 @@ choice; each is in the PR body as well.
   `DetachedVerifier` as the dataset's publisher: the authority for
   `zones`, `uspace_airspace` and `ussp_list`, the ANSP for
   `restrictions` (the CISP's `auth.PublisherOf`). The keys are
-  `USSP_CIS_PUBLISHER_KEYS` (`authority=jwks_url,ansp=jwks_url`): the
-  CISP does not serve the publishers' keys, its `/.well-known/jwks.json`
-  holds its own signing keys only. A missing signature, one that does
+  `USSP_CIS_PUBLISHER_KEYS` (`authority=jwks_url,ansp=jwks_url,cisp=jwks_url`):
+  the CISP does not serve the publishers' keys, its
+  `/.well-known/jwks.json` holds its own signing keys only, which the
+  `cisp` entry names (for the expiry versions below). A missing signature, one that does
   not verify, an `X-Publisher-Kid` that is not the signature's kid, or
   no keys (not configured, not fetched yet) holds the version: stored
   with `signature_ok` false, never used, never loaded by a warm start,
@@ -192,15 +195,49 @@ choice; each is in the PR body as well.
   and the bound can be raised. The iat bound is not the replay guard
   here: versions only move forward (one at or below the version held is
   never installed) and the CISP checks `body_sha256` before serving.
-- What the signature does not cover (spec gap, for the CISP): the
-  collection read from `GET /v1/{dataset}` is built by the CISP from its
-  stored rows and is not compared with the signed bytes (for
-  `restrictions` the signed bytes are the ANSP's request, not a
-  collection). A version the CISP makes itself (a restriction expiring:
-  publisher `system`) carries no publisher signature and is held until
-  the ANSP's next signed version. The CISP's `X-CIS-Signature` is not
-  verified: it is over the same version bytes. The pull is over TLS with
-  a `cis.read` token.
+- What the served collection is compared with: the collection read
+  from `GET /v1/{dataset}` (or built from a delta) is compared feature
+  by feature with the signed bytes (`signedMatches`; for `restrictions`
+  the signed bytes are the ANSP's request, and its feature must be in
+  the version as signed). The pull is over TLS with a `cis.read` token.
+- The CISP's expiry versions (spec 02 F3 erratum 2026-10-16). When a
+  restriction reaches its `ends_at` the CISP publishes a restrictions
+  version itself (reason `restriction_expired`, publisher
+  `uspace-cisp`): no `X-Publisher-Signature`, its bytes at
+  `/v1/restrictions/versions/{v}` the CISP's record `{op: "expire",
+  restriction_id, feature_id, ends_at, at}`. Such a version is
+  installed, not held, when (`expiryProvenance`): `X-CIS-Signature`
+  over those bytes verifies with the `cisp` key of
+  `USSP_CIS_PUBLISHER_KEYS` under `USSP_CIS_PUBLISHER_SIG_MAX_AGE_S`
+  (the CISP makes it at the first serve, so its `iat` is not the
+  publication time); `op` is `expire`; `at` is not later than this
+  process's clock plus `USSP_CIS_EXPIRY_SKEW_S` (default 30 s, 0 to
+  300); and, compared with the CISP's restrictions version in use
+  (`Cache.restrBase`, without the ANSP's direct overlay, `cis_*`
+  members left out), the version removes one or more features and
+  adds or changes none, every removed feature has a single
+  `limitedApplicability` period whose `endDateTime` (the end bound to
+  the ANSP's signature when it was installed) is at or before `at`, and
+  `feature_id` is one of them. Installed, it is stored with provenance
+  `cisp_expiry`, confirms like any version (its age resets, the hold is
+  gone) and the next ANSP-signed version installs on top of it. Any
+  other case holds it as before, each with its reason ("no
+  X-Publisher-Signature, and not an expiry the CISP may make: ..."):
+  no or a failing `X-CIS-Signature` (or no `cisp` key), another `op`,
+  a record without `feature_id` (a CISP from before the erratum), a
+  feature added or changed, a removal before its signed end, an `at`
+  beyond the skew, no restrictions version in use to compare with (a
+  fresh start). `cis_expiry_installed` and `cis_expiry_held` count
+  them (a hold also counts `cis_publisher_untrusted`). Every other
+  dataset without a publisher signature is held as before. The
+  Evaluator applies `limitedApplicability` itself regardless: a
+  restriction past its signed end does not apply whether or not the
+  expiry version has arrived; the expiry version is version and
+  freshness bookkeeping. Before the erratum the held expiry version
+  made every authorisation refuse `cis_outdated` from the first pull
+  after the hold (`Cache.Outdated` lists a newer version held, and
+  the decision checks it before the age), until the ANSP's next signed
+  restrictions version, and the age then passed `cis_stale_s`.
 - A `pull_url` is followed only when it is https with the scheme, host
   and port of `USSP_CISP_BASE_URL` (a missing port is the scheme's
   default) and carries no user information (`cis.Client.GetURL`).
