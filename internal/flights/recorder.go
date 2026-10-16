@@ -18,6 +18,13 @@ type Store interface {
 	Record(ctx context.Context, b Body) error
 }
 
+// Warmer looks up the registry answers of a flight first seen
+// (registry.Cache.Warm): the aircraft and, when an intent names one,
+// its operator.
+type Warmer interface {
+	Warm(ctx context.Context, serial string, operatorReg *string)
+}
+
 // Source is the FLIGHT stream as the recorder reads it
 // (bus.StreamSource).
 type Source interface {
@@ -78,10 +85,13 @@ func Decode(data []byte) (Event, error) {
 // the store cannot take is left in the stream (nak) and the recorder
 // waits before it reads again; one that does not read as a flight fact
 // is logged at error level with its subject, counted and acknowledged
-// (it can never be recorded).
+// (it can never be recorded). A flight's started fact, once recorded,
+// has its registry answers looked up (Warmer, spec 02 F8: each new
+// serial seen).
 type Recorder struct {
 	Source   Source
 	Store    Store
+	Warmer   Warmer
 	Counters *core.Counters
 	Logger   *slog.Logger
 	// Batch (64) and Wait (1 s).
@@ -151,6 +161,9 @@ func (r *Recorder) Take(ctx context.Context, msgs []bus.Msg) bool {
 		r.counters().Inc(CounterRecorded)
 		if err := m.Ack(); err != nil {
 			r.counters().Inc(CounterRecordAckFails)
+		}
+		if e.Body.Event == EventStarted && r.Warmer != nil {
+			r.Warmer.Warm(ctx, e.Body.UASSerial, e.Body.OperatorReg)
 		}
 	}
 	return true

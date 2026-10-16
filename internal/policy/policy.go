@@ -81,6 +81,15 @@ type Values struct {
 	// 5 min). The change feed invalidates either sooner.
 	RegistryPositiveTTLS float64 `json:"registry_positive_ttl_s"`
 	RegistryNegativeTTLS float64 `json:"registry_negative_ttl_s"`
+	// RegistryRevalidateIntervalS is how often the registry feed asks
+	// the authority again about every key bound to an open flight or an
+	// active intent whose cached answer is missing or older than it: the
+	// bound in time on a change the feed never names (the authority's
+	// sequence is not gap-free) and the restoration of a key whose
+	// re-fetch failed or was deferred. RegistryRevalidateMaxCount bounds
+	// the keys one sweep asks about (E-10); the rest wait for the next.
+	RegistryRevalidateIntervalS float64 `json:"registry_revalidate_interval_s"`
+	RegistryRevalidateMaxCount  int     `json:"registry_revalidate_max_count"`
 
 	// SpecialOperationPriority is the F3548 priority of a special
 	// operation (SERA Art. 4, Art. 10(8)); a normal flight has 0. It is
@@ -478,6 +487,8 @@ func Defaults() Values {
 		ClientSecretOverlapS:        24 * 3600,
 		RegistryPositiveTTLS:        24 * 3600,
 		RegistryNegativeTTLS:        300,
+		RegistryRevalidateIntervalS: 60,
+		RegistryRevalidateMaxCount:  1000,
 		SpecialOperationPriority:    100,
 		DeconflictBufferM:           0,
 		DeconflictVerticalBufferM:   0,
@@ -614,6 +625,7 @@ func (v Values) Validate() error {
 		{"cpa_horizontal_min_m", v.CPAHorizontalMinM}, {"cpa_vertical_min_m", v.CPAVerticalMinM},
 		{"cpa_neighbour_radius_m", v.CPANeighbourRadiusM},
 		{"registry_positive_ttl_s", v.RegistryPositiveTTLS}, {"registry_negative_ttl_s", v.RegistryNegativeTTLS},
+		{"registry_revalidate_interval_s", v.RegistryRevalidateIntervalS},
 		{"activation_lead_s", v.ActivationLeadS},
 		{"backlog_after_s", v.BacklogAfterS}, {"flight_end_after_s", v.FlightEndAfterS},
 		{"ingest_queue_s", v.IngestQueueS}, {"ingest_backlog_max_s", v.IngestBacklogMaxS},
@@ -673,6 +685,9 @@ func (v Values) Validate() error {
 	}
 	if v.SpecialOperationPriority < 1 || v.SpecialOperationPriority > MaxSpecialOperationPriority {
 		errs = append(errs, core.Fieldf("special_operation_priority", "must be from 1 to %d, got %d", MaxSpecialOperationPriority, v.SpecialOperationPriority))
+	}
+	if v.RegistryRevalidateMaxCount < 1 {
+		errs = append(errs, core.Fieldf("registry_revalidate_max_count", "must be at least 1, got %d", v.RegistryRevalidateMaxCount))
 	}
 	if v.IntentOpenMaxCount < 1 || v.IntentOpenMaxCount > MaxIntentOpenMaxCount {
 		errs = append(errs, core.Fieldf("intent_open_max_count", "must be from 1 to %d, got %d", MaxIntentOpenMaxCount, v.IntentOpenMaxCount))

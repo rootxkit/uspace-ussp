@@ -87,6 +87,23 @@ const (
 	// CounterRefetchDeferred counts bound keys a change named beyond the
 	// poll's re-fetch bound: deleted, left to the sweep.
 	CounterRefetchDeferred = "registry_refetch_deferred"
+	// CounterRevalidated counts answers of bound keys the sweep asked
+	// about again and cached (missing, or older than its period).
+	CounterRevalidated = "registry_revalidated"
+	// CounterRevalidateFailed counts bound keys the sweep asked about
+	// that the authority did not answer.
+	CounterRevalidateFailed = "registry_revalidate_failed"
+	// CounterRevalidateDeferred counts bound keys due beyond one sweep's
+	// bound (registry_revalidate_max_count): left to the next sweep.
+	CounterRevalidateDeferred = "registry_revalidate_deferred"
+	// CounterSweepFailed counts sweeps that did not complete.
+	CounterSweepFailed = "registry_sweep_failed"
+	// CounterWarmed counts flights first seen whose keys were looked up
+	// (a fresh key is not asked again).
+	CounterWarmed = "registry_warmed"
+	// CounterWarmRefused counts flights first seen whose keys F8 does
+	// not define (nothing asked).
+	CounterWarmRefused = "registry_warm_refused"
 	// CounterFeedOrphansDeleted counts projected answers a change named
 	// that registry_validity held no row for (a commit that failed after
 	// the projection's put; audit S1).

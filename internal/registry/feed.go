@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -33,6 +34,19 @@ const (
 	DefaultMaxRefetchPerPoll = 1000
 )
 
+// Revalidate is the sweep's period and bound (policy
+// registry_revalidate_interval_s and registry_revalidate_max_count).
+type Revalidate struct {
+	Interval time.Duration
+	MaxKeys  int
+}
+
+// RevalidateFromPolicy reads the sweep's period and bound from a policy
+// version.
+func RevalidateFromPolicy(v policy.Values) Revalidate {
+	return Revalidate{Interval: time.Duration(v.RegistryRevalidateIntervalS * float64(time.Second)), MaxKeys: v.RegistryRevalidateMaxCount}
+}
+
 // BoundKeys names the cache keys currently bound to an open flight or
 // an active intent (pgstore): the keys whose answer the hot path needs
 // now, so a change to one is re-fetched in the poll that applies it
@@ -58,6 +72,9 @@ type FeedConfig struct {
 	// MaxRefetchPerPoll bounds the keys one poll re-fetches
 	// (DefaultMaxRefetchPerPoll).
 	MaxRefetchPerPoll int
+	// Revalidate is the sweep's period and bound, read before every
+	// sweep (the policy's); nil: the policy defaults.
+	Revalidate func() Revalidate
 	// Counters are the cache's (Cache.Counters).
 	Counters *core.Counters
 	Logger   *slog.Logger
@@ -113,6 +130,10 @@ func NewFeed(cfg FeedConfig) *Feed {
 	if cfg.MaxRefetchPerPoll <= 0 {
 		cfg.MaxRefetchPerPoll = DefaultMaxRefetchPerPoll
 	}
+	if cfg.Revalidate == nil {
+		def := RevalidateFromPolicy(policy.Defaults())
+		cfg.Revalidate = func() Revalidate { return def }
+	}
 	if cfg.Counters == nil {
 		cfg.Counters = &core.Counters{}
 	}
@@ -125,20 +146,137 @@ func NewFeed(cfg FeedConfig) *Feed {
 	return &Feed{cfg: cfg, failed: map[Key]bool{}}
 }
 
-// Run polls at once and then every Interval until ctx ends.
+// Run polls at once and then every Interval, and sweeps after the first
+// poll and then every Revalidate().Interval, until ctx ends.
 func (f *Feed) Run(ctx context.Context) {
 	t := time.NewTicker(f.cfg.Interval)
 	defer t.Stop()
-	for {
+	poll := func() {
 		if err := f.Poll(ctx); err != nil && ctx.Err() == nil {
 			obs.Error(ctx, f.cfg.Logger, "registry change feed not polled", err)
 		}
+	}
+	poll()
+	sweep := time.NewTimer(0)
+	defer sweep.Stop()
+	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			poll()
+		case <-sweep.C:
+			if err := f.Sweep(ctx); err != nil && ctx.Err() == nil {
+				obs.Error(ctx, f.cfg.Logger, "registry bound keys not revalidated", err)
+			}
+			sweep.Reset(f.revalidate().Interval)
 		}
 	}
+}
+
+// revalidate is the sweep's period and bound, the defaults in place of
+// a value that is not positive (the policy refuses one; E-15: never a
+// disarmed sweep).
+func (f *Feed) revalidate() Revalidate {
+	r, def := f.cfg.Revalidate(), RevalidateFromPolicy(policy.Defaults())
+	if r.Interval <= 0 {
+		r.Interval = def.Interval
+	}
+	if r.MaxKeys <= 0 {
+		r.MaxKeys = def.MaxKeys
+	}
+	return r
+}
+
+// Sweep asks the authority (purpose identification) again about every
+// key bound to an open flight or an active intent whose cached answer
+// is missing (never fetched, deferred by a poll, failed) or older than
+// the period, missing first and then oldest first, at most MaxKeys
+// (the rest counted registry_revalidate_deferred and left to the next
+// sweep), and caches the answers as a lookup does (Save's guard, the
+// projection overwritten). It bounds in time a change the feed never
+// names, and restores the keys a poll could not re-fetch. A key that is
+// no longer bound is no longer reported failed.
+func (f *Feed) Sweep(ctx context.Context) error {
+	if f.cfg.Bound == nil || f.cfg.Cache == nil || f.cfg.Store == nil {
+		return nil
+	}
+	err := f.sweep(ctx)
+	if err != nil {
+		f.cfg.Counters.Inc(CounterSweepFailed)
+	}
+	return err
+}
+
+func (f *Feed) sweep(ctx context.Context) error {
+	r := f.revalidate()
+	bound, err := f.cfg.Bound.Bound(ctx)
+	if err != nil {
+		return fmt.Errorf("registry bound keys: %w", err)
+	}
+	f.mu.Lock()
+	for k := range f.failed {
+		if !slices.Contains(bound, k) {
+			delete(f.failed, k)
+		}
+	}
+	f.mu.Unlock()
+	if len(bound) == 0 {
+		return nil
+	}
+	rows, since, err := f.cfg.Store.Entries(ctx, bound)
+	if err != nil {
+		return fmt.Errorf("registry_validity: %w", err)
+	}
+	ageOf := map[Key]float64{}
+	for i := range rows {
+		ageOf[rows[i].Key] = rows[i].AgeS
+	}
+	var due []Key
+	for _, k := range bound {
+		if a, ok := ageOf[k]; !ok || a < 0 || time.Duration(a*float64(time.Second)) >= r.Interval {
+			due = append(due, k)
+		}
+	}
+	slices.SortStableFunc(due, func(a, b Key) int {
+		ma, ok := ageOf[a]
+		mb, okb := ageOf[b]
+		switch {
+		case !ok && !okb:
+			return 0
+		case !ok:
+			return -1
+		case !okb:
+			return 1
+		}
+		return cmp.Compare(mb, ma)
+	})
+	if n := len(due) - r.MaxKeys; n > 0 {
+		f.cfg.Counters.Add(CounterRevalidateDeferred, uint64(n))
+		due = due[:r.MaxKeys]
+	}
+	for start := 0; start < len(due); start += MaxQueries {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		batch := due[start:min(start+MaxQueries, len(due))]
+		got, _ := f.cfg.Cache.refetch(context.WithoutCancel(ctx), batch)
+		f.cfg.Counters.Add(CounterRevalidateFailed, uint64(len(batch)-len(got)))
+		if len(got) == 0 {
+			continue
+		}
+		written, err := f.cfg.Cache.store(ctx, got, since)
+		if err != nil {
+			return err
+		}
+		f.cfg.Counters.Add(CounterRevalidated, uint64(len(written)))
+		f.mu.Lock()
+		for i := range written {
+			delete(f.failed, written[i].Key)
+		}
+		f.mu.Unlock()
+	}
+	return nil
 }
 
 // Poll applies the pages after the stored cursor, at most MaxPages.

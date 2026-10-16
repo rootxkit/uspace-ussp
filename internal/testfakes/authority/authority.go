@@ -107,6 +107,9 @@ type Fake struct {
 	failAfter int
 	// clock stamps the changes' at (time.Now).
 	clock func() time.Time
+	// behind is the sequence the next change is recorded under
+	// (InsertChangeBehind); 0: the next one.
+	behind int64
 }
 
 // StatusNotice is one operating-status notice the fake recorded.
@@ -165,6 +168,15 @@ func (f *Fake) Down(ops ...string) {
 // answered 502, as an authority whose answer is lost after its commit.
 func (f *Fake) FailAfterCommit(n int) { f.mu.Lock(); f.failAfter = n; f.mu.Unlock() }
 
+// InsertChangeBehind makes the next change (SetOperator, SetUAS,
+// SetPilot) be recorded under seq, a sequence the feed has already read
+// past: a transaction at the authority that took its sequence before a
+// later one and committed after the page holding the later one was
+// served (a bigserial is not gap-free under concurrent transactions).
+// A cursor beyond seq never sees the change; the sequence may repeat one
+// already served.
+func (f *Fake) InsertChangeBehind(seq int64) { f.mu.Lock(); f.behind = seq; f.mu.Unlock() }
+
 // SetClock makes now the clock the changes' at is stamped with (nil:
 // time.Now).
 func (f *Fake) SetClock(now func() time.Time) { f.mu.Lock(); f.clock = now; f.mu.Unlock() }
@@ -204,7 +216,11 @@ func (f *Fake) record(entity, key, status string) {
 	if f.clock != nil {
 		now = f.clock
 	}
-	f.changes = append(f.changes, Change{Seq: int64(len(f.changes) + 1), EntityType: entity, EntityID: entity + "-" + key,
+	seq := int64(len(f.changes) + 1)
+	if f.behind > 0 {
+		seq, f.behind = f.behind, 0
+	}
+	f.changes = append(f.changes, Change{Seq: seq, EntityType: entity, EntityID: entity + "-" + key,
 		PublicKey: key, Status: status, At: now().UTC()})
 }
 

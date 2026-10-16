@@ -201,6 +201,36 @@ func TestTelemetryDefaultsAndFlightEndAfterTelemetryLost(t *testing.T) {
 	}
 }
 
+// The registry sweep's period and bound (WP-5): zero, negative or not
+// finite is refused naming its field (E-15: never a disarmed sweep);
+// the defaults and the smallest values are accepted (E-01 pair).
+func TestRegistryRevalidateBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		set   func(*Values)
+		field string
+	}{
+		{"no period", func(v *Values) { v.RegistryRevalidateIntervalS = 0 }, "registry_revalidate_interval_s"},
+		{"negative period", func(v *Values) { v.RegistryRevalidateIntervalS = -1 }, "registry_revalidate_interval_s"},
+		{"infinite period", func(v *Values) { v.RegistryRevalidateIntervalS = math.Inf(1) }, "registry_revalidate_interval_s"},
+		{"no keys", func(v *Values) { v.RegistryRevalidateMaxCount = 0 }, "registry_revalidate_max_count"},
+	} {
+		v := Defaults()
+		tc.set(&v)
+		if err := v.Validate(); err == nil || !strings.Contains(err.Error(), tc.field) {
+			t.Errorf("%s: accepted or not named: %v", tc.name, err)
+		}
+	}
+	v := Defaults()
+	if v.RegistryRevalidateIntervalS != 60 || v.RegistryRevalidateMaxCount != 1000 {
+		t.Errorf("defaults %v %d", v.RegistryRevalidateIntervalS, v.RegistryRevalidateMaxCount)
+	}
+	v.RegistryRevalidateIntervalS, v.RegistryRevalidateMaxCount = 0.001, 1
+	if err := v.Validate(); err != nil {
+		t.Errorf("the smallest values refused: %v", err)
+	}
+}
+
 // The Service Provider bounds (WP-9): a recent-positions bound outside 1
 // to its maximum, and a session ISA without a positive radius or
 // horizon, are refused; the bounds themselves are accepted (E-01 pair).
