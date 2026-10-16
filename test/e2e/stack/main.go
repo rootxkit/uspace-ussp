@@ -7,10 +7,14 @@
 // browser (the web app, and the traffic and alert WebSockets of
 // traffic-ws, as the deployment's Caddy routes them); and a control
 // listener the Playwright test drives: mark a registration number and a
-// serial valid in the fake registry, fly a simulated operator client
-// over the operator WebSocket, and bring a second operator's aircraft
-// beside it. Test-only: it never ships in an image and has no send path
-// to an aircraft (the simulated operator only sends to this USSP).
+// serial valid in the fake registry (or suspend a serial), fly a
+// simulated operator client over the operator WebSocket, bring a second
+// operator's aircraft beside it (with or without an intent, its serial
+// registered or not), and read the traffic product of its intent. The
+// CISP publishes a second PROHIBITED zone, TZE2E17, with AMSL limits
+// (judged without terrain), for SC-17. Test-only: it never ships in an
+// image and has no send path to an aircraft (the simulated operator
+// only sends to this USSP).
 //
 // Environment: USSP_TEST_PG_URL, USSP_TEST_TS_OWNER_URL, USSP_TEST_NATS_URL
 // (as make integration reads them); E2E_FRONT_ADDR (the browser's
@@ -121,10 +125,15 @@ func (f *fakes) close() {
 	f.ansp.Close()
 }
 
+// sc17At is the south-west corner of TZE2E17, the PROHIBITED zone of
+// web/e2e/registry.spec.ts (0.01 deg by 0.015 deg, 0 to 3000 m AMSL),
+// away from every other test's flights.
+var sc17At = core.LatLon{LatDeg: 41.90, LonDeg: 45.10}
+
 // startFakes starts the token service (the ecosystem issuer's JWKS and
 // POST /oauth/token answering the fakes' bearer), the F8 registry, the
-// CISP with one PROHIBITED zone, no U-space airspace and no restriction,
-// and the DSS.
+// CISP with two PROHIBITED zones (TZE2E01 in AGL, TZE2E17 in AMSL), no
+// U-space airspace and no restriction, and the DSS.
 func startFakes(zoneAt core.LatLon) (*fakes, error) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -154,7 +163,8 @@ func startFakes(zoneAt core.LatLon) (*fakes, error) {
 		return nil, err
 	}
 	box := [4]float64{zoneAt.LatDeg, zoneAt.LonDeg, zoneAt.LatDeg + 0.01, zoneAt.LonDeg + 0.015}
-	f.cisp.Publish("zones", zone("TZE2E01", "PROHIBITED", box))
+	sc17 := [4]float64{sc17At.LatDeg, sc17At.LonDeg, sc17At.LatDeg + 0.01, sc17At.LonDeg + 0.015}
+	f.cisp.Publish("zones", zone("TZE2E01", "PROHIBITED", box), zoneIn("TZE2E17", "PROHIBITED", sc17, 0, 3000, "AMSL"))
 	f.cisp.Publish("uspace_airspace")
 	f.cisp.Publish("restrictions")
 	f.dss = fakedss.New()
@@ -166,12 +176,16 @@ func startFakes(zoneAt core.LatLon) (*fakes, error) {
 
 // zone is an ED-318 feature over [lat0, lon0, lat1, lon1] from 0 to 120
 // m AGL.
-func zone(id, typ string, b [4]float64) json.RawMessage {
+func zone(id, typ string, b [4]float64) json.RawMessage { return zoneIn(id, typ, b, 0, 120, "AGL") }
+
+// zoneIn is an ED-318 feature over [lat0, lon0, lat1, lon1] from lowerM
+// to upperM above ref (AGL or AMSL).
+func zoneIn(id, typ string, b [4]float64, lowerM, upperM float64, ref string) json.RawMessage {
 	raw, _ := json.Marshal(map[string]any{
 		"type": "Feature",
 		"geometry": map[string]any{"type": "Polygon",
 			"coordinates": []any{[]any{[]any{b[1], b[0]}, []any{b[3], b[0]}, []any{b[3], b[2]}, []any{b[1], b[2]}, []any{b[1], b[0]}}},
-			"layer":       map[string]any{"lower": 0, "lowerReference": "AGL", "upper": 120, "upperReference": "AGL", "uom": "m"}},
+			"layer":       map[string]any{"lower": lowerM, "lowerReference": ref, "upper": upperM, "upperReference": ref, "uom": "m"}},
 		"properties": map[string]any{"identifier": id, "country": "GEO", "type": typ, "variant": "COMMON",
 			"name":   []any{map[string]any{"text": "E2E zone " + id, "lang": "en-GB"}, map[string]any{"text": "E2E ზონა " + id, "lang": "ka-GE"}},
 			"reason": []string{"SENSITIVE"},
@@ -365,8 +379,8 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return err
 	}
 	defer closeStaff()
-	c := &control{logger: logger, registry: f.registry, apiURL: apiURL, telemetryURL: "http://" + addr(1), accounts: staffSvc,
-		downs: &downs{cisp: f.cisp, registry: f.registry, dss: f.dss, ansp: f.ansp, nats: natsProxy}}
+	c := &control{logger: logger, registry: f.registry, apiURL: apiURL, telemetryURL: "http://" + addr(1), trafficURL: "http://" + addr(4),
+		accounts: staffSvc, downs: &downs{cisp: f.cisp, registry: f.registry, dss: f.dss, ansp: f.ansp, nats: natsProxy}, tokens: map[string]string{}}
 	frontSrv, err := frontServer(webURL, "http://"+addr(4))
 	if err != nil {
 		return err
@@ -465,11 +479,15 @@ type control struct {
 	registry     *authority.Fake
 	apiURL       string
 	telemetryURL string
+	trafficURL   string
 	accounts     *accounts.Service
 	downs        *downs
 
 	mu      sync.Mutex
 	flights []context.CancelFunc
+	// tokens are the intruders' operator tokens by intent id (POST
+	// /traffic reads the intent's product with it).
+	tokens map[string]string
 }
 
 func (c *control) stopAll() {
@@ -485,6 +503,8 @@ func (c *control) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("POST /registry", c.handle(c.registryValid))
+	mux.HandleFunc("POST /registry/suspend", c.handle(c.registrySuspend))
+	mux.HandleFunc("POST /traffic", c.handle(c.traffic))
 	mux.HandleFunc("POST /fly", c.handle(c.fly))
 	mux.HandleFunc("POST /intruder", c.handle(c.intruder))
 	mux.HandleFunc("POST /staff", c.handle(c.staff))
@@ -527,6 +547,45 @@ func (c *control) registryValid(_ context.Context, in map[string]any) (any, erro
 		c.registry.SetUAS(sn, "active", "", "")
 	}
 	return map[string]any{"ok": true}, nil
+}
+
+// registrySuspend makes the fake registry hold a UAS serial as
+// suspended (a change on its feed, as the authority's suspension is).
+func (c *control) registrySuspend(_ context.Context, in map[string]any) (any, error) {
+	sn := str(in, "serial")
+	if sn == "" {
+		return nil, errors.New("serial is required")
+	}
+	c.registry.SetUAS(sn, "suspended", "", "")
+	return map[string]any{"ok": true, "registry_seq": len(c.registry.Changes())}, nil
+}
+
+// traffic is POST /traffic {intent_id}: the intent's traffic product
+// (GET /v1/traffic/snapshot of traffic-ws) read with the operator token
+// of the intruder that filed it.
+func (c *control) traffic(ctx context.Context, in map[string]any) (any, error) {
+	id := str(in, "intent_id")
+	c.mu.Lock()
+	tok, ok := c.tokens[id]
+	c.mu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("no intruder filed intent %q", id)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.trafficURL+"/v1/traffic/snapshot?intent_id="+url.QueryEscape(id), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+tok)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = res.Body.Close() }()
+	raw, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("traffic snapshot: %d %s", res.StatusCode, raw)
+	}
+	return json.RawMessage(raw), nil
 }
 
 // call sends a JSON request to the api process.
@@ -635,14 +694,27 @@ func (c *control) start(tok, serial, intentID string, lat, lng float64) (any, er
 
 // intruder registers a second operator through the API, gives it a
 // client and a serial, files and activates an intent of its own 2 km
-// east of (lat, lng) (so it does not meet the first operator's intent
+// (or intent_east_m) east of (lat, lng) (so it does not meet the first operator's intent
 // strategically), and flies its aircraft east_m metres east of (lat,
-// lng), beside the first aircraft.
+// lng), beside the first aircraft. With intent false it flies without
+// an intent (a session outside U-space airspace); with register_serial
+// false the registry never holds its serial. The answer carries the
+// fake registry's sequence after the registration (registry_seq).
 func (c *control) intruder(ctx context.Context, in map[string]any) (any, error) {
 	u := strconv.FormatInt(time.Now().UnixNano()%1_000_000_000, 10)
 	number, serial := "GEO-TEST-E2EB"+u, "TESTE2EB"+u
+	withIntent, registerSerial := true, true
+	if v, ok := in["intent"].(bool); ok {
+		withIntent = v
+	}
+	if v, ok := in["register_serial"].(bool); ok {
+		registerSerial = v
+	}
 	c.registry.SetOperator(number, "active", nil)
-	c.registry.SetUAS(serial, "active", "", "")
+	if registerSerial {
+		c.registry.SetUAS(serial, "active", "", "")
+	}
+	registrySeq := len(c.registry.Changes())
 	user, pass := "intruder."+u, "intruder-password-"+u
 	var op struct {
 		ID string `json:"id"`
@@ -674,7 +746,18 @@ func (c *control) intruder(ctx context.Context, in map[string]any) (any, error) 
 		return nil, err
 	}
 	at := core.LatLon{LatDeg: num(in, "lat"), LonDeg: num(in, "lng")}
-	far := geodesy.Destination(at, 90, 2000)
+	if !withIntent {
+		beside := geodesy.Destination(at, 90, num(in, "east_m"))
+		if _, err := c.start(tok, serial, "", beside.LatDeg, beside.LonDeg); err != nil {
+			return nil, err
+		}
+		return map[string]any{"serial": serial, "client_id": cl.ClientID, "registry_seq": registrySeq}, nil
+	}
+	farM := 2000.0
+	if v := num(in, "intent_east_m"); v > 0 {
+		farM = v
+	}
+	far := geodesy.Destination(at, 90, farM)
 	start := time.Now().UTC().Add(time.Minute).Truncate(time.Second)
 	d := 0.002
 	var dec struct {
@@ -711,7 +794,10 @@ func (c *control) intruder(ctx context.Context, in map[string]any) (any, error) 
 	if _, err := c.start(tok, serial, dec.IntentID, beside.LatDeg, beside.LonDeg); err != nil {
 		return nil, err
 	}
-	return map[string]any{"intent_id": dec.IntentID, "serial": serial, "client_id": cl.ClientID}, nil
+	c.mu.Lock()
+	c.tokens[dec.IntentID] = tok
+	c.mu.Unlock()
+	return map[string]any{"intent_id": dec.IntentID, "serial": serial, "client_id": cl.ClientID, "registry_seq": registrySeq}, nil
 }
 
 // hostOf is the host:port of a NATS URL.
