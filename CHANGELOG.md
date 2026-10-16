@@ -14,7 +14,8 @@ additively within `/v1`.
   `unknown_operator` / `registry_unavailable` for its whole flight and
   raised a spurious critical `identification` alert inside a
   PROHIBITED zone. A cached answer now records the feed cursor it was
-  fetched under (`registry_validity.fetched_since`, migration 00030)
+  fetched under (`registry_validity.fetched_since`, migration 00030;
+  its CHECK, added NOT VALID, is validated by 00031)
   and a change deletes only answers fetched under a cursor below its
   `seq` (`registry_feed_retained` counts the others). The keys of open
   flights and active intents a change names are re-fetched in the poll

@@ -179,3 +179,26 @@ func TestIntegrationConsoleAlertChecksAreValidated(t *testing.T) {
 		}
 	}
 }
+
+// The CHECK 00030 adds to the live registry_validity table NOT VALID is
+// validated by 00031 (WP-5): at the latest version it is valid, and it
+// still refuses a row that breaks it while taking one that keeps it.
+func TestIntegrationRegistryFetchedSinceCheckIsValidated(t *testing.T) {
+	ensureSchemas(t)
+	const name = "registry_validity_fetched_since_check"
+	if c := count(t, relOwner(t), `SELECT count(*) FROM pg_constraint WHERE conrelid = 'registry_validity'::regclass AND conname = $1 AND convalidated`, name); c != 1 {
+		t.Errorf("%s: not validated at the latest version", name)
+	}
+	const ins = `INSERT INTO registry_validity (entity_type, key, key_fold, status, fetched_at, fetched_since) VALUES ('uas', $1, $1, 'unknown', now(), $2)`
+	key := "TESTFS" + unique()
+	t.Cleanup(func() {
+		_, _ = relOwner(t).Exec(context.Background(), "DELETE FROM registry_validity WHERE key = $1", key)
+	})
+	if _, err := relOwner(t).Exec(context.Background(), ins, key, int64(0)); err != nil {
+		t.Fatalf("fetched_since 0: %v", err)
+	}
+	_, err := relOwner(t).Exec(context.Background(), "UPDATE registry_validity SET fetched_since = -1 WHERE key = $1", key)
+	if err == nil || !strings.Contains(err.Error(), name) {
+		t.Errorf("fetched_since -1: %v, want a refusal by %s", err, name)
+	}
+}
