@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -188,14 +189,16 @@ func TestCompactConfigCallbackHostIsAnAudience(t *testing.T) {
 // refused naming the variable.
 func TestPublisherConfig(t *testing.T) {
 	c, err := LoadFrom(env(map[string]string{
-		"USSP_CIS_PUBLISHER_KEYS": "authority=https://auth.example/.well-known/jwks.json, ansp=https://ansp.example/.well-known/jwks.json",
+		"USSP_CIS_PUBLISHER_KEYS": "authority=https://auth.example/.well-known/jwks.json, ansp=https://ansp.example/.well-known/jwks.json, " +
+			"cisp=https://cisp.example/.well-known/jwks.json",
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	pc, err := c.PublisherConfig()
-	if err != nil || len(pc.Publishers) != 2 || pc.Publishers[PublisherANSP].JWKSURL != "https://ansp.example/.well-known/jwks.json" ||
-		pc.Publishers[PublisherAuthority].JWKSURL != "https://auth.example/.well-known/jwks.json" || pc.MaxAge != 366*24*time.Hour {
+	if err != nil || len(pc.Publishers) != 3 || pc.Publishers[PublisherANSP].JWKSURL != "https://ansp.example/.well-known/jwks.json" ||
+		pc.Publishers[PublisherAuthority].JWKSURL != "https://auth.example/.well-known/jwks.json" ||
+		pc.Publishers[PublisherCISP].JWKSURL != "https://cisp.example/.well-known/jwks.json" || pc.MaxAge != 366*24*time.Hour {
 		t.Fatalf("got %+v %v", pc, err)
 	}
 	c, err = LoadFrom(env(map[string]string{
@@ -212,7 +215,8 @@ func TestPublisherConfig(t *testing.T) {
 	}
 	for name, keys := range map[string][]string{
 		"none":         nil,
-		"not one":      {"cisp=https://cisp.example/jwks"},
+		"not one":      {"dss=https://dss.example/jwks"},
+		"cisp twice":   {"cisp=https://a.example/jwks", "cisp=https://b.example/jwks"},
 		"named twice":  {"ansp=https://a.example/jwks", "ansp=https://b.example/jwks"},
 		"without JWKS": {"authority"},
 	} {
@@ -224,5 +228,24 @@ func TestPublisherConfig(t *testing.T) {
 	c = Config{CISPublisherKeys: []string{"ansp=https://a.example/jwks"}}
 	if _, err := c.PublisherConfig(); !slices.Equal(fieldNames(err), []string{"USSP_CIS_PUBLISHER_SIG_MAX_AGE_S"}) {
 		t.Fatalf("no max age: %v", err)
+	}
+}
+
+// USSP_CIS_EXPIRY_SKEW_S is 30 s by default and bounded both ways: 0
+// and 300 are taken, -1 and 301 refused naming the variable.
+func TestCISExpirySkewBounded(t *testing.T) {
+	c, err := LoadFrom(env(map[string]string{}))
+	if err != nil || c.CISExpirySkewS != 30 {
+		t.Fatalf("default: %d %v", c.CISExpirySkewS, err)
+	}
+	for _, ok := range []string{"0", "300"} {
+		if c, err := LoadFrom(env(map[string]string{"USSP_CIS_EXPIRY_SKEW_S": ok})); err != nil || strconv.Itoa(c.CISExpirySkewS) != ok {
+			t.Errorf("%s: %d %v", ok, c.CISExpirySkewS, err)
+		}
+	}
+	for _, bad := range []string{"-1", "301"} {
+		if _, err := LoadFrom(env(map[string]string{"USSP_CIS_EXPIRY_SKEW_S": bad})); !slices.Equal(fieldNames(err), []string{"USSP_CIS_EXPIRY_SKEW_S"}) {
+			t.Errorf("%s: %v", bad, err)
+		}
 	}
 }
