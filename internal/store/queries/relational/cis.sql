@@ -5,13 +5,22 @@
 -- A version is stored once; a second store of the same version is a
 -- no-op (inserted = false). fetched_at is the database clock.
 WITH ins AS (
-    INSERT INTO cis_datasets (dataset, version, etag, fetched_at, metadata, signature_ok)
-    VALUES (sqlc.arg(dataset), sqlc.arg(version), sqlc.narg(etag), now(), sqlc.arg(metadata), sqlc.arg(signature_ok))
+    INSERT INTO cis_datasets (dataset, version, etag, fetched_at, metadata, signature_ok, provenance)
+    VALUES (sqlc.arg(dataset), sqlc.arg(version), sqlc.narg(etag), now(), sqlc.arg(metadata), sqlc.arg(signature_ok),
+            sqlc.narg(provenance))
     ON CONFLICT (dataset, version) DO NOTHING
     RETURNING fetched_at
 )
 SELECT (SELECT count(*) FROM ins) = 1 AS inserted,
        COALESCE((SELECT fetched_at FROM ins), now())::timestamptz AS fetched_at;
+
+-- name: PromoteCISDataset :execrows
+-- A version stored held (signature_ok false) and installed later, once
+-- its provenance was shown (the keys fetched since, or the expiry rule
+-- passed), is marked trusted with its kind; its features were stored
+-- with it. A trusted row is never changed, nor marked held again.
+UPDATE cis_datasets SET signature_ok = true, provenance = sqlc.arg(provenance)
+ WHERE dataset = sqlc.arg(dataset) AND version = sqlc.arg(version) AND NOT signature_ok;
 
 -- name: InsertCISFeature :exec
 -- geom is the union of the feature's parts as PostGIS builds them: each
@@ -56,10 +65,11 @@ UPDATE cis_datasets SET fetched_at = now()
 RETURNING fetched_at;
 
 -- name: CurrentCISDatasets :many
--- The newest stored version of every dataset whose publisher signature
--- verified (a held one is never loaded), with its age on the database
--- clock.
-SELECT DISTINCT ON (dataset) dataset, version, etag, fetched_at, metadata, signature_ok,
+-- The newest stored trusted version of every dataset (signature_ok:
+-- its publisher signature verified, or the expiry rule passed; a held
+-- one is never loaded), with its provenance kind and its age on the
+-- database clock.
+SELECT DISTINCT ON (dataset) dataset, version, etag, fetched_at, metadata, signature_ok, provenance,
        extract(epoch FROM now() - fetched_at)::float8 AS age_s
   FROM cis_datasets
  WHERE signature_ok

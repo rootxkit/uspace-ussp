@@ -381,7 +381,7 @@ func TestIntegrationCISUntrustedVersionHeld(t *testing.T) {
 
 	eval := cis.NewEvaluator(cis.EvaluatorConfig{StaleS: func() float64 { return 300 }})
 	cis.NewCache(cis.CacheConfig{Store: g.store, Evaluator: eval}).Warm(ctx)
-	if v := eval.Snapshot().Version(cis.Zones); v == nil || v.Number != 1 || !v.SignatureOK {
+	if v := eval.Snapshot().Version(cis.Zones); v == nil || v.Number != 1 || !v.Trusted() {
 		t.Fatalf("warm loaded %+v, want the trusted v1", v)
 	}
 
@@ -552,5 +552,80 @@ func TestIntegrationAPICISUnknownWithoutCISP(t *testing.T) {
 	t.Logf("readyz cis: %s (%s)", d.State, d.Detail)
 	if d.State != "unknown" || d.Detail != "no version loaded: no CISP configured (USSP_CISP_BASE_URL)" {
 		t.Fatalf("cis: %+v", d)
+	}
+}
+
+// The provenance kind on the real database (migration 00032): a
+// restrictions version stored held and installed later by the CISP's
+// expiry rule is marked trusted with its kind (the row is written once,
+// so without the promotion it stayed held and a restart loaded the
+// version before it); a warm start loads it with its kind; a publisher
+// version is stored with its own; the CHECK refuses a trusted row
+// without a kind and a held one with one.
+func TestIntegrationCISProvenanceKindStored(t *testing.T) {
+	cleanCIS(t)
+	ctx := context.Background()
+	st := pgstore.Store{S: appStore(t)}
+	kind := func(v int64) string {
+		var k *string
+		var ok bool
+		if err := relOwner(t).QueryRow(ctx, "SELECT provenance, signature_ok FROM cis_datasets WHERE dataset = 'restrictions' AND version = $1", v).Scan(&k, &ok); err != nil {
+			t.Fatal(err)
+		}
+		if k == nil {
+			return "held " + strconv.FormatBool(ok)
+		}
+		return *k + " " + strconv.FormatBool(ok)
+	}
+	version := func(n int64) *cis.Version {
+		body, _ := json.Marshal(map[string]any{"type": "FeatureCollection", "features": []any{}, "cis_dataset": "restrictions", "cis_version": n})
+		v, rf := cis.ParseVersion(cis.Restrictions, body, "", n)
+		if rf != nil {
+			t.Fatal(rf)
+		}
+		return v
+	}
+	v1 := version(1)
+	v1.Provenance = cis.ProvenancePublisher
+	if err := st.SaveVersion(ctx, v1, nil); err != nil || kind(1) != "publisher true" {
+		t.Fatalf("v1: %v %s", err, kind(1))
+	}
+	v2 := version(2)
+	if err := st.SaveVersion(ctx, v2, nil); err != nil || kind(2) != "held false" {
+		t.Fatalf("v2 held: %v %s", err, kind(2))
+	}
+	v2.Provenance = cis.ProvenanceCISPExpiry
+	if err := st.SaveVersion(ctx, v2, nil); err != nil || kind(2) != "cisp_expiry true" {
+		t.Fatalf("v2 installed: %v %s", err, kind(2))
+	}
+	// A trusted row is never marked held again.
+	v2.Provenance = ""
+	if err := st.SaveVersion(ctx, v2, nil); err != nil || kind(2) != "cisp_expiry true" {
+		t.Fatalf("v2 saved held again: %v %s", err, kind(2))
+	}
+	stored, err := st.LoadCurrent(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got *cis.Version
+	for _, sv := range stored {
+		if sv.Version.Dataset == cis.Restrictions {
+			got = sv.Version
+		}
+	}
+	if got == nil || got.Number != 2 || got.Provenance != cis.ProvenanceCISPExpiry {
+		t.Fatalf("warm loaded %+v", got)
+	}
+	if c := count(t, relOwner(t), `SELECT count(*) FROM pg_constraint WHERE conrelid = 'cis_datasets'::regclass AND conname = 'cis_datasets_provenance_check' AND convalidated`); c != 1 {
+		t.Error("cis_datasets_provenance_check: not validated at the latest version (00033)")
+	}
+	for _, bad := range []string{
+		"INSERT INTO cis_datasets (dataset, version, fetched_at, signature_ok, provenance) VALUES ('restrictions', 9, now(), true, NULL)",
+		"INSERT INTO cis_datasets (dataset, version, fetched_at, signature_ok, provenance) VALUES ('restrictions', 9, now(), false, 'publisher')",
+		"INSERT INTO cis_datasets (dataset, version, fetched_at, signature_ok, provenance) VALUES ('restrictions', 9, now(), true, 'trusted')",
+	} {
+		if _, err := relOwner(t).Exec(ctx, bad); err == nil || !strings.Contains(err.Error(), "cis_datasets_provenance_check") {
+			t.Errorf("%s: %v, want a refusal by cis_datasets_provenance_check", bad, err)
+		}
 	}
 }

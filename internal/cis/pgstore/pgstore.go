@@ -25,8 +25,10 @@ type Store struct{ S *store.Store }
 
 var _ cis.Store = Store{}
 
-// SaveVersion stores v, its features and the pruning of older versions
-// in one transaction.
+// SaveVersion stores v with its provenance kind, its features and the
+// pruning of older versions in one transaction. A version stored held
+// before and trusted now is marked trusted with its kind (its features
+// were stored with it), and the pruning runs again.
 func (p Store) SaveVersion(ctx context.Context, v *cis.Version, es []*cis.Entry) error {
 	meta, err := json.Marshal(v.Meta)
 	if err != nil {
@@ -36,15 +38,35 @@ func (p Store) SaveVersion(ctx context.Context, v *cis.Version, es []*cis.Entry)
 	if v.ETag != "" {
 		etag = &v.ETag
 	}
+	var kind *string
+	if v.Trusted() {
+		k := string(v.Provenance)
+		kind = &k
+	}
 	return p.S.Tx(ctx, func(q *relational.Queries) error {
 		row, err := q.InsertCISDataset(ctx, relational.InsertCISDatasetParams{
-			Dataset: string(v.Dataset), Version: v.Number, Etag: etag, Metadata: meta, SignatureOk: v.SignatureOK,
+			Dataset: string(v.Dataset), Version: v.Number, Etag: etag, Metadata: meta, SignatureOk: v.Trusted(), Provenance: kind,
 		})
 		if err != nil {
 			return fmt.Errorf("cis_datasets: %w", err)
 		}
 		if !row.Inserted {
-			return nil // stored before: a version is written once
+			// Stored before: a version is written once, except that one
+			// stored held is marked trusted once its provenance is shown.
+			if !v.Trusted() {
+				return nil
+			}
+			n, err := q.PromoteCISDataset(ctx, relational.PromoteCISDatasetParams{Provenance: kind, Dataset: string(v.Dataset), Version: v.Number})
+			if err != nil {
+				return fmt.Errorf("cis_datasets promotion: %w", err)
+			}
+			if n == 0 {
+				return nil
+			}
+			if _, err := q.PruneCISVersions(ctx, string(v.Dataset)); err != nil {
+				return fmt.Errorf("pruning cis_datasets: %w", err)
+			}
+			return nil
 		}
 		for _, e := range es {
 			fp, err := featureParams(v, e)
@@ -139,8 +161,8 @@ func (p Store) TouchVersion(ctx context.Context, d cis.Dataset, version int64) e
 	return err
 }
 
-// LoadCurrent reads the newest trusted version (signature_ok) of every
-// dataset back and parses
+// LoadCurrent reads the newest trusted version (signature_ok, with its
+// provenance kind) of every dataset back and parses
 // it as a served body (its features, and the cis_* members from its
 // metadata), so a stored version is judged exactly like a pulled one.
 func (p Store) LoadCurrent(ctx context.Context) ([]cis.StoredVersion, error) {
@@ -190,7 +212,15 @@ func (p Store) LoadCurrent(ctx context.Context) ([]cis.StoredVersion, error) {
 			return nil, fmt.Errorf("stored %s: %w", fmt.Sprintf("%s:%d", d, r.Version), rf)
 		}
 		v.Meta.Issued, v.Meta.Provider, v.Meta.Delta = meta.Issued, meta.Provider, meta.Delta
-		v.SignatureOK = r.SignatureOk
+		kind := cis.ProvenancePublisher // signature_ok without a kind cannot be stored (00032's CHECK)
+		if r.Provenance != nil {
+			k, ok := cis.ParseProvenance(*r.Provenance)
+			if !ok || k == "" {
+				return nil, fmt.Errorf("stored %s:%d: provenance %q is not a kind this USSP knows", d, r.Version, *r.Provenance)
+			}
+			kind = k
+		}
+		v.Provenance = kind
 		out = append(out, cis.StoredVersion{Version: v, AgeS: r.AgeS})
 	}
 	return out, nil

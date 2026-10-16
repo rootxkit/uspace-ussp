@@ -117,7 +117,8 @@ func startCIS(ctx context.Context, rt *proc.Runtime, current func() policy.Value
 	}
 	out := &CIS{Evaluator: eval}
 	cache := cis.NewCache(cis.CacheConfig{
-		Client: client, Publishers: publishers, Store: st, Evaluator: eval, Counters: counters, Logger: rt.Logger.With("component", "cis"),
+		Client: client, Publishers: publishers, ExpirySkew: time.Duration(cfg.CISExpirySkewS) * time.Second,
+		Store: st, Evaluator: eval, Counters: counters, Logger: rt.Logger.With("component", "cis"),
 		CallbackURL: callback, BBox: bbox, ReconcileInterval: time.Duration(cfg.CISReconcileS) * time.Second,
 		RetentionDays: func() int { return current().RecordRetentionDays },
 		Projector:     &cis.BusProjector{KV: kv},
