@@ -17,8 +17,10 @@
 -- +goose Up
 ALTER TABLE cis_datasets ADD COLUMN provenance text;
 UPDATE cis_datasets SET provenance = 'publisher' WHERE signature_ok;
+-- The provenance IS NOT NULL is not redundant: a NULL IN (...) is NULL,
+-- and a CHECK that evaluates to NULL passes.
 ALTER TABLE cis_datasets ADD CONSTRAINT cis_datasets_provenance_check CHECK (
-    (signature_ok AND provenance IN ('publisher', 'cisp_expiry'))
+    (signature_ok AND provenance IS NOT NULL AND provenance IN ('publisher', 'cisp_expiry'))
     OR (NOT signature_ok AND provenance IS NULL)) NOT VALID;
 COMMENT ON COLUMN cis_datasets.provenance IS
     'publisher or cisp_expiry: the evidence the version was installed on; NULL while held untrusted';
