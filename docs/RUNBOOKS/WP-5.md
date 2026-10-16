@@ -153,8 +153,7 @@ as read; the reads were at about 13:02:57 and 13:03:11, not continuous.
 A re-read at 13:04:14 shows the row `valid`, `fetched_since` 6,
 `fetched_at` 13:03:51.135Z. No alert was raised (the flight was outside
 any zone at the time; a SELECT at 13:04Z finds no `alerts` row raised after 12:57Z).
-This confirms the presence path of plan item 4 (a suspended registration
-is held as `suspended`, not dropped) on staging.
+This confirms the presence path of plan item 4 on staging.
 
 **Not in the logs.** `registry_feed_polled`, `registry_feed_invalidated`,
 `registry_feed_refetched`, `registry_feed_retained`,
