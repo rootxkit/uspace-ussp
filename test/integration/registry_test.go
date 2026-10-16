@@ -5,8 +5,11 @@ package integration
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
+
+	"github.com/rootxkit/uspace-core/core"
 
 	"github.com/rootxkit/uspace-ussp/internal/registry"
 	"github.com/rootxkit/uspace-ussp/internal/registry/pgstore"
@@ -41,12 +44,13 @@ func cleanRegistry(t *testing.T) {
 
 func noProjection(context.Context, []registry.Entry) error { return nil }
 
-func noDeletion(context.Context, []registry.Key) error { return nil }
+func noDeletion(context.Context, registry.Applied) error { return nil }
 
 // pgstore on PostgreSQL as ussp_app: ages on the database clock, the
 // invalidation guard both ways, invalidation by fold key with the
-// cursor (never backwards), the rollback of a refused projection, and
-// the bound on a competency set (E-10).
+// cursor (never backwards), fetched_since round-tripping and deciding
+// what a change deletes (both ways), the rollback of a refused
+// projection, and the bound on a competency set (E-10).
 func TestIntegrationRegistryStore(t *testing.T) {
 	cleanRegistry(t)
 	ctx := context.Background()
@@ -93,10 +97,10 @@ func TestIntegrationRegistryStore(t *testing.T) {
 	// The feed invalidates the fold key: both spellings go; the cursor
 	// moves; the projection sees what was deleted.
 	var projected []registry.Key
-	deleted, err := st.Invalidate(ctx, []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-A", Seq: 5}}, 5, `"e5"`, time.Hour,
-		func(_ context.Context, del []registry.Key) error { projected = del; return nil })
-	if err != nil || len(deleted) != 2 || len(projected) != 2 {
-		t.Fatalf("invalidate %v %v %v", deleted, projected, err)
+	applied, err := st.Invalidate(ctx, []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-A", Seq: 5}}, nil, 5, `"e5"`, time.Hour,
+		func(_ context.Context, a registry.Applied) error { projected = a.Deleted; return nil })
+	if err != nil || len(applied.Deleted) != 2 || len(projected) != 2 || len(applied.Retained) != 0 {
+		t.Fatalf("invalidate %+v %v %v", applied, projected, err)
 	}
 	cur, err := st.Cursor(ctx)
 	if err != nil || cur.Since != 5 || cur.ETag != `"e5"` || cur.AgeS == nil || *cur.AgeS > 5 {
@@ -108,13 +112,36 @@ func TestIntegrationRegistryStore(t *testing.T) {
 	if w, err := st.Save(ctx, again, 4, noProjection); err != nil || len(w) != 0 {
 		t.Fatalf("a raced write: %v %v", w, err)
 	}
-	if w, err := st.Save(ctx, again, 5, noProjection); err != nil || len(w) != 1 {
+	if w, err := st.Save(ctx, again, 5, noProjection); err != nil || len(w) != 1 || w[0].FetchedSince != 5 {
 		t.Fatalf("a write after the invalidation: %v %v", w, err)
+	}
+	// fetched_since round-trips: the cursor the answer was fetched under.
+	if got, _, _ := st.Entries(ctx, []registry.Key{es[2].Key}); len(got) != 1 || got[0].FetchedSince != 5 {
+		t.Fatalf("fetched_since %+v", got)
+	}
+	if all, _ := st.All(ctx, 10); len(all) == 0 || all[0].Key != es[2].Key || all[0].FetchedSince != 5 {
+		t.Fatalf("All fetched_since %+v", all)
+	}
+	// The same change applied again (a second api instance, or a page
+	// served twice) leaves the answer fetched after it standing, in the
+	// table and named as retained for the projection.
+	applied, err = st.Invalidate(ctx, []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-A", Seq: 5}}, nil, 5, `"e5"`, time.Hour,
+		func(_ context.Context, a registry.Applied) error { projected = a.Retained; return nil })
+	if err != nil || len(applied.Deleted) != 0 || len(applied.Retained) != 1 || applied.Retained[0] != es[2].Key || len(projected) != 1 {
+		t.Fatalf("a change before the fetch: %+v %v", applied, err)
+	}
+	if got, _, _ := st.Entries(ctx, []registry.Key{es[2].Key}); len(got) != 1 {
+		t.Fatal("an answer fetched after its change was deleted by it")
 	}
 	// A refused projection rolls the invalidation and the cursor back.
 	refused := errors.New("bucket down")
-	if _, err := st.Invalidate(ctx, []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-A", Seq: 6}}, 6, "", time.Hour,
-		func(context.Context, []registry.Key) error { return refused }); !errors.Is(err, refused) {
+	if _, err := st.Invalidate(ctx, []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-A", Seq: 6}}, nil, 6, "", time.Hour,
+		func(_ context.Context, a registry.Applied) error {
+			if len(a.Deleted) != 1 {
+				t.Errorf("a change after the fetch deletes it: %+v", a)
+			}
+			return refused
+		}); !errors.Is(err, refused) {
 		t.Fatalf("got %v", err)
 	}
 	if cur, _ := st.Cursor(ctx); cur.Since != 5 {
@@ -130,7 +157,7 @@ func TestIntegrationRegistryStore(t *testing.T) {
 		t.Fatal("a row was written with a refused projection")
 	}
 	// The cursor never moves backwards.
-	if _, err := st.Invalidate(ctx, nil, 3, "", time.Hour, noDeletion); err != nil {
+	if _, err := st.Invalidate(ctx, nil, nil, 3, "", time.Hour, noDeletion); err != nil {
 		t.Fatal(err)
 	}
 	if cur, _ := st.Cursor(ctx); cur.Since != 5 {
@@ -154,6 +181,60 @@ func TestIntegrationRegistryStore(t *testing.T) {
 	big.Competencies = big.Competencies[:registry.MaxCompetencies]
 	if _, err := st.Save(ctx, []registry.Entry{big}, 5, noProjection); err != nil {
 		t.Fatalf("%d competencies refused: %v", len(big.Competencies), err)
+	}
+}
+
+// Invalidate with re-fetched answers on PostgreSQL: the put is written
+// under next in the transaction that deletes, a key deleted and written
+// again is replaced (never in Deleted, so never deleted from the
+// projection), and a refused projection rolls back the deletion, the
+// write and the cursor together.
+func TestIntegrationRegistryInvalidateWithPut(t *testing.T) {
+	cleanRegistry(t)
+	ctx := context.Background()
+	st := pgstore.Store{S: appStore(t)}
+	a := registry.Entry{Key: registry.Key{Entity: registry.EntityUAS, Key: "TEST-SN-PUT"}, KeyFold: "TEST-SN-PUT", Status: registry.StatusValid}
+	b := registry.Entry{Key: registry.Key{Entity: registry.EntityUAS, Key: "TEST-SN-DEL"}, KeyFold: "TEST-SN-DEL", Status: registry.StatusValid}
+	if _, err := st.Save(ctx, []registry.Entry{a, b}, 0, noProjection); err != nil {
+		t.Fatal(err)
+	}
+	inv := []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-PUT", Seq: 1}, {Entity: registry.EntityUAS, KeyFold: "TEST-SN-DEL", Seq: 2}}
+	suspended := a
+	suspended.Status = registry.StatusSuspended
+	refused := errors.New("bucket down")
+	if _, err := st.Invalidate(ctx, inv, []registry.Entry{suspended}, 2, "", time.Hour,
+		func(context.Context, registry.Applied) error { return refused }); !errors.Is(err, refused) {
+		t.Fatalf("got %v", err)
+	}
+	got, since, err := st.Entries(ctx, []registry.Key{a.Key, b.Key})
+	if err != nil || len(got) != 2 || since != 0 {
+		t.Fatalf("after a refused projection: %+v %d %v", got, since, err)
+	}
+	for _, c := range got {
+		if c.Status != registry.StatusValid || c.FetchedSince != 0 {
+			t.Fatalf("a refused projection left %+v", c)
+		}
+	}
+	applied, err := st.Invalidate(ctx, inv, []registry.Entry{suspended}, 2, "", time.Hour, noDeletion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(applied.Put) != 1 || applied.Put[0].FetchedSince != 2 || applied.Put[0].FetchedAt.IsZero() ||
+		len(applied.Replaced) != 1 || applied.Replaced[0] != a.Key || len(applied.Deleted) != 1 || applied.Deleted[0] != b.Key {
+		t.Fatalf("applied %+v", applied)
+	}
+	got, since, _ = st.Entries(ctx, []registry.Key{a.Key, b.Key})
+	if len(got) != 1 || got[0].Status != registry.StatusSuspended || got[0].FetchedSince != 2 || since != 2 {
+		t.Fatalf("after: %+v %d", got, since)
+	}
+	// A later page applied meanwhile by another instance (an
+	// invalidation above next) skips the put: the key is deleted.
+	if _, err := st.Invalidate(ctx, []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-PUT", Seq: 9}}, nil, 9, "", time.Hour, noDeletion); err != nil {
+		t.Fatal(err)
+	}
+	applied, err = st.Invalidate(ctx, inv[:1], []registry.Entry{a}, 2, "", time.Hour, noDeletion)
+	if err != nil || len(applied.Put) != 0 {
+		t.Fatalf("a put behind a later invalidation: %+v %v", applied, err)
 	}
 }
 
@@ -231,5 +312,100 @@ func TestIntegrationRegistryCacheOnPostgres(t *testing.T) {
 	}
 	if count(t, relOwner(t), "SELECT count(*) FROM events WHERE event_type = 'registry_validated' AND payload::text LIKE '%xyz%'") != 0 {
 		t.Fatal("the secret part was recorded")
+	}
+}
+
+// The bound keys on PostgreSQL (plan step D): the serial and operator of
+// an open flight and the serial, operator and pilot of an active intent
+// are bound, each as a lookup caches it; an ended flight and an ended
+// intent are not (E-01 pair); the read is bounded and a read cut at its
+// bound is counted (E-10). Then the staging order on PostgreSQL: a
+// lookup before the feed has seen the registration, the key bound to
+// the open flight, the poll: the answer is replaced under the page's
+// next_since and the projection never loses the key.
+func TestIntegrationRegistryBoundKeys(t *testing.T) {
+	cleanRegistry(t)
+	ctx := context.Background()
+	app := appPool(t)
+	u := unique()
+	var operatorID string
+	if err := app.QueryRow(ctx, `INSERT INTO operator_accounts (authority_registration_number, display_name, contact_email, status)
+		VALUES ($1, 'Bound keys operator', 'bound@example.invalid', 'active') RETURNING id::text`, "GEO-TEST-B"+u).Scan(&operatorID); err != nil {
+		t.Fatal(err)
+	}
+	clientID := "client-bound-" + u
+	if _, err := app.Exec(ctx, `INSERT INTO oauth_clients (client_id, operator_id, secret_hash, scopes, status)
+		VALUES ($1, $2::uuid, 'x', '{ussp.intents}', 'active')`, clientID, operatorID); err != nil {
+		t.Fatal(err)
+	}
+	opReg, pilot := "GEOTESTB"+u+"-abc", "GEO-TEST-PILOT-"+u
+	for _, in := range []struct{ serial, state string }{{"TESTBI" + u, "activated"}, {"TESTBE" + u, "ended"}} {
+		if _, err := app.Exec(ctx, `INSERT INTO operational_intents (id, operator_id, client_id, uas_serial, local_state, volumes, volumes_amsl,
+			    envelope_geom, time_start, time_end, operator_reg, pilot_ref)
+			VALUES (gen_random_uuid(), $1::uuid, $2, $3, $4, '[]', '[]',
+			        ST_GeogFromText('SRID=4326;POLYGON((44.7 41.7,44.8 41.7,44.8 41.8,44.7 41.7))'), now(), now() + interval '1 hour', $5, $6)`,
+			operatorID, clientID, in.serial, in.state, opReg, pilot); err != nil {
+			t.Fatal(err)
+		}
+	}
+	openSerial := "test-bf-" + u
+	if _, err := app.Exec(ctx, `INSERT INTO flights (uas_serial, operator_reg, started_at) VALUES ($1, NULL, now()),
+		($2, NULL, now() - interval '1 hour')`, openSerial, "TESTBX"+u); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Exec(ctx, `UPDATE flights SET ended_at = now(), end_reason = 'landed' WHERE uas_serial = $1`, "TESTBX"+u); err != nil {
+		t.Fatal(err)
+	}
+	counters := &core.Counters{}
+	st := pgstore.Store{S: appStore(t), Counters: counters}
+	bound, err := st.Bound(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := append(registry.KeysOf(registry.Query{Serial: "TESTBI" + u, Operator: opReg, Pilot: pilot}), registry.KeysOf(registry.Query{Serial: openSerial})...)
+	for _, k := range want {
+		if !slices.Contains(bound, k) {
+			t.Errorf("%v is not bound", k)
+		}
+	}
+	for _, k := range append(registry.KeysOf(registry.Query{Serial: "TESTBE" + u}), registry.KeysOf(registry.Query{Serial: "TESTBX" + u})...) {
+		if slices.Contains(bound, k) {
+			t.Errorf("%v is bound", k)
+		}
+	}
+	if counters.Get(pgstore.CounterBoundTruncated) != 0 {
+		t.Fatal("an uncut read was counted cut")
+	}
+	cut := pgstore.Store{S: appStore(t), Counters: counters, BoundLimit: 1}
+	if few, err := cut.Bound(ctx); err != nil || len(few) == 0 || len(few) > 3 || counters.Get(pgstore.CounterBoundTruncated) != 1 {
+		t.Fatalf("a read of one row: %v %v, cut %d", few, err, counters.Get(pgstore.CounterBoundTruncated))
+	}
+
+	fake := authority.New()
+	defer fake.Close()
+	client, err := registry.NewClient(registry.ClientConfig{BaseURL: fake.URL(), Tokens: authority.Tokens{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proj := registry.NewMemoryProjector()
+	cache := registry.NewCache(registry.CacheConfig{Client: client, Store: st, Projector: proj, Audit: st})
+	feed := registry.NewFeed(registry.FeedConfig{Client: client, Store: st, Projector: proj, Bound: st, Cache: cache, Counters: cache.Counters()})
+	fake.SetUAS(openSerial, "active", "", "")
+	if _, err := cache.Validate(ctx, []registry.Query{{Serial: openSerial}}, registry.PurposeIdentification); err != nil {
+		t.Fatal(err)
+	}
+	key := registry.KeysOf(registry.Query{Serial: openSerial})[0]
+	if err := feed.Poll(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, since, err := st.Entries(ctx, []registry.Key{key})
+	if err != nil || len(got) != 1 || got[0].Status != registry.StatusValid || got[0].FetchedSince != since || since != 1 {
+		t.Fatalf("after the poll: %+v %d %v", got, since, err)
+	}
+	if fake.Requests("validate") != 2 || cache.Counters().Get(registry.CounterFeedRefetched) != 1 {
+		t.Fatalf("validate %d refetched %d", fake.Requests("validate"), cache.Counters().Get(registry.CounterFeedRefetched))
+	}
+	if es, _ := proj.Snapshot(); !slices.ContainsFunc(es, func(e registry.Entry) bool { return e.Key == key && e.FetchedSince == 1 }) {
+		t.Fatalf("projection %+v", es)
 	}
 }

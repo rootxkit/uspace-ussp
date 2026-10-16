@@ -13,12 +13,14 @@ import (
 const deleteRegistryValidityByFold = `-- name: DeleteRegistryValidityByFold :many
 DELETE FROM registry_validity
  WHERE entity_type = $1 AND key_fold = $2
+   AND fetched_since < $3::bigint
 RETURNING entity_type, key
 `
 
 type DeleteRegistryValidityByFoldParams struct {
 	EntityType string `json:"entity_type"`
 	KeyFold    string `json:"key_fold"`
+	Seq        int64  `json:"seq"`
 }
 
 type DeleteRegistryValidityByFoldRow struct {
@@ -26,9 +28,10 @@ type DeleteRegistryValidityByFoldRow struct {
 	Key        string `json:"key"`
 }
 
-// Invalidates every cached answer under a fold key and names them.
+// Invalidates the cached answers under a fold key that a change of
+// sequence seq names (fetched under an older cursor) and names them.
 func (q *Queries) DeleteRegistryValidityByFold(ctx context.Context, arg DeleteRegistryValidityByFoldParams) ([]DeleteRegistryValidityByFoldRow, error) {
-	rows, err := q.db.Query(ctx, deleteRegistryValidityByFold, arg.EntityType, arg.KeyFold)
+	rows, err := q.db.Query(ctx, deleteRegistryValidityByFold, arg.EntityType, arg.KeyFold, arg.Seq)
 	if err != nil {
 		return nil, err
 	}
@@ -79,6 +82,48 @@ func (q *Queries) RecordRegistryInvalidation(ctx context.Context, arg RecordRegi
 	return err
 }
 
+const registryBoundKeys = `-- name: RegistryBoundKeys :many
+SELECT f.uas_serial, f.operator_reg, NULL::text AS pilot_ref
+  FROM flights f
+ WHERE f.ended_at IS NULL
+UNION
+SELECT i.uas_serial, i.operator_reg, i.pilot_ref
+  FROM operational_intents i
+ WHERE i.local_state IN ('accepted', 'activated', 'nonconforming', 'contingent')
+ LIMIT $1
+`
+
+type RegistryBoundKeysRow struct {
+	UasSerial   string  `json:"uas_serial"`
+	OperatorReg *string `json:"operator_reg"`
+	PilotRef    *string `json:"pilot_ref"`
+}
+
+// The registry keys an aircraft in flight or about to fly needs now:
+// the serial and operator of every open flight (flights_open_idx) and
+// the serial, operator and pilot of every active intent (the open
+// intents' index), at most max_rows. The feed re-fetches these when a
+// change names them, and its sweep keeps them fresh.
+func (q *Queries) RegistryBoundKeys(ctx context.Context, maxRows int32) ([]RegistryBoundKeysRow, error) {
+	rows, err := q.db.Query(ctx, registryBoundKeys, maxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RegistryBoundKeysRow
+	for rows.Next() {
+		var i RegistryBoundKeysRow
+		if err := rows.Scan(&i.UasSerial, &i.OperatorReg, &i.PilotRef); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const registryFeedCursor = `-- name: RegistryFeedCursor :one
 SELECT since, etag, polled_at, extract(epoch FROM now() - polled_at)::float8 AS age_s
   FROM registry_feed
@@ -108,7 +153,7 @@ func (q *Queries) RegistryFeedCursor(ctx context.Context) (RegistryFeedCursorRow
 
 const registryValidityAll = `-- name: RegistryValidityAll :many
 SELECT entity_type, key, key_fold, status, valid_until, class_label, mtom_band,
-       competencies, fetched_at, negative,
+       competencies, fetched_at, negative, fetched_since,
        extract(epoch FROM now() - fetched_at)::float8 AS age_s
   FROM registry_validity
  ORDER BY fetched_at DESC
@@ -126,6 +171,7 @@ type RegistryValidityAllRow struct {
 	Competencies []byte     `json:"competencies"`
 	FetchedAt    time.Time  `json:"fetched_at"`
 	Negative     bool       `json:"negative"`
+	FetchedSince int64      `json:"fetched_since"`
 	AgeS         float64    `json:"age_s"`
 }
 
@@ -151,6 +197,7 @@ func (q *Queries) RegistryValidityAll(ctx context.Context, maxRows int32) ([]Reg
 			&i.Competencies,
 			&i.FetchedAt,
 			&i.Negative,
+			&i.FetchedSince,
 			&i.AgeS,
 		); err != nil {
 			return nil, err
@@ -166,7 +213,7 @@ func (q *Queries) RegistryValidityAll(ctx context.Context, maxRows int32) ([]Reg
 const registryValidityByKeys = `-- name: RegistryValidityByKeys :many
 
 SELECT v.entity_type, v.key, v.key_fold, v.status, v.valid_until, v.class_label, v.mtom_band,
-       v.competencies, v.fetched_at, v.negative,
+       v.competencies, v.fetched_at, v.negative, v.fetched_since,
        extract(epoch FROM now() - v.fetched_at)::float8 AS age_s
   FROM registry_validity v
   JOIN (SELECT unnest($1::text[]) AS entity_type,
@@ -190,12 +237,19 @@ type RegistryValidityByKeysRow struct {
 	Competencies []byte     `json:"competencies"`
 	FetchedAt    time.Time  `json:"fetched_at"`
 	Negative     bool       `json:"negative"`
+	FetchedSince int64      `json:"fetched_since"`
 	AgeS         float64    `json:"age_s"`
 }
 
 // The registry validity cache of WP-5 (internal/registry): the F8
 // answers by key, the change feed's cursor and the invalidations it
 // applied. Every age and every timestamp is the database clock.
+//
+// fetched_since is the feed cursor an answer was fetched under. The
+// invariant: a cached answer survives a change to its key iff it was
+// fetched under a feed cursor at or beyond the change's seq; every
+// other answer the change names is invalidated. Time (the change's at,
+// fetched_at) never decides retention.
 // The cached answers for the (entity_type, key) pairs, with their age.
 func (q *Queries) RegistryValidityByKeys(ctx context.Context, arg RegistryValidityByKeysParams) ([]RegistryValidityByKeysRow, error) {
 	rows, err := q.db.Query(ctx, registryValidityByKeys, arg.EntityTypes, arg.Keys)
@@ -217,8 +271,49 @@ func (q *Queries) RegistryValidityByKeys(ctx context.Context, arg RegistryValidi
 			&i.Competencies,
 			&i.FetchedAt,
 			&i.Negative,
+			&i.FetchedSince,
 			&i.AgeS,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const registryValidityRetainedByFold = `-- name: RegistryValidityRetainedByFold :many
+SELECT entity_type, key
+  FROM registry_validity
+ WHERE entity_type = $1 AND key_fold = $2
+   AND fetched_since >= $3::bigint
+`
+
+type RegistryValidityRetainedByFoldParams struct {
+	EntityType string `json:"entity_type"`
+	KeyFold    string `json:"key_fold"`
+	Seq        int64  `json:"seq"`
+}
+
+type RegistryValidityRetainedByFoldRow struct {
+	EntityType string `json:"entity_type"`
+	Key        string `json:"key"`
+}
+
+// The cached answers under a fold key that a change of sequence seq
+// leaves standing: fetched under a cursor at or beyond it.
+func (q *Queries) RegistryValidityRetainedByFold(ctx context.Context, arg RegistryValidityRetainedByFoldParams) ([]RegistryValidityRetainedByFoldRow, error) {
+	rows, err := q.db.Query(ctx, registryValidityRetainedByFold, arg.EntityType, arg.KeyFold, arg.Seq)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RegistryValidityRetainedByFoldRow
+	for rows.Next() {
+		var i RegistryValidityRetainedByFoldRow
+		if err := rows.Scan(&i.EntityType, &i.Key); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -249,10 +344,10 @@ func (q *Queries) SetRegistryFeedCursor(ctx context.Context, arg SetRegistryFeed
 
 const upsertRegistryValidity = `-- name: UpsertRegistryValidity :one
 INSERT INTO registry_validity (entity_type, key, key_fold, status, valid_until, class_label, mtom_band,
-                               competencies, fetched_at, negative)
+                               competencies, fetched_at, negative, fetched_since)
 SELECT $1::text, $2::text, $3::text, $4::text,
        $5::timestamptz, $6::text, $7::text,
-       $8::jsonb, now(), $9::boolean
+       $8::jsonb, now(), $9::boolean, $10::bigint
  WHERE NOT EXISTS (
        SELECT 1 FROM registry_invalidations i
         WHERE i.entity_type = $1::text AND i.key_fold = $3::text
@@ -260,7 +355,8 @@ SELECT $1::text, $2::text, $3::text, $4::text,
 ON CONFLICT (entity_type, key) DO UPDATE
    SET key_fold = EXCLUDED.key_fold, status = EXCLUDED.status, valid_until = EXCLUDED.valid_until,
        class_label = EXCLUDED.class_label, mtom_band = EXCLUDED.mtom_band,
-       competencies = EXCLUDED.competencies, fetched_at = EXCLUDED.fetched_at, negative = EXCLUDED.negative
+       competencies = EXCLUDED.competencies, fetched_at = EXCLUDED.fetched_at, negative = EXCLUDED.negative,
+       fetched_since = EXCLUDED.fetched_since
 RETURNING fetched_at
 `
 
@@ -279,7 +375,8 @@ type UpsertRegistryValidityParams struct {
 
 // Writes one answer unless the change feed invalidated its key under a
 // sequence above since (the cursor read before the fetch): an answer
-// that raced an invalidation is never written (no row returned).
+// that raced an invalidation is never written (no row returned). The
+// row records since as its fetched_since.
 func (q *Queries) UpsertRegistryValidity(ctx context.Context, arg UpsertRegistryValidityParams) (time.Time, error) {
 	row := q.db.QueryRow(ctx, upsertRegistryValidity,
 		arg.EntityType,

@@ -25,6 +25,21 @@ type Invalidation struct {
 	Seq     int64
 }
 
+// Applied is what one Invalidate did to registry_validity: the rows it
+// deleted (fetched under a cursor below the change that names them, and
+// not written again), the rows under a named fold key it retained
+// (fetched under a cursor at or beyond that change, so they reflect it)
+// and the re-fetched answers it wrote (FetchedAt from the database
+// clock, FetchedSince the page's next). Replaced are the keys of Put
+// whose row the change invalidated: deleted and written again in the
+// one transaction, so never deleted from the projection.
+type Applied struct {
+	Deleted  []Key
+	Retained []Key
+	Put      []Entry
+	Replaced []Key
+}
+
 // FeedCursor is the change feed's position.
 type FeedCursor struct {
 	// Since is the authority's next_since of the last page applied.
@@ -48,12 +63,16 @@ type Store interface {
 	// database clock) before it commits: an error from project rolls the
 	// writes back and is returned.
 	Save(ctx context.Context, es []Entry, since int64, project func(context.Context, []Entry) error) ([]Entry, error)
-	// Invalidate deletes the entries under the invalidations' fold keys,
-	// records the invalidations, forgets those older than keep, and
-	// moves the cursor to next with etag, in one transaction; project is
-	// called with the deleted keys before it commits. With no
+	// Invalidate deletes the entries under the invalidations' fold keys
+	// that were fetched under a cursor below the invalidation's Seq
+	// (Entry.FetchedSince) and retains the others, writes put (the
+	// answers re-fetched after the page was received) under since next
+	// with Save's guard, records the invalidations, forgets those older
+	// than keep, and moves the cursor to next with etag, in one
+	// transaction; project is called with what it did before it commits.
+	// A key deleted and written again is in Put, not in Deleted. With no
 	// invalidation it records that the feed answered.
-	Invalidate(ctx context.Context, inv []Invalidation, next int64, etag string, keep time.Duration, project func(context.Context, []Key) error) ([]Key, error)
+	Invalidate(ctx context.Context, inv []Invalidation, put []Entry, next int64, etag string, keep time.Duration, project func(context.Context, Applied) error) (Applied, error)
 	// Cursor is the feed's cursor (Since 0 before the first page).
 	Cursor(ctx context.Context) (FeedCursor, error)
 	// All is every cached entry, newest first, at most limit.
@@ -73,13 +92,18 @@ type Projector interface {
 // holds a row for it: a put reaches the projection before the commit,
 // so a commit that failed after it leaves an answer the table lacks,
 // which deleting the table's rows alone would never remove (audit S1).
-// It returns the keys it deleted.
+// The keys in except are not deleted: the rows the table retained
+// (Applied.Retained), whose projection stands with them. It returns the
+// keys it deleted.
 type FoldDeleter interface {
-	DeleteFolds(ctx context.Context, inv []Invalidation) ([]Key, error)
+	DeleteFolds(ctx context.Context, inv []Invalidation, except []Key) ([]Key, error)
 }
 
-// invalidates says whether one of inv names k.
-func invalidates(inv []Invalidation, k Key) bool {
+// invalidates says whether one of inv names k and k is not in except.
+func invalidates(inv []Invalidation, except []Key, k Key) bool {
+	if slices.Contains(except, k) {
+		return false
+	}
 	for _, in := range inv {
 		if in.Entity == k.Entity && in.KeyFold == entryKeyFold(k.Entity, k.Key) {
 			return true
@@ -128,7 +152,7 @@ func (m *MemoryProjector) ProjectRegistry(_ context.Context, put []Entry, del []
 }
 
 // DeleteFolds implements FoldDeleter.
-func (m *MemoryProjector) DeleteFolds(_ context.Context, inv []Invalidation) ([]Key, error) {
+func (m *MemoryProjector) DeleteFolds(_ context.Context, inv []Invalidation, except []Key) ([]Key, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.Fail != nil {
@@ -136,7 +160,7 @@ func (m *MemoryProjector) DeleteFolds(_ context.Context, inv []Invalidation) ([]
 	}
 	var out []Key
 	for k := range m.entries {
-		if invalidates(inv, k) {
+		if invalidates(inv, except, k) {
 			delete(m.entries, k)
 			out = append(out, k)
 		}

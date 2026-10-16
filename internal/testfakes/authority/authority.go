@@ -5,9 +5,12 @@
 // parameter, GET /v1/registry/changes with since, limit and ETag),
 // answers status only as the authority's F8 does (an operator number
 // echoed as its public part, an expired registration revoked) and
-// records a change for every status it is given. Down makes every
-// request answer 503; Misbehave adds a field F8 does not define to
-// every lookup answer; Requests counts what was asked.
+// records a change for every status it is given, at the time of its
+// clock (SetClock: an authority whose clock is not this USSP's). Down
+// makes every request answer 503; Misbehave adds a field F8 does not
+// define to every lookup answer; Requests counts what was asked.
+// Down("validate") or Down("changes") takes one operation down and
+// leaves the others up (a lookup service down while the feed answers).
 //
 // WP-15 adds the holder's operating-status notice of the pinned file
 // (POST /v1/certificates/{id}/status: started once, ceased only after a
@@ -88,6 +91,7 @@ type Fake struct {
 	mu        sync.Mutex
 	bearer    string
 	down      bool
+	downOps   map[string]bool
 	extra     map[string]any
 	echoAs    string
 	operators map[string]operator // by regnum.CompareKey
@@ -101,6 +105,11 @@ type Fake struct {
 	// failAfter is how many of the next reports are stored and answered
 	// 502 (FailAfterCommit).
 	failAfter int
+	// clock stamps the changes' at (time.Now).
+	clock func() time.Time
+	// behind is the sequence the next change is recorded under
+	// (InsertChangeBehind); 0: the next one.
+	behind int64
 }
 
 // StatusNotice is one operating-status notice the fake recorded.
@@ -137,15 +146,43 @@ func (f *Fake) URL() string { return f.srv.URL }
 // token service hands out another bearer).
 func (f *Fake) AcceptBearer(tok string) { f.mu.Lock(); f.bearer = tok; f.mu.Unlock() }
 
-// Down makes every request answer 503 until Up.
-func (f *Fake) Down() { f.mu.Lock(); f.down = true; f.mu.Unlock() }
+// Down makes every request answer 503 until Up; with ops, only the
+// requests of those operations ("validate": GET and POST
+// /v1/registry/validate; "changes": GET /v1/registry/changes).
+func (f *Fake) Down(ops ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(ops) == 0 {
+		f.down = true
+		return
+	}
+	if f.downOps == nil {
+		f.downOps = map[string]bool{}
+	}
+	for _, op := range ops {
+		f.downOps[op] = true
+	}
+}
 
 // FailAfterCommit makes the next n occurrence reports be stored and
 // answered 502, as an authority whose answer is lost after its commit.
 func (f *Fake) FailAfterCommit(n int) { f.mu.Lock(); f.failAfter = n; f.mu.Unlock() }
 
-// Up ends Down.
-func (f *Fake) Up() { f.mu.Lock(); f.down = false; f.mu.Unlock() }
+// InsertChangeBehind makes the next change (SetOperator, SetUAS,
+// SetPilot) be recorded under seq, a sequence the feed has already read
+// past: a transaction at the authority that took its sequence before a
+// later one and committed after the page holding the later one was
+// served (a bigserial is not gap-free under concurrent transactions).
+// A cursor beyond seq never sees the change; the sequence may repeat one
+// already served.
+func (f *Fake) InsertChangeBehind(seq int64) { f.mu.Lock(); f.behind = seq; f.mu.Unlock() }
+
+// SetClock makes now the clock the changes' at is stamped with (nil:
+// time.Now).
+func (f *Fake) SetClock(now func() time.Time) { f.mu.Lock(); f.clock = now; f.mu.Unlock() }
+
+// Up ends Down, for every operation.
+func (f *Fake) Up() { f.mu.Lock(); f.down, f.downOps = false, nil; f.mu.Unlock() }
 
 // Misbehave adds field: value to every lookup answer's parts (nil
 // removes every added field): an authority that sends what F8 does not
@@ -175,8 +212,16 @@ func (f *Fake) Requests(op string) int { f.mu.Lock(); defer f.mu.Unlock(); retur
 func (f *Fake) Purposes() []string { f.mu.Lock(); defer f.mu.Unlock(); return slices.Clone(f.purposes) }
 
 func (f *Fake) record(entity, key, status string) {
-	f.changes = append(f.changes, Change{Seq: int64(len(f.changes) + 1), EntityType: entity, EntityID: entity + "-" + key,
-		PublicKey: key, Status: status, At: time.Now().UTC()})
+	now := time.Now
+	if f.clock != nil {
+		now = f.clock
+	}
+	seq := int64(len(f.changes) + 1)
+	if f.behind > 0 {
+		seq, f.behind = f.behind, 0
+	}
+	f.changes = append(f.changes, Change{Seq: seq, EntityType: entity, EntityID: entity + "-" + key,
+		PublicKey: key, Status: status, At: now().UTC()})
 }
 
 // SetOperator registers an operator with a registry status (active,
@@ -216,7 +261,14 @@ func problem(w http.ResponseWriter, status int, slug string) {
 func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.down {
+	op := ""
+	switch r.URL.Path {
+	case "/v1/registry/validate":
+		op = "validate"
+	case "/v1/registry/changes":
+		op = "changes"
+	}
+	if f.down || (op != "" && f.downOps[op]) {
 		problem(w, http.StatusServiceUnavailable, "unavailable")
 		return
 	}

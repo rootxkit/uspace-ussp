@@ -7,6 +7,31 @@ additively within `/v1`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Registry answers fetched just after a registration were deleted by
+  the change feed (staging): a registered aircraft then resolved
+  `unknown_operator` / `registry_unavailable` for its whole flight and
+  raised a spurious critical `identification` alert inside a
+  PROHIBITED zone. A cached answer now records the feed cursor it was
+  fetched under (`registry_validity.fetched_since`, migration 00030)
+  and a change deletes only answers fetched under a cursor below its
+  `seq` (`registry_feed_retained` counts the others). The keys of open
+  flights and active intents a change names are re-fetched in the poll
+  and written in its transaction, the KV key overwritten, never deleted
+  first (`registry_feed_refetched`, `registry_refetch_failed`,
+  `registry_refetch_deferred`; `/readyz` `refetch_failed=n`). A sweep
+  every `registry_revalidate_interval_s` (new policy value, 60 s) asks
+  again about every bound key whose answer is missing or older than
+  that, at most `registry_revalidate_max_count` (new, 1000) per sweep
+  (`registry_revalidated`, `registry_revalidate_failed`,
+  `registry_revalidate_deferred`, `registry_sweep_failed`). A flight's
+  first fact looks up its serial and operator (spec 02 F8 "each new
+  serial seen"; `registry_warmed`, `registry_warm_refused`). The bound
+  keys read is bounded (`registry_bound_truncated`). SC-17's USSP
+  clause is held by `web/e2e/registry.spec.ts` in the browser-test
+  stack (WP-5, `docs/RUNBOOKS/WP-5.md`).
+
 ### Added
 
 - Intent decisions judge AGL limits with the DEM (uspace-ansp's AGL

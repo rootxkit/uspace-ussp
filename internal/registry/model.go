@@ -74,7 +74,36 @@ const (
 	CounterWriteSkipped     = "registry_write_skipped"      // an answer not cached because the feed invalidated its key meanwhile
 	CounterFeedPolled       = "registry_feed_polled"        // a change page applied
 	CounterFeedNotModified  = "registry_feed_not_modified"  // the feed answered 304
-	CounterFeedInvalidated  = "registry_feed_invalidated"   // a cached entry deleted by a change
+	CounterFeedInvalidated  = "registry_feed_invalidated"   // a cached entry a change invalidated (deleted, or replaced by its re-fetch)
+	// CounterFeedRetained counts cached entries a change named that were
+	// fetched under a cursor at or beyond it, so they reflect it and stay.
+	CounterFeedRetained = "registry_feed_retained"
+	// CounterFeedRefetched counts answers of bound keys a change named,
+	// re-fetched and written in the transaction that applied the change.
+	CounterFeedRefetched = "registry_feed_refetched"
+	// CounterRefetchFailed counts bound keys a change named that the
+	// authority did not answer when re-fetched: deleted, unavailable.
+	CounterRefetchFailed = "registry_refetch_failed"
+	// CounterRefetchDeferred counts bound keys a change named beyond the
+	// poll's re-fetch bound: deleted, left to the sweep.
+	CounterRefetchDeferred = "registry_refetch_deferred"
+	// CounterRevalidated counts answers of bound keys the sweep asked
+	// about again and cached (missing, or older than its period).
+	CounterRevalidated = "registry_revalidated"
+	// CounterRevalidateFailed counts bound keys the sweep asked about
+	// that the authority did not answer.
+	CounterRevalidateFailed = "registry_revalidate_failed"
+	// CounterRevalidateDeferred counts bound keys due beyond one sweep's
+	// bound (registry_revalidate_max_count): left to the next sweep.
+	CounterRevalidateDeferred = "registry_revalidate_deferred"
+	// CounterSweepFailed counts sweeps that did not complete.
+	CounterSweepFailed = "registry_sweep_failed"
+	// CounterWarmed counts flights first seen whose keys were looked up
+	// (a fresh key is not asked again).
+	CounterWarmed = "registry_warmed"
+	// CounterWarmRefused counts flights first seen whose keys F8 does
+	// not define (nothing asked).
+	CounterWarmRefused = "registry_warm_refused"
 	// CounterFeedOrphansDeleted counts projected answers a change named
 	// that registry_validity held no row for (a commit that failed after
 	// the projection's put; audit S1).
@@ -145,6 +174,10 @@ type Entry struct {
 	Competencies []Competency `json:"competencies,omitempty"`
 	// FetchedAt is when the authority answered, on the database clock.
 	FetchedAt time.Time `json:"fetched_at"`
+	// FetchedSince is the change feed's cursor the answer was fetched
+	// under: a change to its key with a sequence above it invalidates
+	// it, any other change leaves it standing (feed.go).
+	FetchedSince int64 `json:"fetched_since"`
 }
 
 // Negative reports whether the entry caches the registry not holding
@@ -205,6 +238,20 @@ func serialKey(raw string) (key, fold string) {
 
 // pilotKey is the cache key of a pilot id.
 func pilotKey(raw string) string { return strings.TrimSpace(raw) }
+
+// KeysOf are the cache keys of q's operator number, serial and pilot
+// id, as a lookup of q caches them; an empty part has none.
+func KeysOf(q Query) []Key {
+	var n normalised
+	if v := strings.TrimSpace(q.Operator); v != "" {
+		n.operatorKey, n.operatorPublic = operatorKey(v)
+	}
+	if v := strings.TrimSpace(q.Serial); v != "" {
+		n.serial, n.serialFold = serialKey(v)
+	}
+	n.pilot = pilotKey(q.Pilot)
+	return n.keys()
+}
 
 // entryKeyFold is the fold key an entity's key is invalidated under.
 func entryKeyFold(e EntityType, key string) string {

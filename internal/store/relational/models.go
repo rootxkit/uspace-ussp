@@ -522,6 +522,8 @@ type RegistryValidity struct {
 	FetchedAt    time.Time  `json:"fetched_at"`
 	Negative     bool       `json:"negative"`
 	KeyFold      string     `json:"key_fold"`
+	// the change feed cursor the answer was fetched under; a change with seq above it invalidates the answer
+	FetchedSince int64 `json:"fetched_since"`
 }
 
 type Session struct {

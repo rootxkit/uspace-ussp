@@ -115,19 +115,36 @@ func TestTTLFollowsThePolicy(t *testing.T) {
 	}
 }
 
-// Done-when (SC-17 step 2 in unit form): a status change at the
-// authority reaches the feed, which invalidates the key in the table and
-// the projection; the next lookup refetches and sees it. Without the
-// poll the cached answer is still served (E-01 pair).
+// Done-when (SC-17 step 2 in unit form), in the order staging ran it:
+// a registration, a lookup before the feed has seen it (the cursor
+// behind the change), then the first poll. The answer was fetched under
+// a cursor below the change, so the change invalidates it in the table
+// and the projection, and the next lookup refetches. A suspension later
+// is invalidated the same way and the refetch sees it. Without the poll
+// the cached answer is still served (E-01 pair).
 func TestChangeFeedInvalidatesAndTheNextLookupRefetches(t *testing.T) {
 	f := newFixture(t)
 	f.fake.SetUAS(snA, "active", "", "")
-	if err := f.feed.Poll(t.Context()); err != nil { // consume the registration
+	if a := f.uas(t, snA); a.Status != StatusValid {
+		t.Fatalf("first %+v", a)
+	}
+	if e, ok := f.store.row(Key{EntityUAS, snA}); !ok || e.FetchedSince != 0 {
+		t.Fatalf("row %+v", e)
+	}
+	if es, _ := f.proj.Snapshot(); len(es) != 1 || es[0].FetchedSince != 0 {
+		t.Fatalf("projection %v", es)
+	}
+	if err := f.feed.Poll(t.Context()); err != nil { // the registration, seq 1 > cursor 0
 		t.Fatal(err)
 	}
-	f.uas(t, snA)
-	if es, _ := f.proj.Snapshot(); len(es) != 1 {
-		t.Fatalf("projection %v", es)
+	if _, ok := f.store.row(Key{EntityUAS, snA}); ok {
+		t.Fatal("an answer fetched before the feed saw its change survived it")
+	}
+	if es, _ := f.proj.Snapshot(); len(es) != 0 {
+		t.Fatalf("the projection kept %v", es)
+	}
+	if a := f.uas(t, snA); a.Status != StatusValid || ageOf(t, a) != 0 || f.fake.Requests("validate") != 2 {
+		t.Fatalf("refetched: %+v after %d", a, f.fake.Requests("validate"))
 	}
 	f.fake.SetUAS(snA, "suspended", "", "")
 	if a := f.uas(t, snA); a.Status != StatusValid {
@@ -142,11 +159,11 @@ func TestChangeFeedInvalidatesAndTheNextLookupRefetches(t *testing.T) {
 	if es, _ := f.proj.Snapshot(); len(es) != 0 {
 		t.Fatalf("the projection kept %v", es)
 	}
-	if a := f.uas(t, snA); a.Status != StatusSuspended || ageOf(t, a) != 0 || f.fake.Requests("validate") != 2 {
+	if a := f.uas(t, snA); a.Status != StatusSuspended || ageOf(t, a) != 0 || f.fake.Requests("validate") != 3 {
 		t.Fatalf("after the poll: %+v", a)
 	}
-	if f.count(CounterFeedInvalidated) != 1 || f.count(CounterFeedPolled) != 2 {
-		t.Fatalf("invalidated %d polled %d", f.count(CounterFeedInvalidated), f.count(CounterFeedPolled))
+	if f.count(CounterFeedInvalidated) != 2 || f.count(CounterFeedPolled) != 2 || f.count(CounterFeedRetained) != 0 {
+		t.Fatalf("invalidated %d polled %d retained %d", f.count(CounterFeedInvalidated), f.count(CounterFeedPolled), f.count(CounterFeedRetained))
 	}
 }
 
@@ -232,8 +249,8 @@ func TestWriteRacingAnInvalidationIsSkipped(t *testing.T) {
 	f := newFixture(t)
 	f.fake.SetUAS(snA, "active", "", "")
 	f.store.beforeSave = func() {
-		_, _ = f.store.Invalidate(context.Background(), []Invalidation{{Entity: EntityUAS, KeyFold: snA, Seq: 7}}, 7, "", time.Hour,
-			func(context.Context, []Key) error { return nil })
+		_, _ = f.store.Invalidate(context.Background(), []Invalidation{{Entity: EntityUAS, KeyFold: snA, Seq: 7}}, nil, 7, "", time.Hour,
+			func(context.Context, Applied) error { return nil })
 	}
 	if a := f.uas(t, snA); a.Status != StatusValid {
 		t.Fatalf("answer %+v", a)

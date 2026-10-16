@@ -26,9 +26,10 @@ type invalidation struct {
 }
 
 // memStore is Store in memory, with the semantics pgstore's SQL has:
-// ages on its clock, the invalidation guard on Save, the cursor never
-// moving backwards, and project inside the "transaction" (an error
-// leaves nothing changed).
+// ages on its clock, the invalidation guard on Save, fetched_since
+// deciding what an invalidation deletes, the cursor never moving
+// backwards, and project inside the "transaction" (an error leaves
+// nothing changed).
 type memStore struct {
 	mu       sync.Mutex
 	clock    *clock
@@ -77,7 +78,7 @@ func (m *memStore) Save(ctx context.Context, es []Entry, since int64, project fu
 		if in, ok := m.inv[Key{e.Entity, e.KeyFold}]; ok && in.seq > since {
 			continue
 		}
-		e.FetchedAt = m.clock.Now()
+		e.FetchedAt, e.FetchedSince = m.clock.Now(), since
 		written = append(written, e)
 	}
 	if err := project(ctx, written); err != nil {
@@ -89,25 +90,54 @@ func (m *memStore) Save(ctx context.Context, es []Entry, since int64, project fu
 	return written, nil
 }
 
-func (m *memStore) Invalidate(ctx context.Context, inv []Invalidation, next int64, etag string, keep time.Duration, project func(context.Context, []Key) error) ([]Key, error) {
+func (m *memStore) Invalidate(ctx context.Context, inv []Invalidation, put []Entry, next int64, etag string, keep time.Duration, project func(context.Context, Applied) error) (Applied, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.failWrite != nil {
-		return nil, m.failWrite
+		return Applied{}, m.failWrite
 	}
-	var deleted []Key
+	// The highest sequence that names each row: a row is deleted when it
+	// was fetched under a cursor below it (pgstore's
+	// DeleteRegistryValidityByFold), retained otherwise.
+	named := map[Key]int64{}
 	for _, in := range inv {
 		for k := range m.rows {
 			if k.Entity == in.Entity && m.rows[k].KeyFold == in.KeyFold {
-				deleted = append(deleted, k)
+				named[k] = max(named[k], in.Seq)
 			}
 		}
 	}
-	if err := project(ctx, deleted); err != nil {
-		return nil, err
+	// The re-fetched answers under next, with Save's guard (an
+	// invalidation above next, from a later page, skips one).
+	var a Applied
+	for i := range put {
+		e := put[i]
+		if in, ok := m.inv[Key{e.Entity, e.KeyFold}]; ok && in.seq > next {
+			continue
+		}
+		e.FetchedAt, e.FetchedSince = m.clock.Now(), next
+		a.Put = append(a.Put, e)
 	}
-	for _, k := range deleted {
+	isPut := func(k Key) bool { return slices.ContainsFunc(a.Put, func(e Entry) bool { return e.Key == k }) }
+	for k, seq := range named {
+		switch {
+		case isPut(k) && m.rows[k].FetchedSince < seq:
+			a.Replaced = append(a.Replaced, k)
+		case isPut(k):
+		case m.rows[k].FetchedSince < seq:
+			a.Deleted = append(a.Deleted, k)
+		default:
+			a.Retained = append(a.Retained, k)
+		}
+	}
+	if err := project(ctx, a); err != nil {
+		return Applied{}, err
+	}
+	for _, k := range a.Deleted {
 		delete(m.rows, k)
+	}
+	for i := range a.Put {
+		m.rows[a.Put[i].Key] = a.Put[i]
 	}
 	now := m.clock.Now()
 	for _, in := range inv {
@@ -121,7 +151,7 @@ func (m *memStore) Invalidate(ctx context.Context, inv []Invalidation, next int6
 		}
 	}
 	m.since, m.etag, m.polledAt = max(m.since, next), etag, &now
-	return deleted, nil
+	return a, nil
 }
 
 func (m *memStore) Cursor(context.Context) (FeedCursor, error) {

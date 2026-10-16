@@ -299,7 +299,7 @@ TimescaleDB read-only for records and exports.
 | `cis_datasets` P | `dataset`, `version`, `etag`, `fetched_at`, `metadata` (JSONB), `signature_ok` | `cis_version` and `cis_age_s` come from here. |
 | `cis_features` P | `dataset`, `version`, `feature_id`, `feature` (JSONB verbatim ED-318), `geom`, `lower_m`, `lower_ref`, `upper_m`, `upper_ref`, `applicable_from`, `applicable_to`, `zone_type` | Only the current and the previous version are kept; history is the CISP's. |
 | `cis_notifications` P | `id`, `received_at`, `dataset`, `version`, `feature_ids[]`, `reason`, `jws_ok`, `pulled_at` | The webhook log. |
-| `registry_validity` P | `entity_type`, `key`, `status`, `valid_until`, `class_label`, `mtom_band`, `competencies` (JSONB), `fetched_at`, `negative` bool | TTL 24 h positive, 5 min negative; invalidated by the F8 change feed. No PII. |
+| `registry_validity` P | `entity_type`, `key`, `status`, `valid_until`, `class_label`, `mtom_band`, `competencies` (JSONB), `fetched_at`, `negative` bool, `fetched_since` (00030) | TTL 24 h positive, 5 min negative; a change invalidates an answer fetched under an older feed cursor (replaced in the same transaction when bound to an open flight or active intent); swept every `registry_revalidate_interval_s`. No PII. |
 | `occurrence_reports` O | `id`, `report_ref`, `kind`, `occurred_at`, `became_aware_at`, `deadline_at` (= became_aware_at + 72 h), `payload` (JSONB `occurrence/v1`), `submitted_at`, `authority_ref`, `attempts`, `last_error` | Undelivered ones are on the console. |
 | `operating_status_notices` O | `id`, `kind` (`start`, `cease`, `restart`), `at`, `submitted_at`, `authority_ref` | Art. 7(6). |
 | `weather_products` O | `id`, `area` (geography), `observed_at`, `valid_from`, `valid_to`, `source`, `product` (JSONB, Art. 12(2) fields), `fetched_at` | Optional. |
@@ -496,7 +496,10 @@ D7's. A subject that carries an `04` message carries the envelope.
 
 KV buckets (written by `api` only): `cis_current` (dataset → version +
 feature set as `zone/applicable/v1` per cell), `policy` (the row),
-`source_control` (B-09 state), `registry_validity` (key → status, TTL),
+`source_control` (B-09 state), `registry_validity` (key → status, TTL,
+`fetched_since`: the feed cursor the answer was fetched under; a
+change overwrites a bound key with its re-fetch, never deleting it
+first),
 `client_bindings` (client → serials), `intent_active` (intent id → volumes
 AMSL, thresholds, flight id, cell set, state). One bucket is not a
 projection: `telemetry_seen` (TTL 1 h) is telemetry-ingest's replay

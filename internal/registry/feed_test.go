@@ -134,6 +134,11 @@ func TestFeedFailuresMoveNothing(t *testing.T) {
 	if err := f.feed.Poll(t.Context()); err == nil {
 		t.Fatal("a down authority polled")
 	}
+	// The feed down invalidates nothing: the cached answer stands, in
+	// the table and the projection (plan §5 item 5(a)).
+	if _, ok := f.store.row(Key{EntityUAS, snA}); !ok || !f.projected(Key{EntityUAS, snA}) {
+		t.Fatal("a down feed removed a cached answer")
+	}
 	f.fake.Up()
 	if f.count(CounterFeedFailed) != 3 || cursor(t, f.store).Since != 1 {
 		t.Fatalf("failed %d, cursor %d", f.count(CounterFeedFailed), cursor(t, f.store).Since)

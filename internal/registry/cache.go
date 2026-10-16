@@ -251,6 +251,31 @@ func (c *Cache) fetch(ctx context.Context, p Purpose, ask []normalised) ([]Entry
 	return out, reasons
 }
 
+// refetch asks the authority, purpose identification, about keys as
+// cached (at most MaxQueries, one query per key) and returns the
+// entries it answered and, for each key it did not, why. Nothing is
+// written: the feed writes them with the page that named them.
+func (c *Cache) refetch(ctx context.Context, keys []Key) ([]Entry, map[Key]string) {
+	ns := make([]normalised, 0, len(keys))
+	for _, k := range keys {
+		switch k.Entity {
+		case EntityOperator:
+			// A cache key is the number's compare key: a public part.
+			ns = append(ns, normalised{operatorKey: k.Key, operatorPublic: k.Key})
+		case EntityUAS:
+			ns = append(ns, normalised{serial: k.Key, serialFold: entryKeyFold(EntityUAS, k.Key)})
+		case EntityPilot:
+			ns = append(ns, normalised{pilot: k.Key})
+		}
+	}
+	if len(ns) == 0 {
+		return nil, map[Key]string{}
+	}
+	got, reasons := c.fetch(ctx, PurposeIdentification, ns)
+	c.cfg.Counters.Add(CounterFetched, uint64(len(got)))
+	return got, reasons
+}
+
 // entriesOf maps a checked answer onto cache entries.
 func entriesOf(n normalised, v authclient.RegistryValidity) []Entry {
 	var out []Entry
@@ -285,7 +310,10 @@ func entriesOf(n normalised, v authclient.RegistryValidity) []Entry {
 // save writes fetched entries and their projection in one step; a
 // failure is counted and logged, and the answers stand (they are the
 // authority's), uncached.
-func (c *Cache) save(ctx context.Context, es []Entry, since int64) {
+func (c *Cache) save(ctx context.Context, es []Entry, since int64) { _, _ = c.store(ctx, es, since) }
+
+// store is save returning the entries written, or the failure.
+func (c *Cache) store(ctx context.Context, es []Entry, since int64) ([]Entry, error) {
 	written, err := c.cfg.Store.Save(ctx, es, since, func(ctx context.Context, put []Entry) error {
 		if c.cfg.Projector == nil || len(put) == 0 {
 			return nil
@@ -298,9 +326,31 @@ func (c *Cache) save(ctx context.Context, es []Entry, since int64) {
 	if err != nil {
 		c.cfg.Counters.Inc(CounterCacheWriteFailed)
 		obs.Error(ctx, c.cfg.Logger, "registry answers not cached", err)
-		return
+		return nil, err
 	}
 	c.cfg.Counters.Add(CounterWriteSkipped, uint64(len(es)-len(written)))
+	return written, nil
+}
+
+// Warm looks up an aircraft and its operator (purpose identification)
+// when a flight is first seen, so that the hot path finds an answer for
+// a flight whose keys never passed through an intent's decision (spec
+// 02 F8: a lookup on each intent and on each new serial seen). A key
+// with a fresh answer is not asked (Validate). It runs on a context the
+// caller cannot cancel (E-14), bounded by the client's deadline; a
+// query F8 does not define is logged and counted, never an error to the
+// caller.
+func (c *Cache) Warm(ctx context.Context, serial string, operatorReg *string) {
+	q := Query{Serial: serial}
+	if operatorReg != nil {
+		q.Operator = *operatorReg
+	}
+	if _, err := c.Validate(context.WithoutCancel(ctx), []Query{q}, PurposeIdentification); err != nil {
+		c.cfg.Counters.Inc(CounterWarmRefused)
+		obs.Error(ctx, c.cfg.Logger, "registry lookup of a new flight refused", err)
+		return
+	}
+	c.cfg.Counters.Inc(CounterWarmed)
 }
 
 func (c *Cache) success() {

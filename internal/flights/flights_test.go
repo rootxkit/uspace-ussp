@@ -354,6 +354,49 @@ func (s *source) Fetch(context.Context, int, time.Duration) ([]bus.Msg, error) {
 	return m, nil
 }
 
+// warmer records the flights whose registry answers were looked up.
+type warmer struct {
+	mu  sync.Mutex
+	got []string
+}
+
+func (w *warmer) Warm(_ context.Context, serial string, operatorReg *string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	op := ""
+	if operatorReg != nil {
+		op = *operatorReg
+	}
+	w.got = append(w.got, serial+"/"+op)
+}
+
+// Spec 02 F8 (each new serial seen): a flight's started fact, once
+// recorded, has its serial and operator looked up; its other facts do
+// not, and neither does a started fact the store could not take (it is
+// looked up when it is redelivered and recorded).
+func TestRecorderWarmsTheRegistryOnAFlightStart(t *testing.T) {
+	r := newBinderRig()
+	op := "GEOTESTOP0001"
+	r.b.Bind("c|A", "c", "A", nil, nil, &op, p0, t0, true)
+	r.b.End("c|A", EndOperator, t0)
+	started, _ := json.Marshal(r.events[0])
+	ended, _ := json.Marshal(r.events[1])
+	w := &warmer{}
+	st := &store{fail: true}
+	rec := &Recorder{Store: st, Warmer: w}
+	rec.Take(context.Background(), []bus.Msg{&msg{data: started}})
+	if len(w.got) != 0 {
+		t.Fatalf("an unrecorded start was looked up: %v", w.got)
+	}
+	st.fail = false
+	if !rec.Take(context.Background(), []bus.Msg{&msg{data: started}, &msg{data: ended}}) {
+		t.Fatal("failed")
+	}
+	if len(w.got) != 1 || w.got[0] != "A/"+op {
+		t.Fatalf("looked up %v, want the start once", w.got)
+	}
+}
+
 // B-05 pairs: a fact is recorded, then acknowledged; one the store
 // cannot take stays in the stream (nak) with the rest of the fetch; one
 // that does not read is logged, counted and acknowledged.
