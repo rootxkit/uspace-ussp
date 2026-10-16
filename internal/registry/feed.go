@@ -47,6 +47,16 @@ type FeedConfig struct {
 // Feed polls the authority's change feed and invalidates the cached
 // answers a change names (SC-17): from registry_validity and from the
 // projection, in the transaction that moves the cursor.
+//
+// The invariant: a cached answer survives a change to its key iff it
+// was fetched under a feed cursor at or beyond the change's seq
+// (Entry.FetchedSince); every other answer the change names is
+// invalidated. An answer fetched under a cursor at or beyond the change
+// was fetched after this USSP received the page naming it, which the
+// authority served after the change committed, so it reflects the
+// change by causality. Time (the change's at, fetched_at) never decides
+// retention: they are two clocks of two systems, and at precedes the
+// authority's commit.
 type Feed struct {
 	cfg FeedConfig
 
@@ -153,15 +163,16 @@ func (f *Feed) poll(ctx context.Context) error {
 			}
 			inv = append(inv, Invalidation{Entity: e, KeyFold: fold, Seq: ch.Seq})
 		}
-		deleted, err := f.apply(ctx, inv, page.NextSince, page.ETag)
+		applied, err := f.apply(ctx, inv, page.NextSince, page.ETag)
 		if err != nil {
 			return err
 		}
 		f.cfg.Counters.Inc(CounterFeedPolled)
-		f.cfg.Counters.Add(CounterFeedInvalidated, uint64(len(deleted)))
-		if len(deleted) > 0 {
-			f.cfg.Logger.Info("registry answers invalidated by the change feed", slog.Int("entries", len(deleted)),
-				slog.Int64("since", page.NextSince))
+		f.cfg.Counters.Add(CounterFeedInvalidated, uint64(len(applied.Deleted)))
+		f.cfg.Counters.Add(CounterFeedRetained, uint64(len(applied.Retained)))
+		if len(applied.Deleted) > 0 || len(applied.Retained) > 0 {
+			f.cfg.Logger.Info("registry answers invalidated by the change feed", slog.Int("entries", len(applied.Deleted)),
+				slog.Int("retained", len(applied.Retained)), slog.Int64("since", page.NextSince))
 		}
 		if len(page.Changes) < f.cfg.PageLimit || page.NextSince == since {
 			return nil
@@ -171,26 +182,27 @@ func (f *Feed) poll(ctx context.Context) error {
 	return nil
 }
 
-func (f *Feed) apply(ctx context.Context, inv []Invalidation, next int64, etag string) ([]Key, error) {
-	return f.cfg.Store.Invalidate(ctx, inv, next, etag, InvalidationKeep, func(ctx context.Context, del []Key) error {
+func (f *Feed) apply(ctx context.Context, inv []Invalidation, next int64, etag string) (Applied, error) {
+	return f.cfg.Store.Invalidate(ctx, inv, next, etag, InvalidationKeep, func(ctx context.Context, a Applied) error {
 		if f.cfg.Projector == nil {
 			return nil
 		}
 		// Every projected answer the invalidations name goes, not only
-		// those the table had a row for (audit S1).
+		// those the table had a row for (audit S1), except the answers
+		// the table retained: they reflect the change.
 		if fd, ok := f.cfg.Projector.(FoldDeleter); ok && len(inv) > 0 {
-			projected, err := fd.DeleteFolds(ctx, inv)
+			projected, err := fd.DeleteFolds(ctx, inv, a.Retained)
 			if err != nil {
 				return &policy.ProjectionError{Bucket: BucketRegistryValidity, Err: err}
 			}
-			if n := countOrphans(projected, del); n > 0 {
+			if n := countOrphans(projected, a.Deleted); n > 0 {
 				f.cfg.Counters.Add(CounterFeedOrphansDeleted, uint64(n))
 			}
 		}
-		if len(del) == 0 {
+		if len(a.Deleted) == 0 {
 			return nil
 		}
-		if err := f.cfg.Projector.ProjectRegistry(ctx, nil, del); err != nil {
+		if err := f.cfg.Projector.ProjectRegistry(ctx, nil, a.Deleted); err != nil {
 			return &policy.ProjectionError{Bucket: BucketRegistryValidity, Err: err}
 		}
 		return nil

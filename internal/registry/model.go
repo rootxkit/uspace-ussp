@@ -75,6 +75,9 @@ const (
 	CounterFeedPolled       = "registry_feed_polled"        // a change page applied
 	CounterFeedNotModified  = "registry_feed_not_modified"  // the feed answered 304
 	CounterFeedInvalidated  = "registry_feed_invalidated"   // a cached entry deleted by a change
+	// CounterFeedRetained counts cached entries a change named that were
+	// fetched under a cursor at or beyond it, so they reflect it and stay.
+	CounterFeedRetained = "registry_feed_retained"
 	// CounterFeedOrphansDeleted counts projected answers a change named
 	// that registry_validity held no row for (a commit that failed after
 	// the projection's put; audit S1).
@@ -145,6 +148,10 @@ type Entry struct {
 	Competencies []Competency `json:"competencies,omitempty"`
 	// FetchedAt is when the authority answered, on the database clock.
 	FetchedAt time.Time `json:"fetched_at"`
+	// FetchedSince is the change feed's cursor the answer was fetched
+	// under: a change to its key with a sequence above it invalidates
+	// it, any other change leaves it standing (feed.go).
+	FetchedSince int64 `json:"fetched_since"`
 }
 
 // Negative reports whether the entry caches the registry not holding

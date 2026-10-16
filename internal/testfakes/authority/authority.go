@@ -5,9 +5,10 @@
 // parameter, GET /v1/registry/changes with since, limit and ETag),
 // answers status only as the authority's F8 does (an operator number
 // echoed as its public part, an expired registration revoked) and
-// records a change for every status it is given. Down makes every
-// request answer 503; Misbehave adds a field F8 does not define to
-// every lookup answer; Requests counts what was asked.
+// records a change for every status it is given, at the time of its
+// clock (SetClock: an authority whose clock is not this USSP's). Down
+// makes every request answer 503; Misbehave adds a field F8 does not
+// define to every lookup answer; Requests counts what was asked.
 //
 // WP-15 adds the holder's operating-status notice of the pinned file
 // (POST /v1/certificates/{id}/status: started once, ceased only after a
@@ -101,6 +102,8 @@ type Fake struct {
 	// failAfter is how many of the next reports are stored and answered
 	// 502 (FailAfterCommit).
 	failAfter int
+	// clock stamps the changes' at (time.Now).
+	clock func() time.Time
 }
 
 // StatusNotice is one operating-status notice the fake recorded.
@@ -144,6 +147,10 @@ func (f *Fake) Down() { f.mu.Lock(); f.down = true; f.mu.Unlock() }
 // answered 502, as an authority whose answer is lost after its commit.
 func (f *Fake) FailAfterCommit(n int) { f.mu.Lock(); f.failAfter = n; f.mu.Unlock() }
 
+// SetClock makes now the clock the changes' at is stamped with (nil:
+// time.Now).
+func (f *Fake) SetClock(now func() time.Time) { f.mu.Lock(); f.clock = now; f.mu.Unlock() }
+
 // Up ends Down.
 func (f *Fake) Up() { f.mu.Lock(); f.down = false; f.mu.Unlock() }
 
@@ -175,8 +182,12 @@ func (f *Fake) Requests(op string) int { f.mu.Lock(); defer f.mu.Unlock(); retur
 func (f *Fake) Purposes() []string { f.mu.Lock(); defer f.mu.Unlock(); return slices.Clone(f.purposes) }
 
 func (f *Fake) record(entity, key, status string) {
+	now := time.Now
+	if f.clock != nil {
+		now = f.clock
+	}
 	f.changes = append(f.changes, Change{Seq: int64(len(f.changes) + 1), EntityType: entity, EntityID: entity + "-" + key,
-		PublicKey: key, Status: status, At: time.Now().UTC()})
+		PublicKey: key, Status: status, At: now().UTC()})
 }
 
 // SetOperator registers an operator with a registry status (active,

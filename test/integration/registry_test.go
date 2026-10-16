@@ -41,12 +41,13 @@ func cleanRegistry(t *testing.T) {
 
 func noProjection(context.Context, []registry.Entry) error { return nil }
 
-func noDeletion(context.Context, []registry.Key) error { return nil }
+func noDeletion(context.Context, registry.Applied) error { return nil }
 
 // pgstore on PostgreSQL as ussp_app: ages on the database clock, the
 // invalidation guard both ways, invalidation by fold key with the
-// cursor (never backwards), the rollback of a refused projection, and
-// the bound on a competency set (E-10).
+// cursor (never backwards), fetched_since round-tripping and deciding
+// what a change deletes (both ways), the rollback of a refused
+// projection, and the bound on a competency set (E-10).
 func TestIntegrationRegistryStore(t *testing.T) {
 	cleanRegistry(t)
 	ctx := context.Background()
@@ -93,10 +94,10 @@ func TestIntegrationRegistryStore(t *testing.T) {
 	// The feed invalidates the fold key: both spellings go; the cursor
 	// moves; the projection sees what was deleted.
 	var projected []registry.Key
-	deleted, err := st.Invalidate(ctx, []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-A", Seq: 5}}, 5, `"e5"`, time.Hour,
-		func(_ context.Context, del []registry.Key) error { projected = del; return nil })
-	if err != nil || len(deleted) != 2 || len(projected) != 2 {
-		t.Fatalf("invalidate %v %v %v", deleted, projected, err)
+	applied, err := st.Invalidate(ctx, []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-A", Seq: 5}}, 5, `"e5"`, time.Hour,
+		func(_ context.Context, a registry.Applied) error { projected = a.Deleted; return nil })
+	if err != nil || len(applied.Deleted) != 2 || len(projected) != 2 || len(applied.Retained) != 0 {
+		t.Fatalf("invalidate %+v %v %v", applied, projected, err)
 	}
 	cur, err := st.Cursor(ctx)
 	if err != nil || cur.Since != 5 || cur.ETag != `"e5"` || cur.AgeS == nil || *cur.AgeS > 5 {
@@ -108,13 +109,36 @@ func TestIntegrationRegistryStore(t *testing.T) {
 	if w, err := st.Save(ctx, again, 4, noProjection); err != nil || len(w) != 0 {
 		t.Fatalf("a raced write: %v %v", w, err)
 	}
-	if w, err := st.Save(ctx, again, 5, noProjection); err != nil || len(w) != 1 {
+	if w, err := st.Save(ctx, again, 5, noProjection); err != nil || len(w) != 1 || w[0].FetchedSince != 5 {
 		t.Fatalf("a write after the invalidation: %v %v", w, err)
+	}
+	// fetched_since round-trips: the cursor the answer was fetched under.
+	if got, _, _ := st.Entries(ctx, []registry.Key{es[2].Key}); len(got) != 1 || got[0].FetchedSince != 5 {
+		t.Fatalf("fetched_since %+v", got)
+	}
+	if all, _ := st.All(ctx, 10); len(all) == 0 || all[0].Key != es[2].Key || all[0].FetchedSince != 5 {
+		t.Fatalf("All fetched_since %+v", all)
+	}
+	// The same change applied again (a second api instance, or a page
+	// served twice) leaves the answer fetched after it standing, in the
+	// table and named as retained for the projection.
+	applied, err = st.Invalidate(ctx, []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-A", Seq: 5}}, 5, `"e5"`, time.Hour,
+		func(_ context.Context, a registry.Applied) error { projected = a.Retained; return nil })
+	if err != nil || len(applied.Deleted) != 0 || len(applied.Retained) != 1 || applied.Retained[0] != es[2].Key || len(projected) != 1 {
+		t.Fatalf("a change before the fetch: %+v %v", applied, err)
+	}
+	if got, _, _ := st.Entries(ctx, []registry.Key{es[2].Key}); len(got) != 1 {
+		t.Fatal("an answer fetched after its change was deleted by it")
 	}
 	// A refused projection rolls the invalidation and the cursor back.
 	refused := errors.New("bucket down")
 	if _, err := st.Invalidate(ctx, []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-A", Seq: 6}}, 6, "", time.Hour,
-		func(context.Context, []registry.Key) error { return refused }); !errors.Is(err, refused) {
+		func(_ context.Context, a registry.Applied) error {
+			if len(a.Deleted) != 1 {
+				t.Errorf("a change after the fetch deletes it: %+v", a)
+			}
+			return refused
+		}); !errors.Is(err, refused) {
 		t.Fatalf("got %v", err)
 	}
 	if cur, _ := st.Cursor(ctx); cur.Since != 5 {

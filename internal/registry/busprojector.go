@@ -49,8 +49,8 @@ func keyOfKV(kv string) (Key, bool) {
 }
 
 // DeleteFolds implements FoldDeleter: it lists the bucket and deletes
-// every key an invalidation's fold names.
-func (b BusProjector) DeleteFolds(ctx context.Context, inv []Invalidation) ([]Key, error) {
+// every key an invalidation's fold names, except the keys in except.
+func (b BusProjector) DeleteFolds(ctx context.Context, inv []Invalidation, except []Key) ([]Key, error) {
 	if len(inv) == 0 {
 		return nil, nil
 	}
@@ -61,7 +61,7 @@ func (b BusProjector) DeleteFolds(ctx context.Context, inv []Invalidation) ([]Ke
 	var out []Key
 	for _, kv := range keys {
 		k, ok := keyOfKV(kv)
-		if !ok || !invalidates(inv, k) {
+		if !ok || !invalidates(inv, except, k) {
 			continue
 		}
 		if err := b.KV.Delete(ctx, BucketRegistryValidity, kv); err != nil {

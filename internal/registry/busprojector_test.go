@@ -57,7 +57,7 @@ func TestBusProjectorDeleteFolds(t *testing.T) {
 		kv.vals[KVKey(k)] = []byte(`{}`)
 	}
 	kv.vals["not-a-registry-key"] = []byte(`{}`)
-	got, err := b.DeleteFolds(context.Background(), []Invalidation{{Entity: EntityUAS, KeyFold: entryKeyFold(EntityUAS, "TEST-SN-A")}})
+	got, err := b.DeleteFolds(context.Background(), []Invalidation{{Entity: EntityUAS, KeyFold: entryKeyFold(EntityUAS, "TEST-SN-A")}}, nil)
 	if err != nil || len(got) != 2 {
 		t.Fatalf("deleted %v %v", got, err)
 	}
@@ -69,8 +69,19 @@ func TestBusProjectorDeleteFolds(t *testing.T) {
 	if _, ok := kv.vals["not-a-registry-key"]; !ok {
 		t.Error("a foreign key deleted")
 	}
+	// A key the table retained (fetched after the change) stays; the
+	// rest of its fold goes (E-01 pair of the deletion above).
+	kept, other := Key{EntityUAS, "TEST-SN-A"}, Key{EntityUAS, "test-sn-a"}
+	kv.vals[KVKey(kept)], kv.vals[KVKey(other)] = []byte(`{}`), []byte(`{}`)
+	got, err = b.DeleteFolds(context.Background(), []Invalidation{{Entity: EntityUAS, KeyFold: entryKeyFold(EntityUAS, "TEST-SN-A")}}, []Key{kept})
+	if err != nil || len(got) != 1 || got[0] != other {
+		t.Fatalf("deleted %v %v", got, err)
+	}
+	if _, ok := kv.vals[KVKey(kept)]; !ok {
+		t.Fatal("a retained key was deleted")
+	}
 	kv.err = errors.New("kv down")
-	if _, err := b.DeleteFolds(context.Background(), []Invalidation{{Entity: EntityUAS, KeyFold: "X"}}); err == nil {
+	if _, err := b.DeleteFolds(context.Background(), []Invalidation{{Entity: EntityUAS, KeyFold: "X"}}, nil); err == nil {
 		t.Fatal("a listing failure not returned")
 	}
 }

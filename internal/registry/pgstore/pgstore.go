@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/rootxkit/uspace-ussp/internal/registry"
@@ -46,7 +47,7 @@ func (p Store) Entries(ctx context.Context, keys []registry.Key) ([]registry.Cac
 	out := make([]registry.Cached, 0, len(rows))
 	for i := range rows {
 		r := &rows[i]
-		c, err := cached(r.EntityType, r.Key, r.KeyFold, r.Status, r.ValidUntil, r.ClassLabel, r.MtomBand, r.Competencies, r.FetchedAt, r.AgeS)
+		c, err := cached(r.EntityType, r.Key, r.KeyFold, r.Status, r.ValidUntil, r.ClassLabel, r.MtomBand, r.Competencies, r.FetchedAt, r.FetchedSince, r.AgeS)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -67,7 +68,7 @@ func (p Store) All(ctx context.Context, limit int) ([]registry.Cached, error) {
 	out := make([]registry.Cached, 0, len(rows))
 	for i := range rows {
 		r := &rows[i]
-		c, err := cached(r.EntityType, r.Key, r.KeyFold, r.Status, r.ValidUntil, r.ClassLabel, r.MtomBand, r.Competencies, r.FetchedAt, r.AgeS)
+		c, err := cached(r.EntityType, r.Key, r.KeyFold, r.Status, r.ValidUntil, r.ClassLabel, r.MtomBand, r.Competencies, r.FetchedAt, r.FetchedSince, r.AgeS)
 		if err != nil {
 			return nil, err
 		}
@@ -76,9 +77,9 @@ func (p Store) All(ctx context.Context, limit int) ([]registry.Cached, error) {
 	return out, nil
 }
 
-func cached(entity, key, fold, status string, validUntil *time.Time, class, band *string, comps []byte, fetched time.Time, ageS float64) (registry.Cached, error) {
+func cached(entity, key, fold, status string, validUntil *time.Time, class, band *string, comps []byte, fetched time.Time, since int64, ageS float64) (registry.Cached, error) {
 	e := registry.Entry{Key: registry.Key{Entity: registry.EntityType(entity), Key: key}, KeyFold: fold, Status: registry.Status(status),
-		ValidUntil: validUntil, FetchedAt: fetched.UTC()}
+		ValidUntil: validUntil, FetchedAt: fetched.UTC(), FetchedSince: since}
 	if class != nil {
 		e.ClassLabel = *class
 	}
@@ -100,9 +101,9 @@ func optional(s string) *string {
 	return &s
 }
 
-// Save writes the entries in one transaction, skipping an entry whose
-// key the feed invalidated after since, and projects the written ones
-// before the commit.
+// Save writes the entries in one transaction under since (their
+// fetched_since), skipping an entry whose key the feed invalidated after
+// since, and projects the written ones before the commit.
 func (p Store) Save(ctx context.Context, es []registry.Entry, since int64, project func(context.Context, []registry.Entry) error) ([]registry.Entry, error) {
 	var written []registry.Entry
 	err := p.S.Tx(ctx, func(q *relational.Queries) error {
@@ -131,7 +132,7 @@ func (p Store) Save(ctx context.Context, es []registry.Entry, since int64, proje
 			if err != nil {
 				return fmt.Errorf("registry_validity %s: %w", e.Entity, err)
 			}
-			e.FetchedAt = at.UTC()
+			e.FetchedAt, e.FetchedSince = at.UTC(), since
 			written = append(written, e)
 		}
 		return project(ctx, written)
@@ -142,19 +143,32 @@ func (p Store) Save(ctx context.Context, es []registry.Entry, since int64, proje
 	return written, nil
 }
 
-// Invalidate deletes, remembers and moves the cursor in one
-// transaction.
-func (p Store) Invalidate(ctx context.Context, inv []registry.Invalidation, next int64, etag string, keep time.Duration, project func(context.Context, []registry.Key) error) ([]registry.Key, error) {
-	var deleted []registry.Key
+// Invalidate deletes the rows fetched under a cursor below the change
+// that names them, retains the others, remembers and moves the cursor
+// in one transaction.
+func (p Store) Invalidate(ctx context.Context, inv []registry.Invalidation, next int64, etag string, keep time.Duration, project func(context.Context, registry.Applied) error) (registry.Applied, error) {
+	var out registry.Applied
 	err := p.S.Tx(ctx, func(q *relational.Queries) error {
-		deleted = deleted[:0]
+		out = registry.Applied{}
+		var retained []registry.Key
 		for _, in := range inv {
-			rows, err := q.DeleteRegistryValidityByFold(ctx, relational.DeleteRegistryValidityByFoldParams{EntityType: string(in.Entity), KeyFold: in.KeyFold})
+			rows, err := q.DeleteRegistryValidityByFold(ctx, relational.DeleteRegistryValidityByFoldParams{
+				EntityType: string(in.Entity), KeyFold: in.KeyFold, Seq: in.Seq,
+			})
 			if err != nil {
 				return fmt.Errorf("registry_validity: %w", err)
 			}
 			for _, r := range rows {
-				deleted = append(deleted, registry.Key{Entity: registry.EntityType(r.EntityType), Key: r.Key})
+				out.Deleted = append(out.Deleted, registry.Key{Entity: registry.EntityType(r.EntityType), Key: r.Key})
+			}
+			kept, err := q.RegistryValidityRetainedByFold(ctx, relational.RegistryValidityRetainedByFoldParams{
+				EntityType: string(in.Entity), KeyFold: in.KeyFold, Seq: in.Seq,
+			})
+			if err != nil {
+				return fmt.Errorf("registry_validity: %w", err)
+			}
+			for _, r := range kept {
+				retained = append(retained, registry.Key{Entity: registry.EntityType(r.EntityType), Key: r.Key})
 			}
 			if err := q.RecordRegistryInvalidation(ctx, relational.RecordRegistryInvalidationParams{
 				EntityType: string(in.Entity), KeyFold: in.KeyFold, Seq: in.Seq,
@@ -168,12 +182,19 @@ func (p Store) Invalidate(ctx context.Context, inv []registry.Invalidation, next
 		if err := q.SetRegistryFeedCursor(ctx, relational.SetRegistryFeedCursorParams{Since: next, Etag: optional(etag)}); err != nil {
 			return fmt.Errorf("registry_feed: %w", err)
 		}
-		return project(ctx, deleted)
+		// A row one change of the page retained and a later one deleted
+		// (two changes to one key) is deleted.
+		for _, k := range retained {
+			if !slices.Contains(out.Deleted, k) && !slices.Contains(out.Retained, k) {
+				out.Retained = append(out.Retained, k)
+			}
+		}
+		return project(ctx, out)
 	})
 	if err != nil {
-		return nil, err
+		return registry.Applied{}, err
 	}
-	return deleted, nil
+	return out, nil
 }
 
 // Cursor reads the feed's cursor.
