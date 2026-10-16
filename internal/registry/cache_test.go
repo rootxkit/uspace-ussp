@@ -249,7 +249,7 @@ func TestWriteRacingAnInvalidationIsSkipped(t *testing.T) {
 	f := newFixture(t)
 	f.fake.SetUAS(snA, "active", "", "")
 	f.store.beforeSave = func() {
-		_, _ = f.store.Invalidate(context.Background(), []Invalidation{{Entity: EntityUAS, KeyFold: snA, Seq: 7}}, 7, "", time.Hour,
+		_, _ = f.store.Invalidate(context.Background(), []Invalidation{{Entity: EntityUAS, KeyFold: snA, Seq: 7}}, nil, 7, "", time.Hour,
 			func(context.Context, Applied) error { return nil })
 	}
 	if a := f.uas(t, snA); a.Status != StatusValid {

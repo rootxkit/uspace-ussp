@@ -107,33 +107,9 @@ func optional(s string) *string {
 func (p Store) Save(ctx context.Context, es []registry.Entry, since int64, project func(context.Context, []registry.Entry) error) ([]registry.Entry, error) {
 	var written []registry.Entry
 	err := p.S.Tx(ctx, func(q *relational.Queries) error {
-		written = written[:0]
-		for i := range es {
-			e := es[i]
-			var comps []byte
-			if e.Entity == registry.EntityPilot {
-				c := e.Competencies
-				if c == nil {
-					c = []registry.Competency{}
-				}
-				b, err := json.Marshal(c)
-				if err != nil {
-					return err
-				}
-				comps = b
-			}
-			at, err := q.UpsertRegistryValidity(ctx, relational.UpsertRegistryValidityParams{
-				EntityType: string(e.Entity), Key: e.Key.Key, KeyFold: e.KeyFold, Status: string(e.Status), ValidUntil: e.ValidUntil,
-				ClassLabel: optional(e.ClassLabel), MtomBand: optional(e.MTOMBand), Competencies: comps, Negative: e.Negative(), Since: since,
-			})
-			if store.IsNoRows(err) {
-				continue // invalidated while it was fetched
-			}
-			if err != nil {
-				return fmt.Errorf("registry_validity %s: %w", e.Entity, err)
-			}
-			e.FetchedAt, e.FetchedSince = at.UTC(), since
-			written = append(written, e)
+		var err error
+		if written, err = upsert(ctx, q, es, since); err != nil {
+			return err
 		}
 		return project(ctx, written)
 	})
@@ -143,10 +119,45 @@ func (p Store) Save(ctx context.Context, es []registry.Entry, since int64, proje
 	return written, nil
 }
 
+// upsert writes es under since inside a transaction and returns the
+// entries written: an entry whose key the feed invalidated under a
+// sequence above since is skipped.
+func upsert(ctx context.Context, q *relational.Queries, es []registry.Entry, since int64) ([]registry.Entry, error) {
+	var written []registry.Entry
+	for i := range es {
+		e := es[i]
+		var comps []byte
+		if e.Entity == registry.EntityPilot {
+			c := e.Competencies
+			if c == nil {
+				c = []registry.Competency{}
+			}
+			b, err := json.Marshal(c)
+			if err != nil {
+				return nil, err
+			}
+			comps = b
+		}
+		at, err := q.UpsertRegistryValidity(ctx, relational.UpsertRegistryValidityParams{
+			EntityType: string(e.Entity), Key: e.Key.Key, KeyFold: e.KeyFold, Status: string(e.Status), ValidUntil: e.ValidUntil,
+			ClassLabel: optional(e.ClassLabel), MtomBand: optional(e.MTOMBand), Competencies: comps, Negative: e.Negative(), Since: since,
+		})
+		if store.IsNoRows(err) {
+			continue // invalidated while it was fetched
+		}
+		if err != nil {
+			return nil, fmt.Errorf("registry_validity %s: %w", e.Entity, err)
+		}
+		e.FetchedAt, e.FetchedSince = at.UTC(), since
+		written = append(written, e)
+	}
+	return written, nil
+}
+
 // Invalidate deletes the rows fetched under a cursor below the change
-// that names them, retains the others, remembers and moves the cursor
-// in one transaction.
-func (p Store) Invalidate(ctx context.Context, inv []registry.Invalidation, next int64, etag string, keep time.Duration, project func(context.Context, registry.Applied) error) (registry.Applied, error) {
+// that names them, retains the others, writes the re-fetched answers
+// under next, remembers and moves the cursor in one transaction.
+func (p Store) Invalidate(ctx context.Context, inv []registry.Invalidation, put []registry.Entry, next int64, etag string, keep time.Duration, project func(context.Context, registry.Applied) error) (registry.Applied, error) {
 	var out registry.Applied
 	err := p.S.Tx(ctx, func(q *relational.Queries) error {
 		out = registry.Applied{}
@@ -170,6 +181,23 @@ func (p Store) Invalidate(ctx context.Context, inv []registry.Invalidation, next
 			for _, r := range kept {
 				retained = append(retained, registry.Key{Entity: registry.EntityType(r.EntityType), Key: r.Key})
 			}
+		}
+		// The re-fetched answers, before this page's invalidations are
+		// recorded: the guard skips one only when another instance
+		// applied a later page meanwhile (an invalidation above next).
+		written, err := upsert(ctx, q, put, next)
+		if err != nil {
+			return err
+		}
+		out.Put = written
+		out.Deleted = slices.DeleteFunc(out.Deleted, func(k registry.Key) bool {
+			if slices.ContainsFunc(written, func(e registry.Entry) bool { return e.Key == k }) {
+				out.Replaced = append(out.Replaced, k)
+				return true
+			}
+			return false
+		})
+		for _, in := range inv {
 			if err := q.RecordRegistryInvalidation(ctx, relational.RecordRegistryInvalidationParams{
 				EntityType: string(in.Entity), KeyFold: in.KeyFold, Seq: in.Seq,
 			}); err != nil {
@@ -183,9 +211,10 @@ func (p Store) Invalidate(ctx context.Context, inv []registry.Invalidation, next
 			return fmt.Errorf("registry_feed: %w", err)
 		}
 		// A row one change of the page retained and a later one deleted
-		// (two changes to one key) is deleted.
+		// (two changes to one key) is deleted; one written again is put.
 		for _, k := range retained {
-			if !slices.Contains(out.Deleted, k) && !slices.Contains(out.Retained, k) {
+			if !slices.Contains(out.Deleted, k) && !slices.Contains(out.Retained, k) &&
+				!slices.ContainsFunc(out.Put, func(e registry.Entry) bool { return e.Key == k }) {
 				out.Retained = append(out.Retained, k)
 			}
 		}

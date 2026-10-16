@@ -26,12 +26,18 @@ type Invalidation struct {
 }
 
 // Applied is what one Invalidate did to registry_validity: the rows it
-// deleted (fetched under a cursor below the change that names them) and
-// the rows under a named fold key it retained (fetched under a cursor
-// at or beyond that change, so they reflect it).
+// deleted (fetched under a cursor below the change that names them, and
+// not written again), the rows under a named fold key it retained
+// (fetched under a cursor at or beyond that change, so they reflect it)
+// and the re-fetched answers it wrote (FetchedAt from the database
+// clock, FetchedSince the page's next). Replaced are the keys of Put
+// whose row the change invalidated: deleted and written again in the
+// one transaction, so never deleted from the projection.
 type Applied struct {
 	Deleted  []Key
 	Retained []Key
+	Put      []Entry
+	Replaced []Key
 }
 
 // FeedCursor is the change feed's position.
@@ -59,12 +65,14 @@ type Store interface {
 	Save(ctx context.Context, es []Entry, since int64, project func(context.Context, []Entry) error) ([]Entry, error)
 	// Invalidate deletes the entries under the invalidations' fold keys
 	// that were fetched under a cursor below the invalidation's Seq
-	// (Entry.FetchedSince) and retains the others, records the
-	// invalidations, forgets those older than keep, and moves the cursor
-	// to next with etag, in one transaction; project is called with what
-	// it did before it commits. With no invalidation it records that the
-	// feed answered.
-	Invalidate(ctx context.Context, inv []Invalidation, next int64, etag string, keep time.Duration, project func(context.Context, Applied) error) (Applied, error)
+	// (Entry.FetchedSince) and retains the others, writes put (the
+	// answers re-fetched after the page was received) under since next
+	// with Save's guard, records the invalidations, forgets those older
+	// than keep, and moves the cursor to next with etag, in one
+	// transaction; project is called with what it did before it commits.
+	// A key deleted and written again is in Put, not in Deleted. With no
+	// invalidation it records that the feed answered.
+	Invalidate(ctx context.Context, inv []Invalidation, put []Entry, next int64, etag string, keep time.Duration, project func(context.Context, Applied) error) (Applied, error)
 	// Cursor is the feed's cursor (Since 0 before the first page).
 	Cursor(ctx context.Context) (FeedCursor, error)
 	// All is every cached entry, newest first, at most limit.

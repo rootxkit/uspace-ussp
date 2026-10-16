@@ -74,10 +74,19 @@ const (
 	CounterWriteSkipped     = "registry_write_skipped"      // an answer not cached because the feed invalidated its key meanwhile
 	CounterFeedPolled       = "registry_feed_polled"        // a change page applied
 	CounterFeedNotModified  = "registry_feed_not_modified"  // the feed answered 304
-	CounterFeedInvalidated  = "registry_feed_invalidated"   // a cached entry deleted by a change
+	CounterFeedInvalidated  = "registry_feed_invalidated"   // a cached entry a change invalidated (deleted, or replaced by its re-fetch)
 	// CounterFeedRetained counts cached entries a change named that were
 	// fetched under a cursor at or beyond it, so they reflect it and stay.
 	CounterFeedRetained = "registry_feed_retained"
+	// CounterFeedRefetched counts answers of bound keys a change named,
+	// re-fetched and written in the transaction that applied the change.
+	CounterFeedRefetched = "registry_feed_refetched"
+	// CounterRefetchFailed counts bound keys a change named that the
+	// authority did not answer when re-fetched: deleted, unavailable.
+	CounterRefetchFailed = "registry_refetch_failed"
+	// CounterRefetchDeferred counts bound keys a change named beyond the
+	// poll's re-fetch bound: deleted, left to the sweep.
+	CounterRefetchDeferred = "registry_refetch_deferred"
 	// CounterFeedOrphansDeleted counts projected answers a change named
 	// that registry_validity held no row for (a commit that failed after
 	// the projection's put; audit S1).

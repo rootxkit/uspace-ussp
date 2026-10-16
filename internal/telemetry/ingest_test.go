@@ -411,6 +411,32 @@ func TestIdentificationThroughTheRegistry(t *testing.T) {
 	}
 }
 
+// The presence twin of the registry_unavailable cases above: the
+// registry feed overwrites a projected answer between two samples (a
+// suspension it re-fetched, never a delete first), and the next sample
+// is suspended / uas_suspended, published once on ident.v1; no sample
+// is registry_unavailable on the way.
+func TestIdentificationFollowsAnOverwrittenAnswer(t *testing.T) {
+	r := newRig(t, rigOpts{})
+	k := registry.Key{Entity: registry.EntityUAS, Key: serial.Normalize(snA)} //nolint:misspell // core's name
+	r.reg.all[k] = registry.Entry{Key: k, KeyFold: serial.FoldKey(snA), Status: registry.StatusValid, FetchedAt: t0}
+	one(t, r.take(clientA, nil, frame(snA, 1, t0)), OutcomeAccepted)
+	if id := r.pub.tracks(t)[0].Body.Identification; id.Status != core.IdentRegistered {
+		t.Fatalf("before: %+v", id)
+	}
+	r.reg.all[k] = registry.Entry{Key: k, KeyFold: serial.FoldKey(snA), Status: registry.StatusSuspended, FetchedAt: t0.Add(time.Second), FetchedSince: 7}
+	r.clk.add(time.Second)
+	one(t, r.take(clientA, nil, frame(snA, 2, t0.Add(time.Second))), OutcomeAccepted)
+	id := r.pub.tracks(t)[1].Body.Identification
+	if id.Status != core.IdentSuspended || id.Reason != core.ReasonUASSuspended {
+		t.Fatalf("after the overwrite: %+v", id)
+	}
+	waitFor(t, func() bool { return len(r.pub.kind(bus.KindIdent)) == 2 })
+	if n := r.counters.Get(CounterIdentPublished); n != 2 || r.counters.Get(CounterIdentUnavailable) != 0 {
+		t.Fatalf("ident changes %d, unavailable %d", n, r.counters.Get(CounterIdentUnavailable))
+	}
+}
+
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)

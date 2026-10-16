@@ -94,7 +94,7 @@ func TestIntegrationRegistryStore(t *testing.T) {
 	// The feed invalidates the fold key: both spellings go; the cursor
 	// moves; the projection sees what was deleted.
 	var projected []registry.Key
-	applied, err := st.Invalidate(ctx, []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-A", Seq: 5}}, 5, `"e5"`, time.Hour,
+	applied, err := st.Invalidate(ctx, []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-A", Seq: 5}}, nil, 5, `"e5"`, time.Hour,
 		func(_ context.Context, a registry.Applied) error { projected = a.Deleted; return nil })
 	if err != nil || len(applied.Deleted) != 2 || len(projected) != 2 || len(applied.Retained) != 0 {
 		t.Fatalf("invalidate %+v %v %v", applied, projected, err)
@@ -122,7 +122,7 @@ func TestIntegrationRegistryStore(t *testing.T) {
 	// The same change applied again (a second api instance, or a page
 	// served twice) leaves the answer fetched after it standing, in the
 	// table and named as retained for the projection.
-	applied, err = st.Invalidate(ctx, []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-A", Seq: 5}}, 5, `"e5"`, time.Hour,
+	applied, err = st.Invalidate(ctx, []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-A", Seq: 5}}, nil, 5, `"e5"`, time.Hour,
 		func(_ context.Context, a registry.Applied) error { projected = a.Retained; return nil })
 	if err != nil || len(applied.Deleted) != 0 || len(applied.Retained) != 1 || applied.Retained[0] != es[2].Key || len(projected) != 1 {
 		t.Fatalf("a change before the fetch: %+v %v", applied, err)
@@ -132,7 +132,7 @@ func TestIntegrationRegistryStore(t *testing.T) {
 	}
 	// A refused projection rolls the invalidation and the cursor back.
 	refused := errors.New("bucket down")
-	if _, err := st.Invalidate(ctx, []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-A", Seq: 6}}, 6, "", time.Hour,
+	if _, err := st.Invalidate(ctx, []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-A", Seq: 6}}, nil, 6, "", time.Hour,
 		func(_ context.Context, a registry.Applied) error {
 			if len(a.Deleted) != 1 {
 				t.Errorf("a change after the fetch deletes it: %+v", a)
@@ -154,7 +154,7 @@ func TestIntegrationRegistryStore(t *testing.T) {
 		t.Fatal("a row was written with a refused projection")
 	}
 	// The cursor never moves backwards.
-	if _, err := st.Invalidate(ctx, nil, 3, "", time.Hour, noDeletion); err != nil {
+	if _, err := st.Invalidate(ctx, nil, nil, 3, "", time.Hour, noDeletion); err != nil {
 		t.Fatal(err)
 	}
 	if cur, _ := st.Cursor(ctx); cur.Since != 5 {
@@ -178,6 +178,60 @@ func TestIntegrationRegistryStore(t *testing.T) {
 	big.Competencies = big.Competencies[:registry.MaxCompetencies]
 	if _, err := st.Save(ctx, []registry.Entry{big}, 5, noProjection); err != nil {
 		t.Fatalf("%d competencies refused: %v", len(big.Competencies), err)
+	}
+}
+
+// Invalidate with re-fetched answers on PostgreSQL: the put is written
+// under next in the transaction that deletes, a key deleted and written
+// again is replaced (never in Deleted, so never deleted from the
+// projection), and a refused projection rolls back the deletion, the
+// write and the cursor together.
+func TestIntegrationRegistryInvalidateWithPut(t *testing.T) {
+	cleanRegistry(t)
+	ctx := context.Background()
+	st := pgstore.Store{S: appStore(t)}
+	a := registry.Entry{Key: registry.Key{Entity: registry.EntityUAS, Key: "TEST-SN-PUT"}, KeyFold: "TEST-SN-PUT", Status: registry.StatusValid}
+	b := registry.Entry{Key: registry.Key{Entity: registry.EntityUAS, Key: "TEST-SN-DEL"}, KeyFold: "TEST-SN-DEL", Status: registry.StatusValid}
+	if _, err := st.Save(ctx, []registry.Entry{a, b}, 0, noProjection); err != nil {
+		t.Fatal(err)
+	}
+	inv := []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-PUT", Seq: 1}, {Entity: registry.EntityUAS, KeyFold: "TEST-SN-DEL", Seq: 2}}
+	suspended := a
+	suspended.Status = registry.StatusSuspended
+	refused := errors.New("bucket down")
+	if _, err := st.Invalidate(ctx, inv, []registry.Entry{suspended}, 2, "", time.Hour,
+		func(context.Context, registry.Applied) error { return refused }); !errors.Is(err, refused) {
+		t.Fatalf("got %v", err)
+	}
+	got, since, err := st.Entries(ctx, []registry.Key{a.Key, b.Key})
+	if err != nil || len(got) != 2 || since != 0 {
+		t.Fatalf("after a refused projection: %+v %d %v", got, since, err)
+	}
+	for _, c := range got {
+		if c.Status != registry.StatusValid || c.FetchedSince != 0 {
+			t.Fatalf("a refused projection left %+v", c)
+		}
+	}
+	applied, err := st.Invalidate(ctx, inv, []registry.Entry{suspended}, 2, "", time.Hour, noDeletion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(applied.Put) != 1 || applied.Put[0].FetchedSince != 2 || applied.Put[0].FetchedAt.IsZero() ||
+		len(applied.Replaced) != 1 || applied.Replaced[0] != a.Key || len(applied.Deleted) != 1 || applied.Deleted[0] != b.Key {
+		t.Fatalf("applied %+v", applied)
+	}
+	got, since, _ = st.Entries(ctx, []registry.Key{a.Key, b.Key})
+	if len(got) != 1 || got[0].Status != registry.StatusSuspended || got[0].FetchedSince != 2 || since != 2 {
+		t.Fatalf("after: %+v %d", got, since)
+	}
+	// A later page applied meanwhile by another instance (an
+	// invalidation above next) skips the put: the key is deleted.
+	if _, err := st.Invalidate(ctx, []registry.Invalidation{{Entity: registry.EntityUAS, KeyFold: "TEST-SN-PUT", Seq: 9}}, nil, 9, "", time.Hour, noDeletion); err != nil {
+		t.Fatal(err)
+	}
+	applied, err = st.Invalidate(ctx, inv[:1], []registry.Entry{a}, 2, "", time.Hour, noDeletion)
+	if err != nil || len(applied.Put) != 0 {
+		t.Fatalf("a put behind a later invalidation: %+v %v", applied, err)
 	}
 }
 

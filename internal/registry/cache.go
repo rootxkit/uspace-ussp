@@ -251,6 +251,31 @@ func (c *Cache) fetch(ctx context.Context, p Purpose, ask []normalised) ([]Entry
 	return out, reasons
 }
 
+// refetch asks the authority, purpose identification, about keys as
+// cached (at most MaxQueries, one query per key) and returns the
+// entries it answered and, for each key it did not, why. Nothing is
+// written: the feed writes them with the page that named them.
+func (c *Cache) refetch(ctx context.Context, keys []Key) ([]Entry, map[Key]string) {
+	ns := make([]normalised, 0, len(keys))
+	for _, k := range keys {
+		switch k.Entity {
+		case EntityOperator:
+			// A cache key is the number's compare key: a public part.
+			ns = append(ns, normalised{operatorKey: k.Key, operatorPublic: k.Key})
+		case EntityUAS:
+			ns = append(ns, normalised{serial: k.Key, serialFold: entryKeyFold(EntityUAS, k.Key)})
+		case EntityPilot:
+			ns = append(ns, normalised{pilot: k.Key})
+		}
+	}
+	if len(ns) == 0 {
+		return nil, map[Key]string{}
+	}
+	got, reasons := c.fetch(ctx, PurposeIdentification, ns)
+	c.cfg.Counters.Add(CounterFetched, uint64(len(got)))
+	return got, reasons
+}
+
 // entriesOf maps a checked answer onto cache entries.
 func entriesOf(n normalised, v authclient.RegistryValidity) []Entry {
 	var out []Entry

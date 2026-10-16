@@ -90,7 +90,7 @@ func (m *memStore) Save(ctx context.Context, es []Entry, since int64, project fu
 	return written, nil
 }
 
-func (m *memStore) Invalidate(ctx context.Context, inv []Invalidation, next int64, etag string, keep time.Duration, project func(context.Context, Applied) error) (Applied, error) {
+func (m *memStore) Invalidate(ctx context.Context, inv []Invalidation, put []Entry, next int64, etag string, keep time.Duration, project func(context.Context, Applied) error) (Applied, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.failWrite != nil {
@@ -107,11 +107,26 @@ func (m *memStore) Invalidate(ctx context.Context, inv []Invalidation, next int6
 			}
 		}
 	}
+	// The re-fetched answers under next, with Save's guard (an
+	// invalidation above next, from a later page, skips one).
 	var a Applied
+	for i := range put {
+		e := put[i]
+		if in, ok := m.inv[Key{e.Entity, e.KeyFold}]; ok && in.seq > next {
+			continue
+		}
+		e.FetchedAt, e.FetchedSince = m.clock.Now(), next
+		a.Put = append(a.Put, e)
+	}
+	isPut := func(k Key) bool { return slices.ContainsFunc(a.Put, func(e Entry) bool { return e.Key == k }) }
 	for k, seq := range named {
-		if m.rows[k].FetchedSince < seq {
+		switch {
+		case isPut(k) && m.rows[k].FetchedSince < seq:
+			a.Replaced = append(a.Replaced, k)
+		case isPut(k):
+		case m.rows[k].FetchedSince < seq:
 			a.Deleted = append(a.Deleted, k)
-		} else {
+		default:
 			a.Retained = append(a.Retained, k)
 		}
 	}
@@ -120,6 +135,9 @@ func (m *memStore) Invalidate(ctx context.Context, inv []Invalidation, next int6
 	}
 	for _, k := range a.Deleted {
 		delete(m.rows, k)
+	}
+	for i := range a.Put {
+		m.rows[a.Put[i].Key] = a.Put[i]
 	}
 	now := m.clock.Now()
 	for _, in := range inv {

@@ -9,6 +9,8 @@
 // clock (SetClock: an authority whose clock is not this USSP's). Down
 // makes every request answer 503; Misbehave adds a field F8 does not
 // define to every lookup answer; Requests counts what was asked.
+// Down("validate") or Down("changes") takes one operation down and
+// leaves the others up (a lookup service down while the feed answers).
 //
 // WP-15 adds the holder's operating-status notice of the pinned file
 // (POST /v1/certificates/{id}/status: started once, ceased only after a
@@ -89,6 +91,7 @@ type Fake struct {
 	mu        sync.Mutex
 	bearer    string
 	down      bool
+	downOps   map[string]bool
 	extra     map[string]any
 	echoAs    string
 	operators map[string]operator // by regnum.CompareKey
@@ -140,8 +143,23 @@ func (f *Fake) URL() string { return f.srv.URL }
 // token service hands out another bearer).
 func (f *Fake) AcceptBearer(tok string) { f.mu.Lock(); f.bearer = tok; f.mu.Unlock() }
 
-// Down makes every request answer 503 until Up.
-func (f *Fake) Down() { f.mu.Lock(); f.down = true; f.mu.Unlock() }
+// Down makes every request answer 503 until Up; with ops, only the
+// requests of those operations ("validate": GET and POST
+// /v1/registry/validate; "changes": GET /v1/registry/changes).
+func (f *Fake) Down(ops ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(ops) == 0 {
+		f.down = true
+		return
+	}
+	if f.downOps == nil {
+		f.downOps = map[string]bool{}
+	}
+	for _, op := range ops {
+		f.downOps[op] = true
+	}
+}
 
 // FailAfterCommit makes the next n occurrence reports be stored and
 // answered 502, as an authority whose answer is lost after its commit.
@@ -151,8 +169,8 @@ func (f *Fake) FailAfterCommit(n int) { f.mu.Lock(); f.failAfter = n; f.mu.Unloc
 // time.Now).
 func (f *Fake) SetClock(now func() time.Time) { f.mu.Lock(); f.clock = now; f.mu.Unlock() }
 
-// Up ends Down.
-func (f *Fake) Up() { f.mu.Lock(); f.down = false; f.mu.Unlock() }
+// Up ends Down, for every operation.
+func (f *Fake) Up() { f.mu.Lock(); f.down, f.downOps = false, nil; f.mu.Unlock() }
 
 // Misbehave adds field: value to every lookup answer's parts (nil
 // removes every added field): an authority that sends what F8 does not
@@ -227,7 +245,14 @@ func problem(w http.ResponseWriter, status int, slug string) {
 func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.down {
+	op := ""
+	switch r.URL.Path {
+	case "/v1/registry/validate":
+		op = "validate"
+	case "/v1/registry/changes":
+		op = "changes"
+	}
+	if f.down || (op != "" && f.downOps[op]) {
 		problem(w, http.StatusServiceUnavailable, "unavailable")
 		return
 	}
