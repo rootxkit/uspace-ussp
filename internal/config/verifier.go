@@ -75,20 +75,25 @@ func (c Config) CompactConfig() (auth.CompactConfig, error) {
 
 // The publishers USSP_CIS_PUBLISHER_KEYS names (the CISP's
 // auth.PublisherOf: the authority publishes zones, uspace_airspace and
-// ussp_list, the ANSP restrictions).
+// ussp_list, the ANSP restrictions), and the CISP itself, whose key
+// verifies the X-CIS-Signature of a restrictions version it made at an
+// expiry (02 F3 erratum 2026-10-16).
 const (
 	PublisherAuthority = "authority"
 	PublisherANSP      = "ansp"
+	PublisherCISP      = "cisp"
 )
 
 // PublisherConfig is the core/auth.DetachedConfig the CIS cache checks
 // the provenance of a dataset version with: the publishers of
-// USSP_CIS_PUBLISHER_KEYS (authority, ansp) with their JWKS URLs, and
+// USSP_CIS_PUBLISHER_KEYS (authority, ansp, cisp) with their JWKS URLs, and
 // MaxAge USSP_CIS_PUBLISHER_SIG_MAX_AGE_S. A version carries the
 // signature its publisher made when it published (X-Publisher-Signature,
 // forwarded by the CISP as received), so its iat is as old as the
 // version: core's 5 min default would refuse every version read later
-// than five minutes after its publication.
+// than five minutes after its publication. The CISP's X-CIS-Signature is
+// made at the version's first serve and kept per version, so its iat is
+// not the publication time either: the same bound applies to it.
 func (c Config) PublisherConfig() (auth.DetachedConfig, error) {
 	if len(c.CISPublisherKeys) == 0 {
 		return auth.DetachedConfig{}, &core.FieldError{Field: "USSP_CIS_PUBLISHER_KEYS", Reason: "required to verify CIS publications"}
@@ -99,8 +104,8 @@ func (c Config) PublisherConfig() (auth.DetachedConfig, error) {
 	}
 	allow := make(map[string]auth.IssuerConfig, len(pubs))
 	for _, p := range pubs {
-		if p.Issuer != PublisherAuthority && p.Issuer != PublisherANSP {
-			return auth.DetachedConfig{}, core.Fieldf("USSP_CIS_PUBLISHER_KEYS", "%q is not a publisher (authority, ansp)", p.Issuer)
+		if p.Issuer != PublisherAuthority && p.Issuer != PublisherANSP && p.Issuer != PublisherCISP {
+			return auth.DetachedConfig{}, core.Fieldf("USSP_CIS_PUBLISHER_KEYS", "%q is not a publisher (authority, ansp, cisp)", p.Issuer)
 		}
 		if _, dup := allow[p.Issuer]; dup {
 			return auth.DetachedConfig{}, core.Fieldf("USSP_CIS_PUBLISHER_KEYS", "%s is named twice", p.Issuer)

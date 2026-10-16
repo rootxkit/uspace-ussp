@@ -21,6 +21,10 @@
 //   - Cache: the writer. A pull is accepted whole or refused whole
 //     (ed318.Parse with ed269.DefaultLimits, never repaired, spec 06 T9);
 //     a refusal keeps the previous version and is reported on /readyz.
+//     A version is used only on a provenance kind (provenance.go): its
+//     publisher's signature, or for a restrictions version the CISP
+//     made at an expiry, the CISP's signature and the expiry rule of
+//     the spec 02 F3 erratum of 2026-10-16; otherwise it is held.
 //     A 60 s reconciliation pulls every dataset conditionally, so a
 //     missed notification costs at most one period.
 //   - Evaluator: what intent, geo and monitor call, in process. Every

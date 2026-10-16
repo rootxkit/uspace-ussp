@@ -97,7 +97,7 @@ func (q *Queries) CISFeatures(ctx context.Context, arg CISFeaturesParams) ([]CIS
 }
 
 const currentCISDatasets = `-- name: CurrentCISDatasets :many
-SELECT DISTINCT ON (dataset) dataset, version, etag, fetched_at, metadata, signature_ok,
+SELECT DISTINCT ON (dataset) dataset, version, etag, fetched_at, metadata, signature_ok, provenance,
        extract(epoch FROM now() - fetched_at)::float8 AS age_s
   FROM cis_datasets
  WHERE signature_ok
@@ -111,12 +111,14 @@ type CurrentCISDatasetsRow struct {
 	FetchedAt   time.Time `json:"fetched_at"`
 	Metadata    []byte    `json:"metadata"`
 	SignatureOk bool      `json:"signature_ok"`
+	Provenance  *string   `json:"provenance"`
 	AgeS        float64   `json:"age_s"`
 }
 
-// The newest stored version of every dataset whose publisher signature
-// verified (a held one is never loaded), with its age on the database
-// clock.
+// The newest stored trusted version of every dataset (signature_ok:
+// its publisher signature verified, or the expiry rule passed; a held
+// one is never loaded), with its provenance kind and its age on the
+// database clock.
 func (q *Queries) CurrentCISDatasets(ctx context.Context) ([]CurrentCISDatasetsRow, error) {
 	rows, err := q.db.Query(ctx, currentCISDatasets)
 	if err != nil {
@@ -133,6 +135,7 @@ func (q *Queries) CurrentCISDatasets(ctx context.Context) ([]CurrentCISDatasetsR
 			&i.FetchedAt,
 			&i.Metadata,
 			&i.SignatureOk,
+			&i.Provenance,
 			&i.AgeS,
 		); err != nil {
 			return nil, err
@@ -166,8 +169,9 @@ func (q *Queries) DeleteCISDirect(ctx context.Context, arg DeleteCISDirectParams
 const insertCISDataset = `-- name: InsertCISDataset :one
 
 WITH ins AS (
-    INSERT INTO cis_datasets (dataset, version, etag, fetched_at, metadata, signature_ok)
-    VALUES ($1, $2, $3, now(), $4, $5)
+    INSERT INTO cis_datasets (dataset, version, etag, fetched_at, metadata, signature_ok, provenance)
+    VALUES ($1, $2, $3, now(), $4, $5,
+            $6)
     ON CONFLICT (dataset, version) DO NOTHING
     RETURNING fetched_at
 )
@@ -181,6 +185,7 @@ type InsertCISDatasetParams struct {
 	Etag        *string `json:"etag"`
 	Metadata    []byte  `json:"metadata"`
 	SignatureOk bool    `json:"signature_ok"`
+	Provenance  *string `json:"provenance"`
 }
 
 type InsertCISDatasetRow struct {
@@ -199,6 +204,7 @@ func (q *Queries) InsertCISDataset(ctx context.Context, arg InsertCISDatasetPara
 		arg.Etag,
 		arg.Metadata,
 		arg.SignatureOk,
+		arg.Provenance,
 	)
 	var i InsertCISDatasetRow
 	err := row.Scan(&i.Inserted, &i.FetchedAt)
@@ -312,6 +318,29 @@ type MarkCISNotificationsPulledParams struct {
 // Every notification of the dataset up to the version now held.
 func (q *Queries) MarkCISNotificationsPulled(ctx context.Context, arg MarkCISNotificationsPulledParams) (int64, error) {
 	result, err := q.db.Exec(ctx, markCISNotificationsPulled, arg.Dataset, arg.Version)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const promoteCISDataset = `-- name: PromoteCISDataset :execrows
+UPDATE cis_datasets SET signature_ok = true, provenance = $1
+ WHERE dataset = $2 AND version = $3 AND NOT signature_ok
+`
+
+type PromoteCISDatasetParams struct {
+	Provenance *string `json:"provenance"`
+	Dataset    string  `json:"dataset"`
+	Version    int64   `json:"version"`
+}
+
+// A version stored held (signature_ok false) and installed later, once
+// its provenance was shown (the keys fetched since, or the expiry rule
+// passed), is marked trusted with its kind; its features were stored
+// with it. A trusted row is never changed, nor marked held again.
+func (q *Queries) PromoteCISDataset(ctx context.Context, arg PromoteCISDatasetParams) (int64, error) {
+	result, err := q.db.Exec(ctx, promoteCISDataset, arg.Provenance, arg.Dataset, arg.Version)
 	if err != nil {
 		return 0, err
 	}

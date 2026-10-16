@@ -91,12 +91,44 @@ type Version struct {
 	// USSPList is the parsed list (nil for the ED-318 datasets).
 	USSPList *cispclient.UsspList
 	Meta     Metadata
-	// SignatureOK is whether the publisher's signature of the version
-	// (X-Publisher-Signature over GET /v1/{dataset}/versions/{v}) was
-	// verified: only such a version is used or loaded at a warm start;
-	// one without is stored held (Cache.hold).
-	SignatureOK bool
+	// Provenance is how the version was shown to come from who may
+	// publish it (provenance.go): ProvenancePublisher, its publisher's
+	// signature verified; ProvenanceCISPExpiry, a restrictions version
+	// the CISP made itself that passed the expiry rule; "" when neither
+	// was shown. Only a trusted version (Trusted) is used or loaded at a
+	// warm start; one without is stored held (Cache.hold).
+	Provenance Provenance
 }
+
+// Provenance is the kind of evidence a version was installed on
+// (cis_datasets.provenance).
+type Provenance string
+
+// The provenance kinds.
+const (
+	// ProvenancePublisher: X-Publisher-Signature over GET
+	// /v1/{dataset}/versions/{v} verified with the dataset's publisher's
+	// key, and the version carries what it signed.
+	ProvenancePublisher Provenance = "publisher"
+	// ProvenanceCISPExpiry: a restrictions version the CISP made when a
+	// restriction reached its end, its X-CIS-Signature verified with the
+	// CISP's key and its content only the removal of restrictions whose
+	// publisher-signed end has passed (expiryProvenance).
+	ProvenanceCISPExpiry Provenance = "cisp_expiry"
+)
+
+// ParseProvenance reads a stored kind; "" is held.
+func ParseProvenance(s string) (Provenance, bool) {
+	switch p := Provenance(s); p {
+	case "", ProvenancePublisher, ProvenanceCISPExpiry:
+		return p, true
+	}
+	return "", false
+}
+
+// Trusted reports whether the version was installed on a provenance
+// kind: only such a version is used, kept from pruning or warm-loaded.
+func (v *Version) Trusted() bool { return v.Provenance != "" }
 
 // RefusalError is a dataset version refused whole: the first problem by JSON
 // path, every problem core listed (at most ProblemLimits.MaxProblems,

@@ -43,7 +43,7 @@ func (g *cacheRig) pullHeld(t *testing.T, d Dataset, v int64, why string) {
 	if !errors.As(err, &ue) || ue.Version != v || !strings.Contains(ue.Reason, why) {
 		t.Fatalf("pull: %v, want version %d held for %q", err, v, why)
 	}
-	if s := g.lastSaved(d); s == nil || s.Number != v || s.SignatureOK {
+	if s := g.lastSaved(d); s == nil || s.Number != v || s.Trusted() {
 		t.Fatalf("stored: %+v", s)
 	}
 	if g.count(CounterUntrusted) != before+1 {
@@ -71,10 +71,10 @@ func TestProvenanceValidSignaturePromotes(t *testing.T) {
 			t.Fatalf("%s: %v", d, err)
 		}
 		v := g.eval.Snapshot().Version(d)
-		if v == nil || v.Number != 1 || !v.SignatureOK {
+		if v == nil || v.Number != 1 || !v.Trusted() {
 			t.Fatalf("%s: %+v", d, v)
 		}
-		if s := g.lastSaved(d); s == nil || !s.SignatureOK {
+		if s := g.lastSaved(d); s == nil || !s.Trusted() {
 			t.Fatalf("%s stored: %+v", d, s)
 		}
 		if n := g.fake.Requests("GET /v1/" + string(d) + "/versions/1"); n != 1 {

@@ -9,6 +9,26 @@ additively within `/v1`.
 
 ### Fixed
 
+- A restriction expiring at its end left every authorisation refused:
+  the CISP publishes the expiry as a restrictions version of its own,
+  without a publisher signature, which was held; from the first pull
+  after it `Cache.Outdated` named the held version and every intent was
+  rejected `cis_outdated` until the ANSP's next signed restrictions
+  version, and the restrictions age then passed `cis_stale_s`. Such a
+  version is now installed by the expiry rule of the spec 02 F3
+  erratum of 2026-10-16: its bytes the CISP's record `{op: "expire",
+  restriction_id, feature_id, ends_at, at}`, `X-CIS-Signature` over
+  them verifying with the new `cisp` entry of `USSP_CIS_PUBLISHER_KEYS`,
+  `at` within `USSP_CIS_EXPIRY_SKEW_S` (new, default 30 s) of this
+  process's clock, and only removals of restrictions whose signed end
+  is at or before `at`, compared with the CISP's version in use without
+  the direct overlay. Anything else is held as before, a CISP that
+  writes no `feature_id` included (`cis_expiry_installed`,
+  `cis_expiry_held`). The kind a version was installed on is stored
+  (`cis_datasets.provenance`, migration 00032; its CHECK, added NOT
+  VALID, is validated by 00033), and a version stored held and
+  installed later is now marked trusted, so a restart loads it.
+
 - Registry answers fetched just after a registration were deleted by
   the change feed (staging): a registered aircraft then resolved
   `unknown_operator` / `registry_unavailable` for its whole flight and

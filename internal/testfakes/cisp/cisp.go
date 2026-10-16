@@ -11,8 +11,13 @@
 // made at publication by a fake authority (zones, uspace_airspace,
 // ussp_list) or a fake ANSP (restrictions) whose JWKS the fake serves at
 // /publishers/{authority|ansp}/jwks.json (the real ones are the
-// publishers' own); SetPublisherSignature replaces or removes one. Down
-// makes every request answer 503; Requests counts what was asked.
+// publishers' own); SetPublisherSignature replaces or removes one. Every
+// version read also carries X-CIS-Signature, the fake CISP's own
+// detached JWS over the same bytes, made at its first serve and kept per
+// version as the CISP does (SetCISSignature replaces or removes it);
+// PublishExpiry makes a version as the CISP's expiry does, its bytes a
+// record and no publisher signature. Down makes every request answer
+// 503; Requests counts what was asked.
 package cisp
 
 import (
@@ -45,16 +50,24 @@ type version struct {
 	// pubSig and pubKID are X-Publisher-Signature and X-Publisher-Kid
 	// ("" sends neither).
 	pubSig, pubKID string
+	// cisSig is X-CIS-Signature once made (at the first serve) or set
+	// (SetCISSignature); cisSet says it was set, and "" then sends none.
+	cisSig string
+	cisSet bool
+	// reason is the change's reason ("" is publication).
+	reason string
 	// signed is what GET /v1/{dataset}/versions/{v} serves and the
 	// publisher signed, when it is not the served body (PublishSigned,
 	// Tamper); nil serves the dataset's body there too.
 	signed []byte
 }
 
-// The publishers of the datasets (the CISP's auth.PublisherOf).
+// The publishers of the datasets (the CISP's auth.PublisherOf), and the
+// name the CISP's own key goes by in USSP_CIS_PUBLISHER_KEYS.
 const (
 	PublisherAuthority = "authority"
 	PublisherANSP      = "ansp"
+	PublisherCISP      = "cisp"
 )
 
 // PublisherOf is the publisher of dataset: the ANSP for restrictions,
@@ -228,20 +241,46 @@ func (f *Fake) Host() string { u, _ := url.Parse(f.srv.URL); return u.Hostname()
 // IssuerConfig is the static key set of its signing key.
 func (f *Fake) IssuerConfig() coreauth.IssuerConfig { return f.Signer.IssuerConfig() }
 
-// PublisherKeys are the publishers' static key sets, by publisher.
+// PublisherKeys are the publishers' static key sets, by publisher, and
+// the fake CISP's own under PublisherCISP.
 func (f *Fake) PublisherKeys() map[string]coreauth.IssuerConfig {
-	out := make(map[string]coreauth.IssuerConfig, len(f.Publishers))
+	out := make(map[string]coreauth.IssuerConfig, len(f.Publishers)+1)
 	for p, s := range f.Publishers {
 		out[p] = s.IssuerConfig()
 	}
+	out[PublisherCISP] = f.Signer.IssuerConfig()
 	return out
 }
 
 // PublisherKeysEnv is USSP_CIS_PUBLISHER_KEYS naming the JWKS URLs the
-// fake serves for its publishers.
+// fake serves for its publishers and its own.
 func (f *Fake) PublisherKeysEnv() string {
 	return PublisherAuthority + "=" + f.srv.URL + "/publishers/" + PublisherAuthority + "/jwks.json," +
-		PublisherANSP + "=" + f.srv.URL + "/publishers/" + PublisherANSP + "/jwks.json"
+		PublisherANSP + "=" + f.srv.URL + "/publishers/" + PublisherANSP + "/jwks.json," +
+		PublisherCISP + "=" + f.srv.URL + "/.well-known/jwks.json"
+}
+
+// SetCISSignature replaces X-CIS-Signature of version v of dataset; an
+// empty sig sends none.
+func (f *Fake) SetCISSignature(dataset string, v int64, sig string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	vs := f.versions[dataset]
+	if v < 1 || v > int64(len(vs)) {
+		return
+	}
+	vs[v-1].cisSig, vs[v-1].cisSet = sig, true
+}
+
+// PublishExpiry makes features the next version of dataset as the
+// CISP's expiry job does (reason restriction_expired): record is the
+// bytes GET /v1/{dataset}/versions/{v} serves, there is no publisher
+// signature, and X-CIS-Signature is the fake CISP's over record.
+func (f *Fake) PublishExpiry(dataset string, record []byte, features ...json.RawMessage) Change {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.publishLocked(dataset, &version{features: append([]json.RawMessage{}, features...), signed: bytes.Clone(record),
+		reason: "restriction_expired"})
 }
 
 // SetPublisherSignature replaces the publisher signature of version v of
@@ -357,8 +396,14 @@ func (f *Fake) publishLocked(dataset string, v *version) Change {
 	v.n = int64(len(vs) + 1)
 	v.at = time.Now().UTC()
 	pub := PublisherOf(dataset)
-	if sig, err := f.Publishers[pub].SignDetached(signedBody(dataset, v), v.at); err == nil {
-		v.pubSig, v.pubKID = sig, "fake-"+pub+"-1"
+	if v.reason == "" {
+		if sig, err := f.Publishers[pub].SignDetached(signedBody(dataset, v), v.at); err == nil {
+			v.pubSig, v.pubKID = sig, "fake-"+pub+"-1"
+		}
+	}
+	reason := v.reason
+	if reason == "" {
+		reason = "publication"
 	}
 	f.versions[dataset] = append(vs, v)
 	ids, removed := []string{}, []string{}
@@ -371,7 +416,7 @@ func (f *Fake) publishLocked(dataset string, v *version) Change {
 	ch := Change{
 		Schema: "cis/change/v1", MsgID: strconv.Itoa(len(f.changes) + 1), Producer: "cisp/deliver-fake",
 		Dataset: dataset, Version: v.n, ETag: etag(dataset, v.n), FeatureIDs: ids, RemovedIDs: removed,
-		Reason: "publication", At: v.at.Format(time.RFC3339Nano),
+		Reason: reason, At: v.at.Format(time.RFC3339Nano),
 		PullURL: fmt.Sprintf("%s/v1/%s?since_version=%d", f.srv.URL, dataset, v.n-1),
 	}
 	f.changes = append(f.changes, ch)
@@ -705,6 +750,12 @@ func (f *Fake) getVersion(w http.ResponseWriter, dataset string, n int64) {
 	v := vs[n-1]
 	sig, kid := v.pubSig, v.pubKID
 	body := signedBody(dataset, v)
+	if !v.cisSet {
+		if s, err := f.Signer.SignDetached(body, time.Now()); err == nil {
+			v.cisSig, v.cisSet = s, true
+		}
+	}
+	cisSig := v.cisSig
 	f.mu.Unlock()
 	w.Header().Set("ETag", etag(dataset, n))
 	w.Header().Set("X-CIS-Version", strconv.FormatInt(n, 10))
@@ -714,6 +765,9 @@ func (f *Fake) getVersion(w http.ResponseWriter, dataset string, n int64) {
 	}
 	if kid != "" {
 		w.Header().Set("X-Publisher-Kid", kid)
+	}
+	if cisSig != "" {
+		w.Header().Set("X-CIS-Signature", cisSig)
 	}
 	_, _ = w.Write(body) //nolint:gosec // G705: a test fake serving the bytes it was given
 }

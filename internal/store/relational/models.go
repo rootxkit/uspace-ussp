@@ -47,6 +47,8 @@ type CisDataset struct {
 	FetchedAt   time.Time `json:"fetched_at"`
 	Metadata    []byte    `json:"metadata"`
 	SignatureOk bool      `json:"signature_ok"`
+	// publisher or cisp_expiry: the evidence the version was installed on; NULL while held untrusted
+	Provenance *string `json:"provenance"`
 }
 
 type CisDirectRestriction struct {

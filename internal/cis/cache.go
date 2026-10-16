@@ -62,15 +62,16 @@ const sweepInterval = 10 * time.Minute
 // on internal/store).
 type Store interface {
 	// SaveVersion stores v and its features once (a second save of the
-	// same version is a no-op) and keeps only the current and the
-	// previous version of the dataset, and the newest trusted one
-	// (SignatureOK) when it is older.
+	// same version is a no-op) with its provenance kind, and keeps only
+	// the current and the previous version of the dataset, and the
+	// newest trusted one (Version.Trusted) when it is older.
 	SaveVersion(ctx context.Context, v *Version, es []*Entry) error
 	// TouchVersion records that the CISP confirmed the version.
 	TouchVersion(ctx context.Context, d Dataset, version int64) error
 	// LoadCurrent returns the newest stored trusted version
-	// (SignatureOK) of every dataset, with its age on the database
-	// clock; a held version is never loaded.
+	// (Version.Trusted, either kind) of every dataset, with its
+	// provenance kind and its age on the database clock; a held version
+	// is never loaded.
 	LoadCurrent(ctx context.Context) ([]StoredVersion, error)
 	// MarkPulled marks d's notifications up to version as pulled.
 	MarkPulled(ctx context.Context, d Dataset, version int64) error
@@ -106,6 +107,10 @@ type CacheConfig struct {
 	// before it is used (USSP_CIS_PUBLISHER_KEYS); nil holds every new
 	// version, untrusted.
 	Publishers PublisherVerifier
+	// ExpirySkew is USSP_CIS_EXPIRY_SKEW_S: how far past this process's
+	// clock the at of a CISP expiry record may be (expiryProvenance).
+	// Zero allows none.
+	ExpirySkew time.Duration
 	Store      Store
 	Evaluator  *Evaluator
 	Projector  Projector
@@ -485,14 +490,18 @@ func (c *Cache) accept(ctx context.Context, v, cur *Version, reconcile bool) err
 			return c.refuse(v.Dataset, rf)
 		}
 	}
-	if err := c.provenance(ctx, v); err != nil {
+	kind, err := c.provenance(ctx, v)
+	if err != nil {
 		var ue *UntrustedError
 		if errors.As(err, &ue) {
 			return c.hold(ctx, v, es, ue)
 		}
 		return c.failPull(v.Dataset, err)
 	}
-	v.SignatureOK = true
+	v.Provenance = kind
+	if kind == ProvenanceCISPExpiry {
+		c.cfg.Counters.Inc(CounterExpiryInstalled)
+	}
 	prevEntries := c.cfg.Evaluator.Snapshot().Entries(v.Dataset)
 	var prevNumber int64
 	if cur != nil {
@@ -510,7 +519,8 @@ func (c *Cache) accept(ctx context.Context, v, cur *Version, reconcile bool) err
 		c.cfg.Counters.Inc(CounterReconcileCatchups)
 	}
 	c.cfg.Logger.Info("CIS version installed", slog.String("dataset", string(v.Dataset)), slog.Int64("version", v.Number),
-		slog.Int("features", len(es)), slog.Bool("delta", v.Meta.Delta), slog.Bool("reconcile", reconcile))
+		slog.Int("features", len(es)), slog.Bool("delta", v.Meta.Delta), slog.Bool("reconcile", reconcile),
+		slog.String("provenance", string(kind)))
 	c.project(ctx)
 	c.clearPending(v.Dataset, v.Number)
 	c.persist(ctx, v, es)
@@ -597,14 +607,14 @@ func (c *Cache) persistTouch(ctx context.Context, d Dataset, version int64) {
 	}
 }
 
-// hold stores v as untrusted (signature_ok false: a warm start never
-// loads it) without using it, and says so on /readyz until a version
+// hold stores v as untrusted (no provenance kind, signature_ok false: a
+// warm start never loads it) without using it, and says so on /readyz until a version
 // whose signature verifies replaces it. A pull that finds the same
 // version again checks it again (the keys may have been fetched since),
 // logging only a change.
 func (c *Cache) hold(ctx context.Context, v *Version, es []*Entry, ue *UntrustedError) error {
 	c.cfg.Counters.Inc(CounterUntrusted)
-	v.SignatureOK = false
+	v.Provenance = ""
 	c.mu.Lock()
 	prev := c.held[v.Dataset]
 	c.held[v.Dataset] = ue
