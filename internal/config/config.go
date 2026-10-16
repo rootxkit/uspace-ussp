@@ -143,7 +143,7 @@ type Config struct {
 	TrustedProxies          []string `env:"USSP_TRUSTED_PROXIES" by:"api,telemetry-ingest,rid-sp,traffic-ws" kind:"cidrs" help:"CIDRs or addresses of the reverse proxies whose X-Forwarded-For is believed, comma-separated; the client is the rightmost hop that is not one of them; empty: the peer is the client"`
 	TokenClientSecretFile   string   `env:"USSP_TOKEN_CLIENT_SECRET_FILE" by:"api,rid-sp,monitor,dss-sync" secret:"true" help:"file holding the client secret of this USSP's client ussp-<code>-01 at the first USSP_TOKEN_ISSUERS entry, for outgoing calls"`
 	GeoidFile               string   `env:"USSP_GEOID_FILE" by:"api,telemetry-ingest,monitor,traffic-ws" help:"geoid grid file for AMSL"`
-	TerrainDir              string   `env:"USSP_TERRAIN_DIR" by:"monitor" help:"directory of terrain tiles"`
+	TerrainDir              string   `env:"USSP_TERRAIN_DIR" by:"api,monitor" help:"directory of terrain tiles (index.json and <cell>.pgm): the monitor judges AGL zone limits with it, the api AGL limits of zones, restrictions and U-space airspace ceilings in intent decisions"`
 	CellOwnership           string   `env:"USSP_CELL_OWNERSHIP" default:"all" by:"monitor" help:"cells this monitor instance owns: all, or a comma list of c3 cells"`
 	AuthorityPush           string   `env:"USSP_AUTHORITY_PUSH" default:"off" by:"rid-sp" enum:"on|off" help:"the optional WS /v1/authority/flights extension (D12)"`
 	RecordsDir              string   `env:"USSP_RECORDS_DIR" by:"api" help:"directory (a local volume) the daily record bundles are written to and served from (GET /v1/records/daily/{date}); unset, no bundle is built and /readyz says so"`

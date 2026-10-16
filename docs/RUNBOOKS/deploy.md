@@ -144,7 +144,7 @@ smoke accepts exactly these by name and fails without them):
 | `api:operating_status` | no Art. 7(6) start notice sent yet | a staff admin confirms the start of operations on the console (`/v1/admin/status`), which sends the `start` notice to the authority |
 | `<process>:policy` | no policy version stored; the defaults apply (pending GCAA) | an admin publishes the first policy version from the console (`PUT /v1/admin/policy`) |
 | `monitor:adsb_rx` | no e-conspicuity receiver configured (`USSP_ADSB_SOURCE`, §15.2 Q11) | a receiver feed |
-| `monitor:terrain` | no pinned terrain source yet (`USSP_TERRAIN_DIR`) | a terrain release |
+| `monitor:terrain`, `api:terrain` | no pinned terrain source yet (`USSP_TERRAIN_DIR`); the api then refuses an intent under an AGL ceiling or an overlapping AGL restriction, never passes it | a terrain release |
 
 Then the smoke checks of the brief: the verification above, and one
 simulated operator from the lab (`sim-operator`) or the smoke's driver

@@ -202,12 +202,13 @@ and where it is stricter than the brief; each is in the PR body as well.
   `pending_dss`; outside, local checks suffice (02 F5). Pending intents
   have no path to accepted in this WP (WP-12/13 re-decide them); they
   can be ended.
-- **AGL is not judged over an area yet.** uspace-core has no lowest or
-  highest ground under an outline, so the api process runs without
-  terrain: a zone limit in AGL counts as overlapping (Z-09) and a
-  U-space airspace with `max_height_agl_m` refuses with
-  `airspace_ceiling_not_judged`. The `Terrain` interface is there for
-  the day core offers an area range. WGS84 zone limits are compared with
+- **AGL over an area** (closed after WP-7: uspace-core v1.7.0
+  `terrain.Store.RangeM`). With `USSP_TERRAIN_DIR` the api process judges
+  an AGL zone or restriction limit and `max_height_agl_m` against the
+  least and greatest ground under the outline; without it, or where the
+  ground is not known, a zone limit in AGL counts as overlapping (Z-09)
+  and a U-space airspace with `max_height_agl_m` refuses with
+  `airspace_ceiling_not_judged`. WGS84 zone limits are compared with
   the volume's W84 band as given; AMSL limits with the AMSL band.
 - U-space airspace membership is the volume's outline against the
   airspace's (deconflict geometry), not `AirspacesAt` at a point, so a

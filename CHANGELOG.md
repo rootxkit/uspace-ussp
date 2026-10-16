@@ -9,6 +9,17 @@ additively within `/v1`.
 
 ### Added
 
+- Intent decisions judge AGL limits with the DEM (uspace-ansp's AGL
+  dynamic restrictions, its docs/PLAN.md D3; WP-7's known gap "AGL is not
+  judged over an area yet"). The api reads `USSP_TERRAIN_DIR` (as the
+  monitor does) and gives the decider the least and greatest ground under
+  a volume's outline from uspace-core `terrain.Store.RangeM` (v1.7.0),
+  so an AGL zone or restriction limit and a U-space airspace's
+  `max_height_agl_m` are judged instead of counted as reached. Ground not
+  known everywhere under the outline is no answer, counted
+  `intent_ground_unknown`, and the decision fails closed as before.
+  `/readyz` lists `api:terrain` (degraded without it).
+
 - The InterUSS automated-testing interfaces `uss_qualifier` drives
   (WP-21, PLAN D13 and §6.4): `cmd/test-interfaces`
   (`ussp-test-interfaces`, image `uspace-ussp-testif`) serves RID
