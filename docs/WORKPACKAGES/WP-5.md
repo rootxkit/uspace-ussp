@@ -108,12 +108,37 @@ choice; each is in the PR body as well.
   `valid` (the feed invalidates any of them). An answer beyond its TTL
   is not served while the authority is down: the key is `unknown` with
   `registry_unavailable` (spec 02 F8: cached answers up to 24 h).
-- A fetch that raced the feed invalidating its key is answered but not
-  cached: the cursor read before the fetch is compared with the
-  sequence of the invalidation, remembered for an hour in
-  `registry_invalidations` (migration 00010). The feed's cursor and the
-  ETag of its page are in `registry_feed`; every age is the database
-  clock's.
+- Retention under the change feed (fixed after staging, where an
+  answer fetched just after a registration was deleted by the poll that
+  brought the registration, and the aircraft resolved
+  `unknown_operator` / `registry_unavailable` for its whole flight). The
+  invariant, in `feed.go` and `registry.sql`: *a cached answer survives
+  a change to its key iff it was fetched under a feed cursor at or
+  beyond the change's `seq`. Every other answer the change names is
+  replaced in the same transaction when its key is bound to an open
+  flight or an active intent, and deleted otherwise. A key that cannot
+  be re-fetched is deleted and said to be unavailable, never kept.
+  Time (`at`, `fetched_at`) never decides retention.* Each row records
+  the cursor it was fetched under (`fetched_since`, migration 00030);
+  the re-fetched answer overwrites the projected key, which is never
+  deleted first; a failed re-fetch is `registry_refetch_failed` and
+  degrades `/readyz` (`refetch_failed=n`) until it is answered; beyond
+  1000 keys a poll defers the rest (`registry_refetch_deferred`). A
+  sweep every `registry_revalidate_interval_s` (policy, 60 s) asks again
+  about every bound key whose answer is missing or older than that, at
+  most `registry_revalidate_max_count` (policy, 1000), which restores
+  failed and deferred keys and bounds in time a change the authority's
+  feed never names (its `bigserial` is not gap-free). The bound keys are
+  the serial and operator of every open flight and the serial, operator
+  and pilot of every active intent (`RegistryBoundKeys`). A flight's
+  first fact looks up its serial and operator (`Cache.Warm`, spec 02 F8
+  "each new serial seen", which had not been built). A fetch that raced
+  the feed invalidating its key is still answered but not cached: the
+  cursor read before the fetch is compared with the sequence of the
+  invalidation, remembered for an hour in `registry_invalidations`
+  (migration 00010). The feed's cursor and the ETag of its page are in
+  `registry_feed`; every age is the database clock's. Run recorded in
+  `docs/RUNBOOKS/WP-5.md`.
 - `registry_validity.valid_until` is the registration's end of validity
   as F8 answers it (nullable since 00010), not the cache's expiry: the
   TTL is applied at read time from the current policy.
